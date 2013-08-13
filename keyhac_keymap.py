@@ -1826,6 +1826,8 @@ class Keymap(ckit.Window):
         def _moveWindowEdge():
 
             wnd_top = self.getTopLevelWindow()
+            if not wnd_top: return
+
             wnd_rect = list(wnd_top.getRect())
 
             nearest = None

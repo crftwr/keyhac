@@ -6,6 +6,8 @@
 
         - Keymap.editTextFile() を追加。
 
+        - OS 起動直後など Keymap.getTopLevelWindow() が None を返すことがあり、command_MoveWindow_MonitorEdge でエラーが発生することがあったのを修正。
+
     **1.60**
 
         - Python27 から Python33 に移行。
