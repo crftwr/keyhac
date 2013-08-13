@@ -2,6 +2,10 @@
 更新履歴
 =========
 
+    **1.61**
+
+        - Keymap.editTextFile() を追加。
+
     **1.60**
 
         - Python27 から Python33 に移行。

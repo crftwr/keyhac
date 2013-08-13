@@ -813,11 +813,23 @@ class Keymap(ckit.Window):
 
         self._updateFocusWindow()
 
-    def editConfigFile(self):
+    ## テキストファイルを編集する
+    #
+    #  @param self  -
+    #  @param filename  ファイル名
+    #
+    def editTextFile( self, filename ):
         if callable(self.editor):
-            self.editor( self.config_filename )
+            self.editor(filename)
         else:
-            pyauto.shellExecute( None, self.editor, '"%s"' % self.config_filename, "" )
+            pyauto.shellExecute( None, self.editor, '"%s"' % filename, "" )
+
+    ## config.py を編集する
+    #
+    #  @param self  -
+    #
+    def editConfigFile(self):
+        self.editTextFile(self.config_filename)
 
     def startup(self):
         self.clipboard_history.load()
