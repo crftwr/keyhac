@@ -4,6 +4,8 @@
 
     **1.61**
 
+        - クリップボード履歴として保存するデータの最大合計サイズを keymap.clipboard_history.quota で設定できるようにした。
+
         - Keymap.editTextFile() を追加。
 
         - OS 起動直後など Keymap.getTopLevelWindow() が None を返すことがあり、command_MoveWindow_MonitorEdge でエラーが発生することがあったのを修正。

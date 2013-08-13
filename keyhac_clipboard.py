@@ -16,11 +16,12 @@ import keyhac_ini
 ## クリップボードの履歴を管理し、リスト表示するためのクラス
 class cblister_ClipboardHistory:
     
-    def __init__( self, window, maxnum=1000, debug=False ):
+    def __init__( self, window, debug=False ):
         
         self.window = window
         self.items = []
-        self.maxnum = maxnum
+        self.maxnum = 1000
+        self.quota = 10 * 1024 * 1024
         
         self.debug = debug
 
@@ -129,12 +130,17 @@ class cblister_ClipboardHistory:
         return items
 
     def save(self):
+
+        total_size = 0
         i=0
+
         while i<len(self.items):
             if self.items[i]:
                 item = self.items[i]
             else:
                 item = ""
+            total_size += len(item) * 2
+            if total_size>self.quota: break
             item = json.dumps(item)
             keyhac_ini.set( "CLIPBOARD", "history_%d"%(i,), item )
             i+=1
@@ -144,13 +150,19 @@ class cblister_ClipboardHistory:
             i+=1
 
     def load(self):
+
+        total_size = 0
+
         for i in range(self.maxnum):
             try:
                 item = keyhac_ini.get( "CLIPBOARD", "history_%d"%(i,) )
                 item = json.loads(item)
+                total_size += len(item) * 2
+                if total_size>self.quota: break
                 self.items.append(item)
             except Exception as e:
                 break
+
         self._push( ckit.getClipboardText() )
 
     def checkSanity(self):
