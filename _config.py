@@ -294,7 +294,6 @@ def configure(keymap):
             ( "YYYYMMDD_HHMMSS",       dateAndTime("%Y%m%d_%H%M%S") ),
             ( "YYYYMMDD",              dateAndTime("%Y%m%d") ),
             ( "HHMMSS",                dateAndTime("%H%M%S") ),
-            ( "HHMMSS",                dateAndTime("%H%M%S") ),
         ]
 
         # 文字列に引用符を付ける
