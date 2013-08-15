@@ -1,4 +1,9 @@
-﻿from keyhac import *
+﻿import sys
+import os
+import datetime
+
+import pyauto
+from keyhac import *
 
 def configure(keymap):
 
@@ -79,8 +84,6 @@ def configure(keymap):
         def command_JobTest():
 
             def jobTest(job_item):
-                import os
-                import sys
                 shellExecute( None, "notepad.exe", "", "" )
 
             def jobTestFinished(job_item):
@@ -95,7 +98,6 @@ def configure(keymap):
     # Cron (定期的なサブスレッド処理) のテスト
     if 0:
         def cronPing(cron_item):
-            import os
             os.system( "ping -n 3 www.google.com" )
 
         cron_item = CronItem( cronPing, 3.0 )
@@ -125,8 +127,6 @@ def configure(keymap):
 
     # Ctrl-Tab で、コンソール関係のウインドウを切り替え
     if 1:
-
-        import pyauto
 
         def isConsoleWindow(wnd):
             if wnd.getClassName() in ("PuTTY","MinTTY","CkwWindowClass"):
@@ -272,15 +272,12 @@ def configure(keymap):
 
     # クリップボード履歴リスト表示のカスタマイズ
     if 1:
-        import datetime
 
         # 定型文
         fixed_items = [
             ( "name@server.net",     "name@server.net" ),
             ( "住所",                "〒東京都品川区123-456" ),
             ( "電話番号",            "03-4567-8901" ),
-            ( "config.pyを編集",     keymap.command_EditConfig ),
-            ( "config.pyをリロード", keymap.command_ReloadConfig ),
         ]
 
         # フォーマット文字列で現在日時の文字列を生成
@@ -299,9 +296,9 @@ def configure(keymap):
             ( "HHMMSS",                dateAndTime("%H%M%S") ),
             ( "HHMMSS",                dateAndTime("%H%M%S") ),
         ]
-        
+
         # 文字列に引用符を付ける
-        def quote():
+        def quoteClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
             s = ""
@@ -310,7 +307,7 @@ def configure(keymap):
             return s
 
         # 文字列をインデントする
-        def indent():
+        def indentClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
             s = ""
@@ -321,7 +318,7 @@ def configure(keymap):
             return s
 
         # 文字列をアンインデントする
-        def unindent():
+        def unindentClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
             s = ""
@@ -336,17 +333,45 @@ def configure(keymap):
                 s += line[i:]
             return s
 
-        # 変換
-        transform_items = [
-            ( "Quote",    quote ),
-            ( "Indent",   indent ),
-            ( "Unindent", unindent ),
+        # クリップボードの内容をデスクトップに保存
+        def command_SaveClipboardToDesktop():
+
+            text = getClipboardText()
+            if not text: return
+
+            # utf-8 / CR-LF に変換
+            utf8_bom = b"\xEF\xBB\xBF"
+            text = text.replace("\r\n","\n")
+            text = text.replace("\r","\n")
+            text = text.replace("\n","\r\n")
+            text = text.encode( encoding="utf-8" )
+
+            # デスクトップに保存
+            fullpath = os.path.join( getDesktopPath(), datetime.datetime.now().strftime("clip_%Y%m%d_%H%M%S.txt") )
+            fd = open( fullpath, "wb" )
+            fd.write(utf8_bom)
+            fd.write(text)
+            fd.close()
+
+            # テキストエディタを開く
+            keymap.editTextFile(fullpath)
+
+        # その他
+        other_items = [
+            ( "Quote clipboard",            quoteClipboardText ),
+            ( "Indent clipboard",           indentClipboardText ),
+            ( "Unindent clipboard",         unindentClipboardText ),
+            ( "",                           None ),
+            ( "Save clipboard to Desktop",  command_SaveClipboardToDesktop ),
+            ( "",                           None ),
+            ( "Edit config.py",             keymap.command_EditConfig ),
+            ( "Reload config.py",           keymap.command_ReloadConfig ),
         ]
-        
+
         # クリップボード履歴リストのメニューリスト
         keymap.cblisters += [
-            ( "定型文",     cblister_FixedPhrase(fixed_items) ),
-            ( "日時",       cblister_FixedPhrase(datetime_items) ),
-            ( "変換",       cblister_FixedPhrase(transform_items) ),
+            ( "定型文",  cblister_FixedPhrase(fixed_items) ),
+            ( "日時",    cblister_FixedPhrase(datetime_items) ),
+            ( "その他",  cblister_FixedPhrase(other_items) ),
         ]
 
