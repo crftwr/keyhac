@@ -2096,9 +2096,28 @@ class Keymap(ckit.Window):
     def popClipboardList(self):
 
         item, mod = self.popListWindow( self.cblisters )
-        
-        if item==None:
-            return
+        if item==None : return
+
+        if callable(item[1]):
+            command = item[1]
+            text = command()
+        else:
+            text = item[1]
+
+        if not text: return
+
+        # Ctrlを押しながら決定したときは、引用記号付で貼り付ける
+        if mod & MODKEY_CTRL:
+            lines = text.splitlines(True)
+            text = ""
+            for line in lines:
+                text += self.quote_mark + line
+
+        # Shiftを押しながら決定したときは、貼り付けを行わず、クリップボードに格納するだけ
+        if mod & MODKEY_SHIFT:
+            paste = False
+        else:
+            paste = True
 
         def jobPaste(job_item):
 
@@ -2125,35 +2144,12 @@ class Keymap(ckit.Window):
             job_item.wnd = wnd
 
         def jobPasteFinished(job_item):
-            ckit.setClipboardText(job_item.text)
-            if job_item.paste:
+            ckit.setClipboardText(text)
+            if paste:
                 self.command_InputKey("C-V")()
 
-        if callable(item[1]):
-            command = item[1]
-            text = command()
-        else:
-            text = item[1]
-
-        if text:
-            job_item = ckit.JobItem( jobPaste, jobPasteFinished )
-
-            # Ctrlを押しながら決定したときは、引用記号付で貼り付ける
-            if mod & MODKEY_CTRL:
-                lines = text.splitlines(True)
-                text = ""
-                for line in lines:
-                    text += self.quote_mark + line
-
-            # Shiftを押しながら決定したときは、貼り付けを行わず、クリップボードに格納するだけ
-            if mod & MODKEY_SHIFT:
-                paste = False
-            else:
-                paste = True
-
-            job_item.text = text
-            job_item.paste = paste
-            ckit.JobQueue.defaultQueue().enqueue(job_item)
+        job_item = ckit.JobItem( jobPaste, jobPasteFinished )
+        ckit.JobQueue.defaultQueue().enqueue(job_item)
 
 
     ## クリップボード履歴をリスト表示する
