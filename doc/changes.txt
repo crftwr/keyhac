@@ -10,7 +10,11 @@
 
         - デフォルト設定ファイルに、クリップボードのテキストをデスクトップにファイルとして保存するコマンドの例を追加。
 
-        - Keymap.editTextFile() を追加。
+        - フックのなかで与えられた関数を実行するメソッド、Keymap.hookCall() を追加。
+
+        - クリップボード履歴リストからの貼り付け処理に Keymap.hookCall() を使うようにして、キーが押しっぱなしになってしまう可能性があったのを修正。
+
+        - テキストファイルを編集するメソッド、Keymap.editTextFile() を追加。
 
         - OS 起動直後など Keymap.getTopLevelWindow() が None を返すことがあり、command_MoveWindow_MonitorEdge でエラーが発生することがあったのを修正。
 

@@ -665,13 +665,14 @@ class Keymap(ckit.Window):
         self.virtual_modifier = 0               # 仮想のモディファイアキー状態 ( beginInput ～ endInput で使用 )
         self.record_status = None               # キーボードマクロの状態
         self.record_seq = None                  # キーボードマクロのシーケンス
+        self.hook_call_list = []                # フック内呼び出し関数のリスト
 
         self.console_window = None
         self.list_window = None
 
         self.sanity_check_state = None
         self.sanity_check_count = 0
-        
+
         # TRU のときも Input.send() を呼ぶかどうかのデバッグ用フラグ。
         # クリップボード履歴リストの表示に DelayedCall を使うようにしたら
         # モディファイアキーが押しっぱなしになる現象が起きなくなったので、
@@ -901,6 +902,12 @@ class Keymap(ckit.Window):
 
     def _onKeyDown( self, vk ):
 
+        if vk==0:
+            for func in self.hook_call_list:
+                func()
+            self.hook_call_list = []
+            return True
+
         self._updateFocusWindow()
 
         self._fixFunnyModifierState()
@@ -914,7 +921,7 @@ class Keymap(ckit.Window):
             replaced = False
 
         #self._debugKeyState(vk)
-        
+
         if self.last_keydown != vk:
             self.last_keydown = vk
             self.oneshot_canceled = False
@@ -1100,7 +1107,7 @@ class Keymap(ckit.Window):
             return self._onKeyUp(vk)
 
     def _hook_onMouseDown( self, x, y, vk ):
-        
+
         # マウスボタンを操作するとワンショットモディファイアはキャンセルする
         self.oneshot_canceled = True
 
@@ -1355,6 +1362,22 @@ class Keymap(ckit.Window):
                 keyhac_hook.hook.reset()
                 self.sanity_check_count = 0
 
+    ## フックのなかで与えられた関数を実行する
+    #
+    #  @param self  -
+    #  @param func  フックの中で実行する関数
+    #
+    #  Input.send() で実行する擬似的な入力の中に、物理的な入力を割り込ませないためには、
+    #  Input.send() をフックのなかで実行する必要があります。
+    #
+    #  フックの外で command_InputKey などのキー入力機能を実行すると、
+    #  稀に物理的なキー入力が擬似的なキー入力のなかに割り込んでしまい、
+    #  意図しないキー操作になってしまったり、キーが押しっぱなしになってしまったり、
+    #  といった問題が起きる可能性があります。
+    #
+    def hookCall( self, func ):
+        self.hook_call_list.append(func)
+        pyauto.Input.send( [ pyauto.KeyDown(0) ] )
 
     ## キーボードフォーカスを持っているウインドウを取得する
     #
@@ -1401,10 +1424,10 @@ class Keymap(ckit.Window):
             focus_wnd = pyauto.Window.getFocus()
             focus_client_rect = focus_wnd.getClientRect()
             pos = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[3] )
-        
+
         # すでにバルーンがあったら閉じる
         self.closeBalloon()
-        
+
         self.balloon = keyhac_balloon.BalloonWindow(self)
         self.balloon.setText( pos[0], pos[1], text )
         self.balloon_name = name
@@ -1424,7 +1447,7 @@ class Keymap(ckit.Window):
     def closeBalloon( self, name=None ):
 
         if name==None or self.balloon_name==name:
-            
+
             if self.balloon:
                 self.balloon.destroy()
 
@@ -2077,14 +2100,14 @@ class Keymap(ckit.Window):
 
         if select<0 :
             return None, 0
-            
+
         return items[select], mod
 
     ## リストウインドウをキャンセルで閉じる
     def cancelListWindow(self):
         if self.list_window:
             self.list_window.cancel()
-    
+
     ## リストウインドウが存在しているかを確認する
     def isListWindowOpened(self):
         return (self.list_window!=None)
@@ -2143,7 +2166,7 @@ class Keymap(ckit.Window):
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
             if paste:
-                self.command_InputKey("C-V")()
+                self.hookCall( self.command_InputKey("C-V") )
 
         job_item = ckit.JobItem( jobPaste, jobPasteFinished )
         ckit.JobQueue.defaultQueue().enqueue(job_item)
