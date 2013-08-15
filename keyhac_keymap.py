@@ -702,7 +702,7 @@ class Keymap(ckit.Window):
             self.balloon = None
 
         self.clipboard_history.destroy()
-        self._releaseModifierAll(check=False)
+        self._releaseModifierAll()
         self.enableHook(False)
 
         ckit.Window.destroy(self)
@@ -761,14 +761,11 @@ class Keymap(ckit.Window):
         ckit.setTheme( name, {} )
         self.console_window.reloadTheme()
 
-    def _releaseModifierAll( self, check ):
+    def _releaseModifierAll(self):
         input_seq = []
         for vk_mod in self.vk_mod_map.items():
             if vk_mod[1] & MODKEY_USER_ALL:
                 continue
-            if check:
-                state = pyauto.Input.getAsyncKeyState(vk_mod[0])
-                if state & 0x8000 : continue
             input_seq.append( pyauto.KeyUp(vk_mod[0]) )
         pyauto.Input.send(input_seq)
 
@@ -778,7 +775,7 @@ class Keymap(ckit.Window):
     #
     def configure(self):
 
-        self._releaseModifierAll(check=False)
+        self._releaseModifierAll()
 
         ckit.Keymap.init()
 
