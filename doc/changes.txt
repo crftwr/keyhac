@@ -8,6 +8,8 @@
 
         - Keymap.editTextFile() を追加。
 
+        - デフォルト設定ファイルに、クリップボードのテキストを変換して貼りつける機能の例を追加。(Quote,Indent,Unindent)
+
         - OS 起動直後など Keymap.getTopLevelWindow() が None を返すことがあり、command_MoveWindow_MonitorEdge でエラーが発生することがあったのを修正。
 
     **1.60**

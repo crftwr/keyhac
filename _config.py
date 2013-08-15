@@ -283,24 +283,70 @@ def configure(keymap):
             ( "config.pyをリロード", keymap.command_ReloadConfig ),
         ]
 
-        # 日時をペーストする機能
+        # フォーマット文字列で現在日時の文字列を生成
         def dateAndTime(fmt):
             def _dateAndTime():
                 return datetime.datetime.now().strftime(fmt)
             return _dateAndTime
 
         # 日時
-        date_and_time_items = [
+        datetime_items = [
             ( "YYYY/MM/DD HH:MM:SS",   dateAndTime("%Y/%m/%d %H:%M:%S") ),
             ( "YYYY/MM/DD",            dateAndTime("%Y/%m/%d") ),
             ( "HH:MM:SS",              dateAndTime("%H:%M:%S") ),
             ( "YYYYMMDD_HHMMSS",       dateAndTime("%Y%m%d_%H%M%S") ),
             ( "YYYYMMDD",              dateAndTime("%Y%m%d") ),
             ( "HHMMSS",                dateAndTime("%H%M%S") ),
+            ( "HHMMSS",                dateAndTime("%H%M%S") ),
         ]
+        
+        # 文字列に引用符を付ける
+        def quote():
+            s = getClipboardText()
+            lines = s.splitlines(True)
+            s = ""
+            for line in lines:
+                s += keymap.quote_mark + line
+            return s
 
+        # 文字列をインデントする
+        def indent():
+            s = getClipboardText()
+            lines = s.splitlines(True)
+            s = ""
+            for line in lines:
+                if line.lstrip():
+                    line = " " * 4 + line
+                s += line
+            return s
+
+        # 文字列をアンインデントする
+        def unindent():
+            s = getClipboardText()
+            lines = s.splitlines(True)
+            s = ""
+            for line in lines:
+                for i in range(4+1):
+                    if i>=len(line) : break
+                    if line[i]=='\t':
+                        i+=1
+                        break
+                    if line[i]!=' ':
+                        break
+                s += line[i:]
+            return s
+
+        # 変換
+        transform_items = [
+            ( "Quote",    quote ),
+            ( "Indent",   indent ),
+            ( "Unindent", unindent ),
+        ]
+        
+        # クリップボード履歴リストのメニューリスト
         keymap.cblisters += [
-            ( "定型文",         cblister_FixedPhrase(fixed_items) ),
-            ( "日時",           cblister_FixedPhrase(date_and_time_items) ),
-            ]
+            ( "定型文",     cblister_FixedPhrase(fixed_items) ),
+            ( "日時",       cblister_FixedPhrase(datetime_items) ),
+            ( "変換",       cblister_FixedPhrase(transform_items) ),
+        ]
 
