@@ -33,7 +33,6 @@ else:
     DOXYGEN_DIR = "c:/Program Files/doxygen"
 
 DIST_DIR = "dist/keyhac"
-DIST_SRC_DIR = "dist/src"
 VERSION = keyhac_resource.keyhac_version.replace(".","")
 ARCHIVE_NAME = "keyhac_%s.zip" % VERSION
 
@@ -82,7 +81,6 @@ DIST_FILES = [
     "keyhac/library.zip",
     "keyhac/dict/.keepme",
     "keyhac/extension/.keepme",
-    "keyhac/src.zip",
     ]
 
 def all():
@@ -91,17 +89,6 @@ def all():
 
 def exe():
     subprocess.call( [ PYTHON, "setup.py", "build" ] )
-
-    if 1:
-        rmtree( DIST_SRC_DIR )
-        makedirs( DIST_SRC_DIR )
-        os.chdir(DIST_SRC_DIR)
-        subprocess.call( [ SVN_DIR + "/svn.exe", "export", "--force", "../../../ckit" ] )
-        subprocess.call( [ SVN_DIR + "/svn.exe", "export", "--force", "../../../pyauto" ] )
-        subprocess.call( [ SVN_DIR + "/svn.exe", "export", "--force", "../../../keyhac" ] )
-        os.chdir("..")
-        createZip( "keyhac/src.zip", [ "src" ] )
-        os.chdir("..")
 
     if 1:
         os.chdir("dist")
