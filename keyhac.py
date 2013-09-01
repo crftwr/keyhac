@@ -4,13 +4,16 @@ from pyauto import *
 from keyhac_clipboard import cblister_FixedPhrase
 
 
-## @mainpage keyhac API リファレンス
+## @mainpage User Manual
 #
-#  keyhac のカスタマイズや機能拡張をするためのリファレンスです。\n
-#  \n
-#  keyhac のオフィシャルサイトはこちらです。\n
-#  http://sites.google.com/site/craftware/keyhac/ \n
-#  \n
+#  @htmlinclude index.htm_
+#
+#  @subpage changes
+#
+
+## @page changes 更新履歴
+#
+#  @htmlinclude changes.htm_
 #
 
 ## @addtogroup keymap キーマップ機能
