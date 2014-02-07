@@ -1797,6 +1797,33 @@ class Keymap(ckit.Window):
 
         return _mouseWheel
 
+    ## マウスの水平ホイールを擬似的に回転する関数を返す
+    #
+    #  @param self    -
+    #  @param wheel 回転量 (1.0=奥に向かって1クリック、-1.0=手前に向かって1クリック)
+    #  @return マウスの水平ホイールを擬似的に回転する関数
+    #
+    #  マウスの水平ホイールを擬似的に回転する関数を生成し、返します。
+    #
+    #  マウスの水平ホイールを擬似的に回転する機能を持っているのは、この関数から返される関数であり、
+    #  この関数自体はその機能を持っていないことに注意が必要です。
+    #
+    def command_MouseHorizontalWheel( self, wheel ):
+
+        def _mouseHorizontalWheel():
+
+            x,y = pyauto.Input.getCursorPos()
+
+            self.beginInput()
+
+            self.setInput_Modifier(0)
+
+            self.input_seq.append( pyauto.MouseHorizontalWheel(x,y,wheel) )
+
+            self.endInput()
+
+        return _mouseHorizontalWheel
+
     ## フォーカスされているウインドウを移動させる関数を返す
     #
     #  @param self    -

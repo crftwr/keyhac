@@ -200,6 +200,8 @@ def configure(keymap):
         keymap_global[ "U-U0-A-Space" ] = keymap.command_MouseButtonUp('left')
         keymap_global[ "U0-A-PageUp" ] = keymap.command_MouseWheel(1.0)
         keymap_global[ "U0-A-PageDown" ] = keymap.command_MouseWheel(-1.0)
+        keymap_global[ "U0-A-Home" ] = keymap.command_MouseHorizontalWheel(-1.0)
+        keymap_global[ "U0-A-End" ] = keymap.command_MouseHorizontalWheel(1.0)
 
 
     # sendMessageでシステムコマンドを実行
