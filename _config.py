@@ -340,21 +340,13 @@ def configure(keymap):
         # 文字列を半角文字にする
         def toHalfWidthClipboardText():
             s = getClipboardText()
-            lines = s.splitlines(True)
-            s = ""
-            trans = str.maketrans(full_width_chars,half_width_chars)
-            for line in lines:
-                s += line.translate(trans)
+            s = s.translate(str.maketrans(full_width_chars,half_width_chars))
             return s
 
         # 文字列を全角文字にする
         def toFullWidthClipboardText():
             s = getClipboardText()
-            lines = s.splitlines(True)
-            s = ""
-            trans = str.maketrans(half_width_chars,full_width_chars)
-            for line in lines:
-                s += line.translate(trans)
+            s = s.translate(str.maketrans(half_width_chars,full_width_chars))
             return s
 
         # クリップボードの内容をデスクトップに保存
