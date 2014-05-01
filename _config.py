@@ -334,6 +334,29 @@ def configure(keymap):
                 s += line[i:]
             return s
 
+        full_width_chars = "ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ！”＃＄％＆’（）＊＋，−．／：；＜＝＞？＠［￥］＾＿‘｛｜｝～０１２３４５６７８９　"
+        half_width_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}～0123456789 "
+
+        # 文字列を半角文字にする
+        def toHalfWidthClipboardText():
+            s = getClipboardText()
+            lines = s.splitlines(True)
+            s = ""
+            trans = str.maketrans(full_width_chars,half_width_chars)
+            for line in lines:
+                s += line.translate(trans)
+            return s
+
+        # 文字列を全角文字にする
+        def toFullWidthClipboardText():
+            s = getClipboardText()
+            lines = s.splitlines(True)
+            s = ""
+            trans = str.maketrans(half_width_chars,full_width_chars)
+            for line in lines:
+                s += line.translate(trans)
+            return s
+
         # クリップボードの内容をデスクトップに保存
         def command_SaveClipboardToDesktop():
 
@@ -362,6 +385,9 @@ def configure(keymap):
             ( "Quote clipboard",            quoteClipboardText ),
             ( "Indent clipboard",           indentClipboardText ),
             ( "Unindent clipboard",         unindentClipboardText ),
+            ( "",                           None ),
+            ( "To Half-Width",              toHalfWidthClipboardText ),
+            ( "To Full-Width",              toFullWidthClipboardText ),
             ( "",                           None ),
             ( "Save clipboard to Desktop",  command_SaveClipboardToDesktop ),
             ( "",                           None ),
