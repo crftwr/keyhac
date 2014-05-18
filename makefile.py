@@ -18,7 +18,7 @@ except:
 if hasattr(makeoption,"PYTHON_DIR"):
     PYTHON_DIR = makeoption.PYTHON_DIR
 else:
-    PYTHON_DIR = "c:/python33"
+    PYTHON_DIR = "c:/python34"
 
 PYTHON = PYTHON_DIR + "/python.exe"
 
@@ -71,7 +71,7 @@ def createZip( zip_filename, items ):
 DIST_FILES = [
     "keyhac/keyhac.exe",
     "keyhac/lib",
-    "keyhac/python33.dll",
+    "keyhac/python34.dll",
     "keyhac/_config.py",
     "keyhac/readme.txt",
     "keyhac/theme/black",
