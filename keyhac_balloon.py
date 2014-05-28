@@ -3,11 +3,11 @@ from ckit.ckit_const import *
 
 #--------------------------------------------------------------------
 
-class BalloonWindow( ckit.Window ):
+class BalloonWindow( ckit.TextWindow ):
 
     def __init__( self, parent_window ):
 
-        ckit.Window.__init__(
+        ckit.TextWindow.__init__(
             self,
             x=0,
             y=0,

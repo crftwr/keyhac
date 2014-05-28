@@ -630,11 +630,11 @@ class WindowKeymap:
 #
 #  設定ファイル config.py の configure に渡される keyhac 引数は、Keymap クラスのオブジェクトです。
 #
-class Keymap(ckit.Window):
+class Keymap(ckit.TextWindow):
 
     def __init__( self, config_filename, debug, profile ):
 
-        ckit.Window.__init__(
+        ckit.TextWindow.__init__(
             self,
             x = 0,
             y = 0,
@@ -706,7 +706,7 @@ class Keymap(ckit.Window):
         self._releaseModifierAll()
         self.enableHook(False)
 
-        ckit.Window.destroy(self)
+        ckit.TextWindow.destroy(self)
 
     def setConsoleWindow( self, console_window ):
         self.console_window = console_window
@@ -748,7 +748,7 @@ class Keymap(ckit.Window):
     #  @param size  フォントサイズ
     #
     def setFont( self, name, size ):
-        ckit.Window.setFont( self, name, size )
+        ckit.TextWindow.setFont( self, name, size )
         self.console_window.setFont( name, size )
 
     ## テーマを設定する

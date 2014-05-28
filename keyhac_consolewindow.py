@@ -52,7 +52,7 @@ class Log:
 #--------------------------------------------------------------------
 # コンソールウインドウ
 
-class ConsoleWindow(ckit.Window):
+class ConsoleWindow(ckit.TextWindow):
     
     def __init__( self, debug=False ):
     
@@ -60,7 +60,7 @@ class ConsoleWindow(ckit.Window):
         
         self.loadState()
 
-        ckit.Window.__init__(
+        ckit.TextWindow.__init__(
             self,
             x = self.window_normal_x,
             y = self.window_normal_y,
@@ -406,7 +406,7 @@ class ConsoleWindow(ckit.Window):
     #--------------------------------------------------------------------------
     
     def setFont( self, name, size ):
-        ckit.Window.setFont( self, name, size )
+        ckit.TextWindow.setFont( self, name, size )
         window_rect = self.getWindowRect()
         self.setPosSize( window_rect[0], window_rect[1], self.width(), self.height(), 0 )
 
