@@ -3,7 +3,6 @@ import sys
 import webbrowser
 
 import ckit
-import pyauto
 
 import keyhac_hook
 import keyhac_misc

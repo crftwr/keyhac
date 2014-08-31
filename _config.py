@@ -2,7 +2,6 @@
 import os
 import datetime
 
-import pyauto
 from keyhac import *
 
 def configure(keymap):

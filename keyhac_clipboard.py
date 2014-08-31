@@ -28,11 +28,13 @@ class cblister_ClipboardHistory:
         self.insane_count = 0
         self.seq_number = None
         
-        keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
+        if ckit.platform()=="win":
+            keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
         
     def destroy(self):
 
-        keyhac_hook.hook.clipboard = None
+        if ckit.platform()=="win":
+            keyhac_hook.hook.clipboard = None
 
         self.save()
 
@@ -166,36 +168,38 @@ class cblister_ClipboardHistory:
         self._push( ckit.getClipboardText() )
 
     def checkSanity(self):
+
+        if ckit.platform()=="win":
     
-        new_seq_number = ckit.getClipboardSequenceNumber()
+            new_seq_number = ckit.getClipboardSequenceNumber()
 
-        if new_seq_number == self.seq_number:
-            self.insane_count = 0
-        else:
-            self.insane_count += 1
+            if new_seq_number == self.seq_number:
+                self.insane_count = 0
+            else:
+                self.insane_count += 1
 
-        if self.insane_count>=3:
+            if self.insane_count>=3:
         
-            clipboard_text = ckit.getClipboardText()
+                clipboard_text = ckit.getClipboardText()
         
-            # クリップボードのフックの再設定
-            keyhac_hook.hook.clipboard = None
-            keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
+                # クリップボードのフックの再設定
+                keyhac_hook.hook.clipboard = None
+                keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
 
-            if self.debug:
+                if self.debug:
 
-                message = ( 
-                    "----------------------------------\n"
-                    "clipboard content mismatch\n"
-                    "re-installed clipboard hook\n"
-                    "----------------------------------"
-                    )
+                    message = ( 
+                        "----------------------------------\n"
+                        "clipboard content mismatch\n"
+                        "re-installed clipboard hook\n"
+                        "----------------------------------"
+                        )
 
-                print( "" )
-                print( message )
-                print( "" )
+                    print( "" )
+                    print( message )
+                    print( "" )
 
-            self.insane_count = 0
+                self.insane_count = 0
 
 ## クリップボード履歴リストに定型文をリストアップするクラス
 class cblister_FixedPhrase:

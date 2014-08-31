@@ -1,9 +1,11 @@
 ﻿import os
 import sys
-import msvcrt
 import configparser
 
 import ckit
+
+if ckit.platform()=="win":
+    import msvcrt
 
 import keyhac_resource
 

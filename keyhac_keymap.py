@@ -5,12 +5,12 @@ import profile
 import ctypes
 import fnmatch
 import traceback
-import winsound
 
 import ckit
+from ckit.ckit_const import *
 
-import pyauto
-from pyauto.pyauto_const import *
+if ckit.platform()=="win":
+    import winsound
 
 import keyhac_hook
 import keyhac_clipboard
@@ -127,12 +127,12 @@ class KeyCondition:
         VK_8 : "8",
         VK_9 : "9",
 
-        VK_OEM_MINUS  : "Minus",
-        VK_OEM_PLUS   : "Plus",
-        VK_OEM_COMMA  : "Comma",
-        VK_OEM_PERIOD : "Period",
+        VK_MINUS  : "Minus",
+        VK_PLUS   : "Plus",
+        VK_COMMA  : "Comma",
+        VK_PERIOD : "Period",
 
-        VK_NUMLOCK  : "NumLock",
+        #VK_NUMLOCK  : "NumLock", # FIXME : Mac対応
         VK_DIVIDE   : "Divide",
         VK_MULTIPLY : "Multiply",
         VK_SUBTRACT : "Subtract",
@@ -173,52 +173,77 @@ class KeyCondition:
         VK_RETURN   : "Return",
         VK_ESCAPE   : "Escape",
         VK_CAPITAL  : "CapsLock",
-        VK_APPS     : "Apps",
+        #VK_APPS     : "Apps", # FIXME : Mac対応
 
-        VK_INSERT   : "Insert",
+        #VK_INSERT   : "Insert", # FIXME : Mac対応
         VK_DELETE   : "Delete",
         VK_HOME     : "Home",
         VK_END      : "End",
         VK_NEXT     : "PageDown",
         VK_PRIOR    : "PageUp",
 
-        VK_MENU     : "Alt",
+        #VK_MENU     : "Alt", # FIXME : Mac対応
         VK_LMENU    : "LAlt",
         VK_RMENU    : "RAlt",
-        VK_CONTROL  : "Ctrl",
+        #VK_CONTROL  : "Ctrl", # FIXME : Mac対応
         VK_LCONTROL : "LCtrl",
         VK_RCONTROL : "RCtrl",
-        VK_SHIFT    : "Shift",
+        #VK_SHIFT    : "Shift", # FIXME : Mac対応
         VK_LSHIFT   : "LShift",
         VK_RSHIFT   : "RShift",
-        VK_LWIN     : "LWin",
-        VK_RWIN     : "RWin",
+        #VK_LWIN     : "LWin", # FIXME : Mac対応
+        #VK_RWIN     : "RWin", # FIXME : Mac対応
 
-        VK_SNAPSHOT : "PrintScreen",
-        VK_SCROLL   : "ScrollLock",
-        VK_PAUSE    : "Pause",
+        #VK_SNAPSHOT : "PrintScreen", # FIXME : Mac対応
+        #VK_SCROLL   : "ScrollLock", # FIXME : Mac対応
+        #VK_PAUSE    : "Pause", # FIXME : Mac対応
     }
 
-    vk_str_table_std = {
-        VK_OEM_1 : "Semicolon",
-        VK_OEM_2 : "Slash",
-        VK_OEM_3 : "BackQuote",
-        VK_OEM_4 : "OpenBracket",
-        VK_OEM_5 : "BackSlash",
-        VK_OEM_6 : "CloseBracket",
-        VK_OEM_7 : "Quote",
-    }
+    if ckit_misc.platform()=="win":
+    
+        vk_str_table_std = {
+            VK_OEM_1 : "Semicolon",
+            VK_OEM_2 : "Slash",
+            VK_OEM_3 : "BackQuote",
+            VK_OEM_4 : "OpenBracket",
+            VK_OEM_5 : "BackSlash",
+            VK_OEM_6 : "CloseBracket",
+            VK_OEM_7 : "Quote",
+        }
 
-    vk_str_table_jpn = {
-        VK_OEM_1    : "Colon",
-        VK_OEM_2    : "Slash",
-        VK_OEM_3    : "Atmark",
-        VK_OEM_4    : "OpenBracket",
-        VK_OEM_5    : "Yen",
-        VK_OEM_6    : "CloseBracket",
-        VK_OEM_7    : "Caret",
-        VK_OEM_102  : "BackSlash",
-    }
+        vk_str_table_jpn = {
+            VK_OEM_1    : "Colon",
+            VK_OEM_2    : "Slash",
+            VK_OEM_3    : "Atmark",
+            VK_OEM_4    : "OpenBracket",
+            VK_OEM_5    : "Yen",
+            VK_OEM_6    : "CloseBracket",
+            VK_OEM_7    : "Caret",
+            VK_OEM_102  : "BackSlash",
+        }
+
+    else:
+
+        vk_str_table_std = {
+            VK_SEMICOLON    : "Semicolon",
+            VK_SLASH        : "Slash",
+            VK_GRAVE        : "BackQuote",
+            VK_OPENBRACKET  : "OpenBracket",
+            VK_BACKSLASH    : "BackSlash",
+            VK_CLOSEBRACKET : "CloseBracket",
+            VK_QUOTE        : "Quote",
+        }
+
+        vk_str_table_jpn = {
+            #VK_OEM_1        : "Colon", # FIXME : Mac対応
+            VK_SLASH        : "Slash",
+            #VK_OEM_3        : "Atmark", # FIXME : Mac対応
+            VK_OPENBRACKET  : "OpenBracket",
+            #VK_OEM_5        : "Yen", # FIXME : Mac対応
+            VK_CLOSEBRACKET : "CloseBracket",
+            #VK_OEM_7        : "Caret", # FIXME : Mac対応
+            VK_BACKSLASH    : "BackSlash",
+        }
 
     str_vk_table_common = {
 
@@ -260,12 +285,12 @@ class KeyCondition:
         "8" : VK_8,
         "9" : VK_9,
 
-        "MINUS"  : VK_OEM_MINUS,
-        "PLUS"   : VK_OEM_PLUS,
-        "COMMA"  : VK_OEM_COMMA,
-        "PERIOD" : VK_OEM_PERIOD,
+        "MINUS"  : VK_MINUS,
+        "PLUS"   : VK_PLUS,
+        "COMMA"  : VK_COMMA,
+        "PERIOD" : VK_PERIOD,
 
-        "NUMLOCK"  : VK_NUMLOCK,
+        #"NUMLOCK"  : VK_NUMLOCK, # FIXME : Mac対応
         "DIVIDE"   : VK_DIVIDE,
         "MULTIPLY" : VK_MULTIPLY,
         "SUBTRACT" : VK_SUBTRACT,
@@ -310,69 +335,111 @@ class KeyCondition:
         "CAPSLOCK" : VK_CAPITAL,
         "CAPS"     : VK_CAPITAL,
         "CAPITAL"  : VK_CAPITAL,
-        "APPS"     : VK_APPS,
+        #"APPS"     : VK_APPS, # FIXME : Mac対応
 
-        "INSERT"   : VK_INSERT,
+        #"INSERT"   : VK_INSERT, # FIXME : Mac対応
         "DELETE"   : VK_DELETE,
         "HOME"     : VK_HOME,
         "END"      : VK_END,
         "PAGEDOWN" : VK_NEXT,
         "PAGEUP"   : VK_PRIOR,
 
-        "ALT"  : VK_MENU ,
+        "ALT"  : VK_LMENU ,
         "LALT" : VK_LMENU,
         "RALT" : VK_RMENU,
-        "CTRL"  : VK_CONTROL ,
+        "CTRL"  : VK_LCONTROL ,
         "LCTRL" : VK_LCONTROL,
         "RCTRL" : VK_RCONTROL,
-        "SHIFT"  : VK_SHIFT ,
+        "SHIFT"  : VK_LSHIFT ,
         "LSHIFT" : VK_LSHIFT,
         "RSHIFT" : VK_RSHIFT,
-        "LWIN" : VK_LWIN,
-        "RWIN" : VK_RWIN,
+        #"LWIN" : VK_LWIN, # FIXME : Mac対応
+        #"RWIN" : VK_RWIN, # FIXME : Mac対応
 
-        "PRINTSCREEN" : VK_SNAPSHOT,
-        "SCROLLLOCK"  : VK_SCROLL,
-        "PAUSE"       : VK_PAUSE,
+        #"PRINTSCREEN" : VK_SNAPSHOT, # FIXME : Mac対応
+        #"SCROLLLOCK"  : VK_SCROLL, # FIXME : Mac対応
+        #"PAUSE"       : VK_PAUSE, # FIXME : Mac対応
     }
 
-    str_vk_table_std = {
+    if ckit_misc.platform()=="win":
+    
+        str_vk_table_std = {
 
-        "SEMICOLON"     : VK_OEM_1,
-        "COLON"         : VK_OEM_1,
-        "SLASH"         : VK_OEM_2,
-        "BACKQUOTE"     : VK_OEM_3,
-        "TILDE"         : VK_OEM_3,
-        "OPENBRACKET"   : VK_OEM_4,
-        "BACKSLASH"     : VK_OEM_5,
-        "YEN"           : VK_OEM_5,
-        "CLOSEBRACKET"  : VK_OEM_6,
-        "QUOTE"         : VK_OEM_7,
-        "DOUBLEQUOTE"   : VK_OEM_7,
-        "UNDERSCORE"    : VK_OEM_MINUS,
-        "ASTERISK"      : VK_8,
-        "ATMARK"        : VK_2,
-        "CARET"         : VK_6,
-    }
+            "SEMICOLON"     : VK_OEM_1,
+            "COLON"         : VK_OEM_1,
+            "SLASH"         : VK_OEM_2,
+            "BACKQUOTE"     : VK_OEM_3,
+            "TILDE"         : VK_OEM_3,
+            "OPENBRACKET"   : VK_OEM_4,
+            "BACKSLASH"     : VK_OEM_5,
+            "YEN"           : VK_OEM_5,
+            "CLOSEBRACKET"  : VK_OEM_6,
+            "QUOTE"         : VK_OEM_7,
+            "DOUBLEQUOTE"   : VK_OEM_7,
+            "UNDERSCORE"    : VK_OEM_MINUS,
+            "ASTERISK"      : VK_8,
+            "ATMARK"        : VK_2,
+            "CARET"         : VK_6,
+        }
 
-    str_vk_table_jpn = {
+        str_vk_table_jpn = {
+        
+            "SEMICOLON"     : VK_OEM_PLUS,
+            "COLON"         : VK_OEM_1,
+            "SLASH"         : VK_OEM_2,
+            "BACKQUOTE"     : VK_OEM_3,
+            "TILDE"         : VK_OEM_7,
+            "OPENBRACKET"   : VK_OEM_4,
+            "BACKSLASH"     : VK_OEM_102,
+            "YEN"           : VK_OEM_5,
+            "CLOSEBRACKET"  : VK_OEM_6,
+            "QUOTE"         : VK_7,
+            "DOUBLEQUOTE"   : VK_2,
+            "UNDERSCORE"    : VK_OEM_102,
+            "ASTERISK"      : VK_OEM_1,
+            "ATMARK"        : VK_OEM_3,
+            "CARET"         : VK_OEM_7,
+        }
 
-        "SEMICOLON"     : VK_OEM_PLUS,
-        "COLON"         : VK_OEM_1,
-        "SLASH"         : VK_OEM_2,
-        "BACKQUOTE"     : VK_OEM_3,
-        "TILDE"         : VK_OEM_7,
-        "OPENBRACKET"   : VK_OEM_4,
-        "BACKSLASH"     : VK_OEM_102,
-        "YEN"           : VK_OEM_5,
-        "CLOSEBRACKET"  : VK_OEM_6,
-        "QUOTE"         : VK_7,
-        "DOUBLEQUOTE"   : VK_2,
-        "UNDERSCORE"    : VK_OEM_102,
-        "ASTERISK"      : VK_OEM_1,
-        "ATMARK"        : VK_OEM_3,
-        "CARET"         : VK_OEM_7,
-    }
+    else:
+
+        str_vk_table_std = {
+
+            "SEMICOLON"     : VK_SEMICOLON,
+            "COLON"         : VK_SEMICOLON,
+            "SLASH"         : VK_SLASH,
+            "BACKQUOTE"     : VK_GRAVE,
+            #"TILDE"         : VK_OEM_3, # FIXME : Mac対応
+            "OPENBRACKET"   : VK_OPENBRACKET,
+            "BACKSLASH"     : VK_BACKSLASH,
+            "YEN"           : VK_BACKSLASH,
+            "CLOSEBRACKET"  : VK_CLOSEBRACKET,
+            "QUOTE"         : VK_QUOTE,
+            "DOUBLEQUOTE"   : VK_QUOTE,
+            "UNDERSCORE"    : VK_MINUS,
+            "ASTERISK"      : VK_8,
+            "ATMARK"        : VK_2,
+            "CARET"         : VK_6,
+        }
+
+        str_vk_table_jpn = {
+        
+            "SEMICOLON"     : VK_PLUS,
+            #"COLON"         : VK_OEM_1, # FIXME : Mac対応
+            "SLASH"         : VK_SLASH,
+            "BACKQUOTE"     : VK_GRAVE,
+            #"TILDE"         : VK_OEM_7, # FIXME : Mac対応
+            "OPENBRACKET"   : VK_OPENBRACKET,
+            "BACKSLASH"     : VK_BACKSLASH,
+            "YEN"           : VK_YEN,
+            "CLOSEBRACKET"  : VK_CLOSEBRACKET,
+            "QUOTE"         : VK_7,
+            "DOUBLEQUOTE"   : VK_2,
+            "UNDERSCORE"    : VK_UNDERSCORE,
+            #"ASTERISK"      : VK_OEM_1, # FIXME : Mac対応
+            #"ATMARK"        : VK_OEM_3, # FIXME : Mac対応
+            #"CARET"         : VK_OEM_7, # FIXME : Mac対応
+        }
 
     str_mod_table = {
 
@@ -532,7 +599,10 @@ class KeyCondition:
     @staticmethod
     def initTables():
 
-        keyboard_type = ctypes.windll.user32.GetKeyboardType(0)
+        if ckit.platform()=="win":
+            keyboard_type = ctypes.windll.user32.GetKeyboardType(0)
+        else:
+            keyboard_type = 0
 
         KeyCondition.str_vk_table = KeyCondition.str_vk_table_common
         KeyCondition.vk_str_table = KeyCondition.vk_str_table_common
@@ -638,8 +708,10 @@ class Keymap(ckit.TextWindow):
             self,
             x = 0,
             y = 0,
-            width = 1,
-            height = 1,
+            width = 40,
+            height = 10,
+            font_name = "Osaka-Mono",
+            font_size = 16,
             title_bar = True,
             title = "keyhac keymap",
             show = False,
@@ -728,18 +800,23 @@ class Keymap(ckit.TextWindow):
         if self.hook_enabled:
             keyhac_hook.hook.keydown = self._hook_onKeyDown
             keyhac_hook.hook.keyup = self._hook_onKeyUp
-            keyhac_hook.hook.mousedown = self._hook_onMouseDown
-            keyhac_hook.hook.mouseup = self._hook_onMouseUp
+            if ckit.platform()=="win":
+                keyhac_hook.hook.mousedown = self._hook_onMouseDown
+                keyhac_hook.hook.mouseup = self._hook_onMouseUp
+            keyhac_hook.hook.reset()
         else:
             keyhac_hook.hook.keydown = None
             keyhac_hook.hook.keyup = None
-            keyhac_hook.hook.mousedown = None
-            keyhac_hook.hook.mouseup = None
+            if ckit.platform()=="win":
+                keyhac_hook.hook.mousedown = None
+                keyhac_hook.hook.mouseup = None
+            keyhac_hook.hook.reset()
 
     def enableDebug( self, enable ):
         self.debug = enable
         self.clipboard_history.enableDebug(enable)
-        pyauto.setDebug(enable)
+        if ckit.platform()=="win":
+            pyauto.setDebug(enable)
 
     ## フォントを設定する
     #
@@ -749,7 +826,8 @@ class Keymap(ckit.TextWindow):
     #
     def setFont( self, name, size ):
         ckit.TextWindow.setFont( self, name, size )
-        self.console_window.setFont( name, size )
+        if ckit.platform()=="win":
+            self.console_window.setFont( name, size )
 
     ## テーマを設定する
     #
@@ -760,15 +838,16 @@ class Keymap(ckit.TextWindow):
     #
     def setTheme( self, name ):
         ckit.setTheme( name, {} )
-        self.console_window.reloadTheme()
+        if ckit.platform()=="win":
+            self.console_window.reloadTheme()
 
     def _releaseModifierAll(self):
         input_seq = []
         for vk_mod in self.vk_mod_map.items():
             if vk_mod[1] & MODKEY_USER_ALL:
                 continue
-            input_seq.append( pyauto.KeyUp(vk_mod[0]) )
-        pyauto.Input.send(input_seq)
+            input_seq.append( ckit.KeyUp(vk_mod[0]) )
+        ckit.Input.send(input_seq)
 
     ## 設定を読み込む
     #
@@ -794,8 +873,8 @@ class Keymap(ckit.TextWindow):
         self.vk_mod_map[VK_RCONTROL ] = MODKEY_CTRL_R
         self.vk_mod_map[VK_LMENU    ] = MODKEY_ALT_L
         self.vk_mod_map[VK_RMENU    ] = MODKEY_ALT_R
-        self.vk_mod_map[VK_LWIN     ] = MODKEY_WIN_L
-        self.vk_mod_map[VK_RWIN     ] = MODKEY_WIN_R
+        #self.vk_mod_map[VK_LWIN     ] = MODKEY_WIN_L
+        #self.vk_mod_map[VK_RWIN     ] = MODKEY_WIN_R
 
         self.editor = "notepad.exe"
         self.quote_mark = "> "
@@ -884,13 +963,13 @@ class Keymap(ckit.TextWindow):
 
     def _debugKeyState( self, vk ):
 
-        state = pyauto.Input.getKeyboardState()
+        state = ckit.Input.getKeyboardState()
         print( "getKeyboardState(%d): 0x%x" % ( vk, ord(state[vk]) ) )
 
-        state = pyauto.Input.getKeyState(vk)
+        state = ckit.Input.getKeyState(vk)
         print( "getKeyState(%d):      0x%x" % ( vk, state ) )
 
-        state = pyauto.Input.getAsyncKeyState(vk)
+        state = ckit.Input.getAsyncKeyState(vk)
         print( "getAsyncKeyState(%d): 0x%x" % ( vk, state ) )
 
     def _recordKey( self, vk, up ):
@@ -902,11 +981,13 @@ class Keymap(ckit.TextWindow):
 
     def _onKeyDown( self, vk ):
 
-        if vk==0:
-            for func in self.hook_call_list:
-                func()
-            self.hook_call_list = []
-            return True
+        if ckit.platform()=="win":
+            # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
+            if vk==0:
+                for func in self.hook_call_list:
+                    func()
+                self.hook_call_list = []
+                return True
 
         self._updateFocusWindow()
 
@@ -940,17 +1021,17 @@ class Keymap(ckit.TextWindow):
             if self._keyAction(key):
                 return True
             elif replaced:
-                key_seq = [ pyauto.KeyDown(vk) ]
+                key_seq = [ ckit.KeyDown(vk) ]
                 if self.debug : print( "REP :", key_seq )
-                pyauto.Input.send(key_seq)
+                ckit.Input.send(key_seq)
                 return True
             else:
                 if self.send_input_on_tru:
                     # 一部の環境でモディファイアが押しっぱなしになってしまう現象の回避テスト
                     # TRU でも Input.send すると問題が起きない
-                    key_seq = [ pyauto.KeyDown(vk) ]
+                    key_seq = [ ckit.KeyDown(vk) ]
                     if self.debug : print( "TRU :", key_seq )
-                    pyauto.Input.send(key_seq)
+                    ckit.Input.send(key_seq)
                     return True
                 else:
                     if self.debug : print( "TRU :", key )
@@ -1000,17 +1081,17 @@ class Keymap(ckit.TextWindow):
                 if self._keyAction(key):
                     return True
                 elif replaced or ( oneshot and self._hasKeyAction(oneshot_key) ):
-                    key_seq = [ pyauto.KeyUp(vk) ]
+                    key_seq = [ ckit.KeyUp(vk) ]
                     if self.debug : print( "REP :", key_seq )
-                    pyauto.Input.send(key_seq)
+                    ckit.Input.send(key_seq)
                     return True
                 else:
                     if self.send_input_on_tru:
                         # 一部の環境でモディファイアが押しっぱなしになってしまう現象の回避テスト
                         # TRU でも Input.send すると問題が起きない
-                        key_seq = [ pyauto.KeyUp(vk) ]
+                        key_seq = [ ckit.KeyUp(vk) ]
                         if self.debug : print( "TRU :", key_seq )
-                        pyauto.Input.send(key_seq)
+                        ckit.Input.send(key_seq)
                         return True
                     else:
                         if self.debug : print( "TRU :", key )
@@ -1083,7 +1164,7 @@ class Keymap(ckit.TextWindow):
             traceback.print_exc()
 
     def _hook_onKeyDown( self, vk, scan ):
-
+    
         # キーフック強制解除検出カウンタをリセット
         self.sanity_check_count = 0
 
@@ -1230,7 +1311,7 @@ class Keymap(ckit.TextWindow):
     def endInput(self):
         self.setInput_Modifier(self.modifier)
         if self.debug : print( "OUT :", self.input_seq )
-        pyauto.Input.send(self.input_seq)
+        ckit.Input.send(self.input_seq)
         self.input_seq = []
 
     def setInput_Modifier( self, mod ):
@@ -1247,18 +1328,18 @@ class Keymap(ckit.TextWindow):
         for vk_mod in self.vk_mod_map.items():
             if vk_mod[1] & MODKEY_USER_ALL : continue
             if not ( vk_mod[1] & self.virtual_modifier ) and ( vk_mod[1] & mod ):
-                self.input_seq.append( pyauto.KeyDown(vk_mod[0]) )
+                self.input_seq.append( ckit.KeyDown(vk_mod[0]) )
                 self.virtual_modifier |= vk_mod[1]
 
         # Win と Alt の単体押しをキャンセル
         if cancel_oneshot_win_alt:
-            self.input_seq.append( pyauto.Key( VK_LCONTROL ) )
+            self.input_seq.append( ckit.Key( VK_LCONTROL ) )
 
         # モディファイア離す
         for vk_mod in self.vk_mod_map.items():
             if vk_mod[1] & MODKEY_USER_ALL : continue
             if ( vk_mod[1] & self.virtual_modifier ) and not ( vk_mod[1] & mod ):
-                self.input_seq.append( pyauto.KeyUp(vk_mod[0]) )
+                self.input_seq.append( ckit.KeyUp(vk_mod[0]) )
                 self.virtual_modifier &= ~vk_mod[1]
 
     def setInput_FromString( self, s ):
@@ -1292,11 +1373,11 @@ class Keymap(ckit.TextWindow):
         self.setInput_Modifier(mod)
 
         if up==True:
-            self.input_seq.append( pyauto.KeyUp(vk) )
+            self.input_seq.append( ckit.KeyUp(vk) )
         elif up==False:
-            self.input_seq.append( pyauto.KeyDown(vk) )
+            self.input_seq.append( ckit.KeyDown(vk) )
         else:
-            self.input_seq.append( pyauto.Key(vk) )
+            self.input_seq.append( ckit.Key(vk) )
 
     # Win と Alt の単体押しをキャンセルする ( beginInput/endInput込み )
     # Win の単体押しは スタートメニューが開き、Alt の単体押しは メニューバーにフォーカスが移動してしまう。
@@ -1308,59 +1389,64 @@ class Keymap(ckit.TextWindow):
 
     # フォーカスがあるウインドウを明示的に更新する
     def _updateFocusWindow(self):
+        
+        if ckit.platform()=="win":
+            try:
+                wnd = pyauto.Window.getFocus()
+                if wnd==None:
+                    wnd = pyauto.Window.getForeground()
+            except:
+                wnd = None
 
-        try:
-            wnd = pyauto.Window.getFocus()
-            if wnd==None:
-                wnd = pyauto.Window.getForeground()
-        except:
-            wnd = None
-
-        if wnd != self.wnd:
-            self._focusChanged(wnd)
+            if wnd != self.wnd:
+                self._focusChanged(wnd)
 
 
     # モディファイアのおかしな状態を修正する
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
     def _fixFunnyModifierState(self):
+        
+        if ckit.platform()=="win":
 
-        for vk_mod in self.vk_mod_map.items():
+            for vk_mod in self.vk_mod_map.items():
 
-            if vk_mod[1] & MODKEY_USER_ALL:
-                continue
+                if vk_mod[1] & MODKEY_USER_ALL:
+                    continue
 
-            if self.modifier & vk_mod[1]:
-                state = pyauto.Input.getAsyncKeyState(vk_mod[0])
-                if not (state & 0x8000):
-                    self.modifier &= ~vk_mod[1]
-                    if self.debug :
-                        print( "" )
-                        print( "FIX :", KeyCondition.vkToStr(vk_mod[0]) )
-                        print( "" )
+                if self.modifier & vk_mod[1]:
+                    state = ckit.Input.getAsyncKeyState(vk_mod[0])
+                    if not (state & 0x8000):
+                        self.modifier &= ~vk_mod[1]
+                        if self.debug :
+                            print( "" )
+                            print( "FIX :", KeyCondition.vkToStr(vk_mod[0]) )
+                            print( "" )
 
 
     # キーフックが強制解除されたことを検出し、フックを再設定する
     def checkSanity(self):
-
+    
         if not self.hook_enabled : return
 
-        state = [ pyauto.Input.getAsyncKeyState(vk_mod[0]) for vk_mod in self.vk_mod_map.items() ]
-        if self.sanity_check_state != state:
-            self.sanity_check_count += 1
-            self.sanity_check_state = state
-            if self.sanity_check_count >= 4:
-                print( "" )
-                print( "-----------------------------------------" )
-                print( "キーフック強制解除を検出しました。" )
-                print( "自動的にフックの再設定を行います。" )
-                print( "" )
-                print( "キーフックの強制解除が頻発する場合、時間のかかる処理(300ミリ秒以上)が" )
-                print( "メインスレッドで呼び出されていないかを、確認してください。" )
-                print( "時間のかかる処理は JobQueue/JobItem を使ってサブスレッドに追い出してください。" )
-                print( "-----------------------------------------" )
-                print( "" )
-                keyhac_hook.hook.reset()
-                self.sanity_check_count = 0
+        if ckit.platform()=="win":
+
+            state = [ ckit.Input.getAsyncKeyState(vk_mod[0]) for vk_mod in self.vk_mod_map.items() ]
+            if self.sanity_check_state != state:
+                self.sanity_check_count += 1
+                self.sanity_check_state = state
+                if self.sanity_check_count >= 4:
+                    print( "" )
+                    print( "-----------------------------------------" )
+                    print( "キーフック強制解除を検出しました。" )
+                    print( "自動的にフックの再設定を行います。" )
+                    print( "" )
+                    print( "キーフックの強制解除が頻発する場合、時間のかかる処理(300ミリ秒以上)が" )
+                    print( "メインスレッドで呼び出されていないかを、確認してください。" )
+                    print( "時間のかかる処理は JobQueue/JobItem を使ってサブスレッドに追い出してください。" )
+                    print( "-----------------------------------------" )
+                    print( "" )
+                    keyhac_hook.hook.reset()
+                    self.sanity_check_count = 0
 
     ## フックのなかで与えられた関数を実行する
     #
@@ -1377,7 +1463,7 @@ class Keymap(ckit.TextWindow):
     #
     def hookCall( self, func ):
         self.hook_call_list.append(func)
-        pyauto.Input.send( [ pyauto.KeyDown(0) ] )
+        ckit.Input.send( [ ckit.KeyDown(0) ] ) # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
 
     ## キーボードフォーカスを持っているウインドウを取得する
     #
@@ -1602,29 +1688,29 @@ class Keymap(ckit.TextWindow):
             input_seq = []
             for vk_mod in self.vk_mod_map.items():
                 if self.modifier & vk_mod[1]:
-                    input_seq.append( pyauto.KeyUp(vk_mod[0]) )
-            pyauto.Input.send(input_seq)
+                    input_seq.append( ckit.KeyUp(vk_mod[0]) )
+            ckit.Input.send(input_seq)
             self.modifier = 0
 
             # 記録されたキーシーケンスを実行する
             for vk, up in self.record_seq:
                 if not up:
                     if not self._onKeyDown(vk):
-                        key_seq = [ pyauto.KeyDown(vk) ]
+                        key_seq = [ ckit.KeyDown(vk) ]
                         if self.debug : print( "OUT :", key_seq )
-                        pyauto.Input.send(key_seq)
+                        ckit.Input.send(key_seq)
                 else:
                     if not self._onKeyUp(vk):
-                        key_seq = [ pyauto.KeyUp(vk) ]
+                        key_seq = [ ckit.KeyUp(vk) ]
                         if self.debug : print( "OUT :", key_seq )
-                        pyauto.Input.send(key_seq)
+                        ckit.Input.send(key_seq)
 
             # モディファイアを戻す
             input_seq = []
             for vk_mod in self.vk_mod_map.items():
                 if modifier & vk_mod[1]:
-                    input_seq.append( pyauto.KeyDown(vk_mod[0]) )
-            pyauto.Input.send(input_seq)
+                    input_seq.append( ckit.KeyDown(vk_mod[0]) )
+            ckit.Input.send(input_seq)
             self.modifier = modifier
 
     ## マウスカーソルを移動させる関数を返す
@@ -1643,7 +1729,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseMove():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             x += delta_x
             y += delta_y
@@ -1671,7 +1757,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseButtonDown():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             self.beginInput()
 
@@ -1709,7 +1795,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseButtonUp():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             self.beginInput()
 
@@ -1747,7 +1833,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseButtonClick():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             self.beginInput()
 
@@ -1785,7 +1871,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseWheel():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             self.beginInput()
 
@@ -1812,7 +1898,7 @@ class Keymap(ckit.TextWindow):
 
         def _mouseHorizontalWheel():
 
-            x,y = pyauto.Input.getCursorPos()
+            x,y = ckit.Input.getCursorPos()
 
             self.beginInput()
 

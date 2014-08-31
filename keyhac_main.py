@@ -17,10 +17,12 @@ import ckit
 ckit.setLocale( locale.getdefaultlocale()[0] )
 
 import keyhac_consolewindow
-import keyhac_tasktrayicon
 import keyhac_keymap
 import keyhac_ini
 import keyhac_resource
+
+if ckit.platform()=="win":
+    import keyhac_tasktrayicon
 
 #--------------------------------------------------------------------
 
@@ -64,14 +66,15 @@ if __name__ == "__main__":
     ckit.CronTable.createDefaultCronTable()
 
     keymap = keyhac_keymap.Keymap( config_filename, debug, profile )
-    console_window = keyhac_consolewindow.ConsoleWindow( debug )
-    task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
+    if ckit.platform()=="win":
+        console_window = keyhac_consolewindow.ConsoleWindow( debug )
+        task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
 
-    keymap.setConsoleWindow(console_window)
-    task_tray_icon.setKeymap(keymap)
-    task_tray_icon.setConsoleWindow(console_window)
+        keymap.setConsoleWindow(console_window)
+        task_tray_icon.setKeymap(keymap)
+        task_tray_icon.setConsoleWindow(console_window)
 
-    console_window.registerStdio()
+        console_window.registerStdio()
 
     keymap.configure()
     
@@ -79,7 +82,8 @@ if __name__ == "__main__":
     
     keymap.messageLoop()
 
-    console_window.unregisterStdio()
+    if ckit.platform()=="win":
+        console_window.unregisterStdio()
 
     ckit.CronTable.cancelAll()
     ckit.CronTable.joinAll()
@@ -87,11 +91,13 @@ if __name__ == "__main__":
     ckit.JobQueue.cancelAll()
     ckit.JobQueue.joinAll()
 
-    task_tray_icon.destroy()
+    if ckit.platform()=="win":
+        task_tray_icon.destroy()
 
     keymap.destroy()
 
-    console_window.saveState()
-    console_window.destroy()
+    if ckit.platform()=="win":
+        console_window.saveState()
+        console_window.destroy()
 
     keyhac_ini.write()    

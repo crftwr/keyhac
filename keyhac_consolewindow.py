@@ -2,8 +2,6 @@
 import threading
 import traceback
 
-import pyauto
-
 import ckit
 from ckit.ckit_const import *
 
@@ -66,7 +64,8 @@ class ConsoleWindow(ckit.TextWindow):
             y = self.window_normal_y,
             width = self.window_normal_width,
             height = self.window_normal_height,
-            font_size = 12,
+            font_name = "Osaka-Mono",
+            font_size = 16,
             bg_color = ckit.getColor("bg"),
             border_size = 2,
             title_bar = True,

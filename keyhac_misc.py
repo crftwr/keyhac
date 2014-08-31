@@ -1,8 +1,6 @@
 ﻿import ckit
 from ckit.ckit_const import *
 
-import pyauto
-
 ## @addtogroup misc
 ## @{
 

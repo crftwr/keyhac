@@ -1,5 +1,4 @@
 ﻿from ckit import *
-from pyauto import *
 
 from keyhac_clipboard import cblister_FixedPhrase
 
