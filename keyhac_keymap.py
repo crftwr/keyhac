@@ -655,7 +655,10 @@ class WindowKeymap:
         self.keymap = {}
 
     def check( self, wnd ):
-        if self.exe_name     and ( not wnd or not fnmatch.fnmatch( wnd.getProcessName(), self.exe_name ) ) : return False
+        if ckit.platform()=="win":
+            if self.exe_name     and ( not wnd or not fnmatch.fnmatch( wnd.getProcessName(), self.exe_name ) ) : return False
+        else:
+            if self.exe_name     and ( not wnd or not fnmatch.fnmatch( wnd, self.exe_name ) ) : return False
         if self.class_name   and ( not wnd or not fnmatch.fnmatch( wnd.getClassName(), self.class_name ) ) : return False
         if self.window_text  and ( not wnd or not fnmatch.fnmatch( wnd.getText(), self.window_text ) ) : return False
         if self.check_func   and ( not wnd or not self.check_func(wnd) ) : return False
@@ -1144,14 +1147,19 @@ class Keymap(ckit.TextWindow):
         try:
             if self.debug:
 
-                if wnd:
-                    print( "" )
-                    print( "Window : exe   : %s" % wnd.getProcessName() )
-                    print( "       : class : %s" % wnd.getClassName() )
-                    print( "       : text  : %s" % wnd.getText() )
-                    print( "" )
+                if ckit.platform()=="win":
+                    if wnd:
+                        print( "" )
+                        print( "Window : exe   : %s" % wnd.getProcessName() )
+                        print( "       : class : %s" % wnd.getClassName() )
+                        print( "       : text  : %s" % wnd.getText() )
+                        print( "" )
+                    else:
+                        print( "Window : None" )
                 else:
-                    print( "Window : None" )
+                    print( "" )
+                    print( "Application : id : %s" % wnd )
+                    print( "" )
 
             self.wnd = None
             self._updateKeymap(wnd)
@@ -1160,7 +1168,8 @@ class Keymap(ckit.TextWindow):
         except Exception as e:
             print( e )
             print( "ERROR : _focusChanged failed" )
-            print( "      : %s : %s : %s" % ( wnd.getProcessName(), wnd.getClassName(), wnd.getText() ) )
+            if ckit.platform()=="win":
+                print( "      : %s : %s : %s" % ( wnd.getProcessName(), wnd.getClassName(), wnd.getText() ) )
             traceback.print_exc()
 
     def _hook_onKeyDown( self, vk, scan ):
@@ -1397,9 +1406,11 @@ class Keymap(ckit.TextWindow):
                     wnd = pyauto.Window.getForeground()
             except:
                 wnd = None
+        else:
+            wnd = ckit.getFocusedApplicationId()
 
-            if wnd != self.wnd:
-                self._focusChanged(wnd)
+        if wnd != self.wnd:
+            self._focusChanged(wnd)
 
 
     # モディファイアのおかしな状態を修正する
