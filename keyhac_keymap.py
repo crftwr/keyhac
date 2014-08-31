@@ -30,32 +30,32 @@ MODKEY_ALT   = 0x00000001
 MODKEY_CTRL  = 0x00000002
 MODKEY_SHIFT = 0x00000004
 MODKEY_WIN   = 0x00000008
-MODKEY_USER0 = 0x00000010
-MODKEY_USER1 = 0x00000020
-MODKEY_USER2 = 0x00000040
-MODKEY_USER3 = 0x00000080
+MODKEY_CMD   = 0x00000010
+MODKEY_FN    = 0x00000020
+MODKEY_USER0 = 0x00000040
+MODKEY_USER1 = 0x00000080
 
 MODKEY_ALT_L   = 0x00000100
 MODKEY_CTRL_L  = 0x00000200
 MODKEY_SHIFT_L = 0x00000400
 MODKEY_WIN_L   = 0x00000800
-MODKEY_USER0_L = 0x00001000
-MODKEY_USER1_L = 0x00002000
-MODKEY_USER2_L = 0x00004000
-MODKEY_USER3_L = 0x00008000
+MODKEY_CMD_L   = 0x00001000
+MODKEY_FN_L    = 0x00002000
+MODKEY_USER0_L = 0x00004000
+MODKEY_USER1_L = 0x00008000
 
 MODKEY_ALT_R   = 0x00010000
 MODKEY_CTRL_R  = 0x00020000
 MODKEY_SHIFT_R = 0x00040000
 MODKEY_WIN_R   = 0x00080000
-MODKEY_USER0_R = 0x00100000
-MODKEY_USER1_R = 0x00200000
-MODKEY_USER2_R = 0x00400000
-MODKEY_USER3_R = 0x00800000
+MODKEY_CMD_R   = 0x00100000
+MODKEY_FN_R    = 0x00200000
+MODKEY_USER0_R = 0x00400000
+MODKEY_USER1_R = 0x00800000
 
-MODKEY_USER_ALL = ( MODKEY_USER0   | MODKEY_USER1   | MODKEY_USER2   | MODKEY_USER3
-                  | MODKEY_USER0_L | MODKEY_USER1_L | MODKEY_USER2_L | MODKEY_USER3_L
-                  | MODKEY_USER0_R | MODKEY_USER1_R | MODKEY_USER2_R | MODKEY_USER3_R )
+MODKEY_USER_ALL = ( MODKEY_USER0   | MODKEY_USER1
+                  | MODKEY_USER0_L | MODKEY_USER1_L
+                  | MODKEY_USER0_R | MODKEY_USER1_R )
 
 
 def checkModifier( mod1, mod2 ):
@@ -447,55 +447,49 @@ class KeyCondition:
         "CTRL"  :  MODKEY_CTRL,
         "SHIFT" :  MODKEY_SHIFT,
         "WIN"   :  MODKEY_WIN,
+        "CMD"   :  MODKEY_CMD,
+        "FN"    :  MODKEY_FN,
         "USER0" :  MODKEY_USER0,
         "USER1" :  MODKEY_USER1,
-        "USER2" :  MODKEY_USER2,
-        "USER3" :  MODKEY_USER3,
 
         "LALT"   :  MODKEY_ALT_L,
         "LCTRL"  :  MODKEY_CTRL_L,
         "LSHIFT" :  MODKEY_SHIFT_L,
         "LWIN"   :  MODKEY_WIN_L,
+        "LCMD"   :  MODKEY_CMD_L,
+        "LFN"    :  MODKEY_FN_L,
         "LUSER0" :  MODKEY_USER0_L,
         "LUSER1" :  MODKEY_USER1_L,
-        "LUSER2" :  MODKEY_USER2_L,
-        "LUSER3" :  MODKEY_USER3_L,
 
         "RALT"   :  MODKEY_ALT_R,
         "RCTRL"  :  MODKEY_CTRL_R,
         "RSHIFT" :  MODKEY_SHIFT_R,
         "RWIN"   :  MODKEY_WIN_R,
+        "RCMD"   :  MODKEY_CMD_R,
+        "RFN"    :  MODKEY_FN_R,
         "RUSER0" :  MODKEY_USER0_R,
         "RUSER1" :  MODKEY_USER1_R,
-        "RUSER2" :  MODKEY_USER2_R,
-        "RUSER3" :  MODKEY_USER3_R,
 
-        "A" :  MODKEY_ALT,
-        "C" :  MODKEY_CTRL,
-        "S" :  MODKEY_SHIFT,
-        "W" :  MODKEY_WIN,
-        "U0" : MODKEY_USER0,
-        "U1" : MODKEY_USER1,
-        "U2" : MODKEY_USER2,
-        "U3" : MODKEY_USER3,
+        #"A" :  MODKEY_ALT,
+        #"C" :  MODKEY_CTRL,
+        #"S" :  MODKEY_SHIFT,
+        #"W" :  MODKEY_WIN,
+        #"U0" : MODKEY_USER0,
+        #"U1" : MODKEY_USER1,
 
-        "LA" :  MODKEY_ALT_L,
-        "LC" :  MODKEY_CTRL_L,
-        "LS" :  MODKEY_SHIFT_L,
-        "LW" :  MODKEY_WIN_L,
-        "LU0" : MODKEY_USER0_L,
-        "LU1" : MODKEY_USER1_L,
-        "LU2" : MODKEY_USER2_L,
-        "LU3" : MODKEY_USER3_L,
+        #"LA" :  MODKEY_ALT_L,
+        #"LC" :  MODKEY_CTRL_L,
+        #"LS" :  MODKEY_SHIFT_L,
+        #"LW" :  MODKEY_WIN_L,
+        #"LU0" : MODKEY_USER0_L,
+        #"LU1" : MODKEY_USER1_L,
 
-        "RA" :  MODKEY_ALT_R,
-        "RC" :  MODKEY_CTRL_R,
-        "RS" :  MODKEY_SHIFT_R,
-        "RW" :  MODKEY_WIN_R,
-        "RU0" : MODKEY_USER0_R,
-        "RU1" : MODKEY_USER1_R,
-        "RU2" : MODKEY_USER2_R,
-        "RU3" : MODKEY_USER3_R,
+        #"RA" :  MODKEY_ALT_R,
+        #"RC" :  MODKEY_CTRL_R,
+        #"RS" :  MODKEY_SHIFT_R,
+        #"RW" :  MODKEY_WIN_R,
+        #"RU0" : MODKEY_USER0_R,
+        #"RU1" : MODKEY_USER1_R,
     }
 
     def __init__( self, vk, mod=0, up=False, oneshot=False ):
@@ -526,37 +520,37 @@ class KeyCondition:
         else:
             s += "D-"
 
-        if self.mod & MODKEY_ALT : s += "A-"
-        elif self.mod & MODKEY_ALT_L : s += "LA-"
-        elif self.mod & MODKEY_ALT_R : s += "RA-"
+        if self.mod & MODKEY_ALT : s += "Alt-"
+        elif self.mod & MODKEY_ALT_L : s += "LAlt-"
+        elif self.mod & MODKEY_ALT_R : s += "RAlt-"
 
-        if self.mod & MODKEY_CTRL : s += "C-"
-        elif self.mod & MODKEY_CTRL_L : s += "LC-"
-        elif self.mod & MODKEY_CTRL_R : s += "RC-"
+        if self.mod & MODKEY_CTRL : s += "Ctrl-"
+        elif self.mod & MODKEY_CTRL_L : s += "LCtrl-"
+        elif self.mod & MODKEY_CTRL_R : s += "RCtrl-"
 
-        if self.mod & MODKEY_SHIFT : s += "S-"
-        elif self.mod & MODKEY_SHIFT_L : s += "LS-"
-        elif self.mod & MODKEY_SHIFT_R : s += "RS-"
+        if self.mod & MODKEY_SHIFT : s += "Shift-"
+        elif self.mod & MODKEY_SHIFT_L : s += "LShift-"
+        elif self.mod & MODKEY_SHIFT_R : s += "RShift-"
 
-        if self.mod & MODKEY_WIN : s += "W-"
-        elif self.mod & MODKEY_WIN_L : s += "LW-"
-        elif self.mod & MODKEY_WIN_R : s += "RW-"
+        if self.mod & MODKEY_WIN : s += "Win-"
+        elif self.mod & MODKEY_WIN_L : s += "LWin-"
+        elif self.mod & MODKEY_WIN_R : s += "RWin-"
 
-        if self.mod & MODKEY_USER0 : s += "U0-"
-        elif self.mod & MODKEY_USER0_L : s += "LU0-"
-        elif self.mod & MODKEY_USER0_R : s += "RU0-"
+        if self.mod & MODKEY_CMD : s += "Cmd-"
+        elif self.mod & MODKEY_CMD_L : s += "LCmd-"
+        elif self.mod & MODKEY_CMD_R : s += "RCmd-"
 
-        if self.mod & MODKEY_USER1 : s += "U1-"
-        elif self.mod & MODKEY_USER1_L : s += "LU1-"
-        elif self.mod & MODKEY_USER1_R : s += "RU1-"
+        if self.mod & MODKEY_FN : s += "Fn-"
+        elif self.mod & MODKEY_FN_L : s += "LFn-"
+        elif self.mod & MODKEY_FN_R : s += "RFn-"
 
-        if self.mod & MODKEY_USER2 : s += "U2-"
-        elif self.mod & MODKEY_USER2_L : s += "LU2-"
-        elif self.mod & MODKEY_USER2_R : s += "RU2-"
+        if self.mod & MODKEY_USER0 : s += "User0-"
+        elif self.mod & MODKEY_USER0_L : s += "LUser0-"
+        elif self.mod & MODKEY_USER0_R : s += "RUser0-"
 
-        if self.mod & MODKEY_USER3 : s += "U3-"
-        elif self.mod & MODKEY_USER3_L : s += "LU3-"
-        elif self.mod & MODKEY_USER3_R : s += "RU3-"
+        if self.mod & MODKEY_USER1 : s += "User1-"
+        elif self.mod & MODKEY_USER1_L : s += "LUser1-"
+        elif self.mod & MODKEY_USER1_R : s += "RUser1-"
 
         s += KeyCondition.vkToStr(self.vk)
 
@@ -878,6 +872,9 @@ class Keymap(ckit.TextWindow):
         self.vk_mod_map[VK_RMENU    ] = MODKEY_ALT_R
         #self.vk_mod_map[VK_LWIN     ] = MODKEY_WIN_L
         #self.vk_mod_map[VK_RWIN     ] = MODKEY_WIN_R
+        self.vk_mod_map[VK_LCOMMAND ] = MODKEY_CMD_L
+        self.vk_mod_map[VK_RCOMMAND ] = MODKEY_CMD_R
+        self.vk_mod_map[VK_FUNCTION ] = MODKEY_FN_L
 
         self.editor = "notepad.exe"
         self.quote_mark = "> "
