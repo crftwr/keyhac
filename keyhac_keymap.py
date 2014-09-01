@@ -193,6 +193,9 @@ class KeyCondition:
         VK_RSHIFT   : "RShift",
         #VK_LWIN     : "LWin", # FIXME : Mac対応
         #VK_RWIN     : "RWin", # FIXME : Mac対応
+        VK_LCOMMAND : "LCmd",
+        VK_RCOMMAND : "RCmd",
+        VK_FUNCTION : "Fn",
 
         #VK_SNAPSHOT : "PrintScreen", # FIXME : Mac対応
         #VK_SCROLL   : "ScrollLock", # FIXME : Mac対応
@@ -344,17 +347,21 @@ class KeyCondition:
         "PAGEDOWN" : VK_NEXT,
         "PAGEUP"   : VK_PRIOR,
 
-        "ALT"  : VK_LMENU ,
+        "ALT"  : VK_LMENU,
         "LALT" : VK_LMENU,
         "RALT" : VK_RMENU,
-        "CTRL"  : VK_LCONTROL ,
+        "CTRL"  : VK_LCONTROL,
         "LCTRL" : VK_LCONTROL,
         "RCTRL" : VK_RCONTROL,
-        "SHIFT"  : VK_LSHIFT ,
+        "SHIFT"  : VK_LSHIFT,
         "LSHIFT" : VK_LSHIFT,
         "RSHIFT" : VK_RSHIFT,
         #"LWIN" : VK_LWIN, # FIXME : Mac対応
         #"RWIN" : VK_RWIN, # FIXME : Mac対応
+        "CMD"  : VK_LCOMMAND,
+        "LCMD" : VK_LCOMMAND,
+        "RCMD" : VK_RCOMMAND,
+        "FN" : VK_FUNCTION,
 
         #"PRINTSCREEN" : VK_SNAPSHOT, # FIXME : Mac対応
         #"SCROLLLOCK"  : VK_SCROLL, # FIXME : Mac対応
@@ -457,7 +464,6 @@ class KeyCondition:
         "LSHIFT" :  MODKEY_SHIFT_L,
         "LWIN"   :  MODKEY_WIN_L,
         "LCMD"   :  MODKEY_CMD_L,
-        "LFN"    :  MODKEY_FN_L,
         "LUSER0" :  MODKEY_USER0_L,
         "LUSER1" :  MODKEY_USER1_L,
 
@@ -466,7 +472,6 @@ class KeyCondition:
         "RSHIFT" :  MODKEY_SHIFT_R,
         "RWIN"   :  MODKEY_WIN_R,
         "RCMD"   :  MODKEY_CMD_R,
-        "RFN"    :  MODKEY_FN_R,
         "RUSER0" :  MODKEY_USER0_R,
         "RUSER1" :  MODKEY_USER1_R,
 
