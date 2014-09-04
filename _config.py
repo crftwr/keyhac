@@ -30,56 +30,101 @@ def configure(keymap):
 
     # --------------------------------------------------------------------
 
-    # キーの単純な置き換え
-    #keymap.replaceKey( "LWin", 235 )
-    #keymap.replaceKey( "RWin", 255 )
-
-    # ユーザモディファイアキーの定義
-    keymap.defineModifier( 235, "User0" )
 
     # どのウインドウにフォーカスがあっても効くキーマップ
-    if 1:
-        keymap_global = keymap.defineWindowKeymap()
+    keymap_global = keymap.defineWindowKeymap()
 
+    # ループを使って、一括キー割当 : OK
+    if 0:
+        for C in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            keymap_global[ "Ctrl-" + C ] = "Cmd-" + C
+
+    # モディファイアを１つ置き換えるテスト : OK
+    if 0:
+        keymap_global[ "Ctrl-Up" ] = "Cmd-Up"
+        keymap_global[ "Ctrl-Down" ] = "Cmd-Down"
+        keymap_global[ "Ctrl-Left" ] = "Cmd-Left"
+        keymap_global[ "Ctrl-Right" ] = "Cmd-Right"
+
+    # モディファイアが減る場合のテスト : OK
+    if 0:
+        keymap_global[ "Cmd-Shift-Right" ] = "Shift-Left"
+
+    # モディファイアが変化しない場合のテスト : OK
+    if 0:
+        keymap_global[ "Cmd-Shift-Right" ] = "Cmd-Shift-Left"
+
+    # モディファイアが増える場合のテスト : OK
+    if 0:
+        keymap_global[ "Cmd-Right" ] = "Cmd-Shift-Left"
+
+    # Cmdキーを別の目的に使う : OK
+    if 0:
+        keymap.replaceKey( "LCmd", 251 )
+        keymap.defineModifier( 251, "User0" )
+        keymap_global[ "User0-A" ] = "B"
+
+    # 通常キーをモディファイアキーに割当 : OK
+    if 0:
+        keymap.replaceKey( "Space", "LShift" )
+        keymap_global[ " O-LShift" ] = "Space"
+
+    #--------------------------
+
+
+
+
+
+
+
+    # キーボードでウインドウの移動
+    if 0:
         # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-        keymap_global[ "User0-Left"  ] = keymap.command_MoveWindow( -10, 0 )
-        keymap_global[ "User0-Right" ] = keymap.command_MoveWindow( +10, 0 )
-        keymap_global[ "User0-Up"    ] = keymap.command_MoveWindow( 0, -10 )
-        keymap_global[ "User0-Down"  ] = keymap.command_MoveWindow( 0, +10 )
+        keymap_global[ "Cmd-Left"  ] = keymap.command_MoveWindow( -10, 0 )
+        keymap_global[ "Cmd-Right" ] = keymap.command_MoveWindow( +10, 0 )
+        keymap_global[ "Cmd-Up"    ] = keymap.command_MoveWindow( 0, -10 )
+        keymap_global[ "Cmd-Down"  ] = keymap.command_MoveWindow( 0, +10 )
 
         # USER0-Shift-↑↓←→ : 1pixel単位のウインドウの移動
-        keymap_global[ "User0-Shift-Left"  ] = keymap.command_MoveWindow( -1, 0 )
-        keymap_global[ "User0-Shift-Right" ] = keymap.command_MoveWindow( +1, 0 )
-        keymap_global[ "User0-Shift-Up"    ] = keymap.command_MoveWindow( 0, -1 )
-        keymap_global[ "User0-Shift-Down"  ] = keymap.command_MoveWindow( 0, +1 )
+        keymap_global[ "Cmd-Shift-Left"  ] = keymap.command_MoveWindow( -1, 0 )
+        keymap_global[ "Cmd-Shift-Right" ] = keymap.command_MoveWindow( +1, 0 )
+        keymap_global[ "Cmd-Shift-Up"    ] = keymap.command_MoveWindow( 0, -1 )
+        keymap_global[ "Cmd-Shift-Down"  ] = keymap.command_MoveWindow( 0, +1 )
 
         # USER0-Ctrl-↑↓←→ : 画面の端まで移動
-        keymap_global[ "User0-Ctrl-Left"  ] = keymap.command_MoveWindow_MonitorEdge(0)
-        keymap_global[ "User0-Ctrl-Right" ] = keymap.command_MoveWindow_MonitorEdge(2)
-        keymap_global[ "User0-Ctrl-Up"    ] = keymap.command_MoveWindow_MonitorEdge(1)
-        keymap_global[ "User0-Ctrl-Down"  ] = keymap.command_MoveWindow_MonitorEdge(3)
+        keymap_global[ "Cmd-Ctrl-Left"  ] = keymap.command_MoveWindow_MonitorEdge(0)
+        keymap_global[ "Cmd-Ctrl-Right" ] = keymap.command_MoveWindow_MonitorEdge(2)
+        keymap_global[ "Cmd-Ctrl-Up"    ] = keymap.command_MoveWindow_MonitorEdge(1)
+        keymap_global[ "Cmd-Ctrl-Down"  ] = keymap.command_MoveWindow_MonitorEdge(3)
 
-        # クリップボード履歴
+    # クリップボード履歴
+    if 0:
         keymap_global[ "Ctrl-Shift-Z"   ] = keymap.command_ClipboardList        # クリップボード履歴表示
         keymap_global[ "Ctrl-Shift-X"   ] = keymap.command_ClipboardRotate      # 直近の履歴を末尾に回す
         keymap_global[ "Ctrl-Shift-Alt-X" ] = keymap.command_ClipboardRemove    # 直近の履歴を削除
         keymap.quote_mark = "> "                                                # 引用貼り付け時の記号
 
-        # キーボードマクロ
-        keymap_global[ "User0-0" ] = keymap.command_RecordToggle
-        keymap_global[ "User0-1" ] = keymap.command_RecordStart
-        keymap_global[ "User0-2" ] = keymap.command_RecordStop
-        keymap_global[ "User0-3" ] = keymap.command_RecordPlay
-        keymap_global[ "User0-4" ] = keymap.command_RecordClear
+    # キーボードマクロ
+    if 0:
+        keymap_global[ "Cmd-0" ] = keymap.command_RecordToggle
+        keymap_global[ "Cmd-1" ] = keymap.command_RecordStart
+        keymap_global[ "Cmd-2" ] = keymap.command_RecordStop
+        keymap_global[ "Cmd-3" ] = keymap.command_RecordPlay
+        keymap_global[ "Cmd-4" ] = keymap.command_RecordClear
+
+
+
+
+
 
 
     # USER0-F1 : アプリケーションの起動テスト
-    if 1:
-        keymap_global[ "User0-F1" ] = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
+    if 0:
+        keymap_global[ "Cmd-F1" ] = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
 
 
     # USER0-F2 : サブスレッド処理のテスト
-    if 1:
+    if 0:
         def command_JobTest():
 
             def jobTest(job_item):
@@ -91,7 +136,7 @@ def configure(keymap):
             job_item = JobItem( jobTest, jobTestFinished )
             JobQueue.defaultQueue().enqueue(job_item)
 
-        keymap_global[ "User0-F2" ] = command_JobTest
+        keymap_global[ "Cmd-F2" ] = command_JobTest
 
 
     # Cron (定期的なサブスレッド処理) のテスト
@@ -104,12 +149,12 @@ def configure(keymap):
 
 
     # USER0-F : ウインドウのアクティブ化
-    if 1:
-        keymap_global[ "User0-F" ] = keymap.command_ActivateWindow( "cfiler.exe", "CfilerWindowClass" )
+    if 0:
+        keymap_global[ "Cmd-F" ] = keymap.command_ActivateWindow( "cfiler.exe", "CfilerWindowClass" )
 
 
     # USER0-E : アクティブ化するか、まだであれば起動する
-    if 1:
+    if 0:
         def command_ActivateOrExecuteNotepad():
             wnd = Window.find( "Notepad", None )
             if wnd:
@@ -121,7 +166,7 @@ def configure(keymap):
                 executeFunc = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
                 executeFunc()
 
-        keymap_global[ "User0-E" ] = command_ActivateOrExecuteNotepad
+        keymap_global[ "Cmd-E" ] = command_ActivateOrExecuteNotepad
 
 
     # Ctrl-Tab で、コンソール関係のウインドウを切り替え
@@ -152,7 +197,7 @@ def configure(keymap):
 
 
     # USER0-Space : カスタムのリスト表示をつかったアプリケーション起動
-    if 1:
+    if 0:
         def command_PopApplicationList():
 
             # すでにリストが開いていたら閉じるだけ
@@ -186,25 +231,25 @@ def configure(keymap):
             # キーフックの中で時間のかかる処理を実行できないので、delayedCall() をつかって遅延実行する
             keymap.delayedCall( popApplicationList, 0 )
 
-        keymap_global[ "User0-Space" ] = command_PopApplicationList
+        keymap_global[ "Cmd-Space" ] = command_PopApplicationList
 
 
     # USER0-Alt-↑↓←→/Space/PageUp/PageDown : キーボードで擬似マウス操作
-    if 1:
-        keymap_global[ "User0-Alt-Left"  ] = keymap.command_MouseMove(-10,0)
-        keymap_global[ "User0-Alt-Right" ] = keymap.command_MouseMove(10,0)
-        keymap_global[ "User0-Alt-Up"    ] = keymap.command_MouseMove(0,-10)
-        keymap_global[ "User0-Alt-Down"  ] = keymap.command_MouseMove(0,10)
-        keymap_global[ "D-User0-Alt-Space" ] = keymap.command_MouseButtonDown('left')
-        keymap_global[ "U-User0-Alt-Space" ] = keymap.command_MouseButtonUp('left')
-        keymap_global[ "User0-Alt-PageUp" ] = keymap.command_MouseWheel(1.0)
-        keymap_global[ "User0-Alt-PageDown" ] = keymap.command_MouseWheel(-1.0)
-        keymap_global[ "User0-Alt-Home" ] = keymap.command_MouseHorizontalWheel(-1.0)
-        keymap_global[ "User0-Alt-End" ] = keymap.command_MouseHorizontalWheel(1.0)
+    if 0:
+        keymap_global[ "Cmd-Alt-Left"  ] = keymap.command_MouseMove(-10,0)
+        keymap_global[ "Cmd-Alt-Right" ] = keymap.command_MouseMove(10,0)
+        keymap_global[ "Cmd-Alt-Up"    ] = keymap.command_MouseMove(0,-10)
+        keymap_global[ "Cmd-Alt-Down"  ] = keymap.command_MouseMove(0,10)
+        keymap_global[ "D-Cmd-Alt-Space" ] = keymap.command_MouseButtonDown('left')
+        keymap_global[ "U-Cmd-Alt-Space" ] = keymap.command_MouseButtonUp('left')
+        keymap_global[ "Cmd-Alt-PageUp" ] = keymap.command_MouseWheel(1.0)
+        keymap_global[ "Cmd-Alt-PageDown" ] = keymap.command_MouseWheel(-1.0)
+        keymap_global[ "Cmd-Alt-Home" ] = keymap.command_MouseHorizontalWheel(-1.0)
+        keymap_global[ "Cmd-Alt-End" ] = keymap.command_MouseHorizontalWheel(1.0)
 
 
     # sendMessageでシステムコマンドを実行
-    if 1:
+    if 0:
         def close():
             wnd = keymap.getTopLevelWindow()
             wnd.sendMessage( WM_SYSCOMMAND, SC_CLOSE )
@@ -213,13 +258,13 @@ def configure(keymap):
             wnd = keymap.getTopLevelWindow()
             wnd.sendMessage( WM_SYSCOMMAND, SC_SCREENSAVE )
 
-        keymap_global[ "User0-C" ] = close              # ウインドウを閉じる
-        keymap_global[ "User0-S" ] = screenSaver        # スクリーンセーバー
+        keymap_global[ "Cmd-C" ] = close              # ウインドウを閉じる
+        keymap_global[ "Cmd-S" ] = screenSaver        # スクリーンセーバー
 
 
     # 文字入力のテスト
-    if 1:
-        keymap_global[ "User0-H" ] = keymap.command_InputText( "Hello / こんにちは" )
+    if 0:
+        keymap_global[ "Cmd-H" ] = keymap.command_InputText( "Hello / こんにちは" )
 
 
     # Editボックスで、Ctrl-Dを削除に当てるなど
@@ -263,16 +308,6 @@ def configure(keymap):
         keymap_notepad[ "Ctrl-Y" ] = "Ctrl-V"                       # 貼り付け
         keymap_notepad[ "Ctrl-X" ][ "Ctrl-C" ] = "Alt-F4"           # 終了
 
-    # Macでのテスト
-    if 1:
-        keymap_global[ "Ctrl-Z" ] = "Cmd-Z"
-        keymap_global[ "Ctrl-X" ] = "Cmd-X"
-        keymap_global[ "Ctrl-C" ] = "Cmd-C"
-        keymap_global[ "Ctrl-V" ] = "Cmd-V"
-
-        keymap_xcode = keymap.defineWindowKeymap( exe_name="com.apple.dt.Xcode" )
-        keymap_xcode[ "Ctrl-F" ] = "Cmd-F"
-        
 
     # クリップボード履歴の最大数 (デフォルト:1000)
     keymap.clipboard_history.maxnum = 1000
@@ -282,7 +317,7 @@ def configure(keymap):
 
 
     # クリップボード履歴リスト表示のカスタマイズ
-    if 1:
+    if 0:
 
         # 定型文
         fixed_items = [
