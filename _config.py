@@ -34,6 +34,43 @@ def configure(keymap):
     # どのウインドウにフォーカスがあっても効くキーマップ
     keymap_global = keymap.defineWindowKeymap()
 
+    if 1:
+        # Commandキーを別の用途に使う
+        keymap.replaceKey( "RCmd", 255 )
+
+        # RCmd で CraftCommander の hotkey
+        keymap_global[ "255" ] = "Shift-Ctrl-Alt-1"
+
+        # 一括キー割当
+        for mod1, mod2 in ( ("Ctrl-","Cmd-"), ("Ctrl-Shift-","Cmd-Shift-"), ("Ctrl-Alt-","Cmd-Alt-") ):
+
+            keys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+            for key in keys:
+                keymap_global[ mod1 + key ] = mod2 + key
+
+            keys = (
+                "Up", "Down", "Left", "Right",
+                "Return", "Space", "OpenBracket", "CloseBracket",
+                "Minus", "Plus", "Semicolon", "Quote", "BackQuote",
+                "Comma", "Period", "Slash", "BackSlash" )
+            for key in keys:
+                keymap_global[ mod1 + key ] = mod2 + key
+
+        # 一括で設定しすぎたキー割当を削除
+        del keymap_global[ "Ctrl-Space" ]
+
+        # その他のキー割当
+        keymap_global[ "Ctrl-Back" ] = "Cmd-Back"
+        keymap_global[ "Cmd-Up" ] = "Ctrl-Up"
+        keymap_global[ "Cmd-Down" ] = "Ctrl-Down"
+
+
+
+
+
+
+
+
     # ループを使って、一括キー割当 : OK
     if 0:
         for C in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
