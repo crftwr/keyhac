@@ -792,6 +792,8 @@ class Keymap(ckit.TextWindow):
     def _onTimer(self):
         ckit.JobQueue.checkAll()
         self.synccall.check()
+        if ckit.platform()=="mac":
+            self.clipboard_history.checkChanged()
 
     def _onTimerCheckSanity(self):
         self.checkSanity()
@@ -2135,22 +2137,28 @@ class Keymap(ckit.TextWindow):
         if self.list_window:
             return None, 0
 
-        paste_target_wnd = pyauto.Window.getForeground()
+        if ckit.platform()=="win":
+            paste_target_wnd = pyauto.Window.getForeground()
 
-        # キャレット位置またはフォーカスウインドウの左上位置を取得
-        caret_wnd, caret_rect = pyauto.Window.getCaret()
-        if caret_wnd:
-            pos1 = caret_wnd.clientToScreen( caret_rect[0], caret_rect[1] )
-            pos2 = caret_wnd.clientToScreen( caret_rect[2], caret_rect[3] )
+            # キャレット位置またはフォーカスウインドウの左上位置を取得
+            caret_wnd, caret_rect = pyauto.Window.getCaret()
+            if caret_wnd:
+                pos1 = caret_wnd.clientToScreen( caret_rect[0], caret_rect[1] )
+                pos2 = caret_wnd.clientToScreen( caret_rect[2], caret_rect[3] )
+            else:
+                focus_wnd = pyauto.Window.getFocus()
+                if not focus_wnd:
+                    print( "ERROR : focus window not found" )
+                    return
+                focus_client_rect = focus_wnd.getClientRect()
+                pos1 = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[1] )
+                pos2 = pos1
+            caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
+        
         else:
-            focus_wnd = pyauto.Window.getFocus()
-            if not focus_wnd:
-                print( "ERROR : focus window not found" )
-                return
-            focus_client_rect = focus_wnd.getClientRect()
-            pos1 = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[1] )
-            pos2 = pos1
-        caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
+            pos1 = ( 300, 300 )
+            caret_rect = ( 300, 300, 300, 300 )
+
 
         lister_select = 0
 
@@ -2190,15 +2198,19 @@ class Keymap(ckit.TextWindow):
                         self.list_window.remove(select)
                     return True
 
-            # 親ウインドウをフォアグラウンドにしないと、ListWindowがフォアグラウンドに来ない
-            pyauto.Window.fromHWND( self.getHWND() ).setForeground(True)
+            if ckit.platform()=="win":
+                # 親ウインドウをフォアグラウンドにしないと、ListWindowがフォアグラウンドに来ない
+                pyauto.Window.fromHWND( self.getHWND() ).setForeground(True)
+            else:
+                self.foreground()
 
             self.list_window = keyhac_listwindow.ListWindow( pos1[0], pos1[1], 5, 1, max_width, max_height, self, False, title, items, initial_select=0, return_modkey=True, keydown_hook=onKeyDown, onekey_search=False, statusbar_handler=onStatusMessage )
             self.list_window.lister = lister
             self.list_window.switch_left = False
             self.list_window.switch_right = False
 
-            keyhac_misc.adjustWindowPosition( self.list_window, caret_rect )
+            if ckit.platform()=="win":
+                keyhac_misc.adjustWindowPosition( self.list_window, caret_rect )
             self.list_window.show(True,True)
 
             if list_window_old:

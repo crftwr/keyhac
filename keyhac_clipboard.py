@@ -30,6 +30,8 @@ class cblister_ClipboardHistory:
         
         if ckit.platform()=="win":
             keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
+        else:
+            self.clipboard_seq_number = ckit.getClipboardSequenceNumber()
         
     def destroy(self):
 
@@ -50,6 +52,12 @@ class cblister_ClipboardHistory:
         # Firefox で クリップボードへの格納が失敗してしまわないように
         # フックの中ではなく、delayedCall で遅延して取得する。
         self.window.delayedCall( onClipboardChanged, 0 )
+    
+    def checkChanged(self):
+        new_clipboard_seq_number = ckit.getClipboardSequenceNumber()
+        if self.clipboard_seq_number != new_clipboard_seq_number:
+            self.clipboard_seq_number = new_clipboard_seq_number
+            self._hook_onClipboardChanged()
     
     # クリップボード履歴の内容をOSのクリップボードに反映させる
     def _apply(self):
