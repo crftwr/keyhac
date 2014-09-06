@@ -1478,6 +1478,7 @@ class Keymap(ckit.TextWindow):
     #
     def hookCall( self, func ):
         self.hook_call_list.append(func)
+        print("Warning : hookCall is not supported on other than Windows.")
         ckit.Input.send( [ ckit.KeyDown(0) ] ) # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
 
     ## キーボードフォーカスを持っているウインドウを取得する
@@ -2271,12 +2272,6 @@ class Keymap(ckit.TextWindow):
             for line in lines:
                 text += self.quote_mark + line
 
-        # Shiftを押しながら決定したときは、貼り付けを行わず、クリップボードに格納するだけ
-        if mod & MODKEY_SHIFT:
-            paste = False
-        else:
-            paste = True
-
         def jobPaste(job_item):
 
             time.sleep(0.05)
@@ -2299,16 +2294,24 @@ class Keymap(ckit.TextWindow):
 
             time.sleep(0.05)
 
-            job_item.wnd = wnd
-
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
-            if paste:
-                self.hookCall( self.command_InputKey("C-V") )
+            if ckit.platform()=="win":
+                self.hookCall( self.command_InputKey("Cmd-V") )
+            else:
+                self.command_InputKey("Cmd-V")()
 
-        job_item = ckit.JobItem( jobPaste, jobPasteFinished )
-        ckit.JobQueue.defaultQueue().enqueue(job_item)
-
+        # Shiftを押しながら決定したときは、貼り付けを行わず、クリップボードに格納するだけ
+        if mod & MODKEY_SHIFT:
+            ckit.setClipboardText(text)
+        else:
+            if ckit.platform()=="win":
+                job_item = ckit.JobItem( jobPaste, jobPasteFinished )
+                ckit.JobQueue.defaultQueue().enqueue(job_item)
+            else:
+                # FIXME : Macで、ほかのアプリを最前面にできるように。
+                # あるいは、自分を非表示にするだけで、貼付け対象がアクティブになるか。
+                ckit.setClipboardText(text)
 
     ## クリップボード履歴をリスト表示する
     #
