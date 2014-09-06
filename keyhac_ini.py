@@ -26,7 +26,8 @@ def read():
 
     try:
         fd = open( ini_filename, "r" )
-        msvcrt.locking( fd.fileno(), msvcrt.LK_LOCK, 1 )
+        if ckit.platform()=="win":
+            svcrt.locking( fd.fileno(), msvcrt.LK_LOCK, 1 )
         ini.readfp(fd)
         fd.close()
     except Exception as e:
@@ -62,7 +63,8 @@ def read():
 def write():
     try:
         fd = open( ini_filename, "w" )
-        msvcrt.locking( fd.fileno(), msvcrt.LK_LOCK, 1 )
+        if ckit.platform()=="win":
+            svcrt.locking( fd.fileno(), msvcrt.LK_LOCK, 1 )
         ini.write(fd)
         fd.close()
     except:
