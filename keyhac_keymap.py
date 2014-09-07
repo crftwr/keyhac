@@ -2297,7 +2297,7 @@ class Keymap(ckit.TextWindow):
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
             if ckit.platform()=="win":
-                self.hookCall( self.command_InputKey("Cmd-V") )
+                self.hookCall( self.command_InputKey("Ctrl-V") )
             else:
                 self.command_InputKey("Cmd-V")()
 
