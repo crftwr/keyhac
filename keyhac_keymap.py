@@ -1518,14 +1518,18 @@ class Keymap(ckit.TextWindow):
     #
     def popBalloon( self, name, text, timeout=None ):
 
-        # キャレット位置またはフォーカスウインドウの左下位置を取得
-        caret_wnd, caret_rect = pyauto.Window.getCaret()
-        if caret_wnd:
-            pos = caret_wnd.clientToScreen( caret_rect[0], caret_rect[3] )
+        if ckit.platform()=="win":
+            # キャレット位置またはフォーカスウインドウの左下位置を取得
+            caret_wnd, caret_rect = pyauto.Window.getCaret()
+            if caret_wnd:
+                pos = caret_wnd.clientToScreen( caret_rect[0], caret_rect[3] )
+            else:
+                focus_wnd = pyauto.Window.getFocus()
+                focus_client_rect = focus_wnd.getClientRect()
+                pos = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[3] )
         else:
-            focus_wnd = pyauto.Window.getFocus()
-            focus_client_rect = focus_wnd.getClientRect()
-            pos = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[3] )
+            # FIXME : 実装
+            pos = ( 100, 100 )
 
         # すでにバルーンがあったら閉じる
         self.closeBalloon()
