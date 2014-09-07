@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import getopt
 import shutil
@@ -66,15 +66,19 @@ if __name__ == "__main__":
     ckit.CronTable.createDefaultCronTable()
 
     keymap = keyhac_keymap.Keymap( config_filename, debug, profile )
+
+    console_window = keyhac_consolewindow.ConsoleWindow( debug )
+
     if ckit.platform()=="win":
-        console_window = keyhac_consolewindow.ConsoleWindow( debug )
         task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
 
-        keymap.setConsoleWindow(console_window)
+    keymap.setConsoleWindow(console_window)
+
+    if ckit.platform()=="win":
         task_tray_icon.setKeymap(keymap)
         task_tray_icon.setConsoleWindow(console_window)
 
-        console_window.registerStdio()
+    console_window.registerStdio()
 
     keymap.configure()
     
@@ -82,8 +86,7 @@ if __name__ == "__main__":
     
     keymap.messageLoop()
 
-    if ckit.platform()=="win":
-        console_window.unregisterStdio()
+    console_window.unregisterStdio()
 
     ckit.CronTable.cancelAll()
     ckit.CronTable.joinAll()
@@ -96,8 +99,7 @@ if __name__ == "__main__":
 
     keymap.destroy()
 
-    if ckit.platform()=="win":
-        console_window.saveState()
-        console_window.destroy()
+    console_window.saveState()
+    console_window.destroy()
 
     keyhac_ini.write()    
