@@ -1480,6 +1480,26 @@ class Keymap(ckit.TextWindow):
     def getFocus(self):
         return self.focus
 
+    ## キーボードフォーカスを持っているトップレベルのウインドウを取得する
+    #
+    #  @return キーボードフォーカスを持っているトップレベルのウインドウを指す accessibility の UIElement オブジェクト
+    #
+    def getFocusedWindow(self):
+
+        systemwide = accessibility.create_systemwide_ref()
+
+        try:
+            focused_app = systemwide["AXFocusedApplication"]
+        except Exception as e:
+            return None
+
+        try:
+            focused_window = focused_app["AXFocusedWindow"]
+        except ValueError as e:
+            return None
+
+        return focused_window
+
     ## バルーンヘルプを開く
     #
     #  @param   self    -
@@ -1917,13 +1937,14 @@ class Keymap(ckit.TextWindow):
     def command_MoveWindow( self, delta_x, delta_y ):
 
         def _moveWindow():
-            wnd_top = self.getTopLevelWindow()
-            rect = list(wnd_top.getRect())
-            rect[0] += delta_x
-            rect[1] += delta_y
-            rect[2] += delta_x
-            rect[3] += delta_y
-            wnd_top.setRect(rect)
+
+            window = self.getFocusedWindow()
+            if not window : return
+
+            pos = list( window["AXPosition"] )
+            pos[0] += delta_x
+            pos[1] += delta_y
+            window["AXPosition"] = tuple(pos)
 
         return _moveWindow
 
@@ -1950,14 +1971,16 @@ class Keymap(ckit.TextWindow):
 
         def _moveWindowEdge():
 
-            wnd_top = self.getTopLevelWindow()
+            wnd_top = self.getFocusedWindow()
             if not wnd_top: return
 
-            wnd_rect = list(wnd_top.getRect())
+            pos = list(wnd_top["AXPosition"])
+            size = wnd_top["AXSize"]
+            wnd_rect = [ pos[0], pos[1], pos[0]+size[0], pos[1]+size[1] ]
 
             nearest = None
             farthest = None
-            for monitor in pyauto.Window.getMonitorInfo():
+            for monitor in ckit.getMonitorInfo():
 
                 intersect_rect = _intersectRect( monitor[1], wnd_rect )
                 intersect = False
@@ -1990,12 +2013,10 @@ class Keymap(ckit.TextWindow):
             if nearest!=None:
                 delta = nearest-wnd_rect[direction]
                 if direction==0 or direction==2:
-                    wnd_rect[0] += delta
-                    wnd_rect[2] += delta
+                    pos[0] += delta
                 else:
-                    wnd_rect[1] += delta
-                    wnd_rect[3] += delta
-                wnd_top.setRect(wnd_rect)
+                    pos[1] += delta
+                wnd_top["AXPosition"] = tuple(pos)
 
         return _moveWindowEdge
 
