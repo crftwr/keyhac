@@ -24,12 +24,11 @@ def adjustWindowPosition( new_window, base_rect, default_up=False, monitor_adjus
     x = x1
     origin_x = ORIGIN_X_LEFT
            
-    monitor_info_list = pyauto.Window.getMonitorInfo()
+    monitor_info_list = ckit.getMonitorInfo()
     for monitor_info in monitor_info_list:
         if monitor_info[0][0] <= x1 < monitor_info[0][2] and monitor_info[0][1] <= y1 < monitor_info[0][3]:
             
             new_window_rect = new_window.getWindowRect()
-            char_w, char_h = new_window.getCharSize()
             
             if monitor_adjust_vertical:
                 if default_up:

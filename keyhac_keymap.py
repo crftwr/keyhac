@@ -12,6 +12,9 @@ from ckit.ckit_const import *
 if ckit.platform()=="win":
     import winsound
 
+if ckit.platform()=="mac":
+    import accessibility
+
 import keyhac_hook
 import keyhac_clipboard
 import keyhac_listwindow
@@ -645,22 +648,20 @@ class KeyCondition:
 
 class WindowKeymap:
 
-    def __init__( self, exe_name=None, class_name=None, window_text=None, check_func=None, help_string=None ):
-        self.exe_name = exe_name
-        self.class_name = class_name
-        self.window_text = window_text
+    def __init__( self, app_name=None, check_func=None, help_string=None ):
+        self.app_name = app_name
         self.check_func = check_func
         self.help_string = help_string
         self.keymap = {}
 
     def check( self, wnd ):
-        if ckit.platform()=="win":
-            if self.exe_name     and ( not wnd or not fnmatch.fnmatch( wnd.getProcessName(), self.exe_name ) ) : return False
-        else:
-            if self.exe_name     and ( not wnd or not fnmatch.fnmatch( wnd, self.exe_name ) ) : return False
-        if self.class_name   and ( not wnd or not fnmatch.fnmatch( wnd.getClassName(), self.class_name ) ) : return False
-        if self.window_text  and ( not wnd or not fnmatch.fnmatch( wnd.getText(), self.window_text ) ) : return False
-        if self.check_func   and ( not wnd or not self.check_func(wnd) ) : return False
+        if self.app_name and ( not wnd or not fnmatch.fnmatch( ckit.getApplicationNameByPid(wnd.pid), self.app_name ) ) : return False
+        try:
+            if self.check_func and ( not wnd or not self.check_func(wnd) ) : return False
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
+            return False
         return True
 
     def helpString(self):
@@ -732,6 +733,7 @@ class Keymap(ckit.TextWindow):
         self.vk_mod_map = {}                    # モディファイアキーの仮想キーコードとビットのテーブル
         self.vk_vk_map = {}                     # キーの置き換えテーブル
         self.wnd = None                         # 現在フォーカスされているウインドウオブジェクト
+        self.focus_change_count = None          # フォーカス変更検出用のカウント
         self.modifier = 0                       # 押されているモディファイアキーのビットの組み合わせ
         self.last_keydown = None                # 最後にKeyDownされた仮想キーコード
         self.oneshot_canceled = False           # ワンショットモディファイアをキャンセルするか
@@ -830,8 +832,7 @@ class Keymap(ckit.TextWindow):
     #
     def setFont( self, name, size ):
         ckit.TextWindow.setFont( self, name, size )
-        if ckit.platform()=="win":
-            self.console_window.setFont( name, size )
+        self.console_window.setFont( name, size )
 
     ## テーマを設定する
     #
@@ -842,8 +843,7 @@ class Keymap(ckit.TextWindow):
     #
     def setTheme( self, name ):
         ckit.setTheme( name, {} )
-        if ckit.platform()=="win":
-            self.console_window.reloadTheme()
+        self.console_window.reloadTheme()
 
     def _releaseModifierAll(self):
         input_seq = []
@@ -1150,20 +1150,12 @@ class Keymap(ckit.TextWindow):
     def _focusChanged( self, wnd ):
         try:
             if self.debug:
-
-                if ckit.platform()=="win":
-                    if wnd:
-                        print( "" )
-                        print( "Window : exe   : %s" % wnd.getProcessName() )
-                        print( "       : class : %s" % wnd.getClassName() )
-                        print( "       : text  : %s" % wnd.getText() )
-                        print( "" )
-                    else:
-                        print( "Window : None" )
+                if wnd:
+                    print( "" )
+                    print( "Window : app : %s" % ckit.getApplicationNameByPid(wnd.pid) )
+                    print( "" )
                 else:
-                    print( "" )
-                    print( "Application : id : %s" % wnd )
-                    print( "" )
+                    print( "Window : None" )
 
             self.wnd = None
             self._updateKeymap(wnd)
@@ -1172,8 +1164,6 @@ class Keymap(ckit.TextWindow):
         except Exception as e:
             print( e )
             print( "ERROR : _focusChanged failed" )
-            if ckit.platform()=="win":
-                print( "      : %s : %s : %s" % ( wnd.getProcessName(), wnd.getClassName(), wnd.getText() ) )
             traceback.print_exc()
 
     def _hook_onKeyDown( self, vk, scan ):
@@ -1285,9 +1275,7 @@ class Keymap(ckit.TextWindow):
     ## 特定条件のウインドウのキーマップを定義する
     #
     #  @param self        -
-    #  @param exe_name    ウインドウが所属するプログラムの実行ファイル名のディレクトリ名を取り除いた部分
-    #  @param class_name  ウインドウのクラス名
-    #  @param window_text ウインドウのタイトル文字列
+    #  @param app_name    ウインドウが所属するアプリケーションバンドル名
     #  @param check_func  ウインドウ識別関数
     #  @return ウインドウごとのキーマップ
     #
@@ -1307,8 +1295,8 @@ class Keymap(ckit.TextWindow):
     #  pyauto.Window クラスについては、pyauto のリファレンスを参照してください。\n
     #  http://hp.vector.co.jp/authors/VA012411/pyauto/doc/
     #
-    def defineWindowKeymap( self, exe_name=None, class_name=None, window_text=None, check_func=None ):
-        window_keymap = WindowKeymap( exe_name, class_name, window_text, check_func )
+    def defineWindowKeymap( self, app_name=None, check_func=None ):
+        window_keymap = WindowKeymap( app_name, check_func )
         self.window_keymap_list.append(window_keymap)
         return window_keymap
 
@@ -1403,20 +1391,25 @@ class Keymap(ckit.TextWindow):
     # フォーカスがあるウインドウを明示的に更新する
     def _updateFocusWindow(self):
         
-        if ckit.platform()=="win":
-            try:
-                wnd = pyauto.Window.getFocus()
-                if wnd==None:
-                    wnd = pyauto.Window.getForeground()
-            except:
-                wnd = None
-        else:
-            wnd = ckit.getFocusedApplicationId()
+        new_focus_change_count = ckit.getFocusChangeCount()
+        if self.focus_change_count == new_focus_change_count:
+            return
+        
+        self.focus_change_count = new_focus_change_count
+        
+        try:
+            systemwide = accessibility.create_systemwide_ref()
+            focused_app = systemwide["AXFocusedApplication"]
+            #print("focused_app.AXRole", self.focused_app["AXRole"] )
+            focus = focused_app["AXFocusedUIElement"]
+            #print("focused_uielm.AXRole", self.focused_uielm["AXRole"] )
+            wnd = focus
+        except Exception as e:
+            print (e)
+            wnd = None
 
-        if wnd != self.wnd:
-            self._focusChanged(wnd)
-
-
+        self._focusChanged(wnd)
+            
     # モディファイアのおかしな状態を修正する
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
     def _fixFunnyModifierState(self):
@@ -2027,57 +2020,29 @@ class Keymap(ckit.TextWindow):
 
         return _moveWindowEdge
 
-    ## ウインドウをアクティブ化する関数を返す
+    ## アプリケーションをアクティブ化する
     #
-    #  @param self    -
-    #  @param exe_name    ウインドウが所属するプログラムの実行ファイル名のディレクトリ名を取り除いた部分
-    #  @param class_name  ウインドウのクラス名
-    #  @param window_text ウインドウのタイトル文字列
-    #  @param check_func  ウインドウ識別関数
-    #  @param force       スレッドのインプット状態を切り替えるか否か
-    #  @return ウインドウをアクティブ化する関数
-    #
-    #  与えられた条件のウインドウをアクティブ化する関数を生成し、返します。
-    #
-    #  引数 exe_name, class_name, window_text に渡す文字列は、keyhac のコンソールウインドウを使って、調査することが出来ます。
-    #  タスクトレイ中の keyhac のアイコンを右クリックして、[ 内部ログ ON ] を選択すると、コンソールウインドウに、
-    #  フォーカス位置のウインドウの詳細情報が出力されるようになります。
-    #
-    #  引数 exe_name, class_name, window_text, check_func を省略するか None を渡した場合は、
-    #  その条件を無視します。
-    #
-    #  引数 exe_name, class_name, window_text には、ワイルドカード ( * ? ) を使うことが出来ます。
-    #
-    #  check_func には、pyauto.Window オブジェクトを受け取り、True か False を返す関数を渡します。
-    #  pyauto.Window クラスについては、pyauto のリファレンスを参照してください。
-    #  http://hp.vector.co.jp/authors/VA012411/pyauto/doc/
-    #
-    #  引数 force に True を与えると、スレッドのインプット状態を切り替えてから、ウインドウをフォアグラウンド化します。ウインドウをフォアグラウンドにしても、タスクバーのボタンが点滅する場合は、引数 force に True を与えてみてください。
-    #
-    #  ウインドウをアクティブ化する機能を持っているのは、この関数から返される関数であり、
-    #  この関数自体はその機能を持っていないことに注意が必要です。
-    #
-    def command_ActivateWindow( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
+    #  @param self -
+    #  @param app_name アプリケーションの名前 (例: "com.apple.Terminal" )
+    # 
+    def activateApplication( self, app_name ):
+        pid_found = None
+        for pid in ckit.getRunningApplications():
+            if app_name == ckit.getApplicationNameByPid(pid):
+                pid_found = pid
+                break
+        if pid_found:
+            ckit.activateApplicationByPid(pid_found)
 
-        def _activateWindow():
-
-            def callback( wnd, arg ):
-
-                if not wnd.isVisible() : return True
-                if wnd.isMinimized() : return True
-
-                if exe_name     and not fnmatch.fnmatch( wnd.getProcessName(), exe_name ) : return True
-                if class_name   and not fnmatch.fnmatch( wnd.getClassName(),   class_name ) : return True
-                if window_text  and not fnmatch.fnmatch( wnd.getText(),        window_text ) : return True
-                if check_func   and not check_func(wnd) : return True
-
-                wnd = wnd.getLastActivePopup()
-                wnd.setForeground(force)
-                return False
-
-            pyauto.Window.enum( callback, None )
-
-        return _activateWindow
+    ## アプリケーションをアクティブ化するコマンド
+    #
+    #  @param self -
+    #  @param app_name アプリケーションの名前 (例: "com.apple.Terminal" )
+    #
+    def ActivateApplicationCommand( self, app_name ):
+        def _activateApplication():
+            self.activateApplication(app_name)
+        return _activateApplication
 
     ## プログラムを起動する関数を返す
     #
@@ -2143,6 +2108,7 @@ class Keymap(ckit.TextWindow):
             return None, 0
 
         if ckit.platform()=="win":
+        
             paste_target_wnd = pyauto.Window.getForeground()
 
             # キャレット位置またはフォーカスウインドウの左上位置を取得
@@ -2161,9 +2127,16 @@ class Keymap(ckit.TextWindow):
             caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
         
         else:
-            pos1 = ( 300, 300 )
-            caret_rect = ( 300, 300, 300, 300 )
-
+            role = self.wnd["AXRole"]
+            print("AXRole", role)
+            focus_pos = self.wnd["AXPosition"]
+            focus_size = self.wnd["AXSize"]
+            print( "AXPosition", focus_pos )
+            print( "AXSize", focus_size )
+            pos1 = ( int(focus_pos[0]), int(focus_pos[1]) )
+            pos2 = ( int(focus_pos[0] + focus_size[0]), int(focus_pos[1] + focus_size[1]) )
+            caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
+            print( caret_rect )
 
         lister_select = 0
 
@@ -2214,8 +2187,7 @@ class Keymap(ckit.TextWindow):
             self.list_window.switch_left = False
             self.list_window.switch_right = False
 
-            if ckit.platform()=="win":
-                keyhac_misc.adjustWindowPosition( self.list_window, caret_rect )
+            keyhac_misc.adjustWindowPosition( self.list_window, caret_rect )
             self.list_window.show(True,True)
 
             if list_window_old:
