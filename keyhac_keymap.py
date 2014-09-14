@@ -654,10 +654,10 @@ class WindowKeymap:
         self.help_string = help_string
         self.keymap = {}
 
-    def check( self, wnd ):
-        if self.app_name and ( not wnd or not fnmatch.fnmatch( ckit.getApplicationNameByPid(wnd.pid), self.app_name ) ) : return False
+    def check( self, focus ):
+        if self.app_name and ( not focus or not fnmatch.fnmatch( ckit.getApplicationNameByPid(focus.pid), self.app_name ) ) : return False
         try:
-            if self.check_func and ( not wnd or not self.check_func(wnd) ) : return False
+            if self.check_func and ( not focus or not self.check_func(focus) ) : return False
         except Exception as e:
             print(e)
             traceback.print_exc()
@@ -732,7 +732,7 @@ class Keymap(ckit.TextWindow):
         self.current_map = {}                   # 現在フォーカスされているウインドウで有効なキーマップ
         self.vk_mod_map = {}                    # モディファイアキーの仮想キーコードとビットのテーブル
         self.vk_vk_map = {}                     # キーの置き換えテーブル
-        self.wnd = None                         # 現在フォーカスされているウインドウオブジェクト
+        self.focus = None                       # 現在フォーカスされているUI要素
         self.focus_change_count = None          # フォーカス変更検出用のカウント
         self.modifier = 0                       # 押されているモディファイアキーのビットの組み合わせ
         self.last_keydown = None                # 最後にKeyDownされた仮想キーコード
@@ -1121,7 +1121,7 @@ class Keymap(ckit.TextWindow):
     def enterMultiStroke( self, keymap ):
 
         self.multi_stroke_keymap = keymap
-        self._updateKeymap(self.wnd)
+        self._updateKeymap(self.focus)
 
         help_string = self.multi_stroke_keymap.helpString()
         if help_string:
@@ -1131,11 +1131,11 @@ class Keymap(ckit.TextWindow):
 
         if self.multi_stroke_keymap:
             self.multi_stroke_keymap = None
-            self._updateKeymap(self.wnd)
+            self._updateKeymap(self.focus)
 
             self.closeBalloon( "MultiStroke" )
 
-    def _updateKeymap( self, wnd ):
+    def _updateKeymap( self, focus ):
 
         self.current_map = {}
 
@@ -1143,23 +1143,23 @@ class Keymap(ckit.TextWindow):
             self.current_map.update(self.multi_stroke_keymap.keymap)
         else:
             for window_keymap in self.window_keymap_list:
-                if window_keymap.check(wnd):
+                if window_keymap.check(focus):
                     self.current_map.update(window_keymap.keymap)
 
 
-    def _focusChanged( self, wnd ):
+    def _focusChanged( self, focus ):
         try:
             if self.debug:
-                if wnd:
+                if focus:
                     print( "" )
-                    print( "Window : app : %s" % ckit.getApplicationNameByPid(wnd.pid) )
+                    print( "Window : app : %s" % ckit.getApplicationNameByPid(focus.pid) )
                     print( "" )
                 else:
                     print( "Window : None" )
 
-            self.wnd = None
-            self._updateKeymap(wnd)
-            self.wnd = wnd
+            self.focus = None
+            self._updateKeymap(focus)
+            self.focus = focus
 
         except Exception as e:
             print( e )
@@ -1403,12 +1403,11 @@ class Keymap(ckit.TextWindow):
             #print("focused_app.AXRole", self.focused_app["AXRole"] )
             focus = focused_app["AXFocusedUIElement"]
             #print("focused_uielm.AXRole", self.focused_uielm["AXRole"] )
-            wnd = focus
         except Exception as e:
             print (e)
-            wnd = None
+            focus = None
 
-        self._focusChanged(wnd)
+        self._focusChanged(focus)
             
     # モディファイアのおかしな状態を修正する
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
@@ -1474,32 +1473,12 @@ class Keymap(ckit.TextWindow):
         print("Warning : hookCall is not supported on other than Windows.")
         ckit.Input.send( [ ckit.KeyDown(0) ] ) # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
 
-    ## キーボードフォーカスを持っているウインドウを取得する
+    ## キーボードフォーカスを持っているUI要素を取得する
     #
-    #  @return キーボードフォーカスを持っているpyauto.Windowオブジェクト
+    #  @return キーボードフォーカスを持っている accessibility の UIElement オブジェクト
     #
-    #  pyauto.Window クラスについては、pyauto のリファレンスを参照してください。\n
-    #  http://hp.vector.co.jp/authors/VA012411/pyauto/doc/
-    #
-    def getWindow(self):
-        return self.wnd
-
-    ## キーボードフォーカスを持っているウインドウが所属するトップレベルウインドウを取得する
-    #
-    #  @return キーボードフォーカスを持っているウインドウが所属するトップレベル pyauto.Window オブジェクト
-    #
-    #  pyauto.Window クラスについては、pyauto のリファレンスを参照してください。\n
-    #  http://hp.vector.co.jp/authors/VA012411/pyauto/doc/
-    #
-    def getTopLevelWindow(self):
-        wnd = self.getWindow()
-        if wnd==None : return None
-        parent = wnd.getParent()
-        while parent != pyauto.Window.getDesktop():
-            wnd = parent;
-            parent = wnd.getParent()
-        return wnd
-
+    def getFocus(self):
+        return self.focus
 
     ## バルーンヘルプを開く
     #
@@ -2127,10 +2106,10 @@ class Keymap(ckit.TextWindow):
             caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
         
         else:
-            role = self.wnd["AXRole"]
+            role = self.focus["AXRole"]
             print("AXRole", role)
-            focus_pos = self.wnd["AXPosition"]
-            focus_size = self.wnd["AXSize"]
+            focus_pos = self.focus["AXPosition"]
+            focus_size = self.focus["AXSize"]
             print( "AXPosition", focus_pos )
             print( "AXSize", focus_size )
             pos1 = ( int(focus_pos[0]), int(focus_pos[1]) )
