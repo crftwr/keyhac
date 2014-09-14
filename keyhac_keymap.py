@@ -2107,36 +2107,20 @@ class Keymap(ckit.TextWindow):
         if self.list_window:
             return None, 0
 
-        if ckit.platform()=="win":
+        monitor_info_list = ckit.getMonitorInfo()
+        focus_rect = monitor_info_list[0][0]
+        uielm = self.focus
         
-            paste_target_wnd = pyauto.Window.getForeground()
+        while uielm:
+            try:
+                focus_pos = uielm["AXPosition"]
+                focus_size = uielm["AXSize"]
+                focus_rect = ( max(focus_pos[0],focus_rect[0]), max(focus_pos[1],focus_rect[1]), min(focus_pos[0]+focus_size[0],focus_rect[2]), min(focus_pos[1]+focus_size[1],focus_rect[3]) )
+                uielm = uielm["AXParent"]
+            except (KeyError, ValueError) as e:
+                break
 
-            # キャレット位置またはフォーカスウインドウの左上位置を取得
-            caret_wnd, caret_rect = pyauto.Window.getCaret()
-            if caret_wnd:
-                pos1 = caret_wnd.clientToScreen( caret_rect[0], caret_rect[1] )
-                pos2 = caret_wnd.clientToScreen( caret_rect[2], caret_rect[3] )
-            else:
-                focus_wnd = pyauto.Window.getFocus()
-                if not focus_wnd:
-                    print( "ERROR : focus window not found" )
-                    return
-                focus_client_rect = focus_wnd.getClientRect()
-                pos1 = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[1] )
-                pos2 = pos1
-            caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
-        
-        else:
-            role = self.focus["AXRole"]
-            print("AXRole", role)
-            focus_pos = self.focus["AXPosition"]
-            focus_size = self.focus["AXSize"]
-            print( "AXPosition", focus_pos )
-            print( "AXSize", focus_size )
-            pos1 = ( int(focus_pos[0]), int(focus_pos[1]) )
-            pos2 = ( int(focus_pos[0] + focus_size[0]), int(focus_pos[1] + focus_size[1]) )
-            caret_rect = ( pos1[0], pos1[1], pos2[0], pos2[1] )
-            print( caret_rect )
+        focus_rect = ( int(focus_rect[0]), int(focus_rect[1]), int(focus_rect[2]), int(focus_rect[3]) )
 
         lister_select = 0
 
@@ -2182,12 +2166,14 @@ class Keymap(ckit.TextWindow):
             else:
                 self.foreground()
 
-            self.list_window = keyhac_listwindow.ListWindow( pos1[0], pos1[1], 5, 1, max_width, max_height, self, False, title, items, initial_select=0, return_modkey=True, keydown_hook=onKeyDown, onekey_search=False, statusbar_handler=onStatusMessage )
+            self.list_window = keyhac_listwindow.ListWindow( (focus_rect[0]+focus_rect[2])//2, (focus_rect[1]+focus_rect[3])//2, 5, 1, max_width, max_height, self, False, title, items, initial_select=0, return_modkey=True, keydown_hook=onKeyDown, onekey_search=False, statusbar_handler=onStatusMessage )
             self.list_window.lister = lister
             self.list_window.switch_left = False
             self.list_window.switch_right = False
 
-            keyhac_misc.adjustWindowPosition( self.list_window, caret_rect )
+            if focus_rect[3] - focus_rect[1] < 64:
+                keyhac_misc.adjustWindowPosition( self.list_window, focus_rect )
+            
             self.list_window.show(True,True)
 
             if list_window_old:
