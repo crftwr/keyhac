@@ -1934,7 +1934,7 @@ class Keymap(ckit.TextWindow):
     #  ウインドウを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MoveWindow( self, delta_x, delta_y ):
+    def MoveWindowCommand( self, delta_x, delta_y ):
 
         def _moveWindow():
 
@@ -1959,7 +1959,7 @@ class Keymap(ckit.TextWindow):
     #  ウインドウを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MoveWindow_MonitorEdge( self, direction ):
+    def MoveWindowToMonitorEdgeCommand( self, direction ):
 
         def _intersectRect( rect1, rect2 ):
             intersect = list(rect1)
