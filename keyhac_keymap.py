@@ -1500,6 +1500,22 @@ class Keymap(ckit.TextWindow):
 
         return focused_window
 
+    ## キーボードフォーカスを持っているアプリケーションのプロセスIDを取得する
+    #
+    #  @return キーボードフォーカスを持っているアプリケーションのプロセスID
+    #
+    def getFocusedApplicationPid(self):
+
+        systemwide = accessibility.create_systemwide_ref()
+
+        try:
+            focused_app = systemwide["AXFocusedApplication"]
+        except Exception as e:
+            print(e)
+            return None
+
+        return focused_app.pid
+
     ## バルーンヘルプを開く
     #
     #  @param   self    -
@@ -2107,6 +2123,8 @@ class Keymap(ckit.TextWindow):
         if self.list_window:
             return None, 0
 
+        paste_target_pid = self.getFocusedApplicationPid()
+
         monitor_info_list = ckit.getMonitorInfo()
         focus_rect = monitor_info_list[0][0]
         uielm = self.focus
@@ -2189,11 +2207,9 @@ class Keymap(ckit.TextWindow):
                     lister_select += 1
             else:
                 break
-
-        try:
-            paste_target_wnd.setForeground()
-        except:
-            pass
+        
+        if paste_target_pid:
+            ckit.activateApplicationByPid(paste_target_pid)
 
         select, mod = self.list_window.getResult()
         self.list_window.destroy()
@@ -2235,26 +2251,18 @@ class Keymap(ckit.TextWindow):
                 text += self.quote_mark + line
 
         def jobPaste(job_item):
-
-            time.sleep(0.05)
-
+            
+            # フォーカスアプリケーションがNoneでなくなるのを待つ
             wnd = None
             timeout = 0.5
             retry_time = 0.01
             while timeout>0.0:
-                try:
-                    wnd = pyauto.Window.getFocus()
-                except:
-                    time.sleep(retry_time)
-                    timeout -= retry_time
-                    continue
+                pid = self.getFocusedApplicationPid()
                 if wnd==None:
                     time.sleep(retry_time)
                     timeout -= retry_time
                     continue
                 break
-
-            time.sleep(0.05)
 
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
@@ -2267,13 +2275,8 @@ class Keymap(ckit.TextWindow):
         if mod & MODKEY_SHIFT:
             ckit.setClipboardText(text)
         else:
-            if ckit.platform()=="win":
-                job_item = ckit.JobItem( jobPaste, jobPasteFinished )
-                ckit.JobQueue.defaultQueue().enqueue(job_item)
-            else:
-                # FIXME : Macで、ほかのアプリを最前面にできるように。
-                # あるいは、自分を非表示にするだけで、貼付け対象がアクティブになるか。
-                ckit.setClipboardText(text)
+            job_item = ckit.JobItem( jobPaste, jobPasteFinished )
+            ckit.JobQueue.defaultQueue().enqueue(job_item)
 
     ## クリップボード履歴をリスト表示する
     #
