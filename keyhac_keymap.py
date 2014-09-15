@@ -1400,11 +1400,8 @@ class Keymap(ckit.TextWindow):
         try:
             systemwide = accessibility.create_systemwide_ref()
             focused_app = systemwide["AXFocusedApplication"]
-            #print("focused_app.AXRole", self.focused_app["AXRole"] )
             focus = focused_app["AXFocusedUIElement"]
-            #print("focused_uielm.AXRole", self.focused_uielm["AXRole"] )
         except Exception as e:
-            print (e)
             focus = None
 
         self._focusChanged(focus)
