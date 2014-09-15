@@ -17,12 +17,10 @@ import ckit
 ckit.setLocale( locale.getdefaultlocale()[0] )
 
 import keyhac_consolewindow
+import keyhac_tasktrayicon
 import keyhac_keymap
 import keyhac_ini
 import keyhac_resource
-
-if ckit.platform()=="win":
-    import keyhac_tasktrayicon
 
 #--------------------------------------------------------------------
 
@@ -69,14 +67,12 @@ if __name__ == "__main__":
 
     console_window = keyhac_consolewindow.ConsoleWindow( debug )
 
-    if ckit.platform()=="win":
-        task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
+    task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
 
     keymap.setConsoleWindow(console_window)
 
-    if ckit.platform()=="win":
-        task_tray_icon.setKeymap(keymap)
-        task_tray_icon.setConsoleWindow(console_window)
+    task_tray_icon.setKeymap(keymap)
+    task_tray_icon.setConsoleWindow(console_window)
 
     console_window.registerStdio()
 
@@ -94,8 +90,7 @@ if __name__ == "__main__":
     ckit.JobQueue.cancelAll()
     ckit.JobQueue.joinAll()
 
-    if ckit.platform()=="win":
-        task_tray_icon.destroy()
+    task_tray_icon.destroy()
 
     keymap.destroy()
 
