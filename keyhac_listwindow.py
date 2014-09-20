@@ -122,9 +122,9 @@ class ListWindow( ckit.TextWindow ):
         self.keymap[ "PageUp" ] = self.command_CursorPageUp
         self.keymap[ "PageDown" ] = self.command_CursorPageDown
         self.keymap[ "Return" ] = self.command_Enter
-        self.keymap[ "Ctrl-Return" ] = self.command_Enter
+        self.keymap[ "Cmd-Return" ] = self.command_Enter
         self.keymap[ "Shift-Return" ] = self.command_Enter
-        self.keymap[ "Ctrl-Shift-Return" ] = self.command_Enter
+        self.keymap[ "Cmd-Shift-Return" ] = self.command_Enter
         self.keymap[ "Escape" ] = self.command_Cancel
         if not self.onekey_search:
             self.keymap[ "F" ] = self.command_IncrementalSearch

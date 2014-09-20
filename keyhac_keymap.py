@@ -2240,8 +2240,8 @@ class Keymap(ckit.TextWindow):
 
         if not text: return
 
-        # Ctrlを押しながら決定したときは、引用記号付で貼り付ける
-        if mod & MODKEY_CTRL:
+        # Cmdを押しながら決定したときは、引用記号付で貼り付ける
+        if mod & MODKEY_CMD:
             lines = text.splitlines(True)
             text = ""
             for line in lines:
