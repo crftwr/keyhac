@@ -93,19 +93,17 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         def onExit(info):
             self.keymap.quit()
         
-        # FIXME : 状態によってメニュー項目のvisibilityを制御する
-        
         menu = ckit.MenuNode( items=[
             ckit.MenuNode( "reload", "設定のリロード", onReload ),
             ckit.MenuNode( "edit", "設定の編集", onEdit ),
-            ckit.MenuNode( "log", "内部ログ OFF", onDebugOff ),
-            ckit.MenuNode( "log", "内部ログ ON", onDebugOn ),
+            ckit.MenuNode( "log", "内部ログ OFF", onDebugOff, visible = lambda: self.debug ),
+            ckit.MenuNode( "log", "内部ログ ON", onDebugOn, visible = lambda: not self.debug ),
             ckit.MenuNode( separator=True ),
-            ckit.MenuNode( "hook", "フック OFF", onHookOff ),
-            ckit.MenuNode( "hook", "フック ON", onHookOn ),
+            ckit.MenuNode( "hook", "フック OFF", onHookOff, visible = lambda: self.keymap.hook_enabled ),
+            ckit.MenuNode( "hook", "フック ON", onHookOn, visible = lambda: not self.keymap.hook_enabled ),
             ckit.MenuNode( separator=True ),
-            ckit.MenuNode( "record", "キー操作 記録開始", onRecordStart ),
-            ckit.MenuNode( "record", "キー操作 記録終了", onRecordStop ),
+            ckit.MenuNode( "record", "キー操作 記録開始", onRecordStart, visible = lambda: self.keymap.record_status in ( None, "recorded" ) ),
+            ckit.MenuNode( "record", "キー操作 記録終了", onRecordStop, visible = lambda: self.keymap.record_status in ( "recording", ) ),
             ckit.MenuNode( separator=True ),
             ckit.MenuNode( "show_log", "ログの表示", onShowLog ),
             ckit.MenuNode( "clear_log", "ログのクリア", onClearLog ),
