@@ -26,6 +26,9 @@ OPTIONS = {
         "theme",
         "_config.py",
         ],
+    "plist" : {
+        "LSUIElement" : "True"
+        },
     }
 
 setup(
