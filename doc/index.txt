@@ -1,12 +1,12 @@
-﻿===============================================
- Pythonスクリプトでキーカスタマイズ [ keyhac ]
+===============================================
+Pythonスクリプトでキーカスタマイズ [ keyhac ]
 ===============================================
 
 :著作者: craftware
 :連絡先: craftware@gmail.com
-:開発環境: Python + VisualC++2010
+:開発環境: Python + Xcode5
 :種別: フリーウェア
-:動作環境: Windows XP/Vista/7/8
+:動作環境: Mac OSX 10.9-
 :Webサイト: http://sites.google.com/site/craftware/
 
 .. contents::
@@ -29,10 +29,10 @@
     - キー入力を別のキー入力に置き換えることが出来ます。
     - キー入力に応じて Python で記述した任意のアクションを実行できます。
     - アプリケーションごとに、別々のキーマップにカスタマイズできます。
-    - タスクトレイに常駐します。
+    - メニューバーに常駐します。
     - キーボードでウインドウを移動させることが出来ます。
     - キーボードでウインドウをアクティブ化ことが出来ます。
-    - キーボードでマウスの操作を実行できます。
+    - キーボードでマウスの操作を実行できます。(Mac版 未対応)
     - アプリケーションを起動することができます。
     - モディファイアキーを新たに定義することが出来ます。
     - いわゆるワンショットモディアファイアを定義することが出来ます。
@@ -45,18 +45,13 @@
 使い方
 =======
 
-    keyhac を起動すると、タスクトレイにキーボードのキーの形をしたアイコンが
+    keyhac を起動すると、メニューバーにキーボードのキーの形をしたアイコンが
     表示されます。
 
         .. image:: image/tasktray.png
 
-    タスクトレイのアイコンを左クリックすると、keyhac のコンソールウインドウ
-    が表示されます。このウインドウには、keyhac 内蔵の Python インタプリタの
-    出力が表示されます。
 
-        .. image:: image/console.png
-
-    タスクトレイのアイコンを右クリックすると、メニューがポップアップします。
+    タスクトレイのアイコンをクリックすると、メニューがポップアップします。
 
         ==========================  =================================================
            項目の名前                機能
@@ -66,11 +61,17 @@
          内部ログ ON/OFF             keyhacの詳細なログ出力を有効または無効にします。
          フック ON/OFF               キーフックを一時的に有効または無効にします。
          キー操作 記録開始/終了      キーボードマクロの記録を開始または終了します。
-         端末のクリア                コンソールウインドウのログを消去します。
+         ログの表示                  ログウインドウを消去します。
+         ログのクリア                ログを消去します。
          ヘルプ                      説明書を開きます。
          keyhacの終了                keyhacを終了します。
         ==========================  =================================================
 
+
+    メニューの [ ログの表示 ] を選択すると、ログウインドウが表示されます。
+    このウインドウには、keyhac 内蔵の Python インタプリタの出力が表示されます。
+
+        .. image:: image/console.png
 
     Ctrl-Shift-Z を押すと、クリップボードの履歴をリスト表示されます。
     キーアサインは、config.py でカスタマイズできます。
@@ -85,7 +86,7 @@
         ================  ============================================================
          ↑/↓                 選択位置を変更します。
          Enter                 選択位置のテキストを貼り付けます。
-         Ctrl+Enter            選択位置のテキストを、引用記号付で貼り付けます。
+         Cmd+Enter             選択位置のテキストを、引用記号付で貼り付けます。
          Shift+Enter           選択位置のテキストを、クリップボードに格納します。
          Esc                   ウインドウを閉じます。
          F                     インクリメンタルサーチを開始します。
@@ -114,6 +115,8 @@
 
     **Migemo**
 
+        (Mac版 未対応)
+
         Migemo はローマ字を入力して日本語をインクリメンタル検索するためのライブラリです。
 
         Migemo の入力方法の詳細については、Migemoの本家サイト ( http://www.kaoriya.net/software/cmigemo/ ) を参照してください。
@@ -137,28 +140,20 @@
 インストール
 -------------
 
-    配布されたファイルを解凍すると以下のファイルとフォルダが作成されます。
+    配布されたファイルを解凍すると Keyhac.app ディレクトリが作成されます。
+    Keyhac.app を /Applications にコピーまたは移動します。
 
-        ================  ==========================================================
-           名前            解説
-        ================  ==========================================================
-         keyhac.exe        プログラム本体
-         python34.dll      Pythonランタイムライブラリ
-         library.zip       スクリプトが格納されているアーカイブ
-         _config.py        デフォルト設定ファイル
-         readme.txt        最初に読む文書
-         src.zip           ソースコード
-         lib/              実行に必要なライブラリが格納されているディレクトリ
-         extension/        ユーザサイドのスクリプトを入れるディレクトリ
-         theme/            テーマのデータが格納されているディレクトリ
-         dict/             Migemoの辞書を入れるディレクトリ
-         doc/              ドキュメントが格納されているディレクトリ
-         license/          コピーライト情報が格納されているディレクトリ
-        ================  ==========================================================
+    Keyhac を実行にするには、
+    [システム環境設定] > [セキュリティとプライバシー] > [プライバシー] > [アクセシビリティ]
+    のアプリケーションのリストに、Keyhac.app をドラッグ＆ドロップして、
+    Keyhac.app によるコンピュータの制御を許可する必要があります。
+
+        .. image:: image/accessibility_setting.png
 
 
-    また、最初の起動で、アプリケーションデータディレクトリに自動的に以下のファイルが作られます。
-    ( XP では c:/Documents and Settings/Application Data/keyhac、Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
+    また、最初の起動で、下記のディレクトリに自動的に以下のファイルが作られます。
+
+        /Users/(username)/Library/Application Support/Keyhac/
 
         ================  =================================================
            名前            解説
@@ -167,9 +162,8 @@
          keyhac.ini        状態保存ファイル
         ================  =================================================
 
-
     config.py と keyhac.ini は、keyhac.exe と同じディレクトリにおいておけば、
-    そちらが優先的に使われます。USBメモリなどで持ち歩く際に便利な方法です。
+    そちらが優先的に使われます。
 
 
 アンインストール
@@ -177,11 +171,9 @@
 
     インストールしたフォルダごと消してください。
 
-    また、アプリケーションデータディレクトリを削除してください。
-    ( XP では c:/Documents and Settings/Application Data/keyhac、Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
+    また、データディレクトリを削除してください。
 
-    このソフトウェアはレジストリを使用しません。
-
+        /Users/(username)/Library/Application Support/Keyhac/
 
 
 使用しているサードパーティ製ライブラリについて
@@ -206,8 +198,9 @@
     全て Python スクリプトとして記述します。
 
     heyhac 一度起動すると、アプリケーションのデータディレクトリ
-    ( XP では c:/Documents and Settings/Application Data/keyhac、
-    Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
+
+        /Users/(username)/Library/Application Support/Keyhac/
+
     に config.py という名前の設定スクリプトが作られます。
     このファイルをテキストエディタで編集します。
 
@@ -238,10 +231,10 @@
         .. code-block:: python
 
             # キーの単純な置き換え
-            keymap.replaceKey( "LWin", 235 )
-            keymap.replaceKey( "RWin", "Space" )
+            keymap.replaceKey( "LCmd", 255 )
+            keymap.replaceKey( "RCmd", "Space" )
 
-        ここでは、左Windowsキーを仮想キーコード235番、右WindowsキーをSpaceキー
+        ここでは、左Commandキーを仮想キーコード255番、右CommandキーをSpaceキー
         に割り当てなおしています。
 
         replaceKey() の引数としては、キーの名前をあらわす文字列と、仮想キーコード
@@ -263,14 +256,14 @@
         .. code-block:: python
 
             # ユーザモディファイアキーの定義
-            keymap.defineModifier( 235, "User0" )
+            keymap.defineModifier( 255, "User0" )
 
         ここでは、先ほど replaceKey を使って左Windowsキーから置き換えた、
-        仮想キーコード 235 番を、ユーザモディファイア 0 番に割り当てています。
+        仮想キーコード 255 番を、ユーザモディファイア 0 番に割り当てています。
 
-        標準では、Alt, Ctrl, Shift, Win の 4 つのモディファイアが存在していますが、
-        これらとは別に、上記のように ユーザモディファイアを最大4つまで定義する
-        ことが出来ます。( User0 ～ User3 )
+        標準では、Alt, Ctrl, Shift, Cmd, Fn の 5 つのモディファイアが存在していますが、
+        これらとは別に、上記のように ユーザモディファイアを最大2つまで定義する
+        ことが出来ます。( User0 ～ User1 )
 
 
     **グローバルキーマップの定義**
@@ -298,10 +291,10 @@
         .. code-block:: python
 
             # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-            keymap_global[ "U0-Left"  ] = keymap.command_MoveWindow( -10, 0 )
-            keymap_global[ "U0-Right" ] = keymap.command_MoveWindow( +10, 0 )
-            keymap_global[ "U0-Up"    ] = keymap.command_MoveWindow( 0, -10 )
-            keymap_global[ "U0-Down"  ] = keymap.command_MoveWindow( 0, +10 )
+            keymap_global[ "User0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
+            keymap_global[ "User0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
+            keymap_global[ "User0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
+            keymap_global[ "User0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
 
         ここでは、先ほど defineModifier を使って定義した、ユーザモディファイア0番
@@ -310,26 +303,23 @@
 
     **特定のウインドウのキーマップの定義**
 
-        defineWindowKeymap() に引数を渡すことによって、特定のウインドウのキーマップ
+        defineWindowKeymap() に引数を渡すことによって、特定のアプリケーションのキーマップ
         を定義することが出来ます。
 
         **defineWindowKeymap()の例**
 
         .. code-block:: python
 
-            keymap_notepad = keymap.defineWindowKeymap( exe_name=u"notepad.exe", class_name=u"Edit" )
+            keymap_terminal = keymap.defineWindowKeymap( app_name="com.apple.Terminal" )
 
-        ここでは、プログラム名が notepad.exe であり、
-        ウインドウクラス名が Edit であるようなウインドウのキーマップを定義しています。
+        ここでは、アプリケーションのバンドル名が com.apple.Terminal であるようなウインドウのキーマップを定義しています。
 
-        ウインドウのクラス名やプログラム名を確認するには、タスクトレイアイコンのメニューで内部ログをONにして、目的のウインドウでキー操作を行います。
-        コンソールウインドウに以下のようなログが出力されます。
+        アプリケーションのバンドル名を確認するには、メニューバーのアイコンのメニューで内部ログをONにして、目的のウインドウでキー操作を行います。
+        ログウインドウに以下のようなログが出力されます。
 
         .. code-block:: text
 
-            Window : exe   : cfiler.exe
-                   : class : CfilerWindowClass
-                   : text  : 内骨格
+            Window : app : com.apple.Terminal
 
         defineWindowKeymap の引数には、* や ? のワイルドカードを使用して、
         条件に幅をもたせることが出来ます。
@@ -344,9 +334,9 @@
             def command_HelloWorld():
                 print "Hello World!"
 
-            keymap_notepad[ "C-A" ] = command_HelloWorld
-            keymap_notepad[ "C-F" ] = keymap.command_InputText( u"qwerty" )
-            keymap_notepad[ "C-G" ] = keymap.command_InputText( u"テストTESTテスト" )
+            keymap_notepad[ "Cmd-A" ] = command_HelloWorld
+            keymap_notepad[ "Cmd-F" ] = keymap.command_InputText( u"qwerty" )
+            keymap_notepad[ "Cmd-G" ] = keymap.command_InputText( u"テストTESTテスト" )
 
 
         このように任意の呼び出し可能オブジェクトを割り当てることが出来ます。
@@ -356,8 +346,8 @@
 
         .. code-block:: python
 
-            keymap_notepad[ "C-C" ] = "Return"
-            keymap_notepad[ "C-D" ] = "C-F"
+            keymap_notepad[ "Cmd-C" ] = "Return"
+            keymap_notepad[ "Cmd-D" ] = "Cmd-F"
 
         キー入力を表す文字列を渡すことで、別のキーを入力したのと同じ効果を
         持たせることが出来ます。
@@ -367,7 +357,7 @@
 
         .. code-block:: python
 
-            keymap_notepad[ "C-E" ] = "A-V", "A-S"
+            keymap_notepad[ "Cmd-E" ] = "Alt-V", "Alt-S"
 
         このように、カンマ区切りで複数の文字列を渡すことで、複数の連続した
         キー入力イベントを擬似的に発生させることが出来ます。
@@ -406,7 +396,7 @@
 
         .. code-block:: python
 
-            keymap.setFont( u"ＭＳ ゴシック", 12 )
+            keymap.setFont( u"Osaka-Mono", 16 )
 
         keymap.setFont()に、フォント名とフォントサイズを引数として渡します。
 
@@ -439,12 +429,6 @@
 
         .. code-block:: python
 
-            "C-S-Return"
-
-        や
-
-        .. code-block:: python
-
             "Ctrl-Shift-Return"
 
         のように、ハイフンで区切って、モディファイアとメインのキーを組み合わせて
@@ -455,21 +439,22 @@
         =============================   ========================================================
          モディファイア                 記述方法
         =============================   ========================================================
-         Altキー (左右どちらでも)       Alt-, A-
-         左 Altキー                     LAlt-, LA-
-         右 Altキー                     RAlt-, RA-
-         Controlキー (左右どちらでも)   Ctrl-, C-
-         左 Controlキー                 LCtrl-, LC-
-         右 Controlキー                 RCtrl-, RC-
-         Shiftキー (左右どちらでも)     Shift-, S-
-         左 Shiftキー                   LShift-, LS-
-         右 Shiftキー                   RShift-, RS-
-         Windowsキー (左右どちらでも)   Win-, W-
-         左 Windowsキー                 LWin-, LW-
-         右 Windowsキー                 RWin-, RW-
-         Userキー (左右どちらでも)      User0-, User1-, User2-, User3-, U0-, U1-, U2-, U3-
-         左 Userキー                    LUser0-, LUser1-, LUser2-, LUser3-, LU0-, LU1-, LU2-, LU3-
-         右 Userキー                    RUser0-, RUser1-, RUser2-, RUser3-, RU0-, RU1-, RU2-, RU3-
+         Altキー (左右どちらでも)       Alt-
+         左 Altキー                     LAlt-
+         右 Altキー                     RAlt-
+         Controlキー (左右どちらでも)   Ctrl-
+         左 Controlキー                 LCtrl-
+         右 Controlキー                 RCtrl-
+         Shiftキー (左右どちらでも)     Shift-
+         左 Shiftキー                   LShift-
+         右 Shiftキー                   RShift-
+         Commandキー (左右どちらでも)   Cmd-
+         左 Commandキー                 LCmd-
+         右 Commandキー                 RCmd-
+         Fnキー                         Fn-
+         Userキー                       User0-, User1-
+         左 Userキー                    LUser0-, LUser1-
+         右 Userキー                    RUser0-, RUser1-
         =============================   ========================================================
 
 
@@ -477,8 +462,8 @@
 
         .. code-block:: python
 
-            "D-S-Return"
-            "U-S-Return"
+            "D-Shift-Return"
+            "U-Shift-Return"
             "O-LShift"
 
         ===============================   ========================================================
@@ -531,27 +516,20 @@
         Enter/Return
         Escape/Esc
         CapsLock/Caps/Capital
-        Apps                        アプリケーションキー
-        Insert
         Delete
         Home
         End
         PageUp
         PageDown
-        Alt
         LAlt
         RAlt
-        Ctrl
         LCtrl
         RCtrl
-        Shift
         LShift
         RShift
-        LWin
-        RWin
-        PrintScreen
-        ScrollLock
-        Pause
+        LCmd
+        RCmd
+        Fn
         | (0) ～ (255)              仮想キーコード指定
         =========================   ===============================
 
@@ -581,10 +559,10 @@
 
         .. code-block:: python
 
-            keymap_global[ "C-X" ] = keymap.defineMultiStrokeKeymap( "C-X" )
-            keymap_global[ "C-X" ][ "C-F" ] = "C-O"
+            keymap_global[ "Cmd-X" ] = keymap.defineMultiStrokeKeymap( "Cmd-X" )
+            keymap_global[ "Cmd-X" ][ "Cmd-F" ] = "Cmd-O"
 
-        この例では、Ctrl-X を押した後に Ctrl-F を押したときに、Ctrl-O を押したことにする
+        この例では、Cmd-X を押した後に Cmd-F を押したときに、Cmd-O を押したことにする
         設定を行っています。
 
         このように、defineMultiStrokeKeymap() メソッドで生成したキーマップを、
