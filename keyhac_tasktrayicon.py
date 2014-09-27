@@ -14,7 +14,7 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         menu = self.createMenu()
     
         ckit.TaskTrayIcon.__init__( self,
-            title = "keyhac",
+            icon = ckit.getThemeAssetFullpath("icon.png"),
             menu = menu
             )
         
