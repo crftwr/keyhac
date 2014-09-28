@@ -38,6 +38,10 @@ for option in option_list:
 
 if __name__ == "__main__":
 
+    # アクセシビリティの設定をチェック
+    if not ckit.Hook.isAllowed(True):
+        sys.exit(0)
+            
     ckit.registerWindowClass( "keyhac" )
     
     # exeと同じ位置にある設定ファイルを優先する
