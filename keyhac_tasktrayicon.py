@@ -1,6 +1,6 @@
 ﻿import os
 import sys
-import webbrowser
+import subprocess
 
 import ckit
 
@@ -80,8 +80,9 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         def onHelp(info):
             
             def jobHelp(job_item):
-                help_path = os.path.join( ckit.getAppExePath(), 'doc\\index.html' )
-                pyauto.shellExecute( None, help_path, "", "" )
+                #help_path = os.path.join( ckit.getAppExePath(), 'doc/index.html' )
+                help_path = "http://crftwr.github.io/keyhac/mac/doc/"
+                subprocess.Popen( [ "/usr/bin/open", help_path ] )
             
             def jobHelpFinished(job_item):
                 print( "Helpを開きました" )
