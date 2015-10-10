@@ -18,7 +18,7 @@ except:
 if hasattr(makeoption,"PYTHON_DIR"):
     PYTHON_DIR = makeoption.PYTHON_DIR
 else:
-    PYTHON_DIR = "c:/python34"
+    PYTHON_DIR = "c:/Python34"
 
 PYTHON = PYTHON_DIR + "/python.exe"
 
