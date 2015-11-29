@@ -1,12 +1,12 @@
 ===============================================
-Pythonスクリプトでキーカスタマイズ [ keyhac ]
+Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 ===============================================
 
 :著作者: craftware
 :連絡先: craftware@gmail.com
-:開発環境: Python + Xcode5
+:開発環境: Python + Xcode
 :種別: フリーウェア
-:動作環境: Mac OSX 10.9-
+:動作環境: Mac OSX 10.11-
 :Webサイト: http://sites.google.com/site/craftware/
 
 .. contents::
@@ -186,6 +186,9 @@ Pythonスクリプトでキーカスタマイズ [ keyhac ]
 
     Pillow
         https://github.com/python-imaging/Pillow
+
+    Accessibility
+        https://pypi.python.org/pypi/accessibility
 
     C/Migemo
         http://www.kaoriya.net/
@@ -369,9 +372,10 @@ Pythonスクリプトでキーカスタマイズ [ keyhac ]
 
         .. code-block:: python
 
-            keymap.editor = u"notepad.exe"
+            keymap.editor = u"TextEdit"
 
-        keymap.editorに、好きなテキストエディタのパスを設定します。
+        keymap.editorに、好きなテキストエディタのアプリケーション名を設定します。
+        アプリケーション名は、/Applications ディレクトリの *.app などの拡張子を除いたものです。
 
         以下のように、呼び出し可能オブジェクトを設定することも出来ます。
 
@@ -380,7 +384,7 @@ Pythonスクリプトでキーカスタマイズ [ keyhac ]
         .. code-block:: python
 
             def editor(path):
-                shellExecute( None, None, u"notepad.exe", '"%s"'% path, "" )
+                subprocess.call([ "open", "-a", "TextEdit", path ])
             keymap.editor = editor
 
         この設定は、タスクトレイの keyhac アイコンを右クリックして表示される
