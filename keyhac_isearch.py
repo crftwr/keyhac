@@ -41,6 +41,10 @@ class IncrementalSearch:
             return fnmatch.fnmatch( name.lower(), new_pattern.lower() )
 
         elif isearch_type=="migemo":
+            
+            # FIXME : Mac対応
+            if ckit.platform()=="mac":
+                return False
 
             # 初めて migemo が必要になったときに遅延ロードする
             if migemo_object==None:
