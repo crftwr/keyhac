@@ -11,12 +11,12 @@ def configure(keymap):
 
     # プログラムのファイルパスを設定 (単純な使用方法)
     if 1:
-        keymap.editor = "notepad.exe"
+        keymap.editor = "TextEdit"
 
     # 呼び出し可能オブジェクトを設定 (高度な使用方法)
     if 0:
         def editor(path):
-            shellExecute( None, "notepad.exe", '"%s"'% path, "" )
+            subprocess.call([ "open", "-a", "TextEdit", path ])
         keymap.editor = editor
 
     # --------------------------------------------------------------------
@@ -34,7 +34,7 @@ def configure(keymap):
     # どのウインドウにフォーカスがあっても効くキーマップ
     keymap_global = keymap.defineWindowKeymap()
 
-    if 1:
+    if 0:
         # Commandキーを別の用途に使う
         keymap.replaceKey( "RCmd", 255 )
 
@@ -115,24 +115,24 @@ def configure(keymap):
 
 
     # キーボードでウインドウの移動
-    if 0:
+    if 1:
         # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-        keymap_global[ "Cmd-Left"  ] = keymap.command_MoveWindow( -10, 0 )
-        keymap_global[ "Cmd-Right" ] = keymap.command_MoveWindow( +10, 0 )
-        keymap_global[ "Cmd-Up"    ] = keymap.command_MoveWindow( 0, -10 )
-        keymap_global[ "Cmd-Down"  ] = keymap.command_MoveWindow( 0, +10 )
-
+        keymap_global[ "Cmd-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
+        keymap_global[ "Cmd-Right" ] = keymap.MoveWindowCommand( +10, 0 )
+        keymap_global[ "Cmd-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
+        keymap_global[ "Cmd-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
+        
         # USER0-Shift-↑↓←→ : 1pixel単位のウインドウの移動
-        keymap_global[ "Cmd-Shift-Left"  ] = keymap.command_MoveWindow( -1, 0 )
-        keymap_global[ "Cmd-Shift-Right" ] = keymap.command_MoveWindow( +1, 0 )
-        keymap_global[ "Cmd-Shift-Up"    ] = keymap.command_MoveWindow( 0, -1 )
-        keymap_global[ "Cmd-Shift-Down"  ] = keymap.command_MoveWindow( 0, +1 )
-
+        keymap_global[ "Cmd-Shift-Left"  ] = keymap.MoveWindowCommand( -1, 0 )
+        keymap_global[ "Cmd-Shift-Right" ] = keymap.MoveWindowCommand( +1, 0 )
+        keymap_global[ "Cmd-Shift-Up"    ] = keymap.MoveWindowCommand( 0, -1 )
+        keymap_global[ "Cmd-Shift-Down"  ] = keymap.MoveWindowCommand( 0, +1 )
+        
         # USER0-Ctrl-↑↓←→ : 画面の端まで移動
-        keymap_global[ "Cmd-Ctrl-Left"  ] = keymap.command_MoveWindow_MonitorEdge(0)
-        keymap_global[ "Cmd-Ctrl-Right" ] = keymap.command_MoveWindow_MonitorEdge(2)
-        keymap_global[ "Cmd-Ctrl-Up"    ] = keymap.command_MoveWindow_MonitorEdge(1)
-        keymap_global[ "Cmd-Ctrl-Down"  ] = keymap.command_MoveWindow_MonitorEdge(3)
+        keymap_global[ "Cmd-Ctrl-Left"  ] = keymap.MoveWindowToMonitorEdgeCommand(0)
+        keymap_global[ "Cmd-Ctrl-Right" ] = keymap.MoveWindowToMonitorEdgeCommand(2)
+        keymap_global[ "Cmd-Ctrl-Up"    ] = keymap.MoveWindowToMonitorEdgeCommand(1)
+        keymap_global[ "Cmd-Ctrl-Down"  ] = keymap.MoveWindowToMonitorEdgeCommand(3)
 
     # クリップボード履歴
     if 0:

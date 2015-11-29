@@ -1,6 +1,7 @@
 ﻿import os
 import sys
 import time
+import subprocess
 import profile
 import ctypes
 import fnmatch
@@ -883,7 +884,11 @@ class Keymap(ckit.TextWindow):
         self.vk_mod_map[VK_RCOMMAND ] = MODKEY_CMD_R
         self.vk_mod_map[VK_FUNCTION ] = MODKEY_FN_L
 
-        self.editor = "notepad.exe"
+        if ckit.platform()=="win":
+            self.editor = "notepad.exe"
+        elif ckit.platform()=="mac":
+            self.editor = "TextEdit"
+
         self.quote_mark = "> "
         self.cblisters = [
             ( "クリップボード", self.clipboard_history )
@@ -906,7 +911,10 @@ class Keymap(ckit.TextWindow):
         if callable(self.editor):
             self.editor(filename)
         else:
-            pyauto.shellExecute( None, self.editor, '"%s"' % filename, "" )
+            if ckit.platform()=="win":
+                pyauto.shellExecute( None, self.editor, '"%s"' % filename, "" )
+            elif ckit.platform()=="mac":
+                subprocess.call([ "open", "-a", self.editor, path ])
 
     ## config.py を編集する
     #
