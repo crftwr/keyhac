@@ -162,9 +162,6 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
          keyhac.ini        状態保存ファイル
         ================  =================================================
 
-    config.py と keyhac.ini は、keyhac.exe と同じディレクトリにおいておけば、
-    そちらが優先的に使われます。
-
 
 アンインストール
 -----------------
@@ -200,7 +197,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
     keyhac はスクリプト言語 Python を内蔵しており、キーのカスタマイズの内容は
     全て Python スクリプトとして記述します。
 
-    heyhac 一度起動すると、アプリケーションのデータディレクトリ
+    keyhac を一度起動すると、アプリケーションのデータディレクトリ
 
         /Users/(username)/Library/Application Support/Keyhac/
 
@@ -234,10 +231,10 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
         .. code-block:: python
 
             # キーの単純な置き換え
-            keymap.replaceKey( "LCmd", 255 )
-            keymap.replaceKey( "RCmd", "Space" )
+            keymap.replaceKey( "RShift", "Back" )
+            keymap.replaceKey( "RCmd", 255 )
 
-        ここでは、左Commandキーを仮想キーコード255番、右CommandキーをSpaceキー
+        ここでは、右CommandキーをBackSpace、右Altキーを仮想キーコード 255番
         に割り当てなおしています。
 
         replaceKey() の引数としては、キーの名前をあらわす文字列と、仮想キーコード
@@ -261,7 +258,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
             # ユーザモディファイアキーの定義
             keymap.defineModifier( 255, "User0" )
 
-        ここでは、先ほど replaceKey を使って左Windowsキーから置き換えた、
+        ここでは、先ほど replaceKey を使って右Altキーから置き換えた、
         仮想キーコード 255 番を、ユーザモディファイア 0 番に割り当てています。
 
         標準では、Alt, Ctrl, Shift, Cmd, Fn の 5 つのモディファイアが存在していますが、
@@ -293,15 +290,14 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-            keymap_global[ "User0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
-            keymap_global[ "User0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
-            keymap_global[ "User0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
-            keymap_global[ "User0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
+            # Ctrl-Alt-↑↓←→ : 10pixel単位のウインドウの移動
+            keymap_global[ "Ctrl-Alt-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
+            keymap_global[ "Ctrl-Alt-Right" ] = keymap.MoveWindowCommand( +10, 0 )
+            keymap_global[ "Ctrl-Alt-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
+            keymap_global[ "Ctrl-Alt-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
 
-        ここでは、先ほど defineModifier を使って定義した、ユーザモディファイア0番
-        と、カーソルキーの同時押しに、アクティブなウインドウの移動を割り当てています。
+        ここでは、Ctrl-Altと、カーソルキーの同時押しに、アクティブなウインドウの移動を割り当てています。
 
 
     **特定のウインドウのキーマップの定義**
@@ -335,11 +331,9 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
         .. code-block:: python
 
             def command_HelloWorld():
-                print "Hello World!"
+                print("Hello World!")
 
-            keymap_notepad[ "Cmd-A" ] = command_HelloWorld
-            keymap_notepad[ "Cmd-F" ] = keymap.command_InputText( u"qwerty" )
-            keymap_notepad[ "Cmd-G" ] = keymap.command_InputText( u"テストTESTテスト" )
+            keymap_global["Fn-A"] = command_HelloWorld
 
 
         このように任意の呼び出し可能オブジェクトを割り当てることが出来ます。
@@ -349,8 +343,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            keymap_notepad[ "Cmd-C" ] = "Return"
-            keymap_notepad[ "Cmd-D" ] = "Cmd-F"
+            keymap_textedit[ "Cmd-R" ] = "Alt-Cmd-F"
 
         キー入力を表す文字列を渡すことで、別のキーを入力したのと同じ効果を
         持たせることが出来ます。
@@ -360,7 +353,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            keymap_notepad[ "Cmd-E" ] = "Alt-V", "Alt-S"
+            keymap_textedit[ "Cmd-L" ] = "Cmd-Right", "Cmd-Shift-Left"
 
         このように、カンマ区切りで複数の文字列を渡すことで、複数の連続した
         キー入力イベントを擬似的に発生させることが出来ます。
@@ -549,11 +542,10 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            keymap_global[ "O-LCtrl" ] = command_Test
+            keymap_global[ "O-RCmd" ] = "Ctrl-Space"
 
         このように、 O- という修飾子を使用することで、ワンショットモディファイアを設定
-        します。この例では、左Ctrlキーを単体で押して離したときに、command_Test
-        という関数を呼び出します。
+        します。この例では、右Commandキーを単体で押して離したときに、Ctrl-Space を入力します。
 
 
 
@@ -563,10 +555,10 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            keymap_global[ "Cmd-X" ] = keymap.defineMultiStrokeKeymap( "Cmd-X" )
-            keymap_global[ "Cmd-X" ][ "Cmd-F" ] = "Cmd-O"
+            keymap_textedit[ "Ctrl-X" ] = keymap.defineMultiStrokeKeymap("Ctrl-X")
+            keymap_textedit[ "Ctrl-X" ][ "Ctrl-F" ] = "Cmd-O"
 
-        この例では、Cmd-X を押した後に Cmd-F を押したときに、Cmd-O を押したことにする
+        この例では、Ctrl-X を押した後に Ctrl-F を押したときに、Cmd-O を押したことにする
         設定を行っています。
 
         このように、defineMultiStrokeKeymap() メソッドで生成したキーマップを、
@@ -589,11 +581,11 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
         .. code-block:: python
 
-            keymap_global[ "U0-0" ] = keymap.command_RecordToggle
-            keymap_global[ "U0-1" ] = keymap.command_RecordStart
-            keymap_global[ "U0-2" ] = keymap.command_RecordStop
-            keymap_global[ "U0-3" ] = keymap.command_RecordPlay
-            keymap_global[ "U0-4" ] = keymap.command_RecordClear
+            keymap_global[ "Fn-0" ] = keymap.command_RecordToggle
+            keymap_global[ "Fn-1" ] = keymap.command_RecordStart
+            keymap_global[ "Fn-2" ] = keymap.command_RecordStop
+            keymap_global[ "Fn-3" ] = keymap.command_RecordPlay
+            keymap_global[ "Fn-4" ] = keymap.command_RecordClear
 
         キーボードマクロは、ウインドウを判別せず、すべてのウインドウで同じキーシーケンスが
         再生されます。キーの意味が、ウインドウによって異なる場合があるため、注意が必要です。
