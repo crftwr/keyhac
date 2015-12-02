@@ -13,6 +13,7 @@ def configure(keymap):
     # プログラムのファイルパスを設定 (単純な使用方法)
     if 1:
         keymap.editor = "TextEdit"
+        #keymap.editor = "Sublime Text 2"
 
     # 呼び出し可能オブジェクトを設定 (高度な使用方法)
     if 0:
@@ -82,14 +83,6 @@ def configure(keymap):
         keymap_global[ "O-RCmd" ] = "Ctrl-Space"
 
 
-    # クリップボード履歴
-    if 1:
-        keymap_global[ "Fn-Z"       ] = keymap.command_ClipboardList      # クリップボード履歴表示
-        keymap_global[ "Fn-X"       ] = keymap.command_ClipboardRotate    # 直近の履歴を末尾に回す
-        keymap_global[ "Fn-Shift-X" ] = keymap.command_ClipboardRemove    # 直近の履歴を削除
-        keymap.quote_mark = "> "                                          # 引用貼り付け時の記号
-
-
     # キーボードマクロ
     if 1:
         keymap_global[ "Fn-0" ] = keymap.command_RecordToggle
@@ -132,46 +125,54 @@ def configure(keymap):
         keymap_textedit[ "Alt-W" ] = "Cmd-C"                # コピー
         keymap_textedit[ "Ctrl-Y" ] = "Cmd-V"               # 貼り付け
         keymap_textedit[ "Ctrl-X" ][ "Ctrl-C" ] = "Cmd-W"   # 終了
-    
 
 
-
-
-
-
-    # USER0-F2 : サブスレッド処理のテスト
-    if 0:
+    # Fn-S : サブスレッド処理のテスト
+    if 1:
         def command_JobTest():
 
+            # サブスレッドで呼ばれる処理
             def jobTest(job_item):
-                shellExecute( None, "notepad.exe", "", "" )
+                subprocess.call([ "open", "-a", "Safari" ])
 
+            # サブスレッド処理が完了した後にメインスレッドで呼ばれる処理
             def jobTestFinished(job_item):
                 print( "Done." )
 
             job_item = JobItem( jobTest, jobTestFinished )
             JobQueue.defaultQueue().enqueue(job_item)
 
-        keymap_global[ "Cmd-F2" ] = command_JobTest
+        keymap_global[ "Fn-S" ] = command_JobTest
 
 
-    # Cron (定期的なサブスレッド処理) のテスト
+    # ウインドウのアクティブ化
+    if 1:
+        # Fn-T : ターミナルのアクティブ化
+        keymap_global[ "Fn-T" ] = keymap.ActivateApplicationCommand( "com.apple.Terminal" )
+
+
+    # アプリや子プロセスの起動
+    if 1:
+
+        # Fn-E : TextEditの起動
+        keymap_global[ "Fn-E" ] = keymap.SubProcessCallCommand( [ "open", "-a", "TextEdit" ], cwd=os.environ["HOME"] )
+
+        # Fn-L : lsコマンドの実行
+        keymap_global[ "Fn-L" ] = keymap.SubProcessCallCommand( [ "ls", "-al" ], cwd=os.environ["HOME"] )
+
+
+
+
+
+
+
+
+
+
+
+    # アクティブ化するか、まだであれば起動する
     if 0:
-        def cronPing(cron_item):
-            os.system( "ping -n 3 www.google.com" )
-
-        cron_item = CronItem( cronPing, 3.0 )
-        CronTable.defaultCronTable().add(cron_item)
-
-
-    # USER0-F : ウインドウのアクティブ化
-    if 0:
-        keymap_global[ "Cmd-F" ] = keymap.command_ActivateWindow( "cfiler.exe", "CfilerWindowClass" )
-
-
-    # USER0-E : アクティブ化するか、まだであれば起動する
-    if 0:
-        def command_ActivateOrExecuteNotepad():
+        def command_ActivateOrLaunchSafari():
             wnd = Window.find( "Notepad", None )
             if wnd:
                 if wnd.isMinimized():
@@ -182,19 +183,25 @@ def configure(keymap):
                 executeFunc = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
                 executeFunc()
 
-        keymap_global[ "Cmd-E" ] = command_ActivateOrExecuteNotepad
+        keymap_global[ "Fn-S" ] = command_ActivateOrLaunchSafari
 
 
 
 
 
 
+    # クリップボード履歴
+    if 1:
+        keymap_global[ "Fn-Z"       ] = keymap.command_ClipboardList      # クリップボード履歴表示
+        keymap_global[ "Fn-X"       ] = keymap.command_ClipboardRotate    # 直近の履歴を末尾に回す
+        keymap_global[ "Fn-Shift-X" ] = keymap.command_ClipboardRemove    # 直近の履歴を削除
+        keymap.quote_mark = "> "                                          # 引用貼り付け時の記号
 
-    # クリップボード履歴の最大数 (デフォルト:1000)
-    keymap.clipboard_history.maxnum = 1000
+        # クリップボード履歴の最大数 (デフォルト:1000)
+        keymap.clipboard_history.maxnum = 1000
 
-    # クリップボード履歴として保存する合計最大サイズ (デフォルト:10MB)
-    keymap.clipboard_history.quota = 10*1024*1024
+        # クリップボード履歴として保存する合計最大サイズ (デフォルト:10MB)
+        keymap.clipboard_history.quota = 10*1024*1024
 
 
     # クリップボード履歴リスト表示のカスタマイズ
