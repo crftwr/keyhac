@@ -914,7 +914,7 @@ class Keymap(ckit.TextWindow):
             if ckit.platform()=="win":
                 pyauto.shellExecute( None, self.editor, '"%s"' % filename, "" )
             elif ckit.platform()=="mac":
-                subprocess.call([ "open", "-a", self.editor, path ])
+                subprocess.call([ "open", "-a", self.editor, filename ])
 
     ## config.py を編集する
     #
@@ -1595,7 +1595,7 @@ class Keymap(ckit.TextWindow):
     #  キーを入力する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_InputKey( self, *keys ):
+    def InputKeyCommand( self, *keys ):
 
         def _inputKey():
 
@@ -1623,7 +1623,7 @@ class Keymap(ckit.TextWindow):
     #  文字列を入力する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_InputText( self, s ):
+    def InputTextCommand( self, s ):
 
         def _inputText():
 
@@ -1758,7 +1758,7 @@ class Keymap(ckit.TextWindow):
     #  マウスカーソルを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseMove( self, delta_x, delta_y ):
+    def MouseMoveCommand( self, delta_x, delta_y ):
 
         def _mouseMove():
 
@@ -1786,7 +1786,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的に押す機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonDown( self, button='left' ):
+    def MouseButtonDownCommand( self, button='left' ):
 
         def _mouseButtonDown():
 
@@ -1824,7 +1824,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的に離す機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonUp( self, button='left' ):
+    def MouseButtonUpCommand( self, button='left' ):
 
         def _mouseButtonUp():
 
@@ -1862,7 +1862,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的にクリックする機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonClick( self, button='left' ):
+    def MouseButtonClickCommand( self, button='left' ):
 
         def _mouseButtonClick():
 
@@ -1900,7 +1900,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのホイールを擬似的に回転する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseWheel( self, wheel ):
+    def MouseWheelCommand( self, wheel ):
 
         def _mouseWheel():
 
@@ -1927,7 +1927,7 @@ class Keymap(ckit.TextWindow):
     #  マウスの水平ホイールを擬似的に回転する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseHorizontalWheel( self, wheel ):
+    def MouseHorizontalWheelCommand( self, wheel ):
 
         def _mouseHorizontalWheel():
 
@@ -2099,21 +2099,22 @@ class Keymap(ckit.TextWindow):
     #  http://msdn.microsoft.com/ja-jp/library/cc422072.aspx
     #
     #  プログラムの起動は、サブスレッドの中で行われます。
-    #
-    def command_ShellExecute( self, verb, filename, param, directory, swmode=None ):
 
-        def _shellExecute():
+    def SubProcessCallCommand( self, cmd, cwd=None, env=None ):
 
-            def jobShellExecute(job_item):
-                pyauto.shellExecute( verb, filename, param, directory, swmode )
+        def _subProcessCall():
 
-            def jobShellExecuteFinished(job_item):
+            def jobSubProcessCall(job_item):
+                p = ckit.SubProcess(cmd,cwd,env)
+                p()
+
+            def jobSubProcessCallFinished(job_item):
                 pass
 
-            job_item = ckit.JobItem( jobShellExecute, jobShellExecuteFinished )
+            job_item = ckit.JobItem( jobSubProcessCall, jobSubProcessCallFinished )
             ckit.JobQueue.defaultQueue().enqueue(job_item)
 
-        return _shellExecute
+        return _subProcessCall
 
 
     ## リストウインドウを開き結果を取得する
