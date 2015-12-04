@@ -2273,9 +2273,9 @@ class Keymap(ckit.TextWindow):
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
             if ckit.platform()=="win":
-                self.hookCall( self.command_InputKey("Ctrl-V") )
+                self.hookCall( self.InputKeyCommand("Ctrl-V") )
             else:
-                self.command_InputKey("Cmd-V")()
+                self.InputKeyCommand("Cmd-V")()
 
         # Shiftを押しながら決定したときは、貼り付けを行わず、クリップボードに格納するだけ
         if mod & MODKEY_SHIFT:
