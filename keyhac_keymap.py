@@ -1468,7 +1468,7 @@ class Keymap(ckit.TextWindow):
     #  Input.send() で実行する擬似的な入力の中に、物理的な入力を割り込ませないためには、
     #  Input.send() をフックのなかで実行する必要があります。
     #
-    #  フックの外で command_InputKey などのキー入力機能を実行すると、
+    #  フックの外で InputKeyCommand などのキー入力機能を実行すると、
     #  稀に物理的なキー入力が擬似的なキー入力のなかに割り込んでしまい、
     #  意図しないキー操作になってしまったり、キーが押しっぱなしになってしまったり、
     #  といった問題が起きる可能性があります。
@@ -2054,6 +2054,8 @@ class Keymap(ckit.TextWindow):
                 break
         if pid_found:
             ckit.activateApplicationByPid(pid_found)
+        else:
+            raise ValueError
 
     ## アプリケーションをアクティブ化するコマンド
     #
@@ -2062,44 +2064,26 @@ class Keymap(ckit.TextWindow):
     #
     def ActivateApplicationCommand( self, app_name ):
         def _activateApplication():
-            self.activateApplication(app_name)
+            try:
+                self.activateApplication(app_name)
+            except ValueError:
+                print( "ERROR : 指定されたアプリケーションがありません :", app_name )
         return _activateApplication
 
-    ## プログラムを起動する関数を返す
+    ## サブプロセスを非同期に呼び出す関数を返す
     #
     #  @param self -
-    #  @param verb          操作
-    #  @param filename      操作対象のファイル
-    #  @param param         操作のパラメータ
-    #  @param directory     既定のディレクトリ
-    #  @param swmode        表示状態
-    #  @return プログラムを起動する関数
+    #  @param cmd           コマンドと引数の文字列を格納した配列
+    #  @param cwd           作業ディレクトリ
+    #  @param env           環境変数を格納した辞書
+    #  @return サブプロセスを非同期に呼び出す関数
     #
-    #  指定されたプログラムを起動する関数を生成し、返します。
+    #  指定されたコマンドをサブプロセスとして呼び出す関数を生成し、返します。
     #
-    #  引数verbには、実行する操作を文字列で渡します。指定可能な文字列は対象によって異なりますが、一般的には次のような操作が指定可能です。
+    #  cmd には、[ "open", "-a", "Safari" ] のように、コマンドラインを文字列に分割した配列を渡します。
     #
-    #  open
-    #       ファイルを開きます。またはプログラムを起動します。
-    #  edit
-    #       ファイルを編集します。
-    #  properties
-    #       ファイルのプロパティを表示します。
+    #  サブプロセスの起動は、非同期にサブスレッドの中で行われます。
     #
-    #  引数swmodeには、以下のいずれかの文字列(またはNone)を渡します。
-    #
-    #  "normal"または""またはNone
-    #       アプリケーションを通常の状態で起動します。
-    #  "maximized"
-    #       アプリケーションを最大化状態で起動します。
-    #  "minimized"
-    #       アプリケーションを最小化状態で起動します。
-    #
-    #  詳細については、以下の解説を参照してください。\n
-    #  http://msdn.microsoft.com/ja-jp/library/cc422072.aspx
-    #
-    #  プログラムの起動は、サブスレッドの中で行われます。
-
     def SubProcessCallCommand( self, cmd, cwd=None, env=None ):
 
         def _subProcessCall():
