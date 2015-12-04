@@ -127,24 +127,6 @@ def configure(keymap):
         keymap_textedit[ "Ctrl-X" ][ "Ctrl-C" ] = "Cmd-W"   # 終了
 
 
-    # Fn-S : サブスレッド処理のテスト
-    if 1:
-        def command_JobTest():
-
-            # サブスレッドで呼ばれる処理
-            def jobTest(job_item):
-                subprocess.call([ "open", "-a", "Safari" ])
-
-            # サブスレッド処理が完了した後にメインスレッドで呼ばれる処理
-            def jobTestFinished(job_item):
-                print( "Done." )
-
-            job_item = JobItem( jobTest, jobTestFinished )
-            JobQueue.defaultQueue().enqueue(job_item)
-
-        keymap_global[ "Fn-S" ] = command_JobTest
-
-
     # ウインドウのアクティブ化
     if 1:
         # Fn-T : ターミナルのアクティブ化
@@ -161,33 +143,22 @@ def configure(keymap):
         keymap_global[ "Fn-L" ] = keymap.SubProcessCallCommand( [ "ls", "-al" ], cwd=os.environ["HOME"] )
 
 
+    # Fn-S : サブスレッド処理のテスト
+    if 1:
+        def command_JobTest():
 
+            # サブスレッドで呼ばれる処理
+            def jobTest(job_item):
+                subprocess.call([ "open", "-a", "Notes" ])
 
+            # サブスレッド処理が完了した後にメインスレッドで呼ばれる処理
+            def jobTestFinished(job_item):
+                print( "Done." )
 
+            job_item = JobItem( jobTest, jobTestFinished )
+            JobQueue.defaultQueue().enqueue(job_item)
 
-
-
-
-
-
-    # アクティブ化するか、まだであれば起動する
-    if 0:
-        def command_ActivateOrLaunchSafari():
-            wnd = Window.find( "Notepad", None )
-            if wnd:
-                if wnd.isMinimized():
-                    wnd.restore()
-                wnd = wnd.getLastActivePopup()
-                wnd.setForeground()
-            else:
-                executeFunc = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
-                executeFunc()
-
-        keymap_global[ "Fn-S" ] = command_ActivateOrLaunchSafari
-
-
-
-
+        keymap_global[ "Fn-N" ] = command_JobTest
 
 
     # クリップボード履歴
