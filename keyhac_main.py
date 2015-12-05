@@ -4,7 +4,7 @@ import getopt
 import shutil
 import locale
 
-os.environ["PATH"] = os.path.abspath(os.path.join( os.path.split(sys.argv[0])[0],'lib')) + ";" + os.environ["PATH"]
+os.environ["PATH"] = os.path.abspath(os.path.join( os.path.split(sys.argv[0])[0],'lib')) + ":" + os.environ["PATH"]
 
 sys.path[0:0] = [
     os.path.join( os.path.split(sys.argv[0])[0], '..' ),
