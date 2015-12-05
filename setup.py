@@ -1,85 +1,61 @@
-﻿import sys
+#
+# Usage 1 : python3.4 setup.py bdist_mac
+#    build Keyhac.app directory.
+#
+# Usage 2 : python3.4 setup.py bdist_dmg
+#    build Keyhac.app and archive as dmg file.
+#
+
+import sys
 import os
-import fnmatch
-
-import keyhac_resource
-
 from cx_Freeze import setup, Executable
 
 sys.path[0:0] = [
     os.path.join( os.path.split(sys.argv[0])[0], ".." ),
     ]
- 
-executable = Executable( 
-    script = "keyhac_main.py",
-    icon = "icon.ico",
-    base = "Win32GUI",
-    targetName = "keyhac.exe"
-    )
 
-options = {
-    "build" : {
-        "build_exe" : "dist/keyhac",
-    },
+PIL_dylibs_path = "/Library/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages/PIL/.dylibs/"
 
-    "build_exe": {
-        "optimize" : 2,
-        
-        "excludes" : [
-            "tkinter",
-            ],
-        
-        "includes" : [
-            "keyhac"
-            ],
-        
-        "packages" : [
-        ],
-        "compressed" : 1,
-        #"copy_dependent_files" : 1,
-        #"create_shared_zip" : 1,
-        #"append_script_to_exe" : 1,
-        "include_files": [ 
-            "dict",
-            "extension",
-            "license",
-            "theme",
-            "readme.txt",
-            "migemo.dll",
-            "_config.py",
-            ( "doc/html", "doc" ),
-            ],
-        #"include_msvcr" : 1,
-    },
-}
+buildOptions = dict(
+	optimize = 2,
+	packages = [], 
+	includes = ["keyhac"], 
+	excludes = ["tkinter"], 
+	bin_includes = [],
+	bin_excludes = ["ckitcore.dylib"],
+    include_files = [ 
+        (PIL_dylibs_path+"libjpeg.9.dylib",".dylibs/libjpeg.9.dylib"),
+        (PIL_dylibs_path+"libtiff.5.dylib",".dylibs/libtiff.5.dylib"),
+        (PIL_dylibs_path+"libz.1.2.8.dylib",".dylibs/libz.1.2.8.dylib"),
+        "dict",
+        "extension",
+        "license",
+        "theme",
+        "readme.txt",
+        "_config.py",
+        #( "doc/html", "doc" ),
+    ],
+)
 
-setup( 
-    name = "keyhac",
-    version = keyhac_resource.keyhac_version,
-    description = "",
-    executables = [executable],
-    options = options,
-    )
+macOptions = dict(
+	iconfile = "app.icns",
+	bundle_name = "Keyhac",
+	custom_info_plist = "Info.plist",
+)
 
-def fixup():
-    
-    exe_dirname = options["build"]["build_exe"]
-    lib_dirname = os.path.join( exe_dirname, "lib" )
-    
-    if not os.path.exists(lib_dirname):
-        os.mkdir(lib_dirname)
-    
-    for name in os.listdir(exe_dirname):
-        if ( fnmatch.fnmatch(name,"*.dll") or fnmatch.fnmatch(name,"*.pyd") ) and not name=="python34.dll":
-            old_path = os.path.join( exe_dirname, name )
-            new_path = os.path.join( lib_dirname, name )
+dmgOptions = dict(
+	volume_label = "Keyhac",
+	#applications_shortcut = True,
+)
 
-            print( "moving %s -> %s" % (old_path,new_path) )
+base = None
 
-            if os.path.exists(new_path):
-                os.unlink(new_path)
-            os.rename( old_path, new_path )
+executables = [
+    Executable('keyhac_main.py', base=base, targetName = 'Keyhac')
+]
 
-fixup()
-
-
+setup(name='Keyhac',
+      version = '1.00',
+      description = 'Keyhac : Python based keyboard customization tool.',
+      options = dict(build_exe = buildOptions, bdist_mac = macOptions, bdist_dmg = dmgOptions ),
+      executables = executables)
