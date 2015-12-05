@@ -33,7 +33,7 @@ buildOptions = dict(
         "theme",
         "readme.txt",
         "_config.py",
-        #( "doc/html", "doc" ),
+        ( "doc/html", "doc" ),
     ],
 )
 

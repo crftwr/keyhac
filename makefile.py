@@ -2,39 +2,11 @@
 import sys
 import subprocess
 import shutil
-import zipfile
-import hashlib
 
-import keyhac_resource
 
-# makeoption.py というファイルを作れば、
-# Python、Svn、Doxygen のインストールディレクトリ等をカスタマイズできる。
+PYTHON = "python3.4"
+DOXYGEN = "/Applications/Doxygen.app/Contents/Resources/doxygen"
 
-try:
-    import makeoption
-except:
-    makeoption = {}
-
-if hasattr(makeoption,"PYTHON_DIR"):
-    PYTHON_DIR = makeoption.PYTHON_DIR
-else:
-    PYTHON_DIR = "c:/python34"
-
-PYTHON = PYTHON_DIR + "/python.exe"
-
-if hasattr(makeoption,"SVN_DIR"):
-    SVN_DIR = makeoption.SVN_DIR
-else:
-    SVN_DIR = "c:/Program Files/TortoiseSVN/bin"
-
-if hasattr(makeoption,"DOXYGEN_DIR"):
-    DOXYGEN_DIR = makeoption.DOXYGEN_DIR
-else:
-    DOXYGEN_DIR = "c:/Program Files/doxygen"
-
-DIST_DIR = "dist/keyhac"
-VERSION = keyhac_resource.keyhac_version.replace(".","")
-ARCHIVE_NAME = "keyhac_%s.zip" % VERSION
 
 def unlink(filename):
     try:
@@ -54,62 +26,18 @@ def rmtree(dirname):
     except OSError:
         pass
 
-def createZip( zip_filename, items ):
-    z = zipfile.ZipFile( zip_filename, "w", zipfile.ZIP_DEFLATED, True )
-    for item in items:
-        if os.path.isdir(item):
-            for root, dirs, files in os.walk(item):
-                for f in files:
-                    f = os.path.join(root,f)
-                    print( f )
-                    z.write(f)
-        else:
-            print( item )
-            z.write(item)
-    z.close()
-
-DIST_FILES = [
-    "keyhac/keyhac.exe",
-    "keyhac/lib",
-    "keyhac/python34.dll",
-    "keyhac/_config.py",
-    "keyhac/readme.txt",
-    "keyhac/theme/black",
-    "keyhac/theme/white",
-    "keyhac/license",
-    "keyhac/doc",
-    "keyhac/library.zip",
-    "keyhac/dict/.keepme",
-    "keyhac/extension/.keepme",
-    ]
-
-def all():
-    doc()
-    exe()
-
-def exe():
-    subprocess.call( [ PYTHON, "setup.py", "build" ] )
-
-    if 1:
-        os.chdir("dist")
-        createZip( ARCHIVE_NAME, DIST_FILES )
-        os.chdir("..")
-    
-    fd = open( "dist/%s" % ARCHIVE_NAME, "rb" )
-    m = hashlib.md5()
-    while 1:
-        data = fd.read( 1024 * 1024 )
-        if not data: break
-        m.update(data)
-    fd.close()
-    print( "" )
-    print( m.hexdigest() )
-
 def clean():
     rmtree("dist")
     rmtree("build")
     rmtree("doc/html")
     unlink( "tags" )
+
+def all():
+    doc()
+    dmg()
+
+def dmg():
+    subprocess.call( [ PYTHON, "setup.py", "bdist_dmg" ] )
 
 def doc():
     rmtree( "doc/html" )
@@ -119,7 +47,7 @@ def doc():
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/index.txt", "doc/obj/index.htm_" ] )
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "doc/changes.txt", "doc/obj/changes.html" ] )
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/changes.txt", "doc/obj/changes.htm_" ] )
-    subprocess.call( [ DOXYGEN_DIR + "/bin/doxygen.exe", "doc/doxyfile" ] )
+    subprocess.call( [ DOXYGEN, "doc/doxyfile" ] )
     shutil.copytree( "doc/image", "doc/html/image", ignore=shutil.ignore_patterns(".svn","*.pdn") )
 
 def run():
