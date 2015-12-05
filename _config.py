@@ -21,6 +21,7 @@ def configure(keymap):
             subprocess.call([ "open", "-a", "TextEdit", path ])
         keymap.editor = editor
 
+
     # --------------------------------------------------------------------
     # 表示のカスタマイズ
 
@@ -29,6 +30,7 @@ def configure(keymap):
 
     # テーマの設定
     keymap.setTheme("black")
+
 
     # --------------------------------------------------------------------
 
@@ -160,6 +162,9 @@ def configure(keymap):
 
         keymap_global[ "Fn-N" ] = command_JobTest
 
+
+    # --------------------------------------------------------------------
+    # クリップボード履歴機能のカスタマイズ
 
     # クリップボード履歴
     if 1:
