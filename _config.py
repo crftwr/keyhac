@@ -43,22 +43,22 @@ def configure(keymap):
         keymap_global = keymap.defineWindowKeymap()
 
         # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-        keymap_global[ "U0-Left"  ] = keymap.command_MoveWindow( -10, 0 )
-        keymap_global[ "U0-Right" ] = keymap.command_MoveWindow( +10, 0 )
-        keymap_global[ "U0-Up"    ] = keymap.command_MoveWindow( 0, -10 )
-        keymap_global[ "U0-Down"  ] = keymap.command_MoveWindow( 0, +10 )
+        keymap_global[ "U0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
+        keymap_global[ "U0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
+        keymap_global[ "U0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
+        keymap_global[ "U0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
         # USER0-Shift-↑↓←→ : 1pixel単位のウインドウの移動
-        keymap_global[ "U0-S-Left"  ] = keymap.command_MoveWindow( -1, 0 )
-        keymap_global[ "U0-S-Right" ] = keymap.command_MoveWindow( +1, 0 )
-        keymap_global[ "U0-S-Up"    ] = keymap.command_MoveWindow( 0, -1 )
-        keymap_global[ "U0-S-Down"  ] = keymap.command_MoveWindow( 0, +1 )
+        keymap_global[ "U0-S-Left"  ] = keymap.MoveWindowCommand( -1, 0 )
+        keymap_global[ "U0-S-Right" ] = keymap.MoveWindowCommand( +1, 0 )
+        keymap_global[ "U0-S-Up"    ] = keymap.MoveWindowCommand( 0, -1 )
+        keymap_global[ "U0-S-Down"  ] = keymap.MoveWindowCommand( 0, +1 )
 
         # USER0-Ctrl-↑↓←→ : 画面の端まで移動
-        keymap_global[ "U0-C-Left"  ] = keymap.command_MoveWindow_MonitorEdge(0)
-        keymap_global[ "U0-C-Right" ] = keymap.command_MoveWindow_MonitorEdge(2)
-        keymap_global[ "U0-C-Up"    ] = keymap.command_MoveWindow_MonitorEdge(1)
-        keymap_global[ "U0-C-Down"  ] = keymap.command_MoveWindow_MonitorEdge(3)
+        keymap_global[ "U0-C-Left"  ] = keymap.MoveWindowToMonitorEdgeCommand(0)
+        keymap_global[ "U0-C-Right" ] = keymap.MoveWindowToMonitorEdgeCommand(2)
+        keymap_global[ "U0-C-Up"    ] = keymap.MoveWindowToMonitorEdgeCommand(1)
+        keymap_global[ "U0-C-Down"  ] = keymap.MoveWindowToMonitorEdgeCommand(3)
 
         # クリップボード履歴
         keymap_global[ "C-S-Z"   ] = keymap.command_ClipboardList     # クリップボード履歴表示
@@ -76,7 +76,7 @@ def configure(keymap):
 
     # USER0-F1 : アプリケーションの起動テスト
     if 1:
-        keymap_global[ "U0-F1" ] = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
+        keymap_global[ "U0-F1" ] = keymap.ShellExecuteCommand( None, "notepad.exe", "", "" )
 
 
     # USER0-F2 : サブスレッド処理のテスト
@@ -106,7 +106,7 @@ def configure(keymap):
 
     # USER0-F : ウインドウのアクティブ化
     if 1:
-        keymap_global[ "U0-F" ] = keymap.command_ActivateWindow( "cfiler.exe", "CfilerWindowClass" )
+        keymap_global[ "U0-F" ] = keymap.ActivateWindowCommand( "cfiler.exe", "CfilerWindowClass" )
 
 
     # USER0-E : アクティブ化するか、まだであれば起動する
@@ -119,7 +119,7 @@ def configure(keymap):
                 wnd = wnd.getLastActivePopup()
                 wnd.setForeground()
             else:
-                executeFunc = keymap.command_ShellExecute( None, "notepad.exe", "", "" )
+                executeFunc = keymap.ShellExecuteCommand( None, "notepad.exe", "", "" )
                 executeFunc()
 
         keymap_global[ "U0-E" ] = command_ActivateOrExecuteNotepad
@@ -164,14 +164,14 @@ def configure(keymap):
             def popApplicationList():
 
                 applications = [
-                    ( "Notepad", keymap.command_ShellExecute( None, "notepad.exe", "", "" ) ),
-                    ( "Paint", keymap.command_ShellExecute( None, "mspaint.exe", "", "" ) ),
+                    ( "Notepad", keymap.ShellExecuteCommand( None, "notepad.exe", "", "" ) ),
+                    ( "Paint", keymap.ShellExecuteCommand( None, "mspaint.exe", "", "" ) ),
                 ]
 
                 websites = [
-                    ( "Google", keymap.command_ShellExecute( None, "https://www.google.co.jp/", "", "" ) ),
-                    ( "Facebook", keymap.command_ShellExecute( None, "https://www.facebook.com/", "", "" ) ),
-                    ( "Twitter", keymap.command_ShellExecute( None, "https://twitter.com/", "", "" ) ),
+                    ( "Google", keymap.ShellExecuteCommand( None, "https://www.google.co.jp/", "", "" ) ),
+                    ( "Facebook", keymap.ShellExecuteCommand( None, "https://www.facebook.com/", "", "" ) ),
+                    ( "Twitter", keymap.ShellExecuteCommand( None, "https://twitter.com/", "", "" ) ),
                 ]
 
                 listers = [
@@ -192,16 +192,16 @@ def configure(keymap):
 
     # USER0-Alt-↑↓←→/Space/PageUp/PageDown : キーボードで擬似マウス操作
     if 1:
-        keymap_global[ "U0-A-Left"  ] = keymap.command_MouseMove(-10,0)
-        keymap_global[ "U0-A-Right" ] = keymap.command_MouseMove(10,0)
-        keymap_global[ "U0-A-Up"    ] = keymap.command_MouseMove(0,-10)
-        keymap_global[ "U0-A-Down"  ] = keymap.command_MouseMove(0,10)
-        keymap_global[ "D-U0-A-Space" ] = keymap.command_MouseButtonDown('left')
-        keymap_global[ "U-U0-A-Space" ] = keymap.command_MouseButtonUp('left')
-        keymap_global[ "U0-A-PageUp" ] = keymap.command_MouseWheel(1.0)
-        keymap_global[ "U0-A-PageDown" ] = keymap.command_MouseWheel(-1.0)
-        keymap_global[ "U0-A-Home" ] = keymap.command_MouseHorizontalWheel(-1.0)
-        keymap_global[ "U0-A-End" ] = keymap.command_MouseHorizontalWheel(1.0)
+        keymap_global[ "U0-A-Left"  ] = keymap.MouseMoveCommand(-10,0)
+        keymap_global[ "U0-A-Right" ] = keymap.MouseMoveCommand(10,0)
+        keymap_global[ "U0-A-Up"    ] = keymap.MouseMoveCommand(0,-10)
+        keymap_global[ "U0-A-Down"  ] = keymap.MouseMoveCommand(0,10)
+        keymap_global[ "D-U0-A-Space" ] = keymap.MouseButtonDownCommand('left')
+        keymap_global[ "U-U0-A-Space" ] = keymap.MouseButtonUpCommand('left')
+        keymap_global[ "U0-A-PageUp" ] = keymap.MouseWheelCommand(1.0)
+        keymap_global[ "U0-A-PageDown" ] = keymap.MouseWheelCommand(-1.0)
+        keymap_global[ "U0-A-Home" ] = keymap.MouseHorizontalWheelCommand(-1.0)
+        keymap_global[ "U0-A-End" ] = keymap.MouseHorizontalWheelCommand(1.0)
 
 
     # sendMessageでシステムコマンドを実行
@@ -220,7 +220,7 @@ def configure(keymap):
 
     # 文字入力のテスト
     if 1:
-        keymap_global[ "U0-H" ] = keymap.command_InputText( "Hello / こんにちは" )
+        keymap_global[ "U0-H" ] = keymap.InputTextCommand( "Hello / こんにちは" )
 
 
     # Editボックスで、C-Dを削除に当てるなど

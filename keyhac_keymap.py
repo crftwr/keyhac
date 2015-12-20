@@ -1476,7 +1476,7 @@ class Keymap(ckit.TextWindow):
     #  キーを入力する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_InputKey( self, *keys ):
+    def InputKeyCommand( self, *keys ):
 
         def _inputKey():
 
@@ -1493,6 +1493,11 @@ class Keymap(ckit.TextWindow):
 
         return _inputKey
 
+    def command_InputKey( self, *keys ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_InputKey","InputKeyCommand") )
+        return self.InputKeyCommand( *keys )
+
+
     ## 文字を入力する関数を返す
     #
     #  @param self -
@@ -1504,7 +1509,7 @@ class Keymap(ckit.TextWindow):
     #  文字列を入力する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_InputText( self, s ):
+    def InputTextCommand( self, s ):
 
         def _inputText():
 
@@ -1518,6 +1523,11 @@ class Keymap(ckit.TextWindow):
             self.endInput()
 
         return _inputText
+
+    def command_InputText( self, s ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_InputText","InputTextCommand") )
+        return self.InputTextCommand( s )
+
 
     ## キーボードマクロの記録を開始する
     #
@@ -1639,7 +1649,7 @@ class Keymap(ckit.TextWindow):
     #  マウスカーソルを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseMove( self, delta_x, delta_y ):
+    def MouseMoveCommand( self, delta_x, delta_y ):
 
         def _mouseMove():
 
@@ -1656,6 +1666,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseMove
 
+    def command_MouseMove( self, delta_x, delta_y ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseMove","MouseMoveCommand") )
+        return self.MouseMoveCommand( delta_x, delta_y )
+
+
     ## マウスのボタンを擬似的に押す関数を返す
     #
     #  @param self    -
@@ -1667,7 +1682,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的に押す機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonDown( self, button='left' ):
+    def MouseButtonDownCommand( self, button='left' ):
 
         def _mouseButtonDown():
 
@@ -1694,6 +1709,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseButtonDown
 
+    def command_MouseButtonDown( self, button='left' ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonDown","MouseButtonDownCommand") )
+        return self.MouseButtonDownCommand( button )
+
+
     ## マウスのボタンを擬似的に離す関数を返す
     #
     #  @param self    -
@@ -1705,7 +1725,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的に離す機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonUp( self, button='left' ):
+    def MouseButtonUpCommand( self, button='left' ):
 
         def _mouseButtonUp():
 
@@ -1732,6 +1752,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseButtonUp
 
+    def command_MouseButtonUp( self, button='left' ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonUp","MouseButtonUpCommand") )
+        return self.MouseButtonUpCommand( button )
+
+
     ## マウスのボタンを擬似的にクリックする関数を返す
     #
     #  @param self    -
@@ -1743,7 +1768,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのボタンを擬似的にクリックする機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseButtonClick( self, button='left' ):
+    def MouseButtonClickCommand( self, button='left' ):
 
         def _mouseButtonClick():
 
@@ -1770,6 +1795,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseButtonClick
 
+    def command_MouseButtonClick( self, button='left' ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonClick","MouseButtonClickCommand") )
+        return self.MouseButtonClickCommand( button )
+
+
     ## マウスのホイールを擬似的に回転する関数を返す
     #
     #  @param self    -
@@ -1781,7 +1811,7 @@ class Keymap(ckit.TextWindow):
     #  マウスのホイールを擬似的に回転する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseWheel( self, wheel ):
+    def MouseWheelCommand( self, wheel ):
 
         def _mouseWheel():
 
@@ -1797,6 +1827,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseWheel
 
+    def command_MouseWheel( self, wheel ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseWheel","MouseWheelCommand") )
+        return self.MouseWheelCommand( wheel )
+
+
     ## マウスの水平ホイールを擬似的に回転する関数を返す
     #
     #  @param self    -
@@ -1808,7 +1843,7 @@ class Keymap(ckit.TextWindow):
     #  マウスの水平ホイールを擬似的に回転する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MouseHorizontalWheel( self, wheel ):
+    def MouseHorizontalWheelCommand( self, wheel ):
 
         def _mouseHorizontalWheel():
 
@@ -1824,6 +1859,11 @@ class Keymap(ckit.TextWindow):
 
         return _mouseHorizontalWheel
 
+    def command_MouseHorizontalWheel( self, wheel ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseHorizontalWheel","MouseHorizontalWheelCommand") )
+        return self.MouseHorizontalWheelCommand( wheel )
+
+
     ## フォーカスされているウインドウを移動させる関数を返す
     #
     #  @param self    -
@@ -1836,7 +1876,7 @@ class Keymap(ckit.TextWindow):
     #  ウインドウを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MoveWindow( self, delta_x, delta_y ):
+    def MoveWindowCommand( self, delta_x, delta_y ):
 
         def _moveWindow():
             wnd_top = self.getTopLevelWindow()
@@ -1849,6 +1889,11 @@ class Keymap(ckit.TextWindow):
 
         return _moveWindow
 
+    def command_MoveWindow( self, delta_x, delta_y ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MoveWindow","MoveWindowCommand") )
+        return self.MoveWindowCommand( delta_x, delta_y )
+
+
     ## フォーカスされているウインドウをモニターの端にそろえるように移動させる関数を返す
     #
     #  @param self      -
@@ -1860,7 +1905,7 @@ class Keymap(ckit.TextWindow):
     #  ウインドウを移動させる機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_MoveWindow_MonitorEdge( self, direction ):
+    def MoveWindowToMonitorEdgeCommand( self, direction ):
 
         def _intersectRect( rect1, rect2 ):
             intersect = list(rect1)
@@ -1921,6 +1966,11 @@ class Keymap(ckit.TextWindow):
 
         return _moveWindowEdge
 
+    def command_MoveWindow_MonitorEdge( self, direction ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MoveWindow_MonitorEdge","MoveWindowToMonitorEdgeCommand") )
+        return self.MoveWindowToMonitorEdgeCommand( direction )
+
+
     ## ウインドウをアクティブ化する関数を返す
     #
     #  @param self    -
@@ -1951,7 +2001,7 @@ class Keymap(ckit.TextWindow):
     #  ウインドウをアクティブ化する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
     #
-    def command_ActivateWindow( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
+    def ActivateWindowCommand( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
 
         def _activateWindow():
 
@@ -1972,6 +2022,11 @@ class Keymap(ckit.TextWindow):
             pyauto.Window.enum( callback, None )
 
         return _activateWindow
+
+    def command_ActivateWindow( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_ActivateWindow","ActivateWindowCommand") )
+        return self.ActivateWindowCommand( exe_name, class_name, window_text, check_func, force )
+
 
     ## プログラムを起動する関数を返す
     #
@@ -2008,7 +2063,7 @@ class Keymap(ckit.TextWindow):
     #
     #  プログラムの起動は、サブスレッドの中で行われます。
     #
-    def command_ShellExecute( self, verb, filename, param, directory, swmode=None ):
+    def ShellExecuteCommand( self, verb, filename, param, directory, swmode=None ):
 
         def _shellExecute():
 
@@ -2022,6 +2077,10 @@ class Keymap(ckit.TextWindow):
             ckit.JobQueue.defaultQueue().enqueue(job_item)
 
         return _shellExecute
+
+    def command_ShellExecute( self, verb, filename, param, directory, swmode=None ):
+        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_ShellExecute","ShellExecuteCommand") )
+        return self.ShellExecuteCommand( verb, filename, param, directory, swmode )
 
 
     ## リストウインドウを開き結果を取得する
@@ -2193,7 +2252,7 @@ class Keymap(ckit.TextWindow):
         def jobPasteFinished(job_item):
             ckit.setClipboardText(text)
             if paste:
-                self.hookCall( self.command_InputKey("C-V") )
+                self.hookCall( self.InputKeyCommand("C-V") )
 
         job_item = ckit.JobItem( jobPaste, jobPasteFinished )
         ckit.JobQueue.defaultQueue().enqueue(job_item)

@@ -298,10 +298,10 @@
         .. code-block:: python
 
             # USER0-↑↓←→ : 10pixel単位のウインドウの移動
-            keymap_global[ "U0-Left"  ] = keymap.command_MoveWindow( -10, 0 )
-            keymap_global[ "U0-Right" ] = keymap.command_MoveWindow( +10, 0 )
-            keymap_global[ "U0-Up"    ] = keymap.command_MoveWindow( 0, -10 )
-            keymap_global[ "U0-Down"  ] = keymap.command_MoveWindow( 0, +10 )
+            keymap_global[ "U0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
+            keymap_global[ "U0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
+            keymap_global[ "U0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
+            keymap_global[ "U0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
 
         ここでは、先ほど defineModifier を使って定義した、ユーザモディファイア0番
@@ -345,8 +345,8 @@
                 print "Hello World!"
 
             keymap_notepad[ "C-A" ] = command_HelloWorld
-            keymap_notepad[ "C-F" ] = keymap.command_InputText( u"qwerty" )
-            keymap_notepad[ "C-G" ] = keymap.command_InputText( u"テストTESTテスト" )
+            keymap_notepad[ "C-F" ] = keymap.InputTextCommand( u"qwerty" )
+            keymap_notepad[ "C-G" ] = keymap.InputTextCommand( u"テストTESTテスト" )
 
 
         このように任意の呼び出し可能オブジェクトを割り当てることが出来ます。
