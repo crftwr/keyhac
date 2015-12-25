@@ -53,23 +53,23 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         def onDebugOn(info):
             self.debug = True
             self.keymap.enableDebug(self.debug)
-            print( "内部ログの出力を ON にしました" )
+            print( ckit.strings["log_internal_log_output_enabled"] )
             print( "" )
 
         def onDebugOff(info):
             self.debug = False
             self.keymap.enableDebug(self.debug)
-            print( "内部ログの出力を OFF にしました" )
+            print( ckit.strings["log_internal_log_output_disabled"] )
             print( "" )
         
         def onHookOn(info):
             self.keymap.enableHook(True)
-            print( "フックを ON にしました" )
+            print( ckit.strings["log_hook_enabled"] )
             print( "" )
 
         def onHookOff(info):
             self.keymap.enableHook(False)
-            print( "フックを OFF にしました" )
+            print( ckit.strings["log_hook_disabled"] )
             print( "" )
 
         def onRecordStart(info):
@@ -88,7 +88,7 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
                 pyauto.shellExecute( None, help_path, "", "" )
 
             def jobHelpFinished(job_item):
-                print( "Helpを開きました" )
+                print( ckit.strings["log_help_opened"] )
                 print( "" )
             
             job_item = ckit.JobItem( jobHelp, jobHelpFinished )
@@ -100,40 +100,40 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         
         menu_items = []
         
-        menu_items.append( ( "設定のリロード(&R)", onReload ) )
+        menu_items.append( ( ckit.strings["menu_reload_config"], onReload ) )
 
-        menu_items.append( ( "設定の編集(&E)", onEdit ) )
+        menu_items.append( ( ckit.strings["menu_edit_config"], onEdit ) )
         
         if self.debug:
-            menu_items.append( ( "内部ログ OFF(&D)", onDebugOff ) )
+            menu_items.append( ( ckit.strings["menu_internal_log_output_disable"], onDebugOff ) )
         else:
-            menu_items.append( ( "内部ログ ON(&D)", onDebugOn ) )
+            menu_items.append( ( ckit.strings["menu_internal_log_output_enable"], onDebugOn ) )
 
         menu_items.append( ( "-", None ) )
         
         if self.keymap.hook_enabled:
-            menu_items.append( ( "フック OFF(&K)", onHookOff ) )
+            menu_items.append( ( ckit.strings["menu_hook_disable"], onHookOff ) )
         else:
-            menu_items.append( ( "フック ON(&K)", onHookOn ) )
+            menu_items.append( ( ckit.strings["menu_hook_enable"], onHookOn ) )
 
         menu_items.append( ( "-", None ) )
 
         if self.keymap.record_status in ( None, "recorded" ):
-            menu_items.append( ( "キー操作 記録開始(&S)", onRecordStart ) )
+            menu_items.append( ( ckit.strings["menu_start_recording"], onRecordStart ) )
         elif self.keymap.record_status in ( "recording", ):
-            menu_items.append( ( "キー操作 記録終了(&S)", onRecordStop ) )
+            menu_items.append( ( ckit.strings["menu_stop_recording"], onRecordStop ) )
 
         menu_items.append( ( "-", None ) )
 
-        menu_items.append( ( "端末のクリア(&C)", onClearConsole ) )
+        menu_items.append( ( ckit.strings["menu_clear_console"], onClearConsole ) )
             
         menu_items.append( ( "-", None ) )
 
-        menu_items.append( ( "ヘルプ(&H)", onHelp ) )
+        menu_items.append( ( ckit.strings["menu_help"], onHelp ) )
 
         menu_items.append( ( "-", None ) )
 
-        menu_items.append( ( "keyhacの終了(&X)", onExit ) )
+        menu_items.append( ( ckit.strings["menu_exit"], onExit ) )
 
         x, y = pyauto.Input.getCursorPos()
         self.popupMenu( x, y, menu_items )

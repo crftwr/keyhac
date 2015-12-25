@@ -599,7 +599,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         self.keymap[key_cond] = value
@@ -609,7 +609,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         return self.keymap[key_cond]
@@ -618,7 +618,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         del self.keymap[key_cond]
@@ -800,7 +800,7 @@ class Keymap(ckit.TextWindow):
         self.editor = "notepad.exe"
         self.quote_mark = "> "
         self.cblisters = [
-            ( "クリップボード", self.clipboard_history )
+            ( ckit.strings["title_clipboard"], self.clipboard_history )
             ]
 
         ckit.CronTable.defaultCronTable().cancel()
@@ -896,7 +896,7 @@ class Keymap(ckit.TextWindow):
     def _recordKey( self, vk, up ):
         if self.record_status=="recording":
             if len(self.record_seq)>=1000:
-                print( "ERROR : キーボードマクロが長すぎます" )
+                print( ckit.strings["error_macro_too_long"] )
                 return
             self.record_seq.append( ( vk, up ) )
 
@@ -957,7 +957,7 @@ class Keymap(ckit.TextWindow):
                     return False
 
         except Exception as e:
-            print( "ERROR : _onKeyDown failed" )
+            print( ckit.strings["error_unexpected"], "_onKeyDown" )
             print( e )
             traceback.print_exc()
 
@@ -1026,7 +1026,7 @@ class Keymap(ckit.TextWindow):
                     self._keyAction(key)
 
         except Exception as e:
-            print( "ERROR : _onKeyUp failed" )
+            print( ckit.strings["error_unexpected"], "_onKeyUp" )
             print( e )
             traceback.print_exc()
 
@@ -1077,8 +1077,8 @@ class Keymap(ckit.TextWindow):
             self.wnd = wnd
 
         except Exception as e:
+            print( ckit.strings["error_unexpected"], "_focusChanged" )
             print( e )
-            print( "ERROR : _focusChanged failed" )
             print( "      : %s : %s : %s" % ( wnd.getProcessName(), wnd.getClassName(), wnd.getText() ) )
             traceback.print_exc()
 
@@ -1134,14 +1134,14 @@ class Keymap(ckit.TextWindow):
             if type(src)==str:
                 src = KeyCondition.strToVk(src)
         except:
-            print( "ERROR : 引数 src の書式が間違えています :", src )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("src",), src )
             return
 
         try:
             if type(dst)==str:
                 dst = KeyCondition.strToVk(dst)
         except:
-            print( "ERROR : 引数 dst の書式が間違えています :", dst )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("dst",), dst )
             return
 
         self.vk_vk_map[src] = dst
@@ -1167,7 +1167,7 @@ class Keymap(ckit.TextWindow):
             if type(vk)==str:
                 vk = KeyCondition.strToVk(vk)
         except:
-            print( "ERROR : 引数 vk の書式が間違えています :", vk )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("vk",), vk )
             return
 
         try:
@@ -1176,14 +1176,14 @@ class Keymap(ckit.TextWindow):
             else:
                 raise TypeError
         except:
-            print( "ERROR : 引数 mod の書式が間違えています :", mod )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("mod",), mod )
             return
 
         try:
             if vk in self.vk_mod_map:
                 raise ValueError
         except:
-            print( "ERROR : すでにモディファイアキーとして定義されています :", vk_org )
+            print( ckit.strings["error_already_defined_as_modifier"], vk_org )
             return
 
         self.vk_mod_map[vk] = mod
@@ -1350,14 +1350,7 @@ class Keymap(ckit.TextWindow):
             self.sanity_check_state = state
             if self.sanity_check_count >= 4:
                 print( "" )
-                print( "-----------------------------------------" )
-                print( "キーフック強制解除を検出しました。" )
-                print( "自動的にフックの再設定を行います。" )
-                print( "" )
-                print( "キーフックの強制解除が頻発する場合、時間のかかる処理(300ミリ秒以上)が" )
-                print( "メインスレッドで呼び出されていないかを、確認してください。" )
-                print( "時間のかかる処理は JobQueue/JobItem を使ってサブスレッドに追い出してください。" )
-                print( "-----------------------------------------" )
+                print( ckit.strings["log_key_hook_force_cancellation_detected"] )
                 print( "" )
                 keyhac_hook.hook.reset()
                 self.sanity_check_count = 0
@@ -1494,7 +1487,7 @@ class Keymap(ckit.TextWindow):
         return _inputKey
 
     def command_InputKey( self, *keys ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_InputKey","InputKeyCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_InputKey","InputKeyCommand") )
         return self.InputKeyCommand( *keys )
 
 
@@ -1525,7 +1518,7 @@ class Keymap(ckit.TextWindow):
         return _inputText
 
     def command_InputText( self, s ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_InputText","InputTextCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_InputText","InputTextCommand") )
         return self.InputTextCommand( s )
 
 
@@ -1536,8 +1529,8 @@ class Keymap(ckit.TextWindow):
     def command_RecordStart(self):
         self.record_seq = []
         self.record_status = "recording"
-        print( "キーボードマクロ : 記録開始" )
-        self.popBalloon( "Record", "Recording Started", 3000 )
+        print( ckit.strings["log_macro_recording_started"] )
+        self.popBalloon( "Record", ckit.strings["balloon_macro_recording_started"], 3000 )
 
     ## キーボードマクロの記録を終了する
     #
@@ -1574,8 +1567,8 @@ class Keymap(ckit.TextWindow):
 
             self.record_status="recorded"
 
-            print( "キーボードマクロ : 記録終了" )
-            self.popBalloon( "Record", "Recording Stopped", 3000 )
+            print( ckit.strings["log_macro_recording_stopped"] )
+            self.popBalloon( "Record", ckit.strings["balloon_macro_recording_stopped"], 3000 )
 
     ## キーボードマクロの記録を開始または終了する
     #
@@ -1594,8 +1587,8 @@ class Keymap(ckit.TextWindow):
     def command_RecordClear(self):
         self.record_seq = None
         self.record_status = None
-        print( "キーボードマクロ : 消去" )
-        self.popBalloon( "Record", "Record Cleared", 3000 )
+        print( ckit.strings["log_macro_recording_cleared"] )
+        self.popBalloon( "Record", ckit.strings["balloon_macro_recording_cleared"], 3000 )
 
     ## キーボードマクロを再生する
     #
@@ -1605,7 +1598,7 @@ class Keymap(ckit.TextWindow):
 
         if self.record_status=="recorded":
 
-            print( "キーボードマクロ : 再生" )
+            print( ckit.strings["log_macro_replay"] )
 
             # モディファイアを離す
             modifier = self.modifier
@@ -1667,7 +1660,7 @@ class Keymap(ckit.TextWindow):
         return _mouseMove
 
     def command_MouseMove( self, delta_x, delta_y ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseMove","MouseMoveCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseMove","MouseMoveCommand") )
         return self.MouseMoveCommand( delta_x, delta_y )
 
 
@@ -1700,7 +1693,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightDown(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1710,7 +1703,7 @@ class Keymap(ckit.TextWindow):
         return _mouseButtonDown
 
     def command_MouseButtonDown( self, button='left' ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonDown","MouseButtonDownCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseButtonDown","MouseButtonDownCommand") )
         return self.MouseButtonDownCommand( button )
 
 
@@ -1743,7 +1736,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightUp(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1753,7 +1746,7 @@ class Keymap(ckit.TextWindow):
         return _mouseButtonUp
 
     def command_MouseButtonUp( self, button='left' ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonUp","MouseButtonUpCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseButtonUp","MouseButtonUpCommand") )
         return self.MouseButtonUpCommand( button )
 
 
@@ -1786,7 +1779,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightClick(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1796,7 +1789,7 @@ class Keymap(ckit.TextWindow):
         return _mouseButtonClick
 
     def command_MouseButtonClick( self, button='left' ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseButtonClick","MouseButtonClickCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseButtonClick","MouseButtonClickCommand") )
         return self.MouseButtonClickCommand( button )
 
 
@@ -1828,7 +1821,7 @@ class Keymap(ckit.TextWindow):
         return _mouseWheel
 
     def command_MouseWheel( self, wheel ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseWheel","MouseWheelCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseWheel","MouseWheelCommand") )
         return self.MouseWheelCommand( wheel )
 
 
@@ -1860,7 +1853,7 @@ class Keymap(ckit.TextWindow):
         return _mouseHorizontalWheel
 
     def command_MouseHorizontalWheel( self, wheel ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MouseHorizontalWheel","MouseHorizontalWheelCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MouseHorizontalWheel","MouseHorizontalWheelCommand") )
         return self.MouseHorizontalWheelCommand( wheel )
 
 
@@ -1890,7 +1883,7 @@ class Keymap(ckit.TextWindow):
         return _moveWindow
 
     def command_MoveWindow( self, delta_x, delta_y ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MoveWindow","MoveWindowCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MoveWindow","MoveWindowCommand") )
         return self.MoveWindowCommand( delta_x, delta_y )
 
 
@@ -1967,7 +1960,7 @@ class Keymap(ckit.TextWindow):
         return _moveWindowEdge
 
     def command_MoveWindow_MonitorEdge( self, direction ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_MoveWindow_MonitorEdge","MoveWindowToMonitorEdgeCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_MoveWindow_MonitorEdge","MoveWindowToMonitorEdgeCommand") )
         return self.MoveWindowToMonitorEdgeCommand( direction )
 
 
@@ -2024,7 +2017,7 @@ class Keymap(ckit.TextWindow):
         return _activateWindow
 
     def command_ActivateWindow( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_ActivateWindow","ActivateWindowCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_ActivateWindow","ActivateWindowCommand") )
         return self.ActivateWindowCommand( exe_name, class_name, window_text, check_func, force )
 
 
@@ -2079,7 +2072,7 @@ class Keymap(ckit.TextWindow):
         return _shellExecute
 
     def command_ShellExecute( self, verb, filename, param, directory, swmode=None ):
-        print( 'Warning : "%s" is deprecated. Use "%s" instead.' % ("command_ShellExecute","ShellExecuteCommand") )
+        print( ckit.strings["warning_api_deprecated"] % ("command_ShellExecute","ShellExecuteCommand") )
         return self.ShellExecuteCommand( verb, filename, param, directory, swmode )
 
 
@@ -2105,7 +2098,7 @@ class Keymap(ckit.TextWindow):
         else:
             focus_wnd = pyauto.Window.getFocus()
             if not focus_wnd:
-                print( "ERROR : focus window not found" )
+                print( ckit.strings["error_focus_not_found"] )
                 return
             focus_client_rect = focus_wnd.getClientRect()
             pos1 = focus_wnd.clientToScreen( focus_client_rect[0], focus_client_rect[1] )
@@ -2302,7 +2295,7 @@ class Keymap(ckit.TextWindow):
     ## config.py を再読み込みする
     def command_ReloadConfig(self):
         self.configure()
-        print( "設定をリロードしました" )
+        print( ckit.strings["log_config_reloaded"] )
         print( "" )
 
     ## config.py を編集する
@@ -2312,7 +2305,7 @@ class Keymap(ckit.TextWindow):
             self.editConfigFile()
 
         def jobEditConfigFinished(job_item):
-            print( "設定ファイルのエディタを起動しました" )
+            print( ckit.strings["log_config_editor_launched"] )
             print( "" )
 
         job_item = ckit.JobItem( jobEditConfig, jobEditConfigFinished )

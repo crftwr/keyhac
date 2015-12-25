@@ -5,6 +5,10 @@ import shutil
 import zipfile
 import hashlib
 
+sys.path[0:0] = [
+    os.path.join( os.path.split(sys.argv[0])[0], '..' ),
+    ]
+
 import keyhac_resource
 
 # makeoption.py というファイルを作れば、

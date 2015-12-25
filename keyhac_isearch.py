@@ -62,7 +62,7 @@ class IncrementalSearch:
                     # migemo_re_pattern のなかに | や + などの正規表現の特殊文字が入っていたときはエラーになってしまう。
                     # 例外が発生したときに True を返すことで無理やり対応するが、正しい対応方法を模索する。
                     if 0:
-                        print( "正規表現のエラー :", e )
+                        print( ckit.strings["error_regex"], e )
                     return True
 
                 self.migemo_pattern = pattern

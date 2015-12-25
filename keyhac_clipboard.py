@@ -183,16 +183,8 @@ class cblister_ClipboardHistory:
             keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
 
             if self.debug:
-
-                message = ( 
-                    "----------------------------------\n"
-                    "clipboard content mismatch\n"
-                    "re-installed clipboard hook\n"
-                    "----------------------------------"
-                    )
-
                 print( "" )
-                print( message )
+                print( ckit.strings["log_clipboard_content_mismatch_detected"] )
                 print( "" )
 
             self.insane_count = 0
