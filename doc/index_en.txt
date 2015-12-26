@@ -18,7 +18,7 @@ About this software
 
     This software is an application to customize your keyboard operations using Python script language.
 
-	Using this software, you can customize the behavior of various applications flexibly.
+    Using this software, you can customize the behavior of various applications flexibly.
 
     **Features**
 
@@ -39,91 +39,88 @@ About this software
 
 
 
-使い方
+Usage
 =======
 
-    keyhac を起動すると、タスクトレイにキーボードのキーの形をしたアイコンが
-    表示されます。
+    Once you launched keyhac, you will see an icon in tasktray.
 
         .. image:: image/tasktray.png
 
-    タスクトレイのアイコンを左クリックすると、keyhac のコンソールウインドウ
-    が表示されます。このウインドウには、keyhac 内蔵の Python インタプリタの
-    出力が表示されます。
+    By left-clicking the tasktray icon, you can open the console window of keyhac.
+    In this window, you can see the log output of Python interpreter which is embeded in keyhac.
 
         .. image:: image/console.png
 
-    タスクトレイのアイコンを右クリックすると、メニューがポップアップします。
+    By right-clicking the tasktray icon, you will see the pop-up menu.
 
-        ==========================  =================================================
-           項目の名前                機能
-        ==========================  =================================================
-         設定のリロード              設定ファイル(config.py)をリロードします。
-         設定の編集                  設定ファイル(config.py)を編集します。
-         内部ログ ON/OFF             keyhacの詳細なログ出力を有効または無効にします。
-         フック ON/OFF               キーフックを一時的に有効または無効にします。
-         キー操作 記録開始/終了      キーボードマクロの記録を開始または終了します。
-         端末のクリア                コンソールウインドウのログを消去します。
-         ヘルプ                      説明書を開きます。
-         keyhacの終了                keyhacを終了します。
-        ==========================  =================================================
+        =========================================  =================================================
+         Item name                                  Feature
+        =========================================  =================================================
+         Reload config file                         Reload the config.py file.
+         Edit config file                           Edit the config.py file.
+         Enable/Disable the Internal log output     Enable or disable the detailed log output.
+         Enable/Disable the Hook                    Enable or disable the key hook tentatively.
+         Start/Stop recording key input             Start or stop the keyboard macro recording.
+         Clear console                              Clear the log of console window.
+         Help                                       Open the help document.
+         Exit                                       Terminate the keyhac.
+        =========================================  =================================================
 
 
-    Ctrl-Shift-Z を押すと、クリップボードの履歴をリスト表示されます。
-    キーアサインは、config.py でカスタマイズできます。
+    Pressing Ctrl-Shift-Z, you can open the clipboard history list.
+    This key assign can be configured by config.py.
 
         .. image:: image/clipboard_history.png
 
 
-    クリップボード履歴リストでは、以下のようにキーアサインされています。
+    In the clipboard history list, you can use following key assigns,
 
         ================  ============================================================
-         キー                  機能
+         Key               Feature
         ================  ============================================================
-         ↑/↓                 選択位置を変更します。
-         Enter                 選択位置のテキストを貼り付けます。
-         Ctrl+Enter            選択位置のテキストを、引用記号付で貼り付けます。
-         Shift+Enter           選択位置のテキストを、クリップボードに格納します。
-         Esc                   ウインドウを閉じます。
-         F                     インクリメンタルサーチを開始します。
-         Delete                選択位置のアイテムを削除します。
-         ←/→                 クリップボード/定型文/日時を切り替えます。
+         Up/Down           Change the selection.
+         Enter             Paste the text of current selection.
+         Ctrl+Enter        Paste the text of current selection with quote mark.
+         Shift+Enter       Store the text of current selection in clipboard.
+         Esc               Close the list window.
+         F                 Start the incremental search.
+         Delete            Delete the list item.
+         Left/Right        Switch between clipboard/fixed phrases/date-time.
         ================  ============================================================
 
 
 
-インクリメンタルサーチ
+Incremental search
 -------------------------
 
-    クリップボード履歴リストのなかのインクリメンタルサーチでは、* や ? のワイルドカードを使用することが出来ます。
+    During the incremental seach in clipboard history list, you can use wild-card such as "*" and "?".
 
-    インクリメンタルサーチ中のキーアサイン
-
+    Key assign during the incremental search
 
        ================  ===========================================================================
-        キー                解説
+        Key               Feature
        ================  ===========================================================================
-        ↑/↓               次の検索条件に合うアイテムに移動
-        Return              インクリメンタルサーチを終了
-        Esc                 インクリメンタルサーチを終了
+        Up/Down           Move to next/previous item which meets the search condition.
+        Return            End incremental search
+        Esc               End incremental search
        ================  ===========================================================================
 
 
     **Migemo**
 
-        Migemo はローマ字を入力して日本語をインクリメンタル検索するためのライブラリです。
+        Migemo is a library for incremental search Japanese characters using Roman-ji.
 
-        Migemo の入力方法の詳細については、Migemoの本家サイト ( http://www.kaoriya.net/software/cmigemo/ ) を参照してください。
+        For the detailed input method of Migemo, please refer the official website of Migemo ( http://www.kaoriya.net/software/cmigemo/ ).
 
-        Migemoを使用する場合は、別途辞書ファイルを入手し、以下のように配置しておく必要があります。
+        If you want to use Migemo, you need to obtain the dictionary files, and put them as follows.
 
-            - (keyhacのインストール場所)/dict/migemo-dict
-            - (keyhacのインストール場所)/dict/han2zen.dat
-            - (keyhacのインストール場所)/dict/zen2han.dat
-            - (keyhacのインストール場所)/dict/hira2kata.dat
-            - (keyhacのインストール場所)/dict/roma2hira.dat
+            - (keyhac install directory)/dict/migemo-dict
+            - (keyhac install directory)/dict/han2zen.dat
+            - (keyhac install directory)/dict/zen2han.dat
+            - (keyhac install directory)/dict/hira2kata.dat
+            - (keyhac install directory)/dict/roma2hira.dat
 
-        辞書ファイルは、C/Migemo のバイナリパッケージに含まれています。
+        The dictionary files are included in the binary package of C/Migemo,
 
         http://cmigemo.googlecode.com/files/cmigemo-default-win64-20110227.zip
 
