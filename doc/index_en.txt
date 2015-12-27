@@ -2,12 +2,12 @@
  "keyhac" - Python powered key customization tool
 ====================================================
 
-:著作者: craftware
-:連絡先: craftware@gmail.com
-:開発環境: Python + VisualC++2015
-:種別: Free software
-:動作環境: Windows XP/Vista/7/8/10  32bit/64bit
-:Webサイト: http://sites.google.com/site/craftware/
+:Author: craftware
+:Contact: craftware@gmail.com
+:Software type: Free software
+:Supported OS: Windows XP/Vista/7/8/10  32bit/64bit
+:Dev env: Python + VisualC++2015
+:Website: http://sites.google.com/site/craftware/
 
 .. contents::
 
@@ -125,63 +125,61 @@ Incremental search
         http://cmigemo.googlecode.com/files/cmigemo-default-win64-20110227.zip
 
 
-インストール/アンインストール
+Install/Uninstall
 ==============================
 
-インストール
+Install
 -------------
 
-    配布されたファイルを解凍すると以下のファイルとフォルダが作成されます。
+    Extracting the distributed file, following files and directories will be created.
 
         ================  ==========================================================
-           名前            解説
+         Name              Comment
         ================  ==========================================================
-         keyhac.exe        プログラム本体
-         python34.dll      Pythonランタイムライブラリ
-         library.zip       スクリプトが格納されているアーカイブ
-         _config.py        デフォルト設定ファイル
-         readme.txt        最初に読む文書
-         src.zip           ソースコード
-         lib/              実行に必要なライブラリが格納されているディレクトリ
-         extension/        ユーザサイドのスクリプトを入れるディレクトリ
-         theme/            テーマのデータが格納されているディレクトリ
-         dict/             Migemoの辞書を入れるディレクトリ
-         doc/              ドキュメントが格納されているディレクトリ
-         license/          コピーライト情報が格納されているディレクトリ
+         keyhac.exe        Application program main body
+         python34.dll      Python runtime library
+         library.zip       Python library archive
+         _config.py        Default configuration file
+         readme.txt        Document to read firstly
+         lib/              Directory which contains runtime library for execution
+         extension/        Directory to put user defined scripts
+         theme/            Directory which contains theme files
+         dict/             Directory to put Migemo dictionary files
+         doc/              Directory which contains document
+         license/          Directory which contains copy right information
         ================  ==========================================================
 
 
-    また、最初の起動で、アプリケーションデータディレクトリに自動的に以下のファイルが作られます。
-    ( XP では c:/Documents and Settings/Application Data/keyhac、Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
+    And with the initial launch, following files will be created automatically in the application data directory.
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
 
         ================  =================================================
-           名前            解説
+         Name              Comment
         ================  =================================================
-         config.py         設定ファイル
-         keyhac.ini        状態保存ファイル
+         config.py         Configuration file
+         keyhac.ini        State saving file
         ================  =================================================
 
+    If you put config.py and keyhac.ini in the same directory with keyhac.exe, those files will be used preferentially.
+    This is useful feature if you want to carry USB memory with keyhac installed.
 
-    config.py と keyhac.ini は、keyhac.exe と同じディレクトリにおいておけば、
-    そちらが優先的に使われます。USBメモリなどで持ち歩く際に便利な方法です。
 
-
-アンインストール
+Uninstall
 -----------------
 
-    インストールしたフォルダごと消してください。
+    To uninstall keyhac, please remove the directory you installed.
 
-    また、アプリケーションデータディレクトリを削除してください。
-    ( XP では c:/Documents and Settings/Application Data/keyhac、Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
+    And please remove the application data directory.
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
 
-    このソフトウェアはレジストリを使用しません。
+    This software doesn't use Windows's registory.
 
 
 
-使用しているサードパーティ製ライブラリについて
+3rd party libraries which are used in keyhac
 ===============================================
 
-    このソフトウェアでは、以下のライブラリを使用しています。
+    In this software, following libraries are used.
 
     Python Programming Language
         http://www.python.org/
@@ -193,145 +191,127 @@ Incremental search
         http://www.kaoriya.net/
 
 
-カスタマイズ
+Customize
 =============
 
-    keyhac はスクリプト言語 Python を内蔵しており、キーのカスタマイズの内容は
-    全て Python スクリプトとして記述します。
+    keyhac uses Python as a embeded scripting language, so you can describe all the key customization in Python script.
 
-    heyhac 一度起動すると、アプリケーションのデータディレクトリ
-    ( XP では c:/Documents and Settings/Application Data/keyhac、
-    Vista/7 では c:/Users/tom/AppData/Roaming/keyhac)
-    に config.py という名前の設定スクリプトが作られます。
-    このファイルをテキストエディタで編集します。
+    With the initial execution of keyhac, the configuration script name config.py will be created in the application data directory.
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
+    You can customize keyhac by editting this file by text editor.
 
-    config.py を編集するテキストエディタは何でもかまいませんが、Python のソース
-    コードを色付で表示してくれるものを推奨します。
+    You can choose any text editor to edit this config.py,
+    but it is recommended to use a text editor which can display Python source code with syntax highlighting.
 
 
-    **config.pyの全体の構造**
+    **Overall structure of config.py**
 
-        config.py には、以下のように、configure() という名前の関数を定義します。
-        configure()の引数には、Keymap オブジェクトが渡され、この Keymap オブジェクト
-        を操作することにより、キーをカスタマイズすることが出来ます。
+        In config.py, a function named configure() is defined as below.
+        Keymap object is passed as an argument of configure(). And you can define the key customization by manipulating the Keymap object.
 
-        **configure関数の定義**
+        **Definition of configure function**
 
         .. code-block:: python
 
             def configure(keymap):
 
 
-    **単純なキーの置き換え**
+    **Simple replacement of keys**
 
-        configure() の中で、keymap.replaceKey() メソッドを呼び出すことで、
-        キーの意味を置き換えることが出来ます。
+        By calling keymap.replaceKey() method in configure(), you can replace the meaning of keys.
 
-        **replaceKey()の例**
+        **Example of replaceKey()**
 
         .. code-block:: python
 
-            # キーの単純な置き換え
+            # Simple key replacement
             keymap.replaceKey( "LWin", 235 )
             keymap.replaceKey( "RWin", "Space" )
 
-        ここでは、左Windowsキーを仮想キーコード235番、右WindowsキーをSpaceキー
-        に割り当てなおしています。
+        This example is re-assigning Left-Windows key to virtual keycode 235, Right-Windows key to Space key.
 
-        replaceKey() の引数としては、キーの名前をあらわす文字列と、仮想キーコード
-        のどちらも与えることが出来ます。
+        You can pass both key-name(string) and virtual-keycode(integer) as arguments of replaceKey().
 
-        replaceKey() によるキーの置き換えは、後述のほかの設定に影響を与えます。
+        The key replacements by replaceKey() affect to following other key customizations.
 
 
-    **モディファイアキーの追加**
+    **Adding modifier key**
 
-        configure() の中で、keymap.defineModifier() メソッドを呼び出すことで、
-        モディファイアキーを追加することが出来ます。
+        By calling keymap.defineModifier() method in configure(), you can define modifier keys additionally.
 
-        モディファイアキーとは、Shift や Ctrl のように、同時に押しておくことで、
-        キー入力に別の意味を持たせるためのキーのことです。
+        Modifier key is a key like Shift, Ctrl, which let key inputs have different meaning by pressing at the same time.
 
-        **defineModifier()の例**
+        **Example of defineModifier()**
 
         .. code-block:: python
 
-            # ユーザモディファイアキーの定義
+            # Defining modifier key
             keymap.defineModifier( 235, "User0" )
 
-        ここでは、先ほど replaceKey を使って左Windowsキーから置き換えた、
-        仮想キーコード 235 番を、ユーザモディファイア 0 番に割り当てています。
+        This example is defining virtual keycode 235 (which is replaced from Left-Windows key in previous example) as User-modifier-0.
 
-        標準では、Alt, Ctrl, Shift, Win の 4 つのモディファイアが存在していますが、
-        これらとは別に、上記のように ユーザモディファイアを最大4つまで定義する
-        ことが出来ます。( User0 ～ User3 )
+        By default, there are four modifier keys of Alt, Ctrl, Shift, Win, and you can define up to 4 user modifier keys ( User0 - User3 ) additionally.
 
 
-    **グローバルキーマップの定義**
+    **Defining global keymap**
 
-        keyhac では、ウインドウの種類ごとに、別々のキーマップを定義することが
-        出来ますが、まずは全てのウインドウに効果のある、グローバルキーマップ
-        の定義方法について説明します。
+        keyhac allows you to define separated keymaps by window types,
+        however this document explains firstly how to define the global keymap which affects all the windows.
 
-        グローバルキーマップを定義するには、keymap.defineWindowKeymap() を
-        引数を渡さずに呼び出します。
+        You can call keymap.defineWindowKeymap() method without arguments to define the global keymap.
 
-        **defineWindowKeymap()の例**
+        **Example of defineWindowKeymap()**
 
         .. code-block:: python
 
             keymap_global = keymap.defineWindowKeymap()
 
 
-        keymap.defineWindowKeymap() は、WindowKeymapオブジェクトを返します。
-        WindowKeymap オブジェクトに対して、以下のように辞書方式でキー入力
-        に対するアクションを割り当てます。
+        keymap.defineWindowKeymap() returns WindowKeymap object.
+        You can assign actions for key inputs by using WindowKeymap object in Python dictionary manner.
 
-        **アクションの割り当て方**
+        **How to assign actions**
 
         .. code-block:: python
 
-            # USER0-↑↓←→ : 10pixel単位のウインドウの移動
+            # USER0-Up/Down/Left/Right : Move window by 10pixel unit
             keymap_global[ "U0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
             keymap_global[ "U0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
             keymap_global[ "U0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
             keymap_global[ "U0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
-
-        ここでは、先ほど defineModifier を使って定義した、ユーザモディファイア0番
-        と、カーソルキーの同時押しに、アクティブなウインドウの移動を割り当てています。
+        This example is assigning the movement of active window to the combination of User-modifier-0 and directional keys.
 
 
-    **特定のウインドウのキーマップの定義**
+    **Defining keymap for specific window type**
 
-        defineWindowKeymap() に引数を渡すことによって、特定のウインドウのキーマップ
-        を定義することが出来ます。
+        By calling defineWindowKeymap() with arguments, you can define a keymap for specific window type.
 
-        **defineWindowKeymap()の例**
+        **Example of defineWindowKeymap()**
 
         .. code-block:: python
 
-            keymap_notepad = keymap.defineWindowKeymap( exe_name=u"notepad.exe", class_name=u"Edit" )
+            keymap_notepad = keymap.defineWindowKeymap( exe_name="notepad.exe", class_name="Edit" )
 
-        ここでは、プログラム名が notepad.exe であり、
-        ウインドウクラス名が Edit であるようなウインドウのキーマップを定義しています。
+        This example is defining a keymap for the window which has program name "notepad.exe" and window class name "Edit".
 
-        ウインドウのクラス名やプログラム名を確認するには、タスクトレイアイコンのメニューで内部ログをONにして、目的のウインドウでキー操作を行います。
-        コンソールウインドウに以下のようなログが出力されます。
+        You can know the window class name and program name, by enabling the internal log output from tasktray icon menu, and inputting key on target window.
+        You will see log output like following.
 
         .. code-block:: text
 
             Window : exe   : cfiler.exe
                    : class : CfilerWindowClass
-                   : text  : 内骨格
+                   : text  : Craft Commander
 
-        defineWindowKeymap の引数には、* や ? のワイルドカードを使用して、
-        条件に幅をもたせることが出来ます。
+        In the argument of defineWindowKeymap(), you can use wild card ("*" "?") to have wider condition.
 
 
-    **さまざまなアクションの割り当て**
+    **Various actions**
 
-        **呼び出し可能オブジェクトの割り当て**
+        **Callable object**
+
+        You can assign any callable objects like this.
 
         .. code-block:: python
 
@@ -339,135 +319,127 @@ Incremental search
                 print "Hello World!"
 
             keymap_notepad[ "C-A" ] = command_HelloWorld
-            keymap_notepad[ "C-F" ] = keymap.InputTextCommand( u"qwerty" )
-            keymap_notepad[ "C-G" ] = keymap.InputTextCommand( u"テストTESTテスト" )
+            keymap_notepad[ "C-F" ] = keymap.InputTextCommand( "qwerty" )
+            keymap_notepad[ "C-G" ] = keymap.InputTextCommand( "Test" )
 
 
-        このように任意の呼び出し可能オブジェクトを割り当てることが出来ます。
 
+        **Alternative key input**
 
-        **代わりのキー入力の割り当て**
+        By passing a string which represents key input,
+        you can let a key input has a same effect with different key input.
 
         .. code-block:: python
 
             keymap_notepad[ "C-C" ] = "Return"
             keymap_notepad[ "C-D" ] = "C-F"
 
-        キー入力を表す文字列を渡すことで、別のキーを入力したのと同じ効果を
-        持たせることが出来ます。
 
+        **Alternative multiple key inputs**
 
-        **代わりのキー入力の割り当て(複数)**
+        By passing multiple key expression strings,
+        you can emit multiple consecutive key input events virtually.
 
         .. code-block:: python
 
             keymap_notepad[ "C-E" ] = "A-V", "A-S"
 
-        このように、カンマ区切りで複数の文字列を渡すことで、複数の連続した
-        キー入力イベントを擬似的に発生させることが出来ます。
 
+    **Setting of text editor**
 
-    **テキストエディタの設定**
+        You can set the path of your favorite text editor to keymap.editor.
 
-        **テキストエディタの設定例**
+        **Example of setting text editor**
 
         .. code-block:: python
 
-            keymap.editor = u"notepad.exe"
+            keymap.editor = "notepad.exe"
 
-        keymap.editorに、好きなテキストエディタのパスを設定します。
+        You can set callable object also as below.
 
-        以下のように、呼び出し可能オブジェクトを設定することも出来ます。
-
-        **呼び出し可能オブジェクトを使った、テキストエディタの設定例**
+        **Example of setting text editor with callable object**
 
         .. code-block:: python
 
             def editor(path):
-                shellExecute( None, None, u"notepad.exe", '"%s"'% path, "" )
+                shellExecute( None, None, "notepad.exe", '"%s"'% path, "" )
             keymap.editor = editor
 
-        この設定は、タスクトレイの keyhac アイコンを右クリックして表示される
-        メニューの [ 設定の編集 ] を選択したときに、config.py をどの
-        アプリケーションで編集するかに影響します。
+        This text editor setting affects the behavior of when "Edit config file" of tasktray icon menu is selected.
+        config.py file is opened by the specified text editor.
 
 
-    **表示の設定**
+    **Display setting**
 
-        クリップボード履歴リストのウインドウと、コンソールウインドウの、フォントや表示色をカスタマイズすることができます。
+        You can customize the font and color of clipboard history list window and console window.
 
-        **フォントの設定例**
+        **Example of font setting**
 
         .. code-block:: python
 
-            keymap.setFont( u"ＭＳ ゴシック", 12 )
+            keymap.setFont( "MS Gothic", 12 )
 
-        keymap.setFont()に、フォント名とフォントサイズを引数として渡します。
+        Font name and font size can be passed as arguments of keymap.setFont().
 
-        **テーマの設定例**
+        **Example of theme setting**
 
         .. code-block:: python
 
             keymap.setTheme("black")
 
-        keymap.setTheme()に、テーマ名を引数として渡します。テーマは theme ディレクトリ以下に配置されているディレクトリによって定義されています。
+        Theme name can be passed to keymap.setTheme().
+        Themes are defined as directories in "theme" directory.
 
 
-    **引用記号の設定**
+    **Setting of quote mark**
 
-        **引用記号の設定例**
+        **Example of quote mark setting**
 
         .. code-block:: python
 
             keymap.quote_mark = "> "
 
-        keymap.quote_markに、クリップボードからの引用貼り付け時の記号を設定します。
+        To keymap.quote_mark, you set the mark for quote-pasting from clipboard.
 
 
-    **キーの文字列表記**
+    **Key expressions**
 
-        config.py では、キーの入力条件や、生成する仮想のキーイベントを、
-        文字列で表現します。
+        In config.py, you express the key input condition, key event generated virtually, by string expression.
 
-        文字列は、
+        If required, the key expression string can be a combination of modifier keys and main key separated by hyphen, as following examples.
 
         .. code-block:: python
 
             "C-S-Return"
 
-        や
-
         .. code-block:: python
 
             "Ctrl-Shift-Return"
 
-        のように、ハイフンで区切って、モディファイアとメインのキーを組み合わせて
-        表現します。
+        Available modifier expression is as below.
 
-        使用可能なモディファイアの記述方法は以下のとおりです。
-
-        =============================   ========================================================
-         モディファイア                 記述方法
-        =============================   ========================================================
-         Altキー (左右どちらでも)       Alt-, A-
-         左 Altキー                     LAlt-, LA-
-         右 Altキー                     RAlt-, RA-
-         Controlキー (左右どちらでも)   Ctrl-, C-
-         左 Controlキー                 LCtrl-, LC-
-         右 Controlキー                 RCtrl-, RC-
-         Shiftキー (左右どちらでも)     Shift-, S-
-         左 Shiftキー                   LShift-, LS-
-         右 Shiftキー                   RShift-, RS-
-         Windowsキー (左右どちらでも)   Win-, W-
-         左 Windowsキー                 LWin-, LW-
-         右 Windowsキー                 RWin-, RW-
-         Userキー (左右どちらでも)      User0-, User1-, User2-, User3-, U0-, U1-, U2-, U3-
-         左 Userキー                    LUser0-, LUser1-, LUser2-, LUser3-, LU0-, LU1-, LU2-, LU3-
-         右 Userキー                    RUser0-, RUser1-, RUser2-, RUser3-, RU0-, RU1-, RU2-, RU3-
-        =============================   ========================================================
+        =======================================   ========================================================
+         Modifier                                  Expression
+        =======================================   ========================================================
+         Alt key (both left/right)                 Alt-, A-
+         Left Alt key                              LAlt-, LA-
+         Right Alt key                             RAlt-, RA-
+         Control key (both left/right)             Ctrl-, C-
+         Left Control key                          LCtrl-, LC-
+         Right Control key                         RCtrl-, RC-
+         Shift key (both left/right)               Shift-, S-
+         Left Shift key                            LShift-, LS-
+         Right Shift key                           RShift-, RS-
+         Windows key (both left/right)             Win-, W-
+         Left Windows key                          LWin-, LW-
+         Right Windows key                         RWin-, RW-
+         User modifier key (both left/right)       User0-, User1-, User2-, User3-, U0-, U1-, U2-, U3-
+         Left User modifier key                    LUser0-, LUser1-, LUser2-, LUser3-, LU0-, LU1-, LU2-, LU3-
+         Right User modifier key                   RUser0-, RUser1-, RUser2-, RUser3-, RU0-, RU1-, RU2-, RU3-
+        =======================================   ========================================================
 
 
-        モディファイア以外に、次のような条件を記述することが出来ます。
+        Other than modifiers, you can describe extra conditions as below.
 
         .. code-block:: python
 
@@ -476,48 +448,48 @@ Incremental search
             "O-LShift"
 
         ===============================   ========================================================
-         条件                              記述方法
+         Condition                         Expression
         ===============================   ========================================================
-         キーの押し下げ                   D-
-         キーの押し上げ                   U-
-         `ワンショットモディファイア`_    O-
+         Key down                          D-
+         Key up                            U-
+         `One-shot modifier`_              O-
         ===============================   ========================================================
 
 
-        メインのキーの記述方法は以下のとおりです。
+        Following is the expression of main key.
 
         =========================   ===============================
-        記述方法                    補足説明
+        Expression                   Meaning
         =========================   ===============================
-        A ～ Z
-        0 ～ 9
-        Minus                       | -
-        Plus                        | +
-        Comma                       | ,
-        Period                      | .
-        Semicolon                   | ;
-        Colon                       | :
-        Slash                       | /
-        BackQuote                   | \`
-        Tilde                       | ~
-        OpenBracket                 | [
-        BackSlash                   | ＼
-        Yen                         | ￥
-        CloseBracket                | ]
-        Quote                       | '
-        DoubleQuote                 | "
-        Underscore                  | _
-        Asterisk                    | \*
-        Atmark                      | @
-        Caret                       | ^
+        A - Z
+        0 - 9
+        Minus                        | -
+        Plus                         | +
+        Comma                        | ,
+        Period                       | .
+        Semicolon                    | ;
+        Colon                        | :
+        Slash                        | /
+        BackQuote                    | \`
+        Tilde                        | ~
+        OpenBracket                  | [
+        BackSlash                    | ＼
+        Yen                          | ￥
+        CloseBracket                 | ]
+        Quote                        | '
+        DoubleQuote                  | "
+        Underscore                   | _
+        Asterisk                     | \*
+        Atmark                       | @
+        Caret                        | ^
         NumLock
-        Divide                      | / (テンキー)
-        Multiply                    | * (テンキー)
-        Subtract                    | - (テンキー)
-        Add                         | + (テンキー)
-        Decimal                     | . (テンキー)
-        Num0 ～ Num9                | 0-9 (テンキー)
-        F1 ～ F12
+        Divide                       | / (ten key)
+        Multiply                     | * (ten key)
+        Subtract                     | - (ten key)
+        Add                          | + (ten key)
+        Decimal                      | . (ten key)
+        Num0 - Num9                  | 0-9 (ten key)
+        F1 - F12
         Left, Right, Up, Down
         Space
         Tab
@@ -525,7 +497,7 @@ Incremental search
         Enter/Return
         Escape/Esc
         CapsLock/Caps/Capital
-        Apps                        アプリケーションキー
+        Apps                         Application key
         Insert
         Delete
         Home
@@ -546,58 +518,51 @@ Incremental search
         PrintScreen
         ScrollLock
         Pause
-        | (0) ～ (255)              仮想キーコード指定
+        | (0) - (255)                Specific virtual key code
         =========================   ===============================
 
-    .. _`ワンショットモディファイア`:
+    .. _`One-shot modifier`:
 
-    **ワンショットモディファイア**
+    **One-shot modifier**
 
-        ワンショットモディファイアとは、Ctrl や Shift、User0 などのモディファイアキーが
-        押されて離されるまでの間に、ほかのキーが押されなかった場合に、任意の動作を実行
-        するための仕組みです。
+        One-shot modifier is a system to execute action when other keys are not manipulated
+        between when the modifier key is pressed and when the modifier key is released.
 
-        **ワンショットモディファイアの割り当ての例**
+        **Example of one-shot modifier setting**
 
         .. code-block:: python
 
             keymap_global[ "O-LCtrl" ] = command_Test
 
-        このように、 O- という修飾子を使用することで、ワンショットモディファイアを設定
-        します。この例では、左Ctrlキーを単体で押して離したときに、command_Test
-        という関数を呼び出します。
+        Like this example, using the "O-" qualifier, you define one-shot modifier.
+        by this example, pressing and releasing left Ctrl key solely, the function command_Test is invoked.
 
 
+    **Assining action to multi-stroke key inputs**
 
-    **複数のキー入力へのアクションの割り当て**
-
-        **複数のキー入力へのアクションの設定例**
+        **Example of multi-stroke key setting**
 
         .. code-block:: python
 
             keymap_global[ "C-X" ] = keymap.defineMultiStrokeKeymap( "C-X" )
             keymap_global[ "C-X" ][ "C-F" ] = "C-O"
 
-        この例では、Ctrl-X を押した後に Ctrl-F を押したときに、Ctrl-O を押したことにする
-        設定を行っています。
+        This example is defining a multi-stroke key input Ctrl-X, Ctrl-F, and assigning C-O.
 
-        このように、defineMultiStrokeKeymap() メソッドで生成したキーマップを、
-        ほかのキーマップのアクションに割り当てることで、マルチストロークのキー入力
-        のカスタマイズを行うことができます。
+        Like this, by generating the keymap by defineMultiStrokeKeymap() method,
+        and assigning it to the key in other keymap, you can customize the muti-stroke key input.
 
-        defineMultiStrokeKeymap() の引数に渡している文字列は、キャレット位置に
-        表示されるヘルプメッセージです。
+        The string argument passed to defineMultiStrokeKeymap() is a help message to be displayed at the caret position.
 
 
-    **キーボードマクロ**
+    **Keyboard macro**
 
-        keyhac には、キーボードの入力を記録し、繰り返し再生する機能があります。
-        これをキーボードマクロ機能と呼びます。
+        keyhac has a feature to record the sequence of key inputs, and replay it repeatedly.
+        This is called Keyboard Macro feature.
 
-        キーボードマクロの記録は、タスクトレイアイコンのメニュー [キー操作 記録開始] / [キー操作 記録終了] からと、
-        キー割り当てを行ったコマンドのどちらかから行うことができます。
+        Recording of the keyboard macro can be started/stopped either tasktray icon menu - "Start/Stop recording key input" or key assigned command.
 
-        **キーボードマクロの開始/終了/再生の設定例**
+        **Example of Keyboard macro start/stop/replay setting**
 
         .. code-block:: python
 
@@ -607,85 +572,82 @@ Incremental search
             keymap_global[ "U0-3" ] = keymap.command_RecordPlay
             keymap_global[ "U0-4" ] = keymap.command_RecordClear
 
-        キーボードマクロは、ウインドウを判別せず、すべてのウインドウで同じキーシーケンスが
-        再生されます。キーの意味が、ウインドウによって異なる場合があるため、注意が必要です。
+        Keyboard macro doesn't differenciate the window type, and replay the same key input sequence on any window types.
+        So you need to be careful about that the meaning of the key input can mean differently on other window types.
 
 
-    **クリップボード履歴リストの設定**
+    **Setting of clipboard history list**
 
-        keyhac に内蔵されている クリップボード履歴機能は、config.py でカスタマイズすることにより、
-        クリップボードの履歴だけではなく、定型文や日時などの、さまざまなテキストの貼り付け機能を
-        追加することができます。
+        keyhac's clipboard history feature can be extended by customizing config.py.
+        You can add fixed-phrase items and date-time items, in addition to clipboard history list.
 
-        **クリップボード履歴リストの設定例**
+        **Example of clipboard history list setting**
 
         .. code-block:: python
 
             import datetime
 
-            # 定型文
+            # Fixed phrases
             fixed_items = [
-                ( u"name@server.net",           u"name@server.net" ),
-                ( u"住所",                      u"〒東京都品川区123-456" ),
-                ( u"電話番号",                  u"03-4567-8901" ),
-                ( u"config.pyを編集",           keymap.command_EditConfig ),
-                ( u"config.pyをリロード",       keymap.command_ReloadConfig ),
+                ( "name@server.net",           "name@server.net" ),
+                ( "Address",                   "San Francisco, CA 94128" ),
+                ( "Phone number",              "03-4567-8901" ),
+                ( "Edit config.py",            keymap.command_EditConfig ),
+                ( "Reload config.py",          keymap.command_ReloadConfig ),
             ]
 
-            # 日時をペーストする機能
+            # Return a formatted date-time string
             def dateAndTime(fmt):
                 def _dateAndTime():
                     return datetime.datetime.now().strftime(fmt)
                 return _dateAndTime
 
-            # 日時
+            # Date-time
             date_and_time_items = [
-                ( u"YYYY/MM/DD HH:MM:SS",   dateAndTime("%Y/%m/%d %H:%M:%S") ),
-                ( u"YYYY/MM/DD",            dateAndTime("%Y/%m/%d") ),
-                ( u"HH:MM:SS",              dateAndTime("%H:%M:%S") ),
-                ( u"YYYYMMDD_HHMMSS",       dateAndTime("%Y%m%d_%H%M%S") ),
-                ( u"YYYYMMDD",              dateAndTime("%Y%m%d") ),
-                ( u"HHMMSS",                dateAndTime("%H%M%S") ),
+                ( "YYYY/MM/DD HH:MM:SS",   dateAndTime("%Y/%m/%d %H:%M:%S") ),
+                ( "YYYY/MM/DD",            dateAndTime("%Y/%m/%d") ),
+                ( "HH:MM:SS",              dateAndTime("%H:%M:%S") ),
+                ( "YYYYMMDD_HHMMSS",       dateAndTime("%Y%m%d_%H%M%S") ),
+                ( "YYYYMMDD",              dateAndTime("%Y%m%d") ),
+                ( "HHMMSS",                dateAndTime("%H%M%S") ),
             ]
 
             keymap.cblisters += [
-                ( u"定型文",         cblister_FixedPhrase(fixed_items) ),
-                ( u"日時",           cblister_FixedPhrase(date_and_time_items) ),
+                ( "Fixed phrases",         cblister_FixedPhrase(fixed_items) ),
+                ( "Date-time",             cblister_FixedPhrase(date_and_time_items) ),
                 ]
 
-        keymap.cblisters に、クリップボード履歴ウインドウへのアイテムリストアップ
-        オブジェクトを追加することで、クリップボード履歴以外の機能を追加します。
-        クリップボード履歴以外の機能には、←/→キーで切り替えることができます。
+        By adding the item listing up object to keymap.cblisters, you can add the features in addition to clipboard history.
+        Using Left/Right keys, you can switch to the features from clipboard history.
 
-        各アイテムは ( 見出し文字列, 貼り付け文字列 ) あるいは、( 見出し文字列, 呼び出し可能オブジェクト )
-        の形を取ります。タプルの２つ目に呼び出し可能オブジェクトを指定した場合は、
-        そのオブジェクトを呼び出して返される文字列を貼り付けます。
+        Each item has either ( label string, pasting string ) or ( label string, callable object ) format.
+        When you specified a callable object in the second position of the tuple,
+        keyhac pastes the string which is returned from the callable object.
 
-        呼び出し可能オブジェクトが、貼り付け文字列ではなく None を返す場合は、
-        文字列の貼り付けは行われません。このようにして、クリップボード履歴ウインドウに、
-        コマンドの実行機能を追加することが可能です。
+        If the callable object returns None instead of pasting string, keyhac doesn't paste any string.
+        Doing like this, you can add the command execution feature in the clipboard history list.
 
 
-    **クリップボード履歴の最大数/最大合計サイズの設定**
+    **Setting of clipboard history maximum number/maximum total size**
 
-        クリップボード履歴の最大数を設定するには、以下のように記述します。
+        You describe as below to specify the maximum number of clipboard history.
 
-        **クリップボード履歴の最大数の設定例**
+        **Example of clipboard history maximum number setting**
 
         .. code-block:: python
 
             keymap.clipboard_history.maxnum = 10000
 
-        デフォルトでは 1000 個の履歴が保存されます。
+        By default, up to 1000 histories are stored.
 
 
-        また、クリップボード履歴として保存する最大サイズを設定するには、以下のように記述します。
+        And you describe as below to specify the maximum total size of clipboard history.
 
-        **クリップボード履歴として保存する最大サイズの設定例**
+        **Example of clipboard history maximum total size setting**
 
         .. code-block:: python
 
             keymap.clipboard_history.quota = 10 * 1024 * 1024
 
-        デフォルトでは 10MB の履歴が保存されます。
+        By default, up to total 10MB histories are stored.
 
