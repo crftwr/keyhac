@@ -8,6 +8,8 @@ Changes
 
         - Changed the name of application from "keyhac" to "Keyhac".
 
+        - Changed the naming convention for Keymap methods which generate command. (command_MoveWindow -> MoveWindowCommand, etc)
+
     **1.64**
 
         - Python33 から Python34 に移行
