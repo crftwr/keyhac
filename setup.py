@@ -44,7 +44,8 @@ options = {
             "extension",
             "license",
             "theme",
-            "readme.txt",
+            "readme_en.txt",
+            "readme_ja.txt",
             "migemo.dll",
             "_config.py",
             ( "doc/html_en", "doc/en" ),
@@ -55,7 +56,7 @@ options = {
 }
 
 setup( 
-    name = "keyhac",
+    name = "Keyhac",
     version = keyhac_resource.keyhac_version,
     description = "",
     executables = [executable],

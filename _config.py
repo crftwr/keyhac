@@ -5,68 +5,69 @@ import datetime
 import pyauto
 from keyhac import *
 
+
 def configure(keymap):
 
     # --------------------------------------------------------------------
-    # config.py編集用のテキストエディタの設定
+    # Text editer setting for editting config.py file
 
-    # プログラムのファイルパスを設定 (単純な使用方法)
+    # Setting with program file path (Simple usage)
     if 1:
         keymap.editor = "notepad.exe"
 
-    # 呼び出し可能オブジェクトを設定 (高度な使用方法)
+    # Setting with callable object (Advanced usage)
     if 0:
         def editor(path):
             shellExecute( None, "notepad.exe", '"%s"'% path, "" )
         keymap.editor = editor
 
     # --------------------------------------------------------------------
-    # 表示のカスタマイズ
+    # Customizing the display
 
-    # フォントの設定
-    keymap.setFont( "ＭＳ ゴシック", 12 )
+    # Font
+    keymap.setFont( "MS Gothic", 12 )
 
-    # テーマの設定
+    # Theme
     keymap.setTheme("black")
 
     # --------------------------------------------------------------------
 
-    # キーの単純な置き換え
+    # Simple key replacement
     keymap.replaceKey( "LWin", 235 )
     keymap.replaceKey( "RWin", 255 )
 
-    # ユーザモディファイアキーの定義
+    # User modifier key definition
     keymap.defineModifier( 235, "User0" )
 
-    # どのウインドウにフォーカスがあっても効くキーマップ
+    # Global keymap which affects any windows
     if 1:
         keymap_global = keymap.defineWindowKeymap()
 
-        # USER0-↑↓←→ : 10pixel単位のウインドウの移動
+        # USER0-Up/Down/Left/Right : Move active window by 10 pixel unit
         keymap_global[ "U0-Left"  ] = keymap.MoveWindowCommand( -10, 0 )
         keymap_global[ "U0-Right" ] = keymap.MoveWindowCommand( +10, 0 )
         keymap_global[ "U0-Up"    ] = keymap.MoveWindowCommand( 0, -10 )
         keymap_global[ "U0-Down"  ] = keymap.MoveWindowCommand( 0, +10 )
 
-        # USER0-Shift-↑↓←→ : 1pixel単位のウインドウの移動
+        # USER0-Shift-Up/Down/Left/Right : Move active window by 1 pixel unit
         keymap_global[ "U0-S-Left"  ] = keymap.MoveWindowCommand( -1, 0 )
         keymap_global[ "U0-S-Right" ] = keymap.MoveWindowCommand( +1, 0 )
         keymap_global[ "U0-S-Up"    ] = keymap.MoveWindowCommand( 0, -1 )
         keymap_global[ "U0-S-Down"  ] = keymap.MoveWindowCommand( 0, +1 )
 
-        # USER0-Ctrl-↑↓←→ : 画面の端まで移動
+        # USER0-Ctrl-Up/Down/Left/Right : Move active window to screen edges
         keymap_global[ "U0-C-Left"  ] = keymap.MoveWindowToMonitorEdgeCommand(0)
         keymap_global[ "U0-C-Right" ] = keymap.MoveWindowToMonitorEdgeCommand(2)
         keymap_global[ "U0-C-Up"    ] = keymap.MoveWindowToMonitorEdgeCommand(1)
         keymap_global[ "U0-C-Down"  ] = keymap.MoveWindowToMonitorEdgeCommand(3)
 
-        # クリップボード履歴
-        keymap_global[ "C-S-Z"   ] = keymap.command_ClipboardList     # クリップボード履歴表示
-        keymap_global[ "C-S-X"   ] = keymap.command_ClipboardRotate   # 直近の履歴を末尾に回す
-        keymap_global[ "C-S-A-X" ] = keymap.command_ClipboardRemove   # 直近の履歴を削除
-        keymap.quote_mark = "> "                                      # 引用貼り付け時の記号
+        # Clipboard history related
+        keymap_global[ "C-S-Z"   ] = keymap.command_ClipboardList     # Open the clipboard history list
+        keymap_global[ "C-S-X"   ] = keymap.command_ClipboardRotate   # Move the most recent history to tail
+        keymap_global[ "C-S-A-X" ] = keymap.command_ClipboardRemove   # Remove the most recent history
+        keymap.quote_mark = "> "                                      # Mark for quote pasting
 
-        # キーボードマクロ
+        # Keyboard macro
         keymap_global[ "U0-0" ] = keymap.command_RecordToggle
         keymap_global[ "U0-1" ] = keymap.command_RecordStart
         keymap_global[ "U0-2" ] = keymap.command_RecordStop
@@ -74,12 +75,12 @@ def configure(keymap):
         keymap_global[ "U0-4" ] = keymap.command_RecordClear
 
 
-    # USER0-F1 : アプリケーションの起動テスト
+    # USER0-F1 : Test of launching application
     if 1:
         keymap_global[ "U0-F1" ] = keymap.ShellExecuteCommand( None, "notepad.exe", "", "" )
 
 
-    # USER0-F2 : サブスレッド処理のテスト
+    # USER0-F2 : Test of sub thread execution using JobQueue/JobItem
     if 1:
         def command_JobTest():
 
@@ -95,7 +96,7 @@ def configure(keymap):
         keymap_global[ "U0-F2" ] = command_JobTest
 
 
-    # Cron (定期的なサブスレッド処理) のテスト
+    # Test of Cron (periodic sub thread procedure)
     if 0:
         def cronPing(cron_item):
             os.system( "ping -n 3 www.google.com" )
@@ -104,12 +105,12 @@ def configure(keymap):
         CronTable.defaultCronTable().add(cron_item)
 
 
-    # USER0-F : ウインドウのアクティブ化
+    # USER0-F : Activation of specific window
     if 1:
         keymap_global[ "U0-F" ] = keymap.ActivateWindowCommand( "cfiler.exe", "CfilerWindowClass" )
 
 
-    # USER0-E : アクティブ化するか、まだであれば起動する
+    # USER0-E : Activate specific window or launch application if the window doesn't exist
     if 1:
         def command_ActivateOrExecuteNotepad():
             wnd = Window.find( "Notepad", None )
@@ -125,7 +126,7 @@ def configure(keymap):
         keymap_global[ "U0-E" ] = command_ActivateOrExecuteNotepad
 
 
-    # Ctrl-Tab で、コンソール関係のウインドウを切り替え
+    # Ctrl-Tab : Switching between console related windows
     if 1:
 
         def isConsoleWindow(wnd):
@@ -152,11 +153,11 @@ def configure(keymap):
         keymap_console[ "C-TAB" ] = command_SwitchConsole
 
 
-    # USER0-Space : カスタムのリスト表示をつかったアプリケーション起動
+    # USER0-Space : Application launcher using custom list window
     if 1:
         def command_PopApplicationList():
 
-            # すでにリストが開いていたら閉じるだけ
+            # If the list window is already opened, just close it
             if keymap.isListWindowOpened():
                 keymap.cancelListWindow()
                 return
@@ -184,13 +185,14 @@ def configure(keymap):
                 if item:
                     item[1]()
 
-            # キーフックの中で時間のかかる処理を実行できないので、delayedCall() をつかって遅延実行する
+            # Because the blocking procedure cannot be executed in the key-hook, 
+            # delayed-execute the procedure by delayedCall().
             keymap.delayedCall( popApplicationList, 0 )
 
         keymap_global[ "U0-Space" ] = command_PopApplicationList
 
 
-    # USER0-Alt-↑↓←→/Space/PageUp/PageDown : キーボードで擬似マウス操作
+    # USER0-Alt-Up/Down/Left/Right/Space/PageUp/PageDown : Virtul mouse operation by keyboard
     if 1:
         keymap_global[ "U0-A-Left"  ] = keymap.MouseMoveCommand(-10,0)
         keymap_global[ "U0-A-Right" ] = keymap.MouseMoveCommand(10,0)
@@ -204,7 +206,7 @@ def configure(keymap):
         keymap_global[ "U0-A-End" ] = keymap.MouseHorizontalWheelCommand(1.0)
 
 
-    # sendMessageでシステムコマンドを実行
+    # Execute the System commands by sendMessage
     if 1:
         def close():
             wnd = keymap.getTopLevelWindow()
@@ -214,81 +216,82 @@ def configure(keymap):
             wnd = keymap.getTopLevelWindow()
             wnd.sendMessage( WM_SYSCOMMAND, SC_SCREENSAVE )
 
-        keymap_global[ "U0-C" ] = close              # ウインドウを閉じる
-        keymap_global[ "U0-S" ] = screenSaver        # スクリーンセーバー
+        keymap_global[ "U0-C" ] = close              # Close the window
+        keymap_global[ "U0-S" ] = screenSaver        # Start the screen-saver
 
 
-    # 文字入力のテスト
+    # Test of text input
     if 1:
         keymap_global[ "U0-H" ] = keymap.InputTextCommand( "Hello / こんにちは" )
 
 
-    # Editボックスで、C-Dを削除に当てるなど
+    # For Edit box, assigning Delete to C-D, etc
     if 1:
         keymap_edit = keymap.defineWindowKeymap( class_name="Edit" )
 
-        keymap_edit[ "C-D" ] = "Delete"              # 削除
-        keymap_edit[ "C-H" ] = "Back"                # バックスペース
-        keymap_edit[ "C-K" ] = "S-End","C-X"         # 行末まで切り取り
+        keymap_edit[ "C-D" ] = "Delete"              # Delete
+        keymap_edit[ "C-H" ] = "Back"                # Backspace
+        keymap_edit[ "C-K" ] = "S-End","C-X"         # Removing following text
 
 
-    # メモ帳を Emacs 風にカスタマイズする
-    # keymap_edit の条件と重複するため、keymap_editの設定と混ざって機能する。
+    # Customize Notepad as Emacs-ish
+    # Because the keymap condition of keymap_edit overlaps with keymap_notepad, 
+    # both these two keymaps are applied in mixed manner.
     if 1:
         keymap_notepad = keymap.defineWindowKeymap( exe_name="notepad.exe", class_name="Edit" )
 
-        # Ctrl-X を マルチストロークの1段目として登録
+        # Define Ctrl-X as the first key of multi-stroke keys
         keymap_notepad[ "C-X" ] = keymap.defineMultiStrokeKeymap("C-X")
 
-        keymap_notepad[ "C-P" ] = "Up"                  # カーソル上
-        keymap_notepad[ "C-N" ] = "Down"                # カーソル下
-        keymap_notepad[ "C-F" ] = "Right"               # カーソル右
-        keymap_notepad[ "C-B" ] = "Left"                # カーソル左
-        keymap_notepad[ "C-A" ] = "Home"                # 行の先頭
-        keymap_notepad[ "C-E" ] = "End"                 # 行の末尾
-        keymap_notepad[ "A-F" ] = "C-Right"             # 単語右
-        keymap_notepad[ "A-B" ] = "C-Left"              # 単語左
-        keymap_notepad[ "C-V" ] = "PageDown"            # ページ下
-        keymap_notepad[ "A-V" ] = "PageUp"              # ページ上
-        keymap_notepad[ "A-Comma" ] = "C-Home"          # バッファ先頭
-        keymap_notepad[ "A-Period" ] = "C-End"          # バッファ末尾
-        keymap_notepad[ "C-X" ][ "C-F" ] = "C-O"        # ファイルを開く
-        keymap_notepad[ "C-X" ][ "C-S" ] = "C-S"        # 保存
-        keymap_notepad[ "C-X" ][ "C-W" ] = "A-F","A-A"  # 名前を付けて保存
-        keymap_notepad[ "C-X" ][ "U" ] = "C-Z"          # アンドゥ
-        keymap_notepad[ "C-S" ] = "C-F"                 # 検索
-        keymap_notepad[ "A-X" ] = "C-G"                 # 指定行へ移動
-        keymap_notepad[ "C-X" ][ "H" ] = "C-A"          # 全て選択
-        keymap_notepad[ "C-W" ] = "C-X"                 # 切り取り
-        keymap_notepad[ "A-W" ] = "C-C"                 # コピー
-        keymap_notepad[ "C-Y" ] = "C-V"                 # 貼り付け
-        keymap_notepad[ "C-X" ][ "C-C" ] = "A-F4"       # 終了
+        keymap_notepad[ "C-P" ] = "Up"                  # Move cursor up
+        keymap_notepad[ "C-N" ] = "Down"                # Move cursor down
+        keymap_notepad[ "C-F" ] = "Right"               # Move cursor right
+        keymap_notepad[ "C-B" ] = "Left"                # Move cursor left
+        keymap_notepad[ "C-A" ] = "Home"                # Move to beginning of line
+        keymap_notepad[ "C-E" ] = "End"                 # Move to end of line
+        keymap_notepad[ "A-F" ] = "C-Right"             # Word right
+        keymap_notepad[ "A-B" ] = "C-Left"              # Word left
+        keymap_notepad[ "C-V" ] = "PageDown"            # Page down
+        keymap_notepad[ "A-V" ] = "PageUp"              # page up
+        keymap_notepad[ "A-Comma" ] = "C-Home"          # Beginning of the document
+        keymap_notepad[ "A-Period" ] = "C-End"          # End of the document
+        keymap_notepad[ "C-X" ][ "C-F" ] = "C-O"        # Open file
+        keymap_notepad[ "C-X" ][ "C-S" ] = "C-S"        # Save
+        keymap_notepad[ "C-X" ][ "C-W" ] = "A-F","A-A"  # Save as
+        keymap_notepad[ "C-X" ][ "U" ] = "C-Z"          # Undo
+        keymap_notepad[ "C-S" ] = "C-F"                 # Search
+        keymap_notepad[ "A-X" ] = "C-G"                 # Jump to specified line number
+        keymap_notepad[ "C-X" ][ "H" ] = "C-A"          # Select all
+        keymap_notepad[ "C-W" ] = "C-X"                 # Cut
+        keymap_notepad[ "A-W" ] = "C-C"                 # Copy
+        keymap_notepad[ "C-Y" ] = "C-V"                 # Paste
+        keymap_notepad[ "C-X" ][ "C-C" ] = "A-F4"       # Exit
 
 
-    # クリップボード履歴の最大数 (デフォルト:1000)
+    # Maximum number of clipboard history (Default:1000)
     keymap.clipboard_history.maxnum = 1000
 
-    # クリップボード履歴として保存する合計最大サイズ (デフォルト:10MB)
+    # Total maximum size of clipboard history (Default:10MB)
     keymap.clipboard_history.quota = 10*1024*1024
 
 
-    # クリップボード履歴リスト表示のカスタマイズ
+    # Customizing clipboard history list
     if 1:
 
-        # 定型文
+        # Fixed phrases
         fixed_items = [
             ( "name@server.net",     "name@server.net" ),
-            ( "住所",                "〒東京都品川区123-456" ),
-            ( "電話番号",            "03-4567-8901" ),
+            ( "Address",             "San Francisco, CA 94128" ),
+            ( "Phone number",        "03-4567-8901" ),
         ]
 
-        # フォーマット文字列で現在日時の文字列を生成
+        # Return formatted date-time string
         def dateAndTime(fmt):
             def _dateAndTime():
                 return datetime.datetime.now().strftime(fmt)
             return _dateAndTime
 
-        # 日時
+        # Date-time
         datetime_items = [
             ( "YYYY/MM/DD HH:MM:SS",   dateAndTime("%Y/%m/%d %H:%M:%S") ),
             ( "YYYY/MM/DD",            dateAndTime("%Y/%m/%d") ),
@@ -298,7 +301,7 @@ def configure(keymap):
             ( "HHMMSS",                dateAndTime("%H%M%S") ),
         ]
 
-        # 文字列に引用符を付ける
+        # Add quote mark to current clipboard contents
         def quoteClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
@@ -307,7 +310,7 @@ def configure(keymap):
                 s += keymap.quote_mark + line
             return s
 
-        # 文字列をインデントする
+        # Indent current clipboard contents
         def indentClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
@@ -318,7 +321,7 @@ def configure(keymap):
                 s += line
             return s
 
-        # 文字列をアンインデントする
+        # Unindent current clipboard contents
         def unindentClipboardText():
             s = getClipboardText()
             lines = s.splitlines(True)
@@ -337,42 +340,42 @@ def configure(keymap):
         full_width_chars = "ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ！”＃＄％＆’（）＊＋，−．／：；＜＝＞？＠［￥］＾＿‘｛｜｝～０１２３４５６７８９　"
         half_width_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}～0123456789 "
 
-        # 文字列を半角文字にする
+        # Convert to half-with characters
         def toHalfWidthClipboardText():
             s = getClipboardText()
             s = s.translate(str.maketrans(full_width_chars,half_width_chars))
             return s
 
-        # 文字列を全角文字にする
+        # Convert to full-with characters
         def toFullWidthClipboardText():
             s = getClipboardText()
             s = s.translate(str.maketrans(half_width_chars,full_width_chars))
             return s
 
-        # クリップボードの内容をデスクトップに保存
+        # Save the clipboard contents as a file in Desktop directory
         def command_SaveClipboardToDesktop():
 
             text = getClipboardText()
             if not text: return
 
-            # utf-8 / CR-LF に変換
+            # Convert to utf-8 / CR-LF
             utf8_bom = b"\xEF\xBB\xBF"
             text = text.replace("\r\n","\n")
             text = text.replace("\r","\n")
             text = text.replace("\n","\r\n")
             text = text.encode( encoding="utf-8" )
 
-            # デスクトップに保存
+            # Save in Desktop directory
             fullpath = os.path.join( getDesktopPath(), datetime.datetime.now().strftime("clip_%Y%m%d_%H%M%S.txt") )
             fd = open( fullpath, "wb" )
             fd.write(utf8_bom)
             fd.write(text)
             fd.close()
 
-            # テキストエディタを開く
+            # Open by the text editor
             keymap.editTextFile(fullpath)
 
-        # その他
+        # Menu item list
         other_items = [
             ( "Quote clipboard",            quoteClipboardText ),
             ( "Indent clipboard",           indentClipboardText ),
@@ -387,10 +390,10 @@ def configure(keymap):
             ( "Reload config.py",           keymap.command_ReloadConfig ),
         ]
 
-        # クリップボード履歴リストのメニューリスト
+        # Clipboard history list extensions
         keymap.cblisters += [
-            ( "定型文",  cblister_FixedPhrase(fixed_items) ),
-            ( "日時",    cblister_FixedPhrase(datetime_items) ),
-            ( "その他",  cblister_FixedPhrase(other_items) ),
+            ( "Fixed phrase", cblister_FixedPhrase(fixed_items) ),
+            ( "Date-time", cblister_FixedPhrase(datetime_items) ),
+            ( "Others", cblister_FixedPhrase(other_items) ),
         ]
 
