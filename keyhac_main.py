@@ -36,7 +36,7 @@ for option in option_list:
 
 if __name__ == "__main__":
 
-    ckit.registerWindowClass( "keyhac" )
+    ckit.registerWindowClass( "Keyhac" )
     
     # exeと同じ位置にある設定ファイルを優先する
     if os.path.exists( os.path.join( ckit.getAppExePath(), 'config.py' ) ):

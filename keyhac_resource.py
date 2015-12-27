@@ -1,8 +1,8 @@
 ﻿import ckit
 
-keyhac_appname = "keyhac"
-keyhac_dirname = "keyhac"
-keyhac_version = "1.65"
+keyhac_appname = "Keyhac"
+keyhac_dirname = "Keyhac"
+keyhac_version = "1.70"
 
 _startup_string_fmt = """\
 %s version %s:
@@ -156,7 +156,7 @@ ckit.strings.setString( "menu_help",
     ja_JP = "ヘルプ(&H)" )
 ckit.strings.setString( "menu_exit",
     en_US = "E&xit",
-    ja_JP = "keyhacの終了(&X)" )
+    ja_JP = "Keyhacの終了(&X)" )
 
 
 ckit.strings.setString( "title_clipboard",

@@ -1,5 +1,5 @@
 ﻿===============================================
- Pythonスクリプトでキーカスタマイズ [ keyhac ]
+ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 ===============================================
 
 :著作者: craftware
@@ -45,13 +45,13 @@
 使い方
 =======
 
-    keyhac を起動すると、タスクトレイにキーボードのキーの形をしたアイコンが
+    Keyhac を起動すると、タスクトレイにキーボードのキーの形をしたアイコンが
     表示されます。
 
         .. image:: image/tasktray.png
 
-    タスクトレイのアイコンを左クリックすると、keyhac のコンソールウインドウ
-    が表示されます。このウインドウには、keyhac 内蔵の Python インタプリタの
+    タスクトレイのアイコンを左クリックすると、Keyhac のコンソールウインドウ
+    が表示されます。このウインドウには、Keyhac 内蔵の Python インタプリタの
     出力が表示されます。
 
         .. image:: image/console.png
@@ -63,12 +63,12 @@
         ==========================  =================================================
          設定のリロード              設定ファイル(config.py)をリロードします。
          設定の編集                  設定ファイル(config.py)を編集します。
-         内部ログ ON/OFF             keyhacの詳細なログ出力を有効または無効にします。
+         内部ログ ON/OFF             Keyhacの詳細なログ出力を有効または無効にします。
          フック ON/OFF               キーフックを一時的に有効または無効にします。
          キー操作 記録開始/終了      キーボードマクロの記録を開始または終了します。
          端末のクリア                コンソールウインドウのログを消去します。
          ヘルプ                      説明書を開きます。
-         keyhacの終了                keyhacを終了します。
+         Keyhacの終了                Keyhacを終了します。
         ==========================  =================================================
 
 
@@ -120,11 +120,11 @@
 
         Migemoを使用する場合は、別途辞書ファイルを入手し、以下のように配置しておく必要があります。
 
-            - (keyhacのインストール場所)/dict/migemo-dict
-            - (keyhacのインストール場所)/dict/han2zen.dat
-            - (keyhacのインストール場所)/dict/zen2han.dat
-            - (keyhacのインストール場所)/dict/hira2kata.dat
-            - (keyhacのインストール場所)/dict/roma2hira.dat
+            - (Keyhacのインストール場所)/dict/migemo-dict
+            - (Keyhacのインストール場所)/dict/han2zen.dat
+            - (Keyhacのインストール場所)/dict/zen2han.dat
+            - (Keyhacのインストール場所)/dict/hira2kata.dat
+            - (Keyhacのインストール場所)/dict/roma2hira.dat
 
         辞書ファイルは、C/Migemo のバイナリパッケージに含まれています。
 
@@ -159,7 +159,7 @@
 
 
     また、最初の起動で、アプリケーションデータディレクトリに自動的に以下のファイルが作られます。
-    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/keyhac、XP では c:/Documents and Settings/Application Data/keyhac)
+    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/Keyhac、XP では c:/Documents and Settings/Application Data/Keyhac)
 
         ================  =================================================
            名前            解説
@@ -179,7 +179,7 @@
     インストールしたフォルダごと消してください。
 
     また、アプリケーションデータディレクトリを削除してください。
-    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/keyhac、XP では c:/Documents and Settings/Application Data/keyhac)
+    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/Keyhac、XP では c:/Documents and Settings/Application Data/Keyhac)
 
     このソフトウェアはレジストリを使用しません。
 
@@ -203,11 +203,11 @@
 カスタマイズ
 =============
 
-    keyhac はスクリプト言語 Python を内蔵しており、キーのカスタマイズの内容は
+    Keyhac はスクリプト言語 Python を内蔵しており、キーのカスタマイズの内容は
     全て Python スクリプトとして記述します。
 
     heyhac 一度起動すると、アプリケーションのデータディレクトリ
-    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/keyhac、XP では c:/Documents and Settings/Application Data/keyhac)
+    ( Vista/7/8/10 では c:/Users/(name)/AppData/Roaming/Keyhac、XP では c:/Documents and Settings/Application Data/Keyhac)
     に config.py という名前の設定スクリプトが作られます。
     このファイルをテキストエディタで編集します。
 
@@ -275,7 +275,7 @@
 
     **グローバルキーマップの定義**
 
-        keyhac では、ウインドウの種類ごとに、別々のキーマップを定義することが
+        Keyhac では、ウインドウの種類ごとに、別々のキーマップを定義することが
         出来ますが、まずは全てのウインドウに効果のある、グローバルキーマップ
         の定義方法について説明します。
 
@@ -393,7 +393,7 @@
                 shellExecute( None, None, "notepad.exe", '"%s"'% path, "" )
             keymap.editor = editor
 
-        この設定は、タスクトレイの keyhac アイコンを右クリックして表示される
+        この設定は、タスクトレイの Keyhac アイコンを右クリックして表示される
         メニューの [ 設定の編集 ] を選択したときに、config.py をどの
         アプリケーションで編集するかに影響します。
 
@@ -597,7 +597,7 @@
 
     **キーボードマクロ**
 
-        keyhac には、キーボードの入力を記録し、繰り返し再生する機能があります。
+        Keyhac には、キーボードの入力を記録し、繰り返し再生する機能があります。
         これをキーボードマクロ機能と呼びます。
 
         キーボードマクロの記録は、タスクトレイアイコンのメニュー [キー操作 記録開始] / [キー操作 記録終了] からと、
@@ -619,7 +619,7 @@
 
     **クリップボード履歴リストの設定**
 
-        keyhac に内蔵されている クリップボード履歴機能は、config.py でカスタマイズすることにより、
+        Keyhac に内蔵されている クリップボード履歴機能は、config.py でカスタマイズすることにより、
         クリップボードの履歴だけではなく、定型文や日時などの、さまざまなテキストの貼り付け機能を
         追加することができます。
 

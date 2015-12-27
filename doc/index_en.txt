@@ -1,5 +1,5 @@
 ﻿====================================================
- "keyhac" - Python powered key customization tool
+ "Keyhac" - Python powered key customization tool
 ====================================================
 
 :Author: craftware
@@ -42,12 +42,12 @@ About this software
 Usage
 =======
 
-    Once you launched keyhac, you will see an icon in tasktray.
+    Once you launched Keyhac, you will see an icon in tasktray.
 
         .. image:: image/tasktray.png
 
-    By left-clicking the tasktray icon, you can open the console window of keyhac.
-    In this window, you can see the log output of Python interpreter which is embeded in keyhac.
+    By left-clicking the tasktray icon, you can open the console window of Keyhac.
+    In this window, you can see the log output of Python interpreter which is embeded in Keyhac.
 
         .. image:: image/console.png
 
@@ -63,7 +63,7 @@ Usage
          Start/Stop recording key input             Start or stop the keyboard macro recording.
          Clear console                              Clear the log of console window.
          Help                                       Open the help document.
-         Exit                                       Terminate the keyhac.
+         Exit                                       Terminate the Keyhac.
         =========================================  =================================================
 
 
@@ -114,11 +114,11 @@ Incremental search
 
         If you want to use Migemo, you need to obtain the dictionary files, and put them as follows.
 
-            - (keyhac install directory)/dict/migemo-dict
-            - (keyhac install directory)/dict/han2zen.dat
-            - (keyhac install directory)/dict/zen2han.dat
-            - (keyhac install directory)/dict/hira2kata.dat
-            - (keyhac install directory)/dict/roma2hira.dat
+            - (Keyhac installed directory)/dict/migemo-dict
+            - (Keyhac installed directory)/dict/han2zen.dat
+            - (Keyhac installed directory)/dict/zen2han.dat
+            - (Keyhac installed directory)/dict/hira2kata.dat
+            - (Keyhac installed directory)/dict/roma2hira.dat
 
         The dictionary files are included in the binary package of C/Migemo,
 
@@ -153,7 +153,7 @@ Install
 
 
     And with the initial launch, following files will be created automatically in the application data directory.
-    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/Keyhac, on XP, c:/Documents and Settings/Application Data/Keyhac )
 
         ================  =================================================
          Name              Comment
@@ -163,22 +163,22 @@ Install
         ================  =================================================
 
     If you put config.py and keyhac.ini in the same directory with keyhac.exe, those files will be used preferentially.
-    This is useful feature if you want to carry USB memory with keyhac installed.
+    This is useful feature if you want to carry USB memory with Keyhac installed.
 
 
 Uninstall
 -----------------
 
-    To uninstall keyhac, please remove the directory you installed.
+    To uninstall Keyhac, please remove the directory you installed.
 
     And please remove the application data directory.
-    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/Keyhac, on XP, c:/Documents and Settings/Application Data/Keyhac )
 
     This software doesn't use Windows's registory.
 
 
 
-3rd party libraries which are used in keyhac
+3rd party libraries which are used in Keyhac
 ===============================================
 
     In this software, following libraries are used.
@@ -196,11 +196,11 @@ Uninstall
 Customize
 =============
 
-    keyhac uses Python as a embeded scripting language, so you can describe all the key customization in Python script.
+    Keyhac uses Python as a embeded scripting language, so you can describe all the key customization in Python script.
 
-    With the initial execution of keyhac, the configuration script name config.py will be created in the application data directory.
-    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/keyhac, on XP, c:/Documents and Settings/Application Data/keyhac )
-    You can customize keyhac by editting this file by text editor.
+    With the initial execution of Keyhac, the configuration script name config.py will be created in the application data directory.
+    (On Vista/7/8/10, c:/Users/(name)/AppData/Roaming/Keyhac, on XP, c:/Documents and Settings/Application Data/Keyhac )
+    You can customize Keyhac by editting this file by text editor.
 
     You can choose any text editor to edit this config.py,
     but it is recommended to use a text editor which can display Python source code with syntax highlighting.
@@ -257,7 +257,7 @@ Customize
 
     **Defining global keymap**
 
-        keyhac allows you to define separated keymaps by window types,
+        Keyhac allows you to define separated keymaps by window types,
         however this document explains firstly how to define the global keymap which affects all the windows.
 
         You can call keymap.defineWindowKeymap() method without arguments to define the global keymap.
@@ -559,7 +559,7 @@ Customize
 
     **Keyboard macro**
 
-        keyhac has a feature to record the sequence of key inputs, and replay it repeatedly.
+        Keyhac has a feature to record the sequence of key inputs, and replay it repeatedly.
         This is called Keyboard Macro feature.
 
         Recording of the keyboard macro can be started/stopped either tasktray icon menu - "Start/Stop recording key input" or key assigned command.
@@ -580,7 +580,7 @@ Customize
 
     **Setting of clipboard history list**
 
-        keyhac's clipboard history feature can be extended by customizing config.py.
+        Keyhac's clipboard history feature can be extended by customizing config.py.
         You can add fixed-phrase items and date-time items, in addition to clipboard history list.
 
         **Example of clipboard history list setting**
@@ -624,9 +624,9 @@ Customize
 
         Each item has either ( label string, pasting string ) or ( label string, callable object ) format.
         When you specified a callable object in the second position of the tuple,
-        keyhac pastes the string which is returned from the callable object.
+        Keyhac pastes the string which is returned from the callable object.
 
-        If the callable object returns None instead of pasting string, keyhac doesn't paste any string.
+        If the callable object returns None instead of pasting string, Keyhac doesn't paste any string.
         Doing like this, you can add the command execution feature in the clipboard history list.
 
 

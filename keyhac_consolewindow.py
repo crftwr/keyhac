@@ -70,7 +70,7 @@ class ConsoleWindow(ckit.TextWindow):
             bg_color = ckit.getColor("bg"),
             border_size = 2,
             title_bar = True,
-            title = "keyhac",
+            title = "Keyhac",
             show = keyhac_ini.getint( "CONSOLE", "visible", 1 ),
             sysmenu=True,
             activate_handler = self._onActivate,

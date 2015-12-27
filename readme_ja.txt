@@ -1,4 +1,4 @@
-Pythonスクリプトでキーカスタマイズ [ keyhac ]
+Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
 著作者: craftware
 連絡先: craftware@gmail.com

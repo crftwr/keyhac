@@ -1,4 +1,4 @@
-"keyhac" - Python powered key customization tool
+"Keyhac" - Python powered key customization tool
 
 Author: craftware
 Contact: craftware@gmail.com

@@ -13,7 +13,7 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
     def __init__( self, debug ):
     
         ckit.TaskTrayIcon.__init__( self,
-            title = "keyhac",
+            title = "Keyhac",
             lbuttondown_handler = self._onLeftButtonDown,
             lbuttonup_handler = self._onLeftButtonUp,
             rbuttondown_handler = self._onRightButtonDown,

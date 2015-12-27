@@ -1,6 +1,12 @@
 ﻿
-更新履歴
+Changes
 =========
+
+    **1.70**
+
+        - Added english support.
+
+        - Changed the name of application from "keyhac" to "Keyhac".
 
     **1.64**
 
