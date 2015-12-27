@@ -15,14 +15,8 @@ from keyhac_clipboard import cblister_FixedPhrase
 #  @subpage changes
 #
 
-## @if lang_en
-#   @page changes Changes
-#   @htmlinclude changes.htm_
-#  @elseif lang_ja
-#   @page changes 更新履歴
-#   @htmlinclude changes.htm_
-#  @endif
-
+## @page changes Changes
+#  @htmlinclude changes.htm_
 
 ## @if lang_en
 #   @addtogroup keymap Keymap feature
@@ -77,4 +71,3 @@ from keyhac_clipboard import cblister_FixedPhrase
 #  @elseif lang_ja
 #   @addtogroup misc その他雑多な機能
 #  @endif
-
