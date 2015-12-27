@@ -84,7 +84,13 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
         def onHelp(info):
         
             def jobHelp(job_item):
-                help_path = os.path.join( ckit.getAppExePath(), 'doc\\index.html' )
+
+                if ckit.strings.locale == ckit.TranslatedStrings.ja_JP:
+                    dirname = "ja"
+                else:
+                    dirname = "en"
+
+                help_path = os.path.join( ckit.getAppExePath(), 'doc\\%s\\index.html' % dirname )
                 pyauto.shellExecute( None, help_path, "", "" )
 
             def jobHelpFinished(job_item):
