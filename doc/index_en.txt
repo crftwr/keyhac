@@ -133,21 +133,23 @@ Install
 
     Extracting the distributed file, following files and directories will be created.
 
-        ================  ==========================================================
-         Name              Comment
-        ================  ==========================================================
-         keyhac.exe        Application program main body
-         python34.dll      Python runtime library
-         library.zip       Python library archive
-         _config.py        Default configuration file
-         readme.txt        Document to read firstly
-         lib/              Directory which contains runtime library for execution
-         extension/        Directory to put user defined scripts
-         theme/            Directory which contains theme files
-         dict/             Directory to put Migemo dictionary files
-         doc/              Directory which contains document
-         license/          Directory which contains copy right information
-        ================  ==========================================================
+        ====================  ==========================================================
+         Name                  Comment
+        ====================  ==========================================================
+         keyhac.exe            Application program main body
+         python34.dll          Python runtime library
+         library.zip           Python library archive
+         _config.py            Default configuration file
+         readme_en.txt         Document to read firstly (English)
+         readme_ja.txt         Document to read firstly (Japanese)
+         lib/                  Directory which contains runtime library for execution
+         extension/            Directory to put user defined scripts
+         theme/                Directory which contains theme files
+         dict/                 Directory to put Migemo dictionary files
+         doc/en/index.html     Directory which contains document (English)
+         doc/ja/index.html     Directory which contains document (Japanese)
+         license/              Directory which contains copy right information
+        ====================  ==========================================================
 
 
     And with the initial launch, following files will be created automatically in the application data directory.

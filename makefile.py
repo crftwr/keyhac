@@ -26,11 +26,6 @@ else:
 
 PYTHON = PYTHON_DIR + "/python.exe"
 
-if hasattr(makeoption,"SVN_DIR"):
-    SVN_DIR = makeoption.SVN_DIR
-else:
-    SVN_DIR = "c:/Program Files/TortoiseSVN/bin"
-
 if hasattr(makeoption,"DOXYGEN_DIR"):
     DOXYGEN_DIR = makeoption.DOXYGEN_DIR
 else:
@@ -77,7 +72,8 @@ DIST_FILES = [
     "keyhac/lib",
     "keyhac/python34.dll",
     "keyhac/_config.py",
-    "keyhac/readme.txt",
+    "keyhac/readme_en.txt",
+    "keyhac/readme_ja.txt",
     "keyhac/theme/black",
     "keyhac/theme/white",
     "keyhac/license",
@@ -112,25 +108,31 @@ def exe():
 def clean():
     rmtree("dist")
     rmtree("build")
-    rmtree("doc/html")
+    rmtree("doc/html_en")
+    rmtree("doc/html_ja")
     unlink( "tags" )
 
 def doc():
-    rmtree( "doc/html" )
+    rmtree( "doc/html_en" )
+    rmtree( "doc/html_ja" )
     makedirs( "doc/obj" )
-    makedirs( "doc/html" )
-
-    subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "doc/index_ja.txt", "doc/obj/index_ja.html" ] )
-    subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/index_ja.txt", "doc/obj/index_ja.htm_" ] )
+    makedirs( "doc/html_en" )
+    makedirs( "doc/html_ja" )
 
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "doc/index_en.txt", "doc/obj/index_en.html" ] )
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/index_en.txt", "doc/obj/index_en.htm_" ] )
 
+    subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "doc/index_ja.txt", "doc/obj/index_ja.html" ] )
+    subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/index_ja.txt", "doc/obj/index_ja.htm_" ] )
+
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "doc/changes.txt", "doc/obj/changes.html" ] )
     subprocess.call( [ PYTHON, "tool/rst2html_pygments.py", "--stylesheet=tool/rst2html_pygments.css", "--template=tool/rst2html_template.txt", "doc/changes.txt", "doc/obj/changes.htm_" ] )
 
-    subprocess.call( [ DOXYGEN_DIR + "/bin/doxygen.exe", "doc/doxyfile" ] )
-    shutil.copytree( "doc/image", "doc/html/image", ignore=shutil.ignore_patterns(".svn","*.pdn") )
+    subprocess.call( [ DOXYGEN_DIR + "/bin/doxygen.exe", "doc/doxyfile_en" ] )
+    shutil.copytree( "doc/image", "doc/html_en/image", ignore=shutil.ignore_patterns("*.pdn",) )
+
+    subprocess.call( [ DOXYGEN_DIR + "/bin/doxygen.exe", "doc/doxyfile_ja" ] )
+    shutil.copytree( "doc/image", "doc/html_ja/image", ignore=shutil.ignore_patterns("*.pdn",) )
 
 def run():
     subprocess.call( [ PYTHON, "keyhac_main.py" ] )

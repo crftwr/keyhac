@@ -2,14 +2,14 @@
 import os
 import fnmatch
 
-import keyhac_resource
-
 from cx_Freeze import setup, Executable
 
 sys.path[0:0] = [
     os.path.join( os.path.split(sys.argv[0])[0], ".." ),
     ]
  
+import keyhac_resource
+
 executable = Executable( 
     script = "keyhac_main.py",
     icon = "icon.ico",
@@ -47,7 +47,8 @@ options = {
             "readme.txt",
             "migemo.dll",
             "_config.py",
-            ( "doc/html", "doc" ),
+            ( "doc/html_en", "doc/en" ),
+            ( "doc/html_ja", "doc/ja" ),
             ],
         #"include_msvcr" : 1,
     },
