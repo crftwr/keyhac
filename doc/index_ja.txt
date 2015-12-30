@@ -4,9 +4,9 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
 
 :著作者: craftware
 :連絡先: craftware@gmail.com
-:開発環境: Python + Xcode
 :種別: フリーウェア
-:動作環境: Mac OSX 10.11-
+:動作環境: Mac OSX 10.6-
+:開発環境: Python + Xcode
 :Webサイト: http://sites.google.com/site/craftware/
 
 .. contents::
@@ -234,7 +234,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
             keymap.replaceKey( "RShift", "Back" )
             keymap.replaceKey( "RCmd", 255 )
 
-        ここでは、右CommandキーをBackSpace、右Altキーを仮想キーコード 255番
+        ここでは、右ShiftキーをBackSpace、右Altキーを仮想キーコード 255番
         に割り当てなおしています。
 
         replaceKey() の引数としては、キーの名前をあらわす文字列と、仮想キーコード
@@ -258,7 +258,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
             # ユーザモディファイアキーの定義
             keymap.defineModifier( 255, "User0" )
 
-        ここでは、先ほど replaceKey を使って右Altキーから置き換えた、
+        ここでは、先ほど replaceKey を使って右Commandキーから置き換えた、
         仮想キーコード 255 番を、ユーザモディファイア 0 番に割り当てています。
 
         標準では、Alt, Ctrl, Shift, Cmd, Fn の 5 つのモディファイアが存在していますが、
@@ -380,7 +380,7 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
                 subprocess.call([ "open", "-a", "TextEdit", path ])
             keymap.editor = editor
 
-        この設定は、タスクトレイの keyhac アイコンを右クリックして表示される
+        この設定は、タスクトレイの keyhac アイコンをクリックして表示される
         メニューの [ 設定の編集 ] を選択したときに、config.py をどの
         アプリケーションで編集するかに影響します。
 
@@ -668,4 +668,3 @@ Pythonスクリプトでキーカスタマイズ [ Keyhac ]
             keymap.clipboard_history.quota = 10 * 1024 * 1024
 
         デフォルトでは 10MB の履歴が保存されます。
-

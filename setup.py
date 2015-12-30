@@ -18,12 +18,12 @@ PIL_dylibs_path = "/Library/Frameworks/Python.framework/Versions/3.4/lib/python3
 
 buildOptions = dict(
 	optimize = 2,
-	packages = [], 
-	includes = ["keyhac"], 
-	excludes = ["tkinter"], 
+	packages = [],
+	includes = ["keyhac"],
+	excludes = ["tkinter"],
 	bin_includes = [],
 	bin_excludes = ["ckitcore.dylib"],
-    include_files = [ 
+    include_files = [
         (PIL_dylibs_path+"libjpeg.9.dylib",".dylibs/libjpeg.9.dylib"),
         (PIL_dylibs_path+"libtiff.5.dylib",".dylibs/libtiff.5.dylib"),
         (PIL_dylibs_path+"libz.1.2.8.dylib",".dylibs/libz.1.2.8.dylib"),
@@ -31,9 +31,11 @@ buildOptions = dict(
         "extension",
         "license",
         "theme",
-        "readme.txt",
+        "readme_en.txt",
+        "readme_ja.txt",
         "_config.py",
-        ( "doc/html", "doc" ),
+        ( "doc/html_en", "doc/en" ),
+        ( "doc/html_ja", "doc/ja" ),
     ],
 )
 

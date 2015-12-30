@@ -717,7 +717,7 @@ class Keymap(ckit.TextWindow):
             font_name = "Osaka-Mono",
             font_size = 16,
             title_bar = True,
-            title = "keyhac keymap",
+            title = "Keyhac keymap",
             show = False,
             endsession_handler = self._onEndSession,
             )
@@ -1216,7 +1216,7 @@ class Keymap(ckit.TextWindow):
     #  @param dst  置き換え後のキー
     #
     #  引数 src で指定されたキー入力を、引数 dst で指定されたキーの入力として扱うよう指示します。\n
-    #  この置き換え処理は、keyhac のキー処理の、もっとも早い段階で行われますので、
+    #  この置き換え処理は、Keyhac のキー処理の、もっとも早い段階で行われますので、
     #  キーに機能を割り当てる際は、この置き換え後のキーで記述する必要があります。\n\n
     #
     #  src と dst には、"Space" や "Left" のような文字列形式の識別子か、仮想キーコードを数値で渡します。
@@ -1290,8 +1290,8 @@ class Keymap(ckit.TextWindow):
     #  アプリケーションごと、あるいはウインドウごとに、それぞれ異なったキーのカスタマイズを行うために、
     #  実行ファイル名やウインドウの名前から、ウインドウの識別条件を定義します。\n\n
     #
-    #  引数 exe_name, class_name, window_text に渡す文字列は、keyhac のコンソールウインドウを使って、調査することが出来ます。
-    #  タスクトレイ中の keyhac のアイコンを右クリックして、[ 内部ログ ON ] を選択すると、コンソールウインドウに、
+    #  引数 exe_name, class_name, window_text に渡す文字列は、Keyhac のコンソールウインドウを使って、調査することが出来ます。
+    #  タスクトレイ中の Keyhac のアイコンを右クリックして、[ 内部ログ ON ] を選択すると、コンソールウインドウに、
     #  フォーカス位置のウインドウの詳細情報が出力されるようになります。\n\n
     #
     #  引数 exe_name, class_name, window_text, check_func を省略するか None を渡した場合は、

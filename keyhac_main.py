@@ -39,13 +39,13 @@ if __name__ == "__main__":
     # アクセシビリティの設定をチェック
     if not ckit.Hook.isAllowed(True):
         sys.exit(0)
-            
-    ckit.registerWindowClass( "keyhac" )
+
+    ckit.registerWindowClass( "Keyhac" )
     
     # exeと同じ位置にある設定ファイルを優先する
     if os.path.exists( os.path.join( ckit.getAppExePath(), 'config.py' ) ):
         ckit.setDataPath( ckit.getAppExePath() )
-    else:    
+    else:
         ckit.setDataPath( os.path.join( ckit.getAppDataPath(), keyhac_resource.keyhac_dirname ) )
         if not os.path.exists(ckit.dataPath()):
             os.mkdir(ckit.dataPath())
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     # config.py がどこにもない場合は作成する
     if not os.path.exists(config_filename) and os.path.exists(default_config_filename):
         shutil.copy( default_config_filename, config_filename )
-    
+
     keyhac_ini.read()
 
     ckit.setThemeDefault()
@@ -79,9 +79,9 @@ if __name__ == "__main__":
     console_window.registerStdio()
 
     keymap.configure()
-    
+
     keymap.startup()
-    
+
     keymap.messageLoop()
 
     console_window.unregisterStdio()
@@ -99,4 +99,4 @@ if __name__ == "__main__":
     console_window.saveState()
     console_window.destroy()
 
-    keyhac_ini.write()    
+    keyhac_ini.write()
