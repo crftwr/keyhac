@@ -15,24 +15,24 @@ import keyhac_ini
 
 ## クリップボードの履歴を管理し、リスト表示するためのクラス
 class cblister_ClipboardHistory:
-    
+
     def __init__( self, window, debug=False ):
-        
+
         self.window = window
         self.items = []
         self.maxnum = 1000
         self.quota = 10 * 1024 * 1024
-        
+
         self.debug = debug
 
         self.insane_count = 0
         self.seq_number = None
-        
+
         if ckit.platform()=="win":
             keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
         else:
             self.clipboard_seq_number = ckit.getClipboardSequenceNumber()
-        
+
     def destroy(self):
 
         if ckit.platform()=="win":
@@ -42,23 +42,23 @@ class cblister_ClipboardHistory:
 
     def enableDebug( self, enable ):
         self.debug = enable
-        
+
     def _hook_onClipboardChanged(self):
-    
+
         def onClipboardChanged():
             self._push( ckit.getClipboardText() )
             self.seq_number = ckit.getClipboardSequenceNumber()
-        
+
         # Firefox で クリップボードへの格納が失敗してしまわないように
         # フックの中ではなく、delayedCall で遅延して取得する。
         self.window.delayedCall( onClipboardChanged, 0 )
-    
+
     def checkChanged(self):
         new_clipboard_seq_number = ckit.getClipboardSequenceNumber()
         if self.clipboard_seq_number != new_clipboard_seq_number:
             self.clipboard_seq_number = new_clipboard_seq_number
             self._hook_onClipboardChanged()
-    
+
     # クリップボード履歴の内容をOSのクリップボードに反映させる
     def _apply(self):
 
@@ -66,9 +66,9 @@ class cblister_ClipboardHistory:
             text = self.items[0]
         else:
             text = ""
-        
+
         ckit.setClipboardText(text)
-    
+
     # クリップボード履歴にテキストを登録する ( OSのクリップボードに反映させない )
     def _push( self, text ):
 
@@ -85,17 +85,17 @@ class cblister_ClipboardHistory:
 
         if len(self.items)>self.maxnum:
             self.items = self.items[:self.maxnum]
-        
+
     ## クリップボード履歴にテキストを登録する
     def push( self, text ):
         self._push(text)
-        self._apply()    
-        
+        self._apply()
+
     ## クリップボード履歴の直近の項目を削除する
     def pop(self):
         if len(self.items):
             del self.items[0]
-            self._apply()    
+            self._apply()
 
     ## クリップボード履歴の直近の項目を末尾に回す
     def rotate(self):
@@ -122,7 +122,7 @@ class cblister_ClipboardHistory:
     def getListItems(self):
 
         items = list( self.items[:] )
-        
+
         if len(items)==0:
             return []
 
@@ -136,7 +136,7 @@ class cblister_ClipboardHistory:
                 return ( "", src )
             return ( getLeadingText(src,100), src )
         items = list( map( build_item, items ) )
-        
+
         return items
 
     def save(self):
@@ -178,7 +178,7 @@ class cblister_ClipboardHistory:
     def checkSanity(self):
 
         if ckit.platform()=="win":
-    
+
             new_seq_number = ckit.getClipboardSequenceNumber()
 
             if new_seq_number == self.seq_number:
@@ -187,24 +187,16 @@ class cblister_ClipboardHistory:
                 self.insane_count += 1
 
             if self.insane_count>=3:
-        
+
                 clipboard_text = ckit.getClipboardText()
-        
+
                 # クリップボードのフックの再設定
                 keyhac_hook.hook.clipboard = None
                 keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
 
                 if self.debug:
-
-                    message = ( 
-                        "----------------------------------\n"
-                        "clipboard content mismatch\n"
-                        "re-installed clipboard hook\n"
-                        "----------------------------------"
-                        )
-
                     print( "" )
-                    print( message )
+                    print( ckit.strings["log_clipboard_content_mismatch_detected"] )
                     print( "" )
 
                 self.insane_count = 0
@@ -219,4 +211,3 @@ class cblister_FixedPhrase:
         return self.items
 
 ## @} clipboardlist
-

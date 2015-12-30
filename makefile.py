@@ -3,10 +3,14 @@ import sys
 import subprocess
 import shutil
 
+sys.path[0:0] = [
+    os.path.join( os.path.split(sys.argv[0])[0], '..' ),
+    ]
+
+import keyhac_resource
 
 PYTHON = "python3.4"
 DOXYGEN = "/Applications/Doxygen.app/Contents/Resources/doxygen"
-
 
 def unlink(filename):
     try:
@@ -65,4 +69,3 @@ else:
     target = sys.argv[1]
 
 eval( target + "()" )
-

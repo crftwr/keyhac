@@ -207,7 +207,7 @@ class KeyCondition:
     }
 
     if ckit_misc.platform()=="win":
-    
+
         vk_str_table_std = {
             VK_OEM_1 : "Semicolon",
             VK_OEM_2 : "Slash",
@@ -373,7 +373,7 @@ class KeyCondition:
     }
 
     if ckit_misc.platform()=="win":
-    
+
         str_vk_table_std = {
 
             "SEMICOLON"     : VK_OEM_1,
@@ -394,7 +394,7 @@ class KeyCondition:
         }
 
         str_vk_table_jpn = {
-        
+
             "SEMICOLON"     : VK_OEM_PLUS,
             "COLON"         : VK_OEM_1,
             "SLASH"         : VK_OEM_2,
@@ -434,7 +434,7 @@ class KeyCondition:
         }
 
         str_vk_table_jpn = {
-        
+
             "SEMICOLON"     : VK_PLUS,
             #"COLON"         : VK_OEM_1, # FIXME : Mac対応
             "SLASH"         : VK_SLASH,
@@ -673,7 +673,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         self.keymap[key_cond] = value
@@ -683,7 +683,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         return self.keymap[key_cond]
@@ -692,7 +692,7 @@ class WindowKeymap:
         try:
             key_cond = KeyCondition.fromString(name)
         except ValueError:
-            print( "ERROR : キーの表記が正しくありません :", name )
+            print( ckit.strings["error_invalid_key_expression"], name )
             return
 
         del self.keymap[key_cond]
@@ -891,7 +891,7 @@ class Keymap(ckit.TextWindow):
 
         self.quote_mark = "> "
         self.cblisters = [
-            ( "クリップボード", self.clipboard_history )
+            ( ckit.strings["title_clipboard"], self.clipboard_history )
             ]
 
         ckit.CronTable.defaultCronTable().cancel()
@@ -990,7 +990,7 @@ class Keymap(ckit.TextWindow):
     def _recordKey( self, vk, up ):
         if self.record_status=="recording":
             if len(self.record_seq)>=1000:
-                print( "ERROR : キーボードマクロが長すぎます" )
+                print( ckit.strings["error_macro_too_long"] )
                 return
             self.record_seq.append( ( vk, up ) )
 
@@ -1053,7 +1053,7 @@ class Keymap(ckit.TextWindow):
                     return False
 
         except Exception as e:
-            print( "ERROR : _onKeyDown failed" )
+            print( ckit.strings["error_unexpected"], "_onKeyDown" )
             print( e )
             traceback.print_exc()
 
@@ -1122,7 +1122,7 @@ class Keymap(ckit.TextWindow):
                     self._keyAction(key)
 
         except Exception as e:
-            print( "ERROR : _onKeyUp failed" )
+            print( ckit.strings["error_unexpected"], "_onKeyUp" )
             print( e )
             traceback.print_exc()
 
@@ -1170,12 +1170,12 @@ class Keymap(ckit.TextWindow):
             self.focus = focus
 
         except Exception as e:
+            print( ckit.strings["error_unexpected"], "_focusChanged" )
             print( e )
-            print( "ERROR : _focusChanged failed" )
             traceback.print_exc()
 
     def _hook_onKeyDown( self, vk, scan ):
-    
+
         # キーフック強制解除検出カウンタをリセット
         self.sanity_check_count = 0
 
@@ -1226,14 +1226,14 @@ class Keymap(ckit.TextWindow):
             if type(src)==str:
                 src = KeyCondition.strToVk(src)
         except:
-            print( "ERROR : 引数 src の書式が間違えています :", src )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("src",), src )
             return
 
         try:
             if type(dst)==str:
                 dst = KeyCondition.strToVk(dst)
         except:
-            print( "ERROR : 引数 dst の書式が間違えています :", dst )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("dst",), dst )
             return
 
         self.vk_vk_map[src] = dst
@@ -1259,7 +1259,7 @@ class Keymap(ckit.TextWindow):
             if type(vk)==str:
                 vk = KeyCondition.strToVk(vk)
         except:
-            print( "ERROR : 引数 vk の書式が間違えています :", vk )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("vk",), vk )
             return
 
         try:
@@ -1268,14 +1268,14 @@ class Keymap(ckit.TextWindow):
             else:
                 raise TypeError
         except:
-            print( "ERROR : 引数 mod の書式が間違えています :", mod )
+            print( ckit.strings["error_invalid_expression_for_argument"] % ("mod",), mod )
             return
 
         try:
             if vk in self.vk_mod_map:
                 raise ValueError
         except:
-            print( "ERROR : すでにモディファイアキーとして定義されています :", vk_org )
+            print( ckit.strings["error_already_defined_as_modifier"], vk_org )
             return
 
         self.vk_mod_map[vk] = mod
@@ -1398,13 +1398,13 @@ class Keymap(ckit.TextWindow):
 
     # フォーカスがあるウインドウを明示的に更新する
     def _updateFocusWindow(self):
-        
+
         new_focus_change_count = ckit.getFocusChangeCount()
         if self.focus_change_count == new_focus_change_count:
             return
-        
+
         self.focus_change_count = new_focus_change_count
-        
+
         try:
             systemwide = accessibility.create_systemwide_ref()
             focused_app = systemwide["AXFocusedApplication"]
@@ -1413,11 +1413,11 @@ class Keymap(ckit.TextWindow):
             focus = None
 
         self._focusChanged(focus)
-            
+
     # モディファイアのおかしな状態を修正する
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
     def _fixFunnyModifierState(self):
-        
+
         if ckit.platform()=="win":
 
             for vk_mod in self.vk_mod_map.items():
@@ -1437,7 +1437,7 @@ class Keymap(ckit.TextWindow):
 
     # キーフックが強制解除されたことを検出し、フックを再設定する
     def checkSanity(self):
-    
+
         if not self.hook_enabled : return
 
         if ckit.platform()=="win":
@@ -1448,14 +1448,7 @@ class Keymap(ckit.TextWindow):
                 self.sanity_check_state = state
                 if self.sanity_check_count >= 4:
                     print( "" )
-                    print( "-----------------------------------------" )
-                    print( "キーフック強制解除を検出しました。" )
-                    print( "自動的にフックの再設定を行います。" )
-                    print( "" )
-                    print( "キーフックの強制解除が頻発する場合、時間のかかる処理(300ミリ秒以上)が" )
-                    print( "メインスレッドで呼び出されていないかを、確認してください。" )
-                    print( "時間のかかる処理は JobQueue/JobItem を使ってサブスレッドに追い出してください。" )
-                    print( "-----------------------------------------" )
+                    print( ckit.strings["log_key_hook_force_cancellation_detected"] )
                     print( "" )
                     keyhac_hook.hook.reset()
                     self.sanity_check_count = 0
@@ -1612,6 +1605,7 @@ class Keymap(ckit.TextWindow):
 
         return _inputKey
 
+
     ## 文字を入力する関数を返す
     #
     #  @param self -
@@ -1638,6 +1632,7 @@ class Keymap(ckit.TextWindow):
 
         return _inputText
 
+
     ## キーボードマクロの記録を開始する
     #
     #  @param self -
@@ -1645,8 +1640,8 @@ class Keymap(ckit.TextWindow):
     def command_RecordStart(self):
         self.record_seq = []
         self.record_status = "recording"
-        print( "キーボードマクロ : 記録開始" )
-        self.popBalloon( "Record", "Recording Started", 3000 )
+        print( ckit.strings["log_macro_recording_started"] )
+        self.popBalloon( "Record", ckit.strings["balloon_macro_recording_started"], 3000 )
 
     ## キーボードマクロの記録を終了する
     #
@@ -1683,8 +1678,8 @@ class Keymap(ckit.TextWindow):
 
             self.record_status="recorded"
 
-            print( "キーボードマクロ : 記録終了" )
-            self.popBalloon( "Record", "Recording Stopped", 3000 )
+            print( ckit.strings["log_macro_recording_stopped"] )
+            self.popBalloon( "Record", ckit.strings["balloon_macro_recording_stopped"], 3000 )
 
     ## キーボードマクロの記録を開始または終了する
     #
@@ -1703,8 +1698,8 @@ class Keymap(ckit.TextWindow):
     def command_RecordClear(self):
         self.record_seq = None
         self.record_status = None
-        print( "キーボードマクロ : 消去" )
-        self.popBalloon( "Record", "Record Cleared", 3000 )
+        print( ckit.strings["log_macro_recording_cleared"] )
+        self.popBalloon( "Record", ckit.strings["balloon_macro_recording_cleared"], 3000 )
 
     ## キーボードマクロを再生する
     #
@@ -1714,7 +1709,7 @@ class Keymap(ckit.TextWindow):
 
         if self.record_status=="recorded":
 
-            print( "キーボードマクロ : 再生" )
+            print( ckit.strings["log_macro_replay"] )
 
             # モディファイアを離す
             modifier = self.modifier
@@ -1775,6 +1770,7 @@ class Keymap(ckit.TextWindow):
 
         return _mouseMove
 
+
     ## マウスのボタンを擬似的に押す関数を返す
     #
     #  @param self    -
@@ -1804,7 +1800,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightDown(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1812,6 +1808,7 @@ class Keymap(ckit.TextWindow):
             self.endInput()
 
         return _mouseButtonDown
+
 
     ## マウスのボタンを擬似的に離す関数を返す
     #
@@ -1842,7 +1839,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightUp(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1850,6 +1847,7 @@ class Keymap(ckit.TextWindow):
             self.endInput()
 
         return _mouseButtonUp
+
 
     ## マウスのボタンを擬似的にクリックする関数を返す
     #
@@ -1880,7 +1878,7 @@ class Keymap(ckit.TextWindow):
             elif button=='right':
                 mouse_input = pyauto.MouseRightClick(x,y)
             else:
-                print( "ERROR : マウスのボタンのタイプが正しくありません :", button )
+                print( ckit.strings["error_invalid_mouse_button_expression"], button )
 
             if mouse_input:
                 self.input_seq.append( mouse_input )
@@ -1888,6 +1886,7 @@ class Keymap(ckit.TextWindow):
             self.endInput()
 
         return _mouseButtonClick
+
 
     ## マウスのホイールを擬似的に回転する関数を返す
     #
@@ -1916,6 +1915,7 @@ class Keymap(ckit.TextWindow):
 
         return _mouseWheel
 
+
     ## マウスの水平ホイールを擬似的に回転する関数を返す
     #
     #  @param self    -
@@ -1943,6 +1943,7 @@ class Keymap(ckit.TextWindow):
 
         return _mouseHorizontalWheel
 
+
     ## フォーカスされているウインドウを移動させる関数を返す
     #
     #  @param self    -
@@ -1968,6 +1969,7 @@ class Keymap(ckit.TextWindow):
             window["AXPosition"] = tuple(pos)
 
         return _moveWindow
+
 
     ## フォーカスされているウインドウをモニターの端にそろえるように移動させる関数を返す
     #
@@ -2045,7 +2047,7 @@ class Keymap(ckit.TextWindow):
     #
     #  @param self -
     #  @param app_name アプリケーションの名前 (例: "com.apple.Terminal" )
-    # 
+    #
     def activateApplication( self, app_name ):
         pid_found = None
         for pid in ckit.getRunningApplications():
@@ -2118,7 +2120,7 @@ class Keymap(ckit.TextWindow):
         monitor_info_list = ckit.getMonitorInfo()
         focus_rect = monitor_info_list[0][0]
         uielm = self.focus
-        
+
         while uielm:
             try:
                 focus_pos = uielm["AXPosition"]
@@ -2181,7 +2183,7 @@ class Keymap(ckit.TextWindow):
 
             if focus_rect[3] - focus_rect[1] < 64:
                 keyhac_misc.adjustWindowPosition( self.list_window, focus_rect )
-            
+
             self.list_window.show(True,True)
 
             if list_window_old:
@@ -2197,7 +2199,7 @@ class Keymap(ckit.TextWindow):
                     lister_select += 1
             else:
                 break
-        
+
         if paste_target_pid:
             ckit.activateApplicationByPid(paste_target_pid)
 
@@ -2241,7 +2243,7 @@ class Keymap(ckit.TextWindow):
                 text += self.quote_mark + line
 
         def jobPaste(job_item):
-            
+
             # フォーカスアプリケーションがNoneでなくなるのを待つ
             wnd = None
             timeout = 0.5
@@ -2312,7 +2314,7 @@ class Keymap(ckit.TextWindow):
     ## config.py を再読み込みする
     def command_ReloadConfig(self):
         self.configure()
-        print( "設定をリロードしました" )
+        print( ckit.strings["log_config_reloaded"] )
         print( "" )
 
     ## config.py を編集する
@@ -2322,11 +2324,10 @@ class Keymap(ckit.TextWindow):
             self.editConfigFile()
 
         def jobEditConfigFinished(job_item):
-            print( "設定ファイルのエディタを起動しました" )
+            print( ckit.strings["log_config_editor_launched"] )
             print( "" )
 
         job_item = ckit.JobItem( jobEditConfig, jobEditConfigFinished )
         ckit.JobQueue.defaultQueue().enqueue(job_item)
 
 ## @} keymap
-

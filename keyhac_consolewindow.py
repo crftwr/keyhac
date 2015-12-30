@@ -167,7 +167,7 @@ class ConsoleWindow(ckit.TextWindow):
                 pyauto.shellExecute( None, help_path, "", "" )
 
             def jobHelpFinished(job_item):
-                print( "Helpを開きました" )
+                print( ckit.strings["log_help_opened"] )
                 print( "" )
             
             job_item = ckit.JobItem( jobHelp, jobHelpFinished )

@@ -1,3 +1,7 @@
-__pycache__
-build
-dist
+__pycache__/
+dist/
+doc/html/
+doc/obj/
+keyhac.ini
+tags
+config.py
