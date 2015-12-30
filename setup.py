@@ -57,7 +57,7 @@ executables = [
 ]
 
 setup(name='Keyhac',
-      version = '1.00',
+      version = '1.10',
       description = 'Keyhac : Python based keyboard customization tool.',
       options = dict(build_exe = buildOptions, bdist_mac = macOptions, bdist_dmg = dmgOptions ),
       executables = executables)
