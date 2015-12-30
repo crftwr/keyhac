@@ -86,7 +86,7 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
                 else:
                     dirname = "en"
 
-                help_path = os.path.join( ckit.getAppExePath(), 'doc\\%s\\index.html' % dirname )
+                help_path = os.path.join( ckit.getAppExePath(), 'doc/%s/index.html' % dirname )
                 subprocess.call( [ "open", help_path ] )
 
             def jobHelpFinished(job_item):
