@@ -1006,7 +1006,7 @@ class Keymap(ckit.TextWindow):
 
         self._updateFocusWindow()
 
-        self._fixFunnyModifierState()
+        self._fixWierdModifierState()
 
         self._recordKey( vk, False )
 
@@ -1061,7 +1061,7 @@ class Keymap(ckit.TextWindow):
 
         self._updateFocusWindow()
 
-        self._fixFunnyModifierState()
+        self._fixWierdModifierState()
 
         self._recordKey( vk, True )
 
@@ -1416,23 +1416,24 @@ class Keymap(ckit.TextWindow):
 
     # モディファイアのおかしな状態を修正する
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
-    def _fixFunnyModifierState(self):
+    def _fixWierdModifierState(self):
+        
+        for vk_mod in self.vk_mod_map.items():
 
-        if ckit.platform()=="win":
+            if vk_mod[1] & MODKEY_USER_ALL:
+                continue
 
-            for vk_mod in self.vk_mod_map.items():
-
-                if vk_mod[1] & MODKEY_USER_ALL:
-                    continue
-
-                if self.modifier & vk_mod[1]:
-                    state = ckit.Input.getAsyncKeyState(vk_mod[0])
-                    if not (state & 0x8000):
-                        self.modifier &= ~vk_mod[1]
-                        if self.debug :
-                            print( "" )
-                            print( "FIX :", KeyCondition.vkToStr(vk_mod[0]) )
-                            print( "" )
+            if self.modifier & vk_mod[1]:
+                if not ckit.Input.isKeyPressed(vk_mod[0]):
+                    
+                    self.modifier &= ~vk_mod[1]
+                    
+                    keyhac_hook.hook.fixWierdModifierState()
+    
+                    if self.debug:
+                        print( "" )
+                        print( "FIX :", KeyCondition.vkToStr(vk_mod[0]) )
+                        print( "" )
 
 
     # キーフックが強制解除されたことを検出し、フックを再設定する
