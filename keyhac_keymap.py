@@ -749,6 +749,7 @@ class Keymap(ckit.TextWindow):
 
         self.sanity_check_state = None
         self.sanity_check_count = 0
+        self.last_input_send_time = 0
 
         # TRU のときも Input.send() を呼ぶかどうかのデバッグ用フラグ。
         # クリップボード履歴リストの表示に DelayedCall を使うようにしたら
@@ -852,7 +853,7 @@ class Keymap(ckit.TextWindow):
             if vk_mod[1] & MODKEY_USER_ALL:
                 continue
             input_seq.append( ckit.KeyUp(vk_mod[0]) )
-        ckit.Input.send(input_seq)
+        self.sendInput(input_seq)
 
     ## 設定を読み込む
     #
@@ -1038,7 +1039,7 @@ class Keymap(ckit.TextWindow):
             elif replaced:
                 key_seq = [ ckit.KeyDown(vk) ]
                 if self.debug : print( "REP :", key_seq )
-                ckit.Input.send(key_seq)
+                self.sendInput(key_seq)
                 return True
             else:
                 if self.send_input_on_tru:
@@ -1046,7 +1047,7 @@ class Keymap(ckit.TextWindow):
                     # TRU でも Input.send すると問題が起きない
                     key_seq = [ ckit.KeyDown(vk) ]
                     if self.debug : print( "TRU :", key_seq )
-                    ckit.Input.send(key_seq)
+                    self.sendInput(key_seq)
                     return True
                 else:
                     if self.debug : print( "TRU :", key )
@@ -1098,7 +1099,7 @@ class Keymap(ckit.TextWindow):
                 elif replaced or ( oneshot and self._hasKeyAction(oneshot_key) ):
                     key_seq = [ ckit.KeyUp(vk) ]
                     if self.debug : print( "REP :", key_seq )
-                    ckit.Input.send(key_seq)
+                    self.sendInput(key_seq)
                     return True
                 else:
                     if self.send_input_on_tru:
@@ -1106,7 +1107,7 @@ class Keymap(ckit.TextWindow):
                         # TRU でも Input.send すると問題が起きない
                         key_seq = [ ckit.KeyUp(vk) ]
                         if self.debug : print( "TRU :", key_seq )
-                        ckit.Input.send(key_seq)
+                        self.sendInput(key_seq)
                         return True
                     else:
                         if self.debug : print( "TRU :", key )
@@ -1320,8 +1321,12 @@ class Keymap(ckit.TextWindow):
     def endInput(self):
         self.setInput_Modifier(self.modifier)
         if self.debug : print( "OUT :", self.input_seq )
-        ckit.Input.send(self.input_seq)
+        self.sendInput(self.input_seq)
         self.input_seq = []
+
+    def sendInput( self, seq ):
+        ckit.Input.send(seq)
+        self.last_input_send_time = time.time()
 
     def setInput_Modifier( self, mod ):
 
@@ -1418,6 +1423,10 @@ class Keymap(ckit.TextWindow):
     # たとえば Win-L を押して ロック画面に行ったときに Winキーが押されっぱなしになってしまうような現象を回避
     def _fixWierdModifierState(self):
         
+        # 最後の Input.send() から 一定時間以上経ってなかったら、この処理をしない
+        if time.time() - self.last_input_send_time < 1.0:
+            return
+
         for vk_mod in self.vk_mod_map.items():
 
             if vk_mod[1] & MODKEY_USER_ALL:
@@ -1470,7 +1479,7 @@ class Keymap(ckit.TextWindow):
     def hookCall( self, func ):
         self.hook_call_list.append(func)
         print("Warning : hookCall is not supported on other than Windows.")
-        ckit.Input.send( [ ckit.KeyDown(0) ] ) # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
+        self.sendInput( [ ckit.KeyDown(0) ] ) # FIXME : vk=0 は Macでは A キーなので特殊な用途には使えない
 
     ## キーボードフォーカスを持っているUI要素を取得する
     #
@@ -1718,7 +1727,7 @@ class Keymap(ckit.TextWindow):
             for vk_mod in self.vk_mod_map.items():
                 if self.modifier & vk_mod[1]:
                     input_seq.append( ckit.KeyUp(vk_mod[0]) )
-            ckit.Input.send(input_seq)
+            self.sendInput(input_seq)
             self.modifier = 0
 
             # 記録されたキーシーケンスを実行する
@@ -1727,19 +1736,19 @@ class Keymap(ckit.TextWindow):
                     if not self._onKeyDown(vk):
                         key_seq = [ ckit.KeyDown(vk) ]
                         if self.debug : print( "OUT :", key_seq )
-                        ckit.Input.send(key_seq)
+                        self.sendInput(key_seq)
                 else:
                     if not self._onKeyUp(vk):
                         key_seq = [ ckit.KeyUp(vk) ]
                         if self.debug : print( "OUT :", key_seq )
-                        ckit.Input.send(key_seq)
+                        self.sendInput(key_seq)
 
             # モディファイアを戻す
             input_seq = []
             for vk_mod in self.vk_mod_map.items():
                 if modifier & vk_mod[1]:
                     input_seq.append( ckit.KeyDown(vk_mod[0]) )
-            ckit.Input.send(input_seq)
+            self.sendInput(input_seq)
             self.modifier = modifier
 
     ## マウスカーソルを移動させる関数を返す
