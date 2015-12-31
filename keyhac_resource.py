@@ -138,10 +138,10 @@ ckit.strings.setString( "menu_internal_log_output_disable",
     ja_JP = "内部ログ OFF" )
 ckit.strings.setString( "menu_hook_enable",
     en_US = "Enable the Hook",
-    ja_JP = "フック OFF" )
+    ja_JP = "フック ON" )
 ckit.strings.setString( "menu_hook_disable",
     en_US = "Disable the Hook",
-    ja_JP = "フック ON" )
+    ja_JP = "フック OFF" )
 ckit.strings.setString( "menu_start_recording",
     en_US = "Start recording key input",
     ja_JP = "キー操作 記録開始" )
