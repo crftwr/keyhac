@@ -2,9 +2,11 @@
 更新履歴
 =========
 
-    **1.01**
+    **1.10**
 
         - Added the support of English language.
+
+        - Added some countermeasure for the issue that modifier keys sometimes become hold down.
 
 
     **1.00**
