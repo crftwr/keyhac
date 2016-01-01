@@ -14,7 +14,7 @@ def configure(keymap):
     # Setting with program file path (Simple usage)
     if 1:
         keymap.editor = "TextEdit"
-        #keymap.editor = "Sublime Text 2"
+        #keymap.editor = "Atom"
 
     # Setting with callable object (Advanced usage)
     if 0:
