@@ -14,6 +14,8 @@ sys.path[0:0] = [
     os.path.join( os.path.split(sys.argv[0])[0], ".." ),
     ]
 
+import keyhac_resource
+
 PIL_dylibs_path = "/Library/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages/PIL/.dylibs/"
 
 buildOptions = dict(
@@ -57,7 +59,7 @@ executables = [
 ]
 
 setup(name='Keyhac',
-      version = '1.10',
+      version = keyhac_resource.keyhac_version,
       description = 'Keyhac : Python based keyboard customization tool.',
       options = dict(build_exe = buildOptions, bdist_mac = macOptions, bdist_dmg = dmgOptions ),
       executables = executables)
