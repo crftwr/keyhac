@@ -6,6 +6,8 @@ Changes
 
         - Allow multiple pyauto.Hook instances, so that Keyhac can co-exist with applications which use pyauto.Hook.
 
+        - Fixed the error which happens when a clipboard history item is removed in a state that the clipboard contains non-text object.
+
 
     **1.70**
 

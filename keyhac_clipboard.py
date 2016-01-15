@@ -57,7 +57,8 @@ class cblister_ClipboardHistory:
         else:
             text = ""
         
-        ckit.setClipboardText(text)
+        if text!=None:
+            ckit.setClipboardText(text)
     
     # クリップボード履歴にテキストを登録する ( OSのクリップボードに反映させない )
     def _push( self, text ):
