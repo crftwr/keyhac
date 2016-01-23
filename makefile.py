@@ -1,9 +1,11 @@
-﻿import os
+import os
 import sys
-import subprocess
+import getopt
 import shutil
 import zipfile
 import hashlib
+import subprocess
+import py_compile
 
 sys.path[0:0] = [
     os.path.join( os.path.split(sys.argv[0])[0], '..' ),
@@ -11,29 +13,50 @@ sys.path[0:0] = [
 
 import keyhac_resource
 
-# makeoption.py というファイルを作れば、
-# Python、Svn、Doxygen のインストールディレクトリ等をカスタマイズできる。
+#-------------------------------------------
 
-try:
-    import makeoption
-except:
-    makeoption = {}
+action = "all"
 
-if hasattr(makeoption,"PYTHON_DIR"):
-    PYTHON_DIR = makeoption.PYTHON_DIR
-else:
-    PYTHON_DIR = "c:/Python34"
+debug = False
+
+option_list, args = getopt.getopt( sys.argv[1:], "d" )
+for option in option_list:
+    if option[0]=="-d":
+        debug = True
+
+if len(args)>0:
+    action = args[0]
+
+#-------------------------------------------
+
+PYTHON_DIR = "c:/Python35"
 
 PYTHON = PYTHON_DIR + "/python.exe"
 
-if hasattr(makeoption,"DOXYGEN_DIR"):
-    DOXYGEN_DIR = makeoption.DOXYGEN_DIR
-else:
-    DOXYGEN_DIR = "c:/Program Files/doxygen"
+DOXYGEN_DIR = "c:/Program Files/doxygen"
 
 DIST_DIR = "dist/keyhac"
 VERSION = keyhac_resource.keyhac_version.replace(".","")
 ARCHIVE_NAME = "keyhac_%s.zip" % VERSION
+
+DIST_FILES = {
+    "keyhac.exe" :          "keyhac/keyhac.exe",
+    "lib" :                 "keyhac/lib",
+    "python35.dll" :        "keyhac/python35.dll",
+    "_config.py" :          "keyhac/_config.py",
+    "readme_en.txt" :       "keyhac/readme_en.txt",
+    "readme_ja.txt" :       "keyhac/readme_ja.txt",
+    "theme/black" :         "keyhac/theme/black",
+    "theme/white" :         "keyhac/theme/white",
+    "license" :             "keyhac/license",
+    "doc/html_en" :         "keyhac/doc/en",
+    "doc/html_ja" :         "keyhac/doc/ja",
+    "library.zip" :         "keyhac/library.zip",
+    "dict/.keepme" :        "keyhac/dict/.keepme",
+    "extension/.keepme" :   "keyhac/extension/.keepme",
+    }
+
+#-------------------------------------------
 
 def unlink(filename):
     try:
@@ -53,13 +76,33 @@ def rmtree(dirname):
     except OSError:
         pass
 
+def compilePythonRecursively( src, dst, file_black_list=[], directory_black_list=[] ):
+
+    for root, dirs, files in os.walk( src ):
+
+        for directory_to_remove in directory_black_list:
+            if directory_to_remove in dirs:
+                dirs.remove(directory_to_remove)
+
+        for file_to_remove in file_black_list:
+            if file_to_remove in files:
+                files.remove(file_to_remove)
+
+        for filename in files:
+            if filename.endswith(".py"):
+                src_filename = os.path.join(root,filename)
+                dst_filename = os.path.join(dst+root[len(src):],filename+"c")
+                print("compile", src_filename, dst_filename )
+                py_compile.compile( src_filename, dst_filename, optimize=2 )
+
+
 def createZip( zip_filename, items ):
     z = zipfile.ZipFile( zip_filename, "w", zipfile.ZIP_DEFLATED, True )
     for item in items:
         if os.path.isdir(item):
             for root, dirs, files in os.walk(item):
                 for f in files:
-                    f = os.path.join(root,f)
+                    f = os.path.normpath(os.path.join(root,f))
                     print( f )
                     z.write(f)
         else:
@@ -67,52 +110,75 @@ def createZip( zip_filename, items ):
             z.write(item)
     z.close()
 
-DIST_FILES = [
-    "keyhac/keyhac.exe",
-    "keyhac/lib",
-    "keyhac/python34.dll",
-    "keyhac/_config.py",
-    "keyhac/readme_en.txt",
-    "keyhac/readme_ja.txt",
-    "keyhac/theme/black",
-    "keyhac/theme/white",
-    "keyhac/license",
-    "keyhac/doc",
-    "keyhac/library.zip",
-    "keyhac/dict/.keepme",
-    "keyhac/extension/.keepme",
-    ]
 
-def all():
-    doc()
-    exe()
+#-------------------------------------------
 
-def exe():
-    subprocess.call( [ PYTHON, "setup.py", "build" ] )
+def target_all():
 
+    target_library()
+    target_document()
+    target_copy()
+    target_archive()
+
+
+def target_library():
+
+    # compile python source files
     if 1:
-        os.chdir("dist")
-        createZip( ARCHIVE_NAME, DIST_FILES )
-        os.chdir("..")
-    
-    fd = open( "dist/%s" % ARCHIVE_NAME, "rb" )
-    m = hashlib.md5()
-    while 1:
-        data = fd.read( 1024 * 1024 )
-        if not data: break
-        m.update(data)
-    fd.close()
-    print( "" )
-    print( m.hexdigest() )
+        compilePythonRecursively( "c:/Python35/Lib", "build/Lib", 
+            directory_black_list = [
+                "site-packages",
+                "test",
+                "tests",
+                "idlelib",
+                ]
+            )
+        compilePythonRecursively( "c:/Python35/Lib/site-packages/PIL", "build/Lib/PIL" )
+        compilePythonRecursively( "../ckit", "build/Lib/ckit" )
+        compilePythonRecursively( "../pyauto", "build/Lib/pyauto" )
+        compilePythonRecursively( ".", "build/Lib", 
+            file_black_list = [
+                "makefile.py",
+                "_config.py",
+                "config.py",
+                ]
+            )
 
-def clean():
-    rmtree("dist")
-    rmtree("build")
-    rmtree("doc/html_en")
-    rmtree("doc/html_ja")
-    unlink( "tags" )
+    # archive python compiled files
+    if 1:
+        os.chdir("build/Lib")
+        createZip( "../../library.zip", "." )
+        os.chdir("../..")
 
-def doc():
+    # copy DLLs
+    if 1:
+        rmtree("lib")
+
+        shutil.copy( "c:/Python35/python35.dll", "python35.dll" )
+
+        shutil.copytree( "c:/Python35/DLLs", "lib", 
+            ignore=shutil.ignore_patterns(
+                "tcl*.*",
+                "tk*.*",
+                "_tk*.*",
+                "*.pdb",
+                "*_d.pyd",
+                "*_d.dll",
+                "*_test.pyd",
+                "_test*.pyd",
+                "*.ico",
+                "*.lib"
+                )
+            )
+
+        shutil.copy( "c:/Python35/Lib/site-packages/PIL/_imaging.cp35-win32.pyd", "lib/_imaging.pyd" )
+
+        shutil.copy( "../ckit/ckitcore.pyd", "lib/ckitcore.pyd" )
+        shutil.copy( "../pyauto/pyautocore.pyd", "lib/pyautocore.pyd" )
+        shutil.copy( "migemo.dll", "lib/migemo.dll" )
+
+
+def target_document():
     rmtree( "doc/html_en" )
     rmtree( "doc/html_ja" )
     makedirs( "doc/obj" )
@@ -134,19 +200,55 @@ def doc():
     subprocess.call( [ DOXYGEN_DIR + "/bin/doxygen.exe", "doc/doxyfile_ja" ] )
     shutil.copytree( "doc/image", "doc/html_ja/image", ignore=shutil.ignore_patterns("*.pdn",) )
 
-def run():
-    subprocess.call( [ PYTHON, "keyhac_main.py" ] )
 
-def debug():
-    subprocess.call( [ PYTHON, "keyhac_main.py", "-d" ] )
+def target_copy():
+    
+    rmtree("dist/keyhac")
 
-def profile():
-    subprocess.call( [ PYTHON, "keyhac_main.py", "-d", "-p" ] )
+    src_root = "."
+    dst_root = "./dist"
+    
+    for src, dst in DIST_FILES.items():
 
-if len(sys.argv)<=1:
-    target = "all"
-else:
-    target = sys.argv[1]
+        src = os.path.join(src_root,src)
+        dst = os.path.join(dst_root,dst)
 
-eval( target + "()" )
+        print( "copy : %s -> %s" % (src,dst) )
+            
+        if os.path.isdir(src):
+            shutil.copytree( src, dst )
+        else:
+            makedirs( os.path.dirname(dst) )
+            shutil.copy( src, dst )
 
+
+def target_archive():
+
+    makedirs("dist")
+
+    os.chdir("dist")
+    createZip( ARCHIVE_NAME, DIST_FILES.values() )
+    os.chdir("..")
+    
+    fd = open( "dist/%s" % ARCHIVE_NAME, "rb" )
+    m = hashlib.md5()
+    while 1:
+        data = fd.read( 1024 * 1024 )
+        if not data: break
+        m.update(data)
+    fd.close()
+    print( "" )
+    print( m.hexdigest() )
+
+
+def target_clean():
+    rmtree("dist")
+    rmtree("build")
+    rmtree("doc/html_en")
+    rmtree("doc/html_ja")
+    unlink( "tags" )
+
+
+#-------------------------------------------
+
+eval( "target_" + action +"()" )

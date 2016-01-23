@@ -8,6 +8,9 @@ Changes
 
         - Fixed the error which happens when a clipboard history item is removed in a state that the clipboard contains non-text object.
 
+        - Moved to Python35 from Python34.
+
+        - Stopped using cx_Freeze, and started to use own freezing system.
 
     **1.70**
 

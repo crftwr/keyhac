@@ -7,3 +7,9 @@ tags
 config.py
 doc/html_ja/
 doc/html_en/
+build/
+Release/
+lib/
+library.zip
+Debug/
+keyhac.VC.opendb

@@ -1,0 +1,92 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Native">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Python">
+      <UniqueIdentifier>{86000ab4-01f6-411a-ae07-8f8d923dd540}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Build">
+      <UniqueIdentifier>{c8fed0f9-0716-4876-9073-8e3696dc57d8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Native</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="_config.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="config.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_balloon.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_clipboard.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_consolewindow.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_hook.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_ini.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_isearch.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_keymap.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_listwindow.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_main.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_misc.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_resource.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_statusbar.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="keyhac_tasktrayicon.py">
+      <Filter>Python</Filter>
+    </None>
+    <None Include="makefile.py">
+      <Filter>Build</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="keyhac.rc">
+      <Filter>Resource</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="icon.ico">
+      <Filter>Resource</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>Resource</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

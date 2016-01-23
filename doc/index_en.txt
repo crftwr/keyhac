@@ -137,7 +137,7 @@ Install
          Name                  Comment
         ====================  ==========================================================
          keyhac.exe            Application program main body
-         python34.dll          Python runtime library
+         python35.dll          Python runtime library
          library.zip           Python library archive
          _config.py            Default configuration file
          readme_en.txt         Document to read firstly (English)
