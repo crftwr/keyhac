@@ -2,6 +2,10 @@
 Changes
 =========
 
+    **1.72 beta 1**
+
+        - Handle key events injected by other programs.
+
     **1.71**
 
         - Allow multiple pyauto.Hook instances, so that Keyhac can co-exist with applications which use pyauto.Hook.
