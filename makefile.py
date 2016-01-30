@@ -115,67 +115,67 @@ def createZip( zip_filename, items ):
 
 def target_all():
 
-    target_library()
-    target_document()
+    target_compile()
     target_copy()
+    target_document()
+    target_dist()
     target_archive()
 
 
-def target_library():
+def target_compile():
 
     # compile python source files
-    if 1:
-        compilePythonRecursively( "c:/Python35/Lib", "build/Lib", 
-            directory_black_list = [
-                "site-packages",
-                "test",
-                "tests",
-                "idlelib",
-                ]
-            )
-        compilePythonRecursively( "c:/Python35/Lib/site-packages/PIL", "build/Lib/PIL" )
-        compilePythonRecursively( "../ckit", "build/Lib/ckit" )
-        compilePythonRecursively( "../pyauto", "build/Lib/pyauto" )
-        compilePythonRecursively( ".", "build/Lib", 
-            file_black_list = [
-                "makefile.py",
-                "_config.py",
-                "config.py",
-                ]
-            )
+    compilePythonRecursively( "c:/Python35/Lib", "build/Lib", 
+        directory_black_list = [
+            "site-packages",
+            "test",
+            "tests",
+            "idlelib",
+            ]
+        )
+    compilePythonRecursively( "c:/Python35/Lib/site-packages/PIL", "build/Lib/PIL" )
+    compilePythonRecursively( "../ckit", "build/Lib/ckit" )
+    compilePythonRecursively( "../pyauto", "build/Lib/pyauto" )
+    compilePythonRecursively( ".", "build/Lib", 
+        file_black_list = [
+            "makefile.py",
+            "_config.py",
+            "config.py",
+            ]
+        )
 
     # archive python compiled files
-    if 1:
-        os.chdir("build/Lib")
-        createZip( "../../library.zip", "." )
-        os.chdir("../..")
+    os.chdir("build/Lib")
+    createZip( "../../library.zip", "." )
+    os.chdir("../..")
 
-    # copy DLLs
-    if 1:
-        rmtree("lib")
 
-        shutil.copy( "c:/Python35/python35.dll", "python35.dll" )
+def target_copy():
 
-        shutil.copytree( "c:/Python35/DLLs", "lib", 
-            ignore=shutil.ignore_patterns(
-                "tcl*.*",
-                "tk*.*",
-                "_tk*.*",
-                "*.pdb",
-                "*_d.pyd",
-                "*_d.dll",
-                "*_test.pyd",
-                "_test*.pyd",
-                "*.ico",
-                "*.lib"
-                )
+    rmtree("lib")
+
+    shutil.copy( "c:/Python35/python35.dll", "python35.dll" )
+
+    shutil.copytree( "c:/Python35/DLLs", "lib", 
+        ignore=shutil.ignore_patterns(
+            "tcl*.*",
+            "tk*.*",
+            "_tk*.*",
+            "*.pdb",
+            "*_d.pyd",
+            "*_d.dll",
+            "*_test.pyd",
+            "_test*.pyd",
+            "*.ico",
+            "*.lib"
             )
+        )
 
-        shutil.copy( "c:/Python35/Lib/site-packages/PIL/_imaging.cp35-win32.pyd", "lib/_imaging.pyd" )
+    shutil.copy( "c:/Python35/Lib/site-packages/PIL/_imaging.cp35-win32.pyd", "lib/_imaging.pyd" )
 
-        shutil.copy( "../ckit/ckitcore.pyd", "lib/ckitcore.pyd" )
-        shutil.copy( "../pyauto/pyautocore.pyd", "lib/pyautocore.pyd" )
-        shutil.copy( "migemo.dll", "lib/migemo.dll" )
+    shutil.copy( "../ckit/ckitcore.pyd", "lib/ckitcore.pyd" )
+    shutil.copy( "../pyauto/pyautocore.pyd", "lib/pyautocore.pyd" )
+    shutil.copy( "migemo.dll", "lib/migemo.dll" )
 
 
 def target_document():
@@ -201,7 +201,7 @@ def target_document():
     shutil.copytree( "doc/image", "doc/html_ja/image", ignore=shutil.ignore_patterns("*.pdn",) )
 
 
-def target_copy():
+def target_dist():
     
     rmtree("dist/keyhac")
 
