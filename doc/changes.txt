@@ -2,6 +2,10 @@
 Changes
 =========
 
+    **1.73**
+
+        - Don't cancel oneshot modifier key when Key-Up event comes.
+
     **1.72**
 
         - Handle key events injected by other programs.

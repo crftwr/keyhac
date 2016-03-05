@@ -660,7 +660,6 @@ class Keymap(ckit.TextWindow):
         self.wnd = None                         # 現在フォーカスされているウインドウオブジェクト
         self.modifier = 0                       # 押されているモディファイアキーのビットの組み合わせ
         self.last_keydown = None                # 最後にKeyDownされた仮想キーコード
-        self.oneshot_canceled = False           # ワンショットモディファイアをキャンセルするか
         self.input_seq = []                     # 仮想のキー入力シーケンス ( beginInput ～ endInput で使用 )
         self.virtual_modifier = 0               # 仮想のモディファイアキー状態 ( beginInput ～ endInput で使用 )
         self.record_status = None               # キーボードマクロの状態
@@ -922,9 +921,7 @@ class Keymap(ckit.TextWindow):
 
         #self._debugKeyState(vk)
 
-        if self.last_keydown != vk:
-            self.last_keydown = vk
-            self.oneshot_canceled = False
+        self.last_keydown = vk
 
         try:
             old_modifier = self.modifier
@@ -977,9 +974,7 @@ class Keymap(ckit.TextWindow):
 
         #self._debugKeyState(vk)
 
-        oneshot = ( vk == self.last_keydown and not self.oneshot_canceled )
-        self.last_keydown = None
-        self.oneshot_canceled = False
+        oneshot = ( vk == self.last_keydown )
 
         try: # for error
             try: # for oneshot
@@ -1109,13 +1104,10 @@ class Keymap(ckit.TextWindow):
     def _hook_onMouseDown( self, x, y, vk ):
 
         # マウスボタンを操作するとワンショットモディファイアはキャンセルする
-        self.oneshot_canceled = True
+        self.last_keydown = None
 
     def _hook_onMouseUp( self, x, y, vk ):
-
-        # マウスボタンを操作するとワンショットモディファイアはキャンセルする
-        self.oneshot_canceled = True
-
+        pass
 
     ## キーの単純な置き換えを指示する
     #
