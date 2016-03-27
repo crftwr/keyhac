@@ -660,6 +660,7 @@ class Keymap(ckit.TextWindow):
         self.wnd = None                         # 現在フォーカスされているウインドウオブジェクト
         self.modifier = 0                       # 押されているモディファイアキーのビットの組み合わせ
         self.last_keydown = None                # 最後にKeyDownされた仮想キーコード
+        self.cancel_oneshot = None              # Oneshotモディファイアをキャンセル
         self.input_seq = []                     # 仮想のキー入力シーケンス ( beginInput ～ endInput で使用 )
         self.virtual_modifier = 0               # 仮想のモディファイアキー状態 ( beginInput ～ endInput で使用 )
         self.record_status = None               # キーボードマクロの状態
@@ -729,11 +730,15 @@ class Keymap(ckit.TextWindow):
             keyhac_hook.hook.keyup = self._hook_onKeyUp
             keyhac_hook.hook.mousedown = self._hook_onMouseDown
             keyhac_hook.hook.mouseup = self._hook_onMouseUp
+            keyhac_hook.hook.mousewheel = self._hook_onMouseWheel
+            keyhac_hook.hook.mousehorizontalwheel = self._hook_onMouseHorizontalWheel
         else:
             keyhac_hook.hook.keydown = None
             keyhac_hook.hook.keyup = None
             keyhac_hook.hook.mousedown = None
             keyhac_hook.hook.mouseup = None
+            keyhac_hook.hook.mousewheel = None
+            keyhac_hook.hook.mousehorizontalwheel = None
 
     def enableDebug( self, enable ):
         self.debug = enable
@@ -922,6 +927,8 @@ class Keymap(ckit.TextWindow):
         #self._debugKeyState(vk)
 
         self.last_keydown = vk
+        if self.cancel_oneshot != vk:
+            self.cancel_oneshot = None
 
         try:
             old_modifier = self.modifier
@@ -974,7 +981,9 @@ class Keymap(ckit.TextWindow):
 
         #self._debugKeyState(vk)
 
-        oneshot = ( vk == self.last_keydown )
+        oneshot = ( vk==self.last_keydown and vk!=self.cancel_oneshot )
+        if vk==self.cancel_oneshot:
+            self.cancel_oneshot = None
 
         try: # for error
             try: # for oneshot
@@ -1104,10 +1113,20 @@ class Keymap(ckit.TextWindow):
     def _hook_onMouseDown( self, x, y, vk ):
 
         # マウスボタンを操作するとワンショットモディファイアはキャンセルする
-        self.last_keydown = None
+        self.cancel_oneshot = self.last_keydown
 
     def _hook_onMouseUp( self, x, y, vk ):
         pass
+
+    def _hook_onMouseWheel( self, x, y, wheel ):
+
+        # マウスホイールを操作するとワンショットモディファイアはキャンセルする
+        self.cancel_oneshot = self.last_keydown
+
+    def _hook_onMouseHorizontalWheel( self, x, y, wheel ):
+
+        # マウスホイールを操作するとワンショットモディファイアはキャンセルする
+        self.cancel_oneshot = self.last_keydown
 
     ## キーの単純な置き換えを指示する
     #

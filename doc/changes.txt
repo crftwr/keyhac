@@ -5,6 +5,8 @@ Changes
     **1.73**
 
         - Don't cancel oneshot modifier key when Key-Up event comes.
+        
+        - Cancel oneshot modifier key when mouse buttons / wheel are used.
 
     **1.72**
 
