@@ -7,6 +7,8 @@ Changes
         - Don't cancel oneshot modifier key when Key-Up event comes.
         
         - Cancel oneshot modifier key when mouse buttons / wheel are used.
+        
+        - Fixed an issue that application cannot be started when working directory is different from exe directory.
 
     **1.72**
 
