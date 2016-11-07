@@ -2,7 +2,7 @@
 
 keyhac_appname = "Keyhac"
 keyhac_dirname = "Keyhac"
-keyhac_version = "1.73"
+keyhac_version = "1.74"
 
 _startup_string_fmt = """\
 %s version %s:
@@ -132,16 +132,16 @@ ckit.strings.setString( "menu_edit_config",
     ja_JP = "設定の編集(&E)" )
 ckit.strings.setString( "menu_internal_log_output_enable",
     en_US = "Enable the &Internal log output",
-    ja_JP = "内部ログ ON(&I)" )
+    ja_JP = "内部ログをON(&I)" )
 ckit.strings.setString( "menu_internal_log_output_disable",
     en_US = "Disable the &Internal log output",
-    ja_JP = "内部ログ OFF(&I)" )
+    ja_JP = "内部ログをOFF(&I)" )
 ckit.strings.setString( "menu_hook_enable",
     en_US = "Enable the Hoo&k",
-    ja_JP = "フック OFF(&K)" )
+    ja_JP = "フックをON(&K)" )
 ckit.strings.setString( "menu_hook_disable",
     en_US = "Disable the Hoo&k",
-    ja_JP = "フック ON(&K)" )
+    ja_JP = "フックをOFF(&K)" )
 ckit.strings.setString( "menu_start_recording",
     en_US = "&Start recording key input",
     ja_JP = "キー操作 記録開始(&S)" )

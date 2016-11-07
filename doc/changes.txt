@@ -2,6 +2,11 @@
 Changes
 =========
 
+    **1.74**
+
+        - Fixed Japanese string resources for task tray menu.
+        
+
     **1.73**
 
         - Don't cancel oneshot modifier key when Key-Up event comes.
