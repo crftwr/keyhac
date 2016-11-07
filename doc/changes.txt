@@ -4,6 +4,8 @@ Changes
 
     **1.74**
 
+        - Added keymap.clipboard_history.enableHook() method to enable/disable clipboard monitoring hook.
+
         - Fixed Japanese string resources for task tray menu.
         
 

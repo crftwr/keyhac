@@ -185,7 +185,7 @@ def configure(keymap):
                 if item:
                     item[1]()
 
-            # Because the blocking procedure cannot be executed in the key-hook, 
+            # Because the blocking procedure cannot be executed in the key-hook,
             # delayed-execute the procedure by delayedCall().
             keymap.delayedCall( popApplicationList, 0 )
 
@@ -235,7 +235,7 @@ def configure(keymap):
 
 
     # Customize Notepad as Emacs-ish
-    # Because the keymap condition of keymap_edit overlaps with keymap_notepad, 
+    # Because the keymap condition of keymap_edit overlaps with keymap_notepad,
     # both these two keymaps are applied in mixed manner.
     if 1:
         keymap_notepad = keymap.defineWindowKeymap( exe_name="notepad.exe", class_name="Edit" )
@@ -268,15 +268,16 @@ def configure(keymap):
         keymap_notepad[ "C-X" ][ "C-C" ] = "A-F4"       # Exit
 
 
-    # Maximum number of clipboard history (Default:1000)
-    keymap.clipboard_history.maxnum = 1000
-
-    # Total maximum size of clipboard history (Default:10MB)
-    keymap.clipboard_history.quota = 10*1024*1024
-
-
     # Customizing clipboard history list
     if 1:
+        # Enable clipboard monitoring hook (Default:Enabled)
+        keymap.clipboard_history.enableHook(True)
+
+        # Maximum number of clipboard history (Default:1000)
+        keymap.clipboard_history.maxnum = 1000
+
+        # Total maximum size of clipboard history (Default:10MB)
+        keymap.clipboard_history.quota = 10*1024*1024
 
         # Fixed phrases
         fixed_items = [

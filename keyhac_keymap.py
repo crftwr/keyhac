@@ -723,6 +723,11 @@ class Keymap(ckit.TextWindow):
         self.checkSanity()
         self.clipboard_history.checkSanity()
 
+    ## キーボードとマウスのフックを有効／無効にする
+    #
+    #  @param self   -
+    #  @param enable 有効にするか、無効にするか
+    #
     def enableHook( self, enable ):
         self.hook_enabled = enable
         if self.hook_enabled:

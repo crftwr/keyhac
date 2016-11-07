@@ -28,13 +28,25 @@ class cblister_ClipboardHistory:
         self.insane_count = 0
         self.seq_number = None
         
-        keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
+        self.enableHook(True)
         
     def destroy(self):
 
-        keyhac_hook.hook.clipboard = None
+        self.enableHook(False)
 
         self.save()
+
+    ## クリップボードの監視用のフックを有効／無効にする
+    #
+    #  @param self   -
+    #  @param enable 有効にするか、無効にするか
+    #
+    def enableHook( self, enable ):
+        self.hook_enabled = enable
+        if self.hook_enabled:
+            keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
+        else:
+            keyhac_hook.hook.clipboard = None
 
     def enableDebug( self, enable ):
         self.debug = enable
@@ -167,6 +179,9 @@ class cblister_ClipboardHistory:
         self._push( ckit.getClipboardText() )
 
     def checkSanity(self):
+    
+        if not self.hook_enabled:
+            return
     
         new_seq_number = ckit.getClipboardSequenceNumber()
 
