@@ -552,6 +552,7 @@
         PrintScreen
         ScrollLock
         Pause
+        LButton/RButton/MButton     マウスの左/右/中ボタン
         | (0) ～ (255)              仮想キーコード指定
         =========================   ===============================
 

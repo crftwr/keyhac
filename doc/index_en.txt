@@ -520,6 +520,7 @@ Customize
         PrintScreen
         ScrollLock
         Pause
+        LButton/RButton/MButton     Mouse Left/Right/Middle buttons
         | (0) - (255)                Specific virtual key code
         =========================   ===============================
 

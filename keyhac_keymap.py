@@ -197,6 +197,10 @@ class KeyCondition:
         VK_SNAPSHOT : "PrintScreen",
         VK_SCROLL   : "ScrollLock",
         VK_PAUSE    : "Pause",
+
+        VK_LBUTTON : "LBUTTON", # mouse button
+        VK_RBUTTON : "RBUTTON", # mouse button
+        VK_MBUTTON : "MBUTTON", # mouse button
     }
 
     vk_str_table_std = {
@@ -334,6 +338,10 @@ class KeyCondition:
         "PRINTSCREEN" : VK_SNAPSHOT,
         "SCROLLLOCK"  : VK_SCROLL,
         "PAUSE"       : VK_PAUSE,
+        
+        "LBUTTON" : VK_LBUTTON, # mouse button
+        "RBUTTON" : VK_RBUTTON, # mouse button
+        "MBUTTON" : VK_MBUTTON, # mouse button
     }
 
     str_vk_table_std = {
@@ -1307,12 +1315,40 @@ class Keymap(ckit.TextWindow):
 
         self.setInput_Modifier(mod)
 
-        if up==True:
-            self.input_seq.append( pyauto.KeyUp(vk) )
-        elif up==False:
-            self.input_seq.append( pyauto.KeyDown(vk) )
+        if vk in (VK_LBUTTON, VK_RBUTTON, VK_MBUTTON):
+
+            x,y = pyauto.Input.getCursorPos()
+
+            if vk==VK_LBUTTON:
+                if up==True:
+                    self.input_seq.append( pyauto.MouseLeftUp(x,y) )
+                elif up==False:
+                    self.input_seq.append( pyauto.MouseLeftDown(x,y) )
+                else:
+                    self.input_seq.append( pyauto.MouseLeftClick(x,y) )
+
+            elif vk==VK_RBUTTON:
+                if up==True:
+                    self.input_seq.append( pyauto.MouseRightUp(x,y) )
+                elif up==False:
+                    self.input_seq.append( pyauto.MouseRightDown(x,y) )
+                else:
+                    self.input_seq.append( pyauto.MouseRightClick(x,y) )
+
+            else: # VK_MBUTTON
+                if up==True:
+                    self.input_seq.append( pyauto.MouseMiddleUp(x,y) )
+                elif up==False:
+                    self.input_seq.append( pyauto.MouseMiddleDown(x,y) )
+                else:
+                    self.input_seq.append( pyauto.MouseMiddleClick(x,y) )
         else:
-            self.input_seq.append( pyauto.Key(vk) )
+            if up==True:
+                self.input_seq.append( pyauto.KeyUp(vk) )
+            elif up==False:
+                self.input_seq.append( pyauto.KeyDown(vk) )
+            else:
+                self.input_seq.append( pyauto.Key(vk) )
 
     # Win と Alt の単体押しをキャンセルする ( beginInput/endInput込み )
     # Win の単体押しは スタートメニューが開き、Alt の単体押しは メニューバーにフォーカスが移動してしまう。

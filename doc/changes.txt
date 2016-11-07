@@ -2,19 +2,22 @@
 Changes
 =========
 
+    **1.75**
+
+        - Added "LButton" / "RButton" / "MButton" mouse buttons as key expression strings.
+
     **1.74**
 
         - Added keymap.clipboard_history.enableHook() method to enable/disable clipboard monitoring hook.
 
         - Fixed Japanese string resources for task tray menu.
-        
 
     **1.73**
 
         - Don't cancel oneshot modifier key when Key-Up event comes.
-        
+
         - Cancel oneshot modifier key when mouse buttons / wheel are used.
-        
+
         - Fixed an issue that application cannot be started when working directory is different from exe directory.
 
     **1.72**
