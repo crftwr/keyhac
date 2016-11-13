@@ -1050,7 +1050,7 @@ class Keymap(ckit.TextWindow):
     def enterMultiStroke( self, keymap ):
 
         self.multi_stroke_keymap = keymap
-        self._updateKeymap(self.wnd)
+        self.updateKeymap()
 
         help_string = self.multi_stroke_keymap.helpString()
         if help_string:
@@ -1060,11 +1060,19 @@ class Keymap(ckit.TextWindow):
 
         if self.multi_stroke_keymap:
             self.multi_stroke_keymap = None
-            self._updateKeymap(self.wnd)
+            self.updateKeymap()
 
             self.closeBalloon( "MultiStroke" )
 
-    def _updateKeymap( self, wnd ):
+
+    ## 現在有効なキーマップを再構築する
+    #
+    #  現在キーボードフォーカスを持っているウインドウに従って、有効なキー割り当ての辞書を再構築します。\n
+    #  通常は、キーボードフォーカスが変化したときに、このメソッドが自動的に呼ばれるため、自分で明示的にこのメソッドを呼ぶ必要はありませんが、
+    #  defineWindowKeymap などで定義した WindowKeymap オブジェクトのキー割り当て内容を動的に変更するような場合は、
+    #  このメソッドを明示的に呼ぶことで即時にキー割り当ての辞書を再構築を実行することができます。
+    #
+    def updateKeymap(self):
 
         self.current_map = {}
 
@@ -1088,10 +1096,9 @@ class Keymap(ckit.TextWindow):
                     print( "" )
                 else:
                     print( "Window : None" )
-
-            self.wnd = None
-            self._updateKeymap(wnd)
+            
             self.wnd = wnd
+            self.updateKeymap()
 
         except Exception as e:
             print( ckit.strings["error_unexpected"], "_focusChanged" )
