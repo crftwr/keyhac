@@ -8,6 +8,8 @@ Changes
 
         - Added keymap.updateKeymap() method. By this method you can apply the changes of WindowKeymap object contents immediately.
 
+        - Changed clipboard monitoring method internally. (SetClipboardViewer -> AddClipboardFormatListener)
+
     **1.74**
 
         - Added keymap.clipboard_history.enableHook() method to enable/disable clipboard monitoring hook.

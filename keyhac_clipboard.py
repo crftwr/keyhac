@@ -24,9 +24,6 @@ class cblister_ClipboardHistory:
         self.quota = 10 * 1024 * 1024
         
         self.debug = debug
-
-        self.insane_count = 0
-        self.seq_number = None
         
         self.enableHook(True)
         
@@ -42,11 +39,16 @@ class cblister_ClipboardHistory:
     #  @param enable 有効にするか、無効にするか
     #
     def enableHook( self, enable ):
+
         self.hook_enabled = enable
+
         if self.hook_enabled:
             keyhac_hook.hook.clipboard = self._hook_onClipboardChanged
         else:
             keyhac_hook.hook.clipboard = None
+
+        self.insane_count = 0
+        self.seq_number = ckit.getClipboardSequenceNumber()
 
     def enableDebug( self, enable ):
         self.debug = enable
@@ -56,10 +58,14 @@ class cblister_ClipboardHistory:
         def onClipboardChanged():
             self._push( ckit.getClipboardText() )
             self.seq_number = ckit.getClipboardSequenceNumber()
-        
-        # Firefox で クリップボードへの格納が失敗してしまわないように
-        # フックの中ではなく、delayedCall で遅延して取得する。
-        self.window.delayedCall( onClipboardChanged, 0 )
+    
+        # FIXME : SetClipboardViewerからAddClipboardFormatListener に移行したので、delayedCall を使う必要がないかも。
+        if 0:
+            # Firefox で クリップボードへの格納が失敗してしまわないように
+            # フックの中ではなく、delayedCall で遅延して取得する。
+            self.window.delayedCall( onClipboardChanged, 0 )
+        else:
+            onClipboardChanged()
     
     # クリップボード履歴の内容をOSのクリップボードに反映させる
     def _apply(self):
@@ -180,6 +186,10 @@ class cblister_ClipboardHistory:
 
     def checkSanity(self):
     
+        # FIXME : SetClipboardViewerからAddClipboardFormatListener に移行したので、checkSanity 自体が不要になったかも。
+        if 1:
+            return
+
         if not self.hook_enabled:
             return
     
