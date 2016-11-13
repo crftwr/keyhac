@@ -1080,7 +1080,7 @@ class Keymap(ckit.TextWindow):
             self.current_map.update(self.multi_stroke_keymap.keymap)
         else:
             for window_keymap in self.window_keymap_list:
-                if window_keymap.check(wnd):
+                if window_keymap.check(self.wnd):
                     self.current_map.update(window_keymap.keymap)
 
 
