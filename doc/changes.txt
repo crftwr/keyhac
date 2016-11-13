@@ -10,6 +10,8 @@ Changes
 
         - Changed clipboard monitoring method internally. (SetClipboardViewer -> AddClipboardFormatListener)
 
+        - Stopped XP support.
+
     **1.74**
 
         - Added keymap.clipboard_history.enableHook() method to enable/disable clipboard monitoring hook.
