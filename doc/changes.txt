@@ -2,6 +2,11 @@
 Changes
 =========
 
+    **1.76**
+
+        - Fixed an issue that Keyhac cannot exit correctly when ListWindow is opened.
+
+
     **1.75**
 
         - Added "LButton" / "RButton" / "MButton" mouse buttons as key expression strings.
