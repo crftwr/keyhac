@@ -716,6 +716,10 @@ class Keymap(ckit.TextWindow):
 
         ckit.TextWindow.destroy(self)
 
+    def quit(self):
+        self.cancelListWindow()
+        ckit.TextWindow.quit(self)
+
     def setConsoleWindow( self, console_window ):
         self.console_window = console_window
 

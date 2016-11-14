@@ -101,8 +101,7 @@ class TaskTrayIcon( ckit.TaskTrayIcon ):
             ckit.JobQueue.defaultQueue().enqueue(job_item)
         
         def onExit(info):
-            keyhac_hook.hook.destroy()
-            self.console_window.quit()
+            self.keymap.quit()
         
         menu_items = []
         
