@@ -6,6 +6,7 @@ Changes
 
         - Fixed an issue that Keyhac cannot exit correctly when ListWindow is opened.
 
+        - Fixed an issue that the task tray icon disappears after explorer crashes and reboots.
 
     **1.75**
 
