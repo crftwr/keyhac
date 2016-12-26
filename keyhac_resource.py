@@ -2,7 +2,7 @@ import ckit
 
 keyhac_appname = "Keyhac"
 keyhac_dirname = "Keyhac"
-keyhac_version = "1.10"
+keyhac_version = "1.11"
 
 _startup_string_fmt = """\
 %s version %s:

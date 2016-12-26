@@ -4,13 +4,23 @@ import getopt
 import shutil
 import locale
 
-os.environ["PATH"] = os.path.abspath(os.path.join( os.path.split(sys.argv[0])[0],'lib')) + ":" + os.environ["PATH"]
+import importlib.abc
 
-sys.path[0:0] = [
-    os.path.join( os.path.split(sys.argv[0])[0], '..' ),
-    os.path.join( os.path.split(sys.argv[0])[0], 'extension' ),
-    os.path.join( os.path.split(sys.argv[0])[0], 'lib' ),
-    ]
+class CustomPydFinder(importlib.abc.MetaPathFinder):
+    def find_module( self, fullname, path=None ):
+        exe_path = os.path.split(sys.argv[0])[0]
+        pyd_filename_body = fullname.split(".")[-1]
+        pyd_fullpath = os.path.join( exe_path, "lib", pyd_filename_body + ".pyd" )
+        print("CustomPydFinder :", pyd_fullpath)
+        if os.path.exists(pyd_fullpath):
+            for importer in sys.meta_path:
+                if isinstance(importer, self.__class__):
+                    continue
+                loader = importer.find_module( fullname, None)
+                if loader:
+                    return loader
+
+sys.meta_path.append(CustomPydFinder())
 
 import ckit
 
@@ -34,69 +44,68 @@ for option in option_list:
 
 #--------------------------------------------------------------------
 
-if __name__ == "__main__":
 
-    # アクセシビリティの設定をチェック
-    if not ckit.Hook.isAllowed(True):
-        sys.exit(0)
+# アクセシビリティの設定をチェック
+if not ckit.Hook.isAllowed(True):
+    sys.exit(0)
 
-    ckit.registerWindowClass( "Keyhac" )
-    
-    # exeと同じ位置にある設定ファイルを優先する
-    if os.path.exists( os.path.join( ckit.getAppExePath(), 'config.py' ) ):
-        ckit.setDataPath( ckit.getAppExePath() )
-    else:
-        ckit.setDataPath( os.path.join( ckit.getAppDataPath(), keyhac_resource.keyhac_dirname ) )
-        if not os.path.exists(ckit.dataPath()):
-            os.mkdir(ckit.dataPath())
+ckit.registerWindowClass( "Keyhac" )
 
-    default_config_filename = os.path.join( ckit.getAppExePath(), '_config.py' )
-    config_filename = os.path.join( ckit.dataPath(), 'config.py' )
-    keyhac_ini.ini_filename = os.path.join( ckit.dataPath(), 'keyhac.ini' )
+# exeと同じ位置にある設定ファイルを優先する
+if os.path.exists( os.path.join( ckit.getAppExePath(), 'config.py' ) ):
+    ckit.setDataPath( ckit.getAppExePath() )
+else:
+    ckit.setDataPath( os.path.join( ckit.getAppDataPath(), keyhac_resource.keyhac_dirname ) )
+    if not os.path.exists(ckit.dataPath()):
+        os.mkdir(ckit.dataPath())
 
-    # config.py がどこにもない場合は作成する
-    if not os.path.exists(config_filename) and os.path.exists(default_config_filename):
-        shutil.copy( default_config_filename, config_filename )
+default_config_filename = os.path.join( ckit.getAppExePath(), '_config.py' )
+config_filename = os.path.join( ckit.dataPath(), 'config.py' )
+keyhac_ini.ini_filename = os.path.join( ckit.dataPath(), 'keyhac.ini' )
 
-    keyhac_ini.read()
+# config.py がどこにもない場合は作成する
+if not os.path.exists(config_filename) and os.path.exists(default_config_filename):
+    shutil.copy( default_config_filename, config_filename )
 
-    ckit.setThemeDefault()
+keyhac_ini.read()
 
-    ckit.JobQueue.createDefaultQueue()
-    ckit.CronTable.createDefaultCronTable()
+ckit.setThemeDefault()
 
-    keymap = keyhac_keymap.Keymap( config_filename, debug, profile )
+ckit.JobQueue.createDefaultQueue()
+ckit.CronTable.createDefaultCronTable()
 
-    console_window = keyhac_consolewindow.ConsoleWindow( debug )
+keymap = keyhac_keymap.Keymap( config_filename, debug, profile )
 
-    task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
+console_window = keyhac_consolewindow.ConsoleWindow( debug )
 
-    keymap.setConsoleWindow(console_window)
+task_tray_icon = keyhac_tasktrayicon.TaskTrayIcon( debug )
 
-    task_tray_icon.setKeymap(keymap)
-    task_tray_icon.setConsoleWindow(console_window)
+keymap.setConsoleWindow(console_window)
 
-    console_window.registerStdio()
+task_tray_icon.setKeymap(keymap)
+task_tray_icon.setConsoleWindow(console_window)
 
-    keymap.configure()
+console_window.registerStdio()
 
-    keymap.startup()
+keymap.configure()
 
-    keymap.messageLoop()
+keymap.startup()
 
-    console_window.unregisterStdio()
+keymap.messageLoop()
 
-    ckit.CronTable.cancelAll()
-    ckit.CronTable.joinAll()
+console_window.unregisterStdio()
 
-    ckit.JobQueue.cancelAll()
-    ckit.JobQueue.joinAll()
+ckit.CronTable.cancelAll()
+ckit.CronTable.joinAll()
 
-    task_tray_icon.destroy()
+ckit.JobQueue.cancelAll()
+ckit.JobQueue.joinAll()
 
-    keymap.destroy()
+task_tray_icon.destroy()
 
-    console_window.saveState()
-    console_window.destroy()
+keymap.destroy()
 
-    keyhac_ini.write()
+console_window.saveState()
+console_window.destroy()
+
+keyhac_ini.write()
