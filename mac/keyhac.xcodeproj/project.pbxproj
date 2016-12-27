@@ -12,6 +12,15 @@
 		E264E6D01DBC42960052B418 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E264E6CF1DBC42960052B418 /* Assets.xcassets */; };
 		E264E6D31DBC42960052B418 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = E264E6D11DBC42960052B418 /* MainMenu.xib */; };
 		E2C9A00A1DBC49D300719948 /* Python.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E2C9A0091DBC49D300719948 /* Python.framework */; };
+		E2CDE6AF1E1260EE0037314F /* changes.txt in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6A71E1260EE0037314F /* changes.txt */; };
+		E2CDE6B01E1260EE0037314F /* doxyfile_en in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6A81E1260EE0037314F /* doxyfile_en */; };
+		E2CDE6B11E1260EE0037314F /* doxyfile_ja in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6A91E1260EE0037314F /* doxyfile_ja */; };
+		E2CDE6B21E1260EE0037314F /* footer.html in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6AA1E1260EE0037314F /* footer.html */; };
+		E2CDE6B31E1260EE0037314F /* header.html in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6AB1E1260EE0037314F /* header.html */; };
+		E2CDE6B41E1260EE0037314F /* index_en.txt in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6AC1E1260EE0037314F /* index_en.txt */; };
+		E2CDE6B51E1260EE0037314F /* index_ja.txt in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6AD1E1260EE0037314F /* index_ja.txt */; };
+		E2CDE6B61E1260EE0037314F /* stylesheet.css in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6AE1E1260EE0037314F /* stylesheet.css */; };
+		E2CDE6B81E12661A0037314F /* app.icns in Resources */ = {isa = PBXBuildFile; fileRef = E2CDE6B71E12661A0037314F /* app.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +48,15 @@
 		E2C9A0191DBC713000719948 /* keyhac_tasktrayicon.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; name = keyhac_tasktrayicon.py; path = ../keyhac_tasktrayicon.py; sourceTree = "<group>"; };
 		E2C9A0271DBC714D00719948 /* keyhac.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; name = keyhac.py; path = ../keyhac.py; sourceTree = "<group>"; };
 		E2C9A0281DBC714D00719948 /* makefile.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; name = makefile.py; path = ../makefile.py; sourceTree = "<group>"; };
+		E2CDE6A71E1260EE0037314F /* changes.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = changes.txt; path = ../doc/changes.txt; sourceTree = "<group>"; };
+		E2CDE6A81E1260EE0037314F /* doxyfile_en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = doxyfile_en; path = ../doc/doxyfile_en; sourceTree = "<group>"; };
+		E2CDE6A91E1260EE0037314F /* doxyfile_ja */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = doxyfile_ja; path = ../doc/doxyfile_ja; sourceTree = "<group>"; };
+		E2CDE6AA1E1260EE0037314F /* footer.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; name = footer.html; path = ../doc/footer.html; sourceTree = "<group>"; };
+		E2CDE6AB1E1260EE0037314F /* header.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; name = header.html; path = ../doc/header.html; sourceTree = "<group>"; };
+		E2CDE6AC1E1260EE0037314F /* index_en.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = index_en.txt; path = ../doc/index_en.txt; sourceTree = "<group>"; };
+		E2CDE6AD1E1260EE0037314F /* index_ja.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = index_ja.txt; path = ../doc/index_ja.txt; sourceTree = "<group>"; };
+		E2CDE6AE1E1260EE0037314F /* stylesheet.css */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.css; name = stylesheet.css; path = ../doc/stylesheet.css; sourceTree = "<group>"; };
+		E2CDE6B71E12661A0037314F /* app.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = app.icns; path = ../app.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,8 +74,10 @@
 		E264E6BD1DBC42960052B418 = {
 			isa = PBXGroup;
 			children = (
+				E2CDE6B71E12661A0037314F /* app.icns */,
 				E2C9A00C1DBC70D700719948 /* Keyhac.python */,
-				E264E6C81DBC42960052B418 /* Keyhac */,
+				E264E6C81DBC42960052B418 /* Keyhac.native */,
+				E2CDE6A61E1260B60037314F /* Document */,
 				E264E6C71DBC42960052B418 /* Products */,
 				E2C9A0061DBC498800719948 /* Frameworks */,
 			);
@@ -71,7 +91,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		E264E6C81DBC42960052B418 /* Keyhac */ = {
+		E264E6C81DBC42960052B418 /* Keyhac.native */ = {
 			isa = PBXGroup;
 			children = (
 				E264E6CD1DBC42960052B418 /* main.m */,
@@ -81,6 +101,7 @@
 				E264E6D11DBC42960052B418 /* MainMenu.xib */,
 				E264E6D41DBC42960052B418 /* Info.plist */,
 			);
+			name = Keyhac.native;
 			path = Keyhac;
 			sourceTree = "<group>";
 		};
@@ -97,7 +118,6 @@
 			isa = PBXGroup;
 			children = (
 				E2C9A0271DBC714D00719948 /* keyhac.py */,
-				E2C9A0281DBC714D00719948 /* makefile.py */,
 				E2C9A00D1DBC713000719948 /* keyhac_balloon.py */,
 				E2C9A00E1DBC713000719948 /* keyhac_clipboard.py */,
 				E2C9A00F1DBC713000719948 /* keyhac_consolewindow.py */,
@@ -111,8 +131,24 @@
 				E2C9A0171DBC713000719948 /* keyhac_resource.py */,
 				E2C9A0181DBC713000719948 /* keyhac_statusbar.py */,
 				E2C9A0191DBC713000719948 /* keyhac_tasktrayicon.py */,
+				E2C9A0281DBC714D00719948 /* makefile.py */,
 			);
 			name = Keyhac.python;
+			sourceTree = "<group>";
+		};
+		E2CDE6A61E1260B60037314F /* Document */ = {
+			isa = PBXGroup;
+			children = (
+				E2CDE6A71E1260EE0037314F /* changes.txt */,
+				E2CDE6A81E1260EE0037314F /* doxyfile_en */,
+				E2CDE6A91E1260EE0037314F /* doxyfile_ja */,
+				E2CDE6AA1E1260EE0037314F /* footer.html */,
+				E2CDE6AB1E1260EE0037314F /* header.html */,
+				E2CDE6AC1E1260EE0037314F /* index_en.txt */,
+				E2CDE6AD1E1260EE0037314F /* index_ja.txt */,
+				E2CDE6AE1E1260EE0037314F /* stylesheet.css */,
+			);
+			name = Document;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -175,8 +211,17 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E2CDE6AF1E1260EE0037314F /* changes.txt in Resources */,
+				E2CDE6B61E1260EE0037314F /* stylesheet.css in Resources */,
+				E2CDE6B01E1260EE0037314F /* doxyfile_en in Resources */,
 				E264E6D01DBC42960052B418 /* Assets.xcassets in Resources */,
 				E264E6D31DBC42960052B418 /* MainMenu.xib in Resources */,
+				E2CDE6B51E1260EE0037314F /* index_ja.txt in Resources */,
+				E2CDE6B41E1260EE0037314F /* index_en.txt in Resources */,
+				E2CDE6B31E1260EE0037314F /* header.html in Resources */,
+				E2CDE6B81E12661A0037314F /* app.icns in Resources */,
+				E2CDE6B11E1260EE0037314F /* doxyfile_ja in Resources */,
+				E2CDE6B21E1260EE0037314F /* footer.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,7 +239,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cp -a $BUILT_PRODUCTS_DIR/ $SRCROOT/dist/";
+			shellScript = "cp -a $BUILT_PRODUCTS_DIR/ $SRCROOT/..\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

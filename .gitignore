@@ -7,3 +7,7 @@ tags
 config.py
 doc/html_ja/
 doc/html_en/
+Python
+Keyhac.app.dSYM
+Keyhac.app
+lib

@@ -4,6 +4,10 @@
 
     **1.11**
 
+        - Changed to Python 3.5.
+
+        - Changed application packaging method to my own one.
+
         - Fixed "Save clipboard to Desktop" feature to work on Mac also.
 
 

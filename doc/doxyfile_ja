@@ -777,8 +777,6 @@ WARN_LOGFILE           =
 
 INPUT                  = keyhac.py \
                          . \
-                         ../pyauto \
-                         ../pyauto/doc/pyauto.py \
                          ../ckit
 
 # This tag can be used to specify the character encoding of the source files

@@ -40,11 +40,11 @@ VERSION = keyhac_resource.keyhac_version.replace(".","")
 ARCHIVE_NAME = "keyhac_%s.zip" % VERSION
 
 DIST_FILES = {
-    "mac/dist/Keyhac.app/Contents/MacOS/Keyhac"   : "Keyhac.app/Contents/MacOS/Keyhac",
-    "mac/dist/Keyhac.app/Contents/Resources"      : "Keyhac.app/Contents/Resources",
-    "mac/dist/Keyhac.app/Contents/_CodeSignature" : "Keyhac.app/Contents/_CodeSignature",
-    "mac/dist/Keyhac.app/Contents/Info.plist"     : "Keyhac.app/Contents/Info.plist",
-    "mac/dist/Keyhac.app/Contents/PkgInfo"        : "Keyhac.app/Contents/PkgInfo",
+    "Keyhac.app/Contents/MacOS/Keyhac"   : "Keyhac.app/Contents/MacOS/Keyhac",
+    "Keyhac.app/Contents/Resources"      : "Keyhac.app/Contents/Resources",
+    "Keyhac.app/Contents/_CodeSignature" : "Keyhac.app/Contents/_CodeSignature",
+    "Keyhac.app/Contents/Info.plist"     : "Keyhac.app/Contents/Info.plist",
+    "Keyhac.app/Contents/PkgInfo"        : "Keyhac.app/Contents/PkgInfo",
     "lib" :                 "Keyhac.app/Contents/MacOS/lib",
     "Python" :              "Keyhac.app/Contents/MacOS/Python",
     "_config.py" :          "Keyhac.app/Contents/MacOS/_config.py",
@@ -65,7 +65,7 @@ DIST_FILES = {
 def unlink(filename):
     try:
         os.unlink(filename)
-    except OSError:
+    except (OSError, FileNotFoundError):
         pass
 
 def makedirs(dirname):
@@ -156,7 +156,7 @@ def target_compile():
 
 def target_copy():
 
-    os.unlink("Python")
+    unlink("Python")
     rmtree("lib")
 
     shutil.copy( PYTHON_FRAMEWORK_DIR + "Python", "Python" )
@@ -177,10 +177,9 @@ def target_copy():
                     ignore=shutil.ignore_patterns()
                     )
 
-#shutil.copy( PYTHON_FRAMEWORK_DIR + "lib/python3.5/site-packages/PIL/.dylibs/libjpeg.9.dylib", "lib/.dylibs/libjpeg.9.dylib" )
+    shutil.copy( PYTHON_FRAMEWORK_DIR + "lib/python3.5/site-packages/accessibility-0.4.0-py3.5-macosx-10.6-intel.egg/accessibility.cpython-35m-darwin.so", "lib/" )
 
     shutil.copy( "../ckit/ckitcore.so", "lib/ckitcore.so" )
-    #shutil.copy( "migemo.dll", "lib/migemo.dll" )
 
 
 def target_document():

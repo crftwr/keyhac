@@ -9,15 +9,15 @@
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "E264E6C51DBC42960052B418"
                BuildableName = "Keyhac.app"
                BlueprintName = "Keyhac"
-               ReferencedContainer = "container:Keyhac.xcodeproj">
+               ReferencedContainer = "container:keyhac.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -35,14 +35,14 @@
             BlueprintIdentifier = "E264E6C51DBC42960052B418"
             BuildableName = "Keyhac.app"
             BlueprintName = "Keyhac"
-            ReferencedContainer = "container:Keyhac.xcodeproj">
+            ReferencedContainer = "container:keyhac.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <AdditionalOptions>
       </AdditionalOptions>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -58,7 +58,7 @@
             BlueprintIdentifier = "E264E6C51DBC42960052B418"
             BuildableName = "Keyhac.app"
             BlueprintName = "Keyhac"
-            ReferencedContainer = "container:Keyhac.xcodeproj">
+            ReferencedContainer = "container:keyhac.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <AdditionalOptions>
@@ -70,16 +70,6 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "E264E6C51DBC42960052B418"
-            BuildableName = "Keyhac.app"
-            BlueprintName = "Keyhac"
-            ReferencedContainer = "container:Keyhac.xcodeproj">
-         </BuildableReference>
-      </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">
