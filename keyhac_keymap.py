@@ -582,6 +582,7 @@ class KeyCondition:
         return mod
 
 
+## Keymap.defineWindowKeymap や Keymap.defineMultiStrokeKeymap によって作られる ウインドウ条件ごとのキーマップ定義
 class WindowKeymap:
 
     def __init__( self, exe_name=None, class_name=None, window_text=None, check_func=None, help_string=None ):
@@ -590,6 +591,15 @@ class WindowKeymap:
         self.window_text = window_text
         self.check_func = check_func
         self.help_string = help_string
+
+        ## キーマップの適用直前に呼ばれるコールバック関数
+        #  
+        #  applying_func に設定された関数は、キーマップが適用される直前に呼び出され、
+        #  必要に応じて、キーマップの内容を変更することができます。
+        #  関数には、引数や返値はありません。
+        #
+        self.applying_func = None
+        
         self.keymap = {}
 
     def check( self, wnd ):
@@ -1081,10 +1091,14 @@ class Keymap(ckit.TextWindow):
         self.current_map = {}
 
         if self.multi_stroke_keymap:
+            if self.multi_stroke_keymap.applying_func:
+                self.multi_stroke_keymap.applying_func()
             self.current_map.update(self.multi_stroke_keymap.keymap)
         else:
             for window_keymap in self.window_keymap_list:
                 if window_keymap.check(self.wnd):
+                    if window_keymap.applying_func:
+                        window_keymap.applying_func()
                     self.current_map.update(window_keymap.keymap)
 
 

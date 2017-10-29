@@ -2,11 +2,13 @@
 Changes
 =========
 
-    **1.76**
+    **1.77**
+
+        - Moved to Python36 from Python35.
 
         - The command which is returned from ActivateWindowCommand now returns found Window object or None.
 
-        - Moved to Python36 from Python35.
+        - Added applying_func property in WindowKeymap class. This is a callback function which is called just before applying the keymap.
 
 
     **1.76**
