@@ -2056,11 +2056,14 @@ class Keymap(ckit.TextWindow):
     #
     #  ウインドウをアクティブ化する機能を持っているのは、この関数から返される関数であり、
     #  この関数自体はその機能を持っていないことに注意が必要です。
+    #  また、ウインドウをアクティブ化する関数は、アクティブ化したWindow、または該当するWindowが見つからなかった場合はNoneを返します。
     #
     def ActivateWindowCommand( self, exe_name=None, class_name=None, window_text=None, check_func=None, force=False ):
 
         def _activateWindow():
-
+            
+            activated_wnd = [None]
+            
             def callback( wnd, arg ):
 
                 if not wnd.isVisible() : return True
@@ -2073,9 +2076,14 @@ class Keymap(ckit.TextWindow):
 
                 wnd = wnd.getLastActivePopup()
                 wnd.setForeground(force)
+                
+                activated_wnd[0] = wnd
+                
                 return False
 
             pyauto.Window.enum( callback, None )
+            
+            return activated_wnd[0]
 
         return _activateWindow
 

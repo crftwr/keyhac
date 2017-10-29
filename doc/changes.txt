@@ -4,6 +4,13 @@ Changes
 
     **1.76**
 
+        - The command which is returned from ActivateWindowCommand now returns found Window object or None.
+
+        - Moved to Python36 from Python35.
+
+
+    **1.76**
+
         - Fixed an issue that Keyhac cannot exit correctly when ListWindow is opened.
 
         - Fixed an issue that the task tray icon disappears after explorer crashes and reboots.
