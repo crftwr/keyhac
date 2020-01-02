@@ -2,6 +2,13 @@
 Changes
 =========
 
+    **1.78**
+
+        - Moved from Python36 to Python38.
+
+        - Removed older Windows versions (XP,Vista,7,8) from the supported list. (May work, but not supported)
+
+
     **1.77**
 
         - Moved to Python36 from Python35.
