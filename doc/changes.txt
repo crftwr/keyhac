@@ -2,12 +2,15 @@
 Changes
 =========
 
+    **1.79**
+
+        - Supported high DPI monitors
+
     **1.78**
 
         - Moved from Python36 to Python38.
 
         - Removed older Windows versions (XP,Vista,7,8) from the supported list. (May work, but not supported)
-
 
     **1.77**
 
@@ -16,7 +19,6 @@ Changes
         - The command which is returned from ActivateWindowCommand now returns found Window object or None.
 
         - Added applying_func property in WindowKeymap class. This is a callback function which is called just before applying the keymap.
-
 
     **1.76**
 
