@@ -21,7 +21,7 @@ import keyhac_misc
 #
 class ListWindow( ckit.TextWindow ):
 
-    def __init__( self, x, y, min_width, min_height, max_width, max_height, parent_window, show=True, title="", items=[], initial_select=0, onekey_search=True, onekey_decide=False, return_modkey=False, keydown_hook=None, statusbar_handler=None ):
+    def __init__( self, x, y, min_width, min_height, max_width, max_height, parent_window, font, show=True, title="", items=[], initial_select=0, onekey_search=True, onekey_decide=False, return_modkey=False, keydown_hook=None, statusbar_handler=None ):
 
         ckit.TextWindow.__init__(
             self,
@@ -30,7 +30,8 @@ class ListWindow( ckit.TextWindow ):
             width=5,
             height=5,
             origin= ORIGIN_X_CENTER | ORIGIN_Y_CENTER,
-            parent_window=parent_window,
+            parent_window=parent_window, # 要る？
+            font=font,
             bg_color = ckit.getColor("bg"),
             show = False,
             resizable = False,

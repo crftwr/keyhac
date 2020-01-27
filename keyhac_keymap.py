@@ -648,11 +648,11 @@ class WindowKeymap:
 #
 #  設定ファイル config.py の configure に渡される keyhac 引数は、Keymap クラスのオブジェクトです。
 #
-class Keymap(ckit.TextWindow):
+class Keymap(ckit.Window):
 
     def __init__( self, config_filename, debug, profile ):
 
-        ckit.TextWindow.__init__(
+        ckit.Window.__init__(
             self,
             x = 0,
             y = 0,
@@ -684,6 +684,9 @@ class Keymap(ckit.TextWindow):
         self.record_status = None               # キーボードマクロの状態
         self.record_seq = None                  # キーボードマクロのシーケンス
         self.hook_call_list = []                # フック内呼び出し関数のリスト
+        
+        self.font_name = "MS Gothic"
+        self.font_size = 12
 
         self.console_window = None
         self.list_window = None
@@ -724,11 +727,11 @@ class Keymap(ckit.TextWindow):
         self._releaseModifierAll()
         self.enableHook(False)
 
-        ckit.TextWindow.destroy(self)
+        ckit.Window.destroy(self)
 
     def quit(self):
         self.cancelListWindow()
-        ckit.TextWindow.quit(self)
+        ckit.Window.quit(self)
 
     def setConsoleWindow( self, console_window ):
         self.console_window = console_window
@@ -779,7 +782,10 @@ class Keymap(ckit.TextWindow):
     #  @param size  フォントサイズ
     #
     def setFont( self, name, size ):
-        ckit.TextWindow.setFont( self, name, size )
+
+        self.font_name = name
+        self.font_size = size
+
         self.console_window.setFont( name, size )
 
     ## テーマを設定する
@@ -2228,10 +2234,16 @@ class Keymap(ckit.TextWindow):
                         self.list_window.remove(select)
                     return True
 
+
+            # リストウインドウの左上位置のDPIによってをフォントサイズ決定する
+            dpi_scale = ckit.Window.getDisplayScalingFromPosition( pos1[0], pos1[1] )
+            scaled_font_size = int( self.font_size * dpi_scale )
+            font = ckit.getStockedFont( self.font_name, scaled_font_size )
+
             # 親ウインドウをフォアグラウンドにしないと、ListWindowがフォアグラウンドに来ない
             pyauto.Window.fromHWND( self.getHWND() ).setForeground(True)
 
-            self.list_window = keyhac_listwindow.ListWindow( pos1[0], pos1[1], 5, 1, max_width, max_height, self, False, title, items, initial_select=0, return_modkey=True, keydown_hook=onKeyDown, onekey_search=False, statusbar_handler=onStatusMessage )
+            self.list_window = keyhac_listwindow.ListWindow( pos1[0], pos1[1], 5, 1, max_width, max_height, self, font, False, title, items, initial_select=0, return_modkey=True, keydown_hook=onKeyDown, onekey_search=False, statusbar_handler=onStatusMessage )
             self.list_window.lister = lister
             self.list_window.switch_left = False
             self.list_window.switch_right = False
