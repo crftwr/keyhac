@@ -2,6 +2,10 @@
 Changes
 =========
 
+    **1.80**
+
+        - Fixed an issue where Keymap.popBalloon() always fails.
+
     **1.79**
 
         - Supported high DPI monitors

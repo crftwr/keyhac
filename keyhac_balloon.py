@@ -5,7 +5,7 @@ from ckit.ckit_const import *
 
 class BalloonWindow( ckit.TextWindow ):
 
-    def __init__( self, parent_window ):
+    def __init__( self, parent_window, font ):
 
         ckit.TextWindow.__init__(
             self,
@@ -15,6 +15,7 @@ class BalloonWindow( ckit.TextWindow ):
             height=5,
             origin= ORIGIN_X_LEFT | ORIGIN_Y_TOP,
             parent_window=parent_window,
+            font=font,
             bg_color = (255,255,255),
             frame_color = (0,0,0),
             border_size = 0,

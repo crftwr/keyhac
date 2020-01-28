@@ -1504,7 +1504,12 @@ class Keymap(ckit.Window):
         # すでにバルーンがあったら閉じる
         self.closeBalloon()
 
-        self.balloon = keyhac_balloon.BalloonWindow(self)
+        # バルーンウインドウの左上位置のDPIによってをフォントサイズ決定する
+        dpi_scale = ckit.Window.getDisplayScalingFromPosition( pos[0], pos[1] )
+        scaled_font_size = int( self.font_size * dpi_scale )
+        font = ckit.getStockedFont( self.font_name, scaled_font_size )
+
+        self.balloon = keyhac_balloon.BalloonWindow( self, font )
         self.balloon.setText( pos[0], pos[1], text )
         self.balloon_name = name
 
