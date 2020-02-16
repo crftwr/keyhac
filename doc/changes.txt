@@ -2,6 +2,15 @@
 Changes
 =========
 
+
+    **1.81**
+
+        - Use DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 for better DPI scaling.
+
+        - For high DPI case, use round function to calculate the font size instead of floor function.
+
+        - Made trackpad scroll smoother in the console window.
+
     **1.80**
 
         - Fixed an issue where Keymap.popBalloon() always fails.

@@ -1506,7 +1506,7 @@ class Keymap(ckit.Window):
 
         # バルーンウインドウの左上位置のDPIによってをフォントサイズ決定する
         dpi_scale = ckit.Window.getDisplayScalingFromPosition( pos[0], pos[1] )
-        scaled_font_size = int( self.font_size * dpi_scale )
+        scaled_font_size = round( self.font_size * dpi_scale )
         font = ckit.getStockedFont( self.font_name, scaled_font_size )
 
         self.balloon = keyhac_balloon.BalloonWindow( self, font )
@@ -2242,7 +2242,7 @@ class Keymap(ckit.Window):
 
             # リストウインドウの左上位置のDPIによってをフォントサイズ決定する
             dpi_scale = ckit.Window.getDisplayScalingFromPosition( pos1[0], pos1[1] )
-            scaled_font_size = int( self.font_size * dpi_scale )
+            scaled_font_size = round( self.font_size * dpi_scale )
             font = ckit.getStockedFont( self.font_name, scaled_font_size )
 
             # 親ウインドウをフォアグラウンドにしないと、ListWindowがフォアグラウンドに来ない

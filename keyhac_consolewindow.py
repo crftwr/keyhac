@@ -65,7 +65,7 @@ class ConsoleWindow(ckit.TextWindow):
 
         # ウインドウの左上位置のDPIによってをフォントサイズ決定する
         dpi_scale = ckit.TextWindow.getDisplayScalingFromPosition( self.window_normal_x, self.window_normal_y )
-        scaled_font_size = int( self.font_size * dpi_scale )
+        scaled_font_size = round( self.font_size * dpi_scale )
         
         ckit.TextWindow.__init__(
             self,
@@ -158,7 +158,7 @@ class ConsoleWindow(ckit.TextWindow):
     def _updateFont( self, x_center ):
         
         scale = self.getDisplayScaling()
-        scaled_font_size = int( self.font_size * scale )
+        scaled_font_size = round( self.font_size * scale )
 
         font = ckit.getStockedFont(self.font_name, scaled_font_size)
         ckit.TextWindow.setFontFromFontObject( self, font )
@@ -397,12 +397,16 @@ class ConsoleWindow(ckit.TextWindow):
 
     def _onMouseWheel( self, x, y, wheel, mod ):
 
-        while wheel>0:
-            self._scroll(-1)
-            wheel-=1
-        while wheel<0:
-            self._scroll(+1)
-            wheel+=1
+        wheel_per_line = 0.34
+        
+        if wheel>0:
+            while wheel>0:
+                self._scroll(-1)
+                wheel-=wheel_per_line
+        else:
+            while wheel<0:
+                self._scroll(+1)
+                wheel+=wheel_per_line
 
         self.paint()
 
