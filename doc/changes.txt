@@ -3,6 +3,11 @@ Changes
 =========
 
 
+    **1.82**
+
+        - Fixed oneshot modifier key behavior (didn't work once right after mouse clicks and wheel move).
+
+
     **1.81**
 
         - Use DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 for better DPI scaling.
