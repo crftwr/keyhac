@@ -1,0 +1,173 @@
+# 02 — Platform layer
+
+What is genuinely OS-specific, how the two OSes differ, and the interfaces that hide it.
+Everything here is grounded in how keyhac-win (pyauto/`WH_KEYBOARD_LL`) and keyhac-mac
+(`CGEventTap`) actually behave in production.
+
+## The honest sync-vs-async comparison
+
+Both hooks give Keyhac a **synchronous consume decision** — the callback's return value
+decides whether the physical event is swallowed. The real differences are around the
+callback:
+
+| Aspect | Windows (`WH_KEYBOARD_LL`) | macOS (`CGEventTap`, session tap, defaultTap) |
+|---|---|---|
+| Decision | Return nonzero from hook proc → consumed | Return `None` (or null the event) → consumed |
+| Delivery thread | Thread that installed the hook, during its message retrieval | Thread whose run loop holds the tap source (main) |
+| Deadline | ~300 ms (`LowLevelHooksTimeout`); exceeded → **silent permanent unhook** | WindowServer timeout → tap **disabled**, but you get `kCGEventTapDisabledByTimeout` and can re-enable |
+| Recovery | Nothing tells you. Detect: poll `GetAsyncKeyState` for modifier changes with no callback (keyhac-win `checkSanity`, 4 strikes → reinstall) | Timer polls `CGEvent.tapIsEnabled` + handle the disabled-tap event types → `tapEnable(true)`, reset modifier state |
+| Modifier keys | Arrive as normal key down/up (VK_LSHIFT etc.) | Arrive as **`flagsChanged`** — platform layer must synthesize down/up by diffing flag state |
+| Injection | `SendInput(batch)` — array injected atomically at the tail of the input queue; ordering vs. physical input is the queue order | `CGEventPost(kCGHIDEventTap)` — posted events re-enter your own tap; **ordering vs. concurrent real events is not guaranteed** |
+| Injection bookkeeping | `LLKHF_INJECTED` flag + own `dwExtraInfo` signature to recognize self-injected events | Compare `eventSourceStateID` against private `CGEventSource`s (one for output, one for replay) |
+| Ordering fix | keyhac-win trick: `hookCall` — inject a sentinel `vk=0` key-down so a follow-up action runs *inside* the input stream, serialized | keyhac-mac machinery: count pending virtual events; **defer real events** that arrive while virtual ones are in flight; flush deferred events when drained or after a 0.2 s watchdog |
+| Repeats | Auto-repeat arrives as repeated key-downs | Same (keyDown with autorepeat flag) |
+| Permissions | None (but cannot hook elevated processes' input unless Keyhac runs elevated — document, don't solve) | **Accessibility permission required** (`AXIsProcessTrustedWithOptions` with prompt); granted per app bundle |
+| Keyboard layout | `GetKeyboardType(0) == 7` → JIS table | `KBGetLayoutType(LMGetKbdType())` → ANSI / JIS / ISO |
+
+Consequences for the shared engine:
+
+1. The engine is written against *synchronous dispatch with a deadline*: user callables
+   run inline only if trivially fast; anything else must be a `ThreadedAction`.
+2. Modifier state is **tracked by Keyhac, not read from the OS** (both predecessors do
+   this), with periodic reconciliation against reality (`GetAsyncKeyState` /
+   post-restore reset) to fix stuck modifiers.
+3. Self-injected events are tagged by the platform (`KeyEvent.kind` below) so the engine
+   ignores its own output but *does* re-process replayed macros (keyhac-mac's
+   replay-source design — adopted for both OSes; on Windows, distinguish via two
+   `dwExtraInfo` signatures).
+
+## Interfaces (`keyhac/platform/base.py`)
+
+Sketches — final signatures decided during M1.
+
+```python
+@dataclass(frozen=True)
+class KeyEvent:
+    vk: int              # OS-native virtual key code
+    down: bool
+    kind: str            # "real" | "own" | "replay"
+
+class InputHook(ABC):
+    def install(self, on_key: Callable[[KeyEvent], bool],
+                      on_restored: Callable[[], None]) -> None: ...
+    def uninstall(self) -> None: ...
+    @property
+    def installed(self) -> bool: ...
+    def check_health(self) -> None      # called from a periodic timer
+    def send(self, events: Sequence[tuple[int, bool]], replay: bool = False) -> None
+        # batch of (vk, down); platform handles atomicity/ordering/tagging
+    def keyboard_layout(self) -> str    # "ansi" | "jis" | "iso"
+
+class FocusProvider(ABC):
+    def get_focus(self) -> Focus | None: ...
+    # Focus: portable snapshot — app_name, pid, window_title,
+    #        plus .native (pyauto-like Window wrapper on win / UIElement on mac)
+    #        plus .path (macOS AX focus path string; None on Windows)
+
+class WindowControl(ABC):     # actions on the focused/top-level window
+    def get_top_level(self) -> NativeWindow | None: ...
+    # NativeWindow: get_rect/set_rect, activate, minimize/restore, close, title, ...
+
+class ClipboardMonitor(ABC):
+    def start(self, on_change: Callable[[], None]) -> None: ...
+    def get_text(self) -> str | None: ...
+    def set_text(self, s: str) -> None: ...
+    # rich formats (RTF/HTML/image) kept as opaque per-OS payloads for history fidelity
+
+class ScreenInfo(ABC):
+    def frames(self) -> list[ScreenFrame]: ...   # full + work area per monitor
+    def caret_rect(self) -> Rect | None: ...     # for balloon placement (GetGUIThreadInfo / AX)
+
+class AppServices(ABC):
+    def launch(self, name_or_path: str) -> None: ...
+    def shell_execute(self, verb, file, params, directory, show) -> None: ...  # win-flavored; mac maps to open/NSWorkspace
+    def running_apps(self) -> list[AppInfo]: ...
+```
+
+## Windows implementation notes (`keyhac/platform/win/`, ctypes)
+
+Reimplements what pyauto provided, in ctypes (PuiKit's `_win32_native.py` shows the
+house style for raw-ctypes Win32/COM):
+
+- **Hook**: `SetWindowsHookExW(WH_KEYBOARD_LL, proc, hInstance, 0)`. The `HOOKPROC`
+  ctypes callback object must be kept referenced for the process lifetime. Read
+  `KBDLLHOOKSTRUCT` (vkCode, flags, dwExtraInfo). `CallNextHookEx` on pass-through;
+  return 1 to consume. Keep the callback *minimal*: normalize → engine → return.
+- **Recovery**: 100 ms timer runs `checkSanity` (port from keyhac-win
+  `keyhac_keymap.py:1427`): snapshot `GetAsyncKeyState` for all modifier vks; 4
+  consecutive changes without an intervening hook callback ⇒ unhook + rehook.
+- **Injection**: `SendInput` with `INPUT[]` batches; `KEYEVENTF_KEYUP`,
+  `KEYEVENTF_EXTENDEDKEY` where required; `dwExtraInfo` = signature A (own) /
+  signature B (replay). Port keyhac-win's rules:
+  - output uses **left-hand** physical modifiers (`force_LR`),
+  - user modifiers are never physically emitted,
+  - lone Win/Alt cancellation: inject a benign `VK_LCONTROL` tap ("poison pill") before
+    modifier release / before running a callable (prevents Start menu / menu-bar focus),
+  - `hook_call(func)`: inject sentinel `vk=0` down; run `func` when the sentinel arrives
+    in the hook (serializes paste-after-focus-change with real input).
+- **Focus/windows**: `GetForegroundWindow`/`GetFocus`-equivalent via
+  `GetGUIThreadInfo`, `GetWindowTextW`, class name, exe name via
+  `QueryFullProcessImageNameW`; enumeration `EnumWindows`; actions
+  `SetForegroundWindow` (+ the attach-thread-input force fallback keyhac-win uses),
+  `GetWindowRect`/`SetWindowPos`, `ShowWindow`, `PostMessage(WM_SYSCOMMAND, SC_CLOSE)`.
+- **Clipboard**: `AddClipboardFormatListener` on a message-only window →
+  `WM_CLIPBOARDUPDATE` (event-driven; keyhac-win moved to this in 1.75). Text via
+  `CF_UNICODETEXT`; optionally capture `CF_HTML`/`CF_DIB` payloads for history fidelity.
+- **Caret**: `GetGUIThreadInfo().rcCaret` + `ClientToScreen` (balloon placement).
+- **Mouse** (later milestone): `WH_MOUSE_LL` for one-shot cancellation on click;
+  `SendInput` mouse events for output commands.
+
+## macOS implementation notes (`keyhac/platform/mac/`, PyObjC)
+
+Reimplements keyhac-mac's Swift `KeyhacCore_Hook/UIElement/Clipboard` in Python.
+`pyobjc-framework-Quartz` exposes `CGEventTapCreate`/`CGEventPost`;
+`pyobjc-framework-ApplicationServices` exposes `AXUIElement*` (verify coverage in M0;
+known-workable but some AX calls need care).
+
+- **Tap**: `CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
+  kCGEventTapOptionDefault, mask(keyDown|keyUp|flagsChanged), callback, None)`; wrap in
+  `CFMachPortCreateRunLoopSource`, add to main run loop, common modes. In the callback:
+  handle `kCGEventTapDisabledByTimeout/ByUserInput` (re-enable, notify engine); map
+  `flagsChanged` to synthetic down/up by diffing `CGEventFlags` per modifier.
+- **Source filtering**: two private `CGEventSource`s (own / replay); compare each
+  incoming event's `kCGEventSourceStateID` to classify `KeyEvent.kind` (port of
+  keyhac-mac `KeyhacCore_Hook.swift:278`).
+- **Ordering**: port the pending/deferred machinery verbatim — count in-flight posted
+  events; buffer real events arriving meanwhile; flush on drain or 0.2 s watchdog.
+  This is subtle, battle-tested code; treat keyhac-mac's Swift as the spec.
+  Also port: rewriting modifier flags on passed-through events from tracked virtual
+  modifier state, and the `hookRestored` → modifier reset path.
+- **Permissions**: `AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})`
+  gate before install; recheck when the user toggles the hook in the console.
+- **Focus**: `AXUIElementCreateSystemWide()` → focused app → `AXFocusedUIElement`;
+  build the focus-path string exactly as keyhac-mac (`AXRole(AXTitle)/...`, transliterate
+  unsafe chars) for `focus_path_pattern` compat; expose portable `app_name` (running-app
+  localized name), `pid`, `window_title` (walk to `AXWindow`, read `AXTitle`).
+  Set `AXUIElementSetMessagingTimeout` small — a hung app must not stall key dispatch.
+- **UIElement**: port the attribute get/set/action API (marshalling AXValue types) —
+  users script window moves and app automation with it (keyhac-mac's `MoveWindow` uses
+  `AXPosition`).
+- **Clipboard**: poll `NSPasteboard.general.changeCount` on the ~1 s health timer tick
+  (keyhac-mac polls at 30 Hz — reduce; clipboard history does not need 33 ms latency).
+- **Injection**: `CGEventCreateKeyboardEvent` + `CGEventPost(kCGHIDEventTap)` with the
+  proper source; set flags from tracked virtual modifiers.
+
+## Keycode & layout strategy
+
+- Engine-level key names are **portable strings** (`"A"`, `"Semicolon"`, `"F13"`,
+  `"Cmd"`, `"Win"`, …). `core/vk.py` owns two per-OS tables mapping name ↔ native vk,
+  with US/JIS variants chosen via `InputHook.keyboard_layout()` (both predecessors
+  already ship these tables; merge them: keyhac-win `str_vk_table_*`, keyhac-mac
+  `keyhac_const.py` + `keyhac_key.py`).
+- `KeyCondition` stores native vks at parse time (fast hook-path comparisons stay int).
+- Raw codes remain expressible as `"(123)"` for unmapped keys.
+- ISO layout on macOS: currently unsupported upstream; keep the warning, add later.
+
+## What is deliberately NOT platform-abstracted
+
+- `UIElement` (macOS AX automation) and the Win32 `Window` wrapper are exposed to
+  configs as **platform-native objects** (via `Focus.native`). Pretending a common
+  automation API exists would be false; configs that use them are platform-branched by
+  nature.
+- `shell_execute(verb=...)` semantics are Windows-flavored; on macOS it degrades to
+  `open` / `NSWorkspace` equivalents with documented behavior.
