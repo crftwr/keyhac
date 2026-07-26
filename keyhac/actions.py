@@ -182,43 +182,195 @@ class DateTimeSnippet:
 
 
 class MoveWindow(ThreadedAction):
-    """Move the focused window (macOS: AX position). Simplified port of
-    keyhac-mac's MoveWindow: direction + distance, clamped to the screen's
-    work area; edge-snapping refinements return with the full port."""
+    """Move the focused window - full port of keyhac-mac's MoveWindow:
+    direction/distance, stop at other windows' edges (window_edge) and
+    screen edges (screen_edge), multi-monitor jump when already at the
+    edge. x/y are deprecated (since keyhac-mac v1.64)."""
 
-    def __init__(self, direction: str = "", distance: float = 10):
+    ADJACENT_SCREEN_TOLERANCE = 50   # menu-bar gap etc.
+    EDGE_TOLERANCE = 2
+
+    def __init__(self, x: int = None, y: int = None, direction: str = "",
+                 distance: float = 10, window_edge: bool = False,
+                 screen_edge: bool = True):
+        if x or y:
+            logger.warning("MoveWindow's arguments x, y are deprecated. "
+                           "Use direction and distance instead.")
+            if x and x < 0:
+                direction, distance = "left", abs(x)
+            elif x and x > 0:
+                direction, distance = "right", abs(x)
+            elif y and y < 0:
+                direction, distance = "up", abs(y)
+            elif y and y > 0:
+                direction, distance = "down", abs(y)
         self.direction = direction
         self.distance = distance
+        self.window_edge = window_edge
+        self.screen_edge = screen_edge
+        self.wnd = None
 
-    def run(self):
-        from keyhac.ui import runtime
+    def starting(self):
+        # ALL AX reads happen here, on the main thread: AX calls into our OWN
+        # process off the main thread SIGTRAP (they are in-process, not IPC),
+        # and this action must also work on Keyhac's own windows.
         keymap = Keymap.get_instance()
-        focus = keymap.focus
-        elm = focus.native if focus else None
-        window = None
+        elm = keymap.focus.native if keymap.focus else None
         while elm is not None:
-            role = elm.get_attribute_value("AXRole")
-            if role == "AXWindow":
-                window = elm
+            if elm.get_attribute_value("AXRole") == "AXWindow":
                 break
             elm = elm.get_attribute_value("AXParent")
-        if window is None:
+        self.wnd = elm
+        self.frame = None
+        if elm is not None:
+            frame = elm.get_attribute_value("AXFrame")
+            if frame is None:
+                pos = elm.get_attribute_value("AXPosition")
+                size = elm.get_attribute_value("AXSize")
+                if pos is not None and size is not None:
+                    frame = (pos[0], pos[1], size[0], size[1])
+            self.frame = frame
+
+    @staticmethod
+    def _get_best_screen(frame, screens):
+        wx, wy, ww, wh = frame
+        best, best_overlap = (screens[0] if screens else None), -1
+        for sx, sy, sw, sh in screens:
+            ox = max(0, min(wx + ww, sx + sw) - max(wx, sx))
+            oy = max(0, min(wy + wh, sy + sh) - max(wy, sy))
+            if ox * oy > best_overlap:
+                best_overlap, best = ox * oy, (sx, sy, sw, sh)
+        return best
+
+    @classmethod
+    def _find_adjacent_screen(cls, cur, screens, direction):
+        cx, cy, cw, ch = cur
+        tol = cls.ADJACENT_SCREEN_TOLERANCE
+        best, best_overlap = None, 0
+        for s in screens:
+            if s == cur:
+                continue
+            sx, sy, sw, sh = s
+            if direction == "left":
+                touching = abs((sx + sw) - cx) <= tol
+                overlap = min(cy + ch, sy + sh) - max(cy, sy)
+            elif direction == "right":
+                touching = abs(sx - (cx + cw)) <= tol
+                overlap = min(cy + ch, sy + sh) - max(cy, sy)
+            elif direction == "up":
+                touching = abs((sy + sh) - cy) <= tol
+                overlap = min(cx + cw, sx + sw) - max(cx, sx)
+            else:
+                touching = abs(sy - (cy + ch)) <= tol
+                overlap = min(cx + cw, sx + sw) - max(cx, sx)
+            if touching and overlap > best_overlap:
+                best_overlap, best = overlap, s
+        return best
+
+    def run(self):
+        if self.wnd is None or self.frame is None:
             logger.warning("MoveWindow: no focused window.")
+            return None
+        # Worker thread: pure math + thread-safe CoreGraphics only (no AX).
+        from keyhac.platform.mac.uielement import UIElement
+        frame = self.frame
+        wx, wy, ww, wh = frame
+
+        screens = UIElement.get_screen_frames()
+        cur = self._get_best_screen(frame, screens)
+        if cur is None:
+            return None
+        sx, sy, sw, sh = cur
+
+        # Already at the screen edge? Jump to the adjacent monitor.
+        at_edge = {
+            "left": (wx - sx) <= self.EDGE_TOLERANCE,
+            "right": ((sx + sw) - (wx + ww)) <= self.EDGE_TOLERANCE,
+            "up": (wy - sy) <= self.ADJACENT_SCREEN_TOLERANCE,
+            "down": ((sy + sh) - (wy + wh)) <= self.EDGE_TOLERANCE,
+        }.get(self.direction, False)
+        if at_edge:
+            adj = self._find_adjacent_screen(cur, screens, self.direction)
+            if adj is not None:
+                ax, ay, aw, ah = adj
+                if self.direction == "left":
+                    wx = ax + aw - ww
+                elif self.direction == "right":
+                    wx = ax
+                elif self.direction == "up":
+                    wx = max(ax, min(wx, ax + aw - ww))
+                    wy = ay + ah - wh
+                elif self.direction == "down":
+                    wx = max(ax, min(wx, ax + aw - ww))
+                    wy = ay
+                return (wx, wy)
+
+        distance = self.distance
+
+        # Leading edge of this window in the movement direction
+        if self.direction == "left":
+            front_pos, front_range, sign = wx, (wy, wy + wh), -1
+        elif self.direction == "right":
+            front_pos, front_range, sign = wx + ww, (wy, wy + wh), 1
+        elif self.direction == "up":
+            front_pos, front_range, sign = wy, (wx, wx + ww), -1
+        elif self.direction == "down":
+            front_pos, front_range, sign = wy + wh, (wx, wx + ww), 1
+        else:
+            return None
+
+        if self.screen_edge:
+            edge_dist = {
+                "left": wx - sx, "right": (sx + sw) - (wx + ww),
+                "up": wy - sy, "down": (sy + sh) - (wy + wh),
+            }[self.direction]
+            if edge_dist >= 0.1:
+                distance = min(distance, edge_dist)
+
+        if self.window_edge:
+            gap = 1
+            for ox, oy, ow, oh in UIElement.get_onscreen_window_frames():
+                if (ox, oy, ow, oh) == frame:
+                    continue
+                if self.direction in ("left", "right"):
+                    edge_pos = (ox + ow) if self.direction == "left" else ox
+                    edge_range = (oy, oy + oh)
+                else:
+                    edge_pos = (oy + oh) if self.direction == "up" else oy
+                    edge_range = (ox, ox + ow)
+                if not (front_range[1] <= edge_range[0]
+                        or front_range[0] >= edge_range[1]):
+                    if (edge_pos - front_pos) * sign - gap >= 0.1:
+                        distance = min(distance, (edge_pos - front_pos) * sign - gap)
+
+        if self.direction == "left":
+            wx -= distance
+        elif self.direction == "right":
+            wx += distance
+        elif self.direction == "up":
+            wy -= distance
+        elif self.direction == "down":
+            wy += distance
+
+        wx = max(sx, min(wx, sx + sw - ww))
+        wy = max(sy, min(wy, sy + sh - wh))
+        return (wx, wy)
+
+    def finished(self, result):
+        if self.wnd is None or result is None:
             return
-        x, y = window.get_attribute_value("AXPosition")
-        w, h = window.get_attribute_value("AXSize")
-        dx = {"left": -1, "right": 1}.get(self.direction, 0) * self.distance
-        dy = {"up": -1, "down": 1}.get(self.direction, 0) * self.distance
-        nx, ny = x + dx, y + dy
-        try:
-            frames = runtime.backend.screen_frames() if runtime.backend else []
-            if frames:
-                (_fx, _fy, fw, fh), _vis = frames[0]
-                nx = max(0, min(nx, fw - w))
-                ny = max(0, min(ny, fh - h))
-        except Exception:
-            pass
-        window.set_attribute_value("AXPosition", "point", (nx, ny))
+        from keyhac.ui import runtime
+
+        def _apply():
+            self.wnd.set_attribute_value("AXPosition", "point", result)
+
+        # The AX write must also run on the main thread (own-process safety);
+        # call_on_main_thread is the one thread-safe puikit entry point.
+        if runtime.backend is None or not runtime.backend.capabilities.supports(
+                "main_thread_dispatch"):
+            _apply()
+        else:
+            runtime.backend.call_on_main_thread(_apply)
 
     def __repr__(self):
         return f'MoveWindow(direction="{self.direction}")'

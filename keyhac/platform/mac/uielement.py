@@ -98,3 +98,38 @@ class UIElement:
     def get_running_applications() -> list[tuple[str, int]]:
         return [(str(a.localizedName()), int(a.processIdentifier()))
                 for a in NSWorkspace.sharedWorkspace().runningApplications()]
+
+
+    @staticmethod
+    def get_screen_frames() -> list[tuple[float, float, float, float]]:
+        """Screen frames in AX (top-left origin) coordinates, main first.
+
+        Uses CoreGraphics, NOT NSScreen: this is called from ThreadedAction
+        worker threads, and AppKit off the main thread crashes with SIGTRAP.
+        CGDisplayBounds is thread-safe and already top-left-origin global."""
+        err, displays, _count = Quartz.CGGetActiveDisplayList(16, None, None)
+        if err != 0 or not displays:
+            return []
+        main_id = Quartz.CGMainDisplayID()
+        frames = []
+        for display in sorted(displays, key=lambda d: d != main_id):
+            b = Quartz.CGDisplayBounds(display)
+            frames.append((b.origin.x, b.origin.y, b.size.width, b.size.height))
+        return frames
+
+    @staticmethod
+    def get_onscreen_window_frames() -> list[tuple[float, float, float, float]]:
+        """Frames of all normal on-screen windows (AX top-left coords), via
+        CGWindowList - far cheaper than per-app AX walks."""
+        wins = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly
+            | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID) or []
+        frames = []
+        for w in wins:
+            if w.get("kCGWindowLayer", 0) != 0:
+                continue
+            b = w.get("kCGWindowBounds")
+            if b:
+                frames.append((b["X"], b["Y"], b["Width"], b["Height"]))
+        return frames

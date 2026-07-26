@@ -71,3 +71,21 @@ class TestPathAndCustom:
     def test_and_combination(self):
         assert FocusCondition(app="Code", title="*myproject*").check(FOCUS)
         assert not FocusCondition(app="Code", title="*nope*").check(FOCUS)
+
+
+class TestNativeForwarding:
+
+    def test_unknown_attributes_forward_to_native(self):
+        class FakeElement:
+            def get_attribute_value(self, name):
+                return f"value:{name}"
+
+        focus = Focus(app_name="X", native=FakeElement())
+        # keyhac-mac style condition code works unchanged
+        assert focus.get_attribute_value("AXWindow") == "value:AXWindow"
+        assert focus.app_name == "X"          # portable fields still win
+
+    def test_no_native_raises_attribute_error(self):
+        import pytest
+        with pytest.raises(AttributeError):
+            Focus(app_name="X").get_attribute_value

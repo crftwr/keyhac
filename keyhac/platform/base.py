@@ -44,6 +44,16 @@ class Focus:
     path: str | None = None
     native: Any = None
 
+    def __getattr__(self, name):
+        # keyhac-mac's custom_condition_func received the UIElement itself;
+        # forwarding unknown attributes to .native keeps those conditions
+        # working unchanged (e.g. focus.get_attribute_value("AXWindow")).
+        native = self.__dict__.get("native")
+        if native is not None:
+            return getattr(native, name)
+        raise AttributeError(
+            f"Focus has no attribute {name!r} (and no native element to forward to)")
+
 
 class InputHook(ABC):
     """Low-level keyboard hook + key event injection."""
