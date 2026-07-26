@@ -67,6 +67,7 @@ class ConsoleWindow:
             frame_autosave_name="KeyhacConsole",
             style=WindowStyle(),                 # a normal resizable window
             activation_policy="accessory",       # agent app: no Dock icon (macOS)
+            main_window_close="hide",            # tray-app lifecycle: close hides
         )
 
         initial_level_index = next(

@@ -60,9 +60,11 @@ class Keymap:
         self._modifier = 0                  # tracked modifier state
         self._last_keydown = None           # for one-shot detection
 
-        # Wired by main(): platform services + clipboard history
+        # Wired by main(): platform services + clipboard history + UI hooks
         self.app_control = None             # platform AppControl
         self._clipboard_history = None      # core ClipboardHistory
+        self.on_enter_multi_stroke = None   # callable(name) - balloon help
+        self.on_leave_multi_stroke = None   # callable()
 
         Keymap._instance = self
 
@@ -324,13 +326,22 @@ class Keymap:
         logger.debug(f"Entering multi-stroke keytable - {keytable}")
         self._multi_stroke_keytable = keytable
         self._update_unified_keytable()
-        # TODO(M4): balloon UI showing the multi-stroke table name/help
+        if self.on_enter_multi_stroke is not None:
+            try:
+                self.on_enter_multi_stroke(keytable.name)
+            except Exception:
+                logger.error("on_enter_multi_stroke callback failed.")
 
     def _leave_multi_stroke(self):
         if self._multi_stroke_keytable:
             logger.debug(f"Leaving multi-stroke keytable - {self._multi_stroke_keytable}")
             self._multi_stroke_keytable = None
             self._update_unified_keytable()
+            if self.on_leave_multi_stroke is not None:
+                try:
+                    self.on_leave_multi_stroke()
+                except Exception:
+                    logger.error("on_leave_multi_stroke callback failed.")
 
     # ------------------------------------------------------------------
     # Focus / key table selection
