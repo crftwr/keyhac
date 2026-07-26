@@ -11,7 +11,35 @@ Project guide for coding agents: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**M1 (engine + minimal hook) — in progress.**
+**M3 (clipboard history + chooser) — in progress.**
+
+- Clipboard history: portable `ClipboardProvider` (NSPasteboard changeCount /
+  Win32 sequence-number polling), text history with dedup + JSON persistence
+  (debounced; file format compatible with keyhac-mac's `clipboard.json`).
+- Chooser window on PuiKit multi-window (`create_window`): search field +
+  filtered list, Up/Down/Enter/Escape, Shift-select = copy without paste.
+  Actions: `ShowClipboardHistory` / `ShowClipboardSnippets` /
+  `ShowClipboardTools`, `ChooserAction` base, `ThreadedAction`,
+  `LaunchApplication`. Verified live on macOS end-to-end (hotkey → chooser →
+  history entry).
+- Windows: clipboard provider written to spec (untested); `WinAppControl`
+  pending.
+
+**M2 (console window) — done on macOS.**
+
+- PuiKit console window working on macOS: LogView with per-level colors, hook
+  on/off toggle (re-enable reloads config), log-level selector, last-key /
+  focus-path inspector with copy buttons. The console's PuiKit backend runs
+  the process event loop; the CGEventTap shares it. Runs as an agent app (no
+  Dock icon) via the new PuiKit `activation_policy="accessory"`.
+- Requires the PuiKit window-management extensions
+  ([puikit PR #76](https://github.com/crftwr/puikit/pull/76)): `WindowStyle`,
+  `activation_policy`, `call_later`. Until that ships in a release, the
+  Makefile installs `../puikit` (branch) editable.
+- Windows console path written but pending the next Windows session.
+- `--no-ui` keeps the headless M1 mode.
+
+**M1 (engine + minimal hook) — done on macOS; Windows interactive checklist open.**
 
 - Core keymap engine: done, 64 unit tests green (key expressions, L/R-agnostic
   modifier matching, one-shot, multi-stroke, user modifiers, replace_key,

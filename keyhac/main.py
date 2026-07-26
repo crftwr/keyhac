@@ -1,10 +1,12 @@
 """Keyhac 2 bootstrap.
 
-M1: command-line app - installs the hook, loads ~/.keyhac/config.py, runs the
-native event loop.  The PuiKit console window replaces stderr logging in M2.
+Default mode opens the PuiKit console window; its backend runs the process's
+native event loop and the keyboard hook shares it (CGEventTap source on the
+same run loop on macOS; the GetMessage pump services WH_KEYBOARD_LL on
+Windows).  --no-ui keeps the M1 headless mode (bare native loop + stderr).
 
 Usage:
-    keyhac [-d]          (or: python -m keyhac [-d])
+    keyhac [-d] [-c PATH] [--no-ui]       (or: python -m keyhac ...)
 """
 
 import argparse
@@ -24,6 +26,8 @@ def main() -> int:
     parser.add_argument("-c", "--config", metavar="PATH", default=None,
                         help="config file path (default: ~/.keyhac/config.py; "
                              "created from the template if missing)")
+    parser.add_argument("--no-ui", action="store_true",
+                        help="run without the console window (headless, logs to stderr)")
     args = parser.parse_args()
 
     log.set_debug(args.debug)
@@ -46,34 +50,88 @@ def main() -> int:
         logger.error(f"Unsupported platform: {sys.platform}")
         return 1
 
-    hook, focus_provider, loop = platform_module.create_platform()
+    hook, focus_provider, native_loop = platform_module.create_platform()
 
     keymap = Keymap(hook, focus_provider, platform_name, config_path=args.config)
+
+    # Clipboard history + app control (platform services above the hook)
+    from keyhac.core.clipboard_history import ClipboardHistory
+    if platform_name == "mac":
+        from keyhac.platform.mac.clipboard import MacClipboardProvider
+        from keyhac.platform.mac.apps import MacAppControl
+        clipboard_provider = MacClipboardProvider()
+        keymap.app_control = MacAppControl()
+    else:
+        from keyhac.platform.win.clipboard import WinClipboardProvider
+        clipboard_provider = WinClipboardProvider()
+        keymap.app_control = None  # WinAppControl lands with the Windows session
+    # With an explicit --config, keep the history beside it (sandbox testing
+    # must not touch the real ~/.keyhac/clipboard.json).
+    import os
+    history_path = (os.path.join(os.path.dirname(os.path.abspath(args.config)),
+                                 "clipboard.json")
+                    if args.config else None)
+    keymap._clipboard_history = ClipboardHistory(clipboard_provider, history_path)
+
     keymap.configure()
 
+    if args.no_ui:
+        return _run_headless(keymap, hook, native_loop, platform_name,
+                             clipboard_provider)
+    return _run_with_console(keymap, hook, platform_name, clipboard_provider)
+
+
+def _run_with_console(keymap, hook, platform_name: str, clipboard_provider) -> int:
+    from keyhac.ui.console import ConsoleWindow
+    from keyhac.ui import runtime
+
+    console = ConsoleWindow(keymap, hook)
+    console.open()
+    runtime.backend = console.backend
+    console.attach_clipboard(clipboard_provider, keymap.clipboard_history)
+
+    hook.install(keymap.on_key_event, keymap.on_hook_restored)
+    console._hook_checkbox.checked = True
+
+    # Ctrl+C in the launching terminal stops the UI loop. The console's
+    # ~10 Hz pump tick guarantees the Python-level handler runs promptly.
+    signal.signal(signal.SIGINT, lambda sig, frame: console.quit())
+
+    logger.info(f"Keyhac 2 running ({platform_name}, config: {keymap._config_path}).")
+
+    try:
+        console.run()
+    finally:
+        hook.uninstall()
+        keymap.clipboard_history.flush()
+        console.close()
+
+    logger.info("Keyhac 2 stopped.")
+    return 0
+
+
+def _run_headless(keymap, hook, loop, platform_name: str, clipboard_provider) -> int:
     hook.install(keymap.on_key_event, keymap.on_hook_restored)
 
-    # Periodic hook health check (no-op on platforms with internal timers).
-    # The 100 ms Python tick also guarantees the SIGINT handler below runs
-    # promptly even while blocked in the native loop.
+    # Periodic hook health check; the 100 ms Python tick also guarantees the
+    # SIGINT handler below runs promptly while blocked in the native loop.
     def health_tick():
         hook.check_health()
+        if clipboard_provider.poll():
+            keymap.clipboard_history.on_clipboard_changed()
         loop.call_later(0.1, health_tick)
 
     loop.call_later(0.1, health_tick)
-
-    # Ctrl+C: stop the native loop cleanly.  KeyboardInterrupt cannot
-    # propagate out of native run-loop callbacks (PyObjC logs and swallows
-    # it), so the handler stops the loop instead of raising.
     signal.signal(signal.SIGINT, lambda sig, frame: loop.stop())
 
-    logger.info(f"Keyhac 2 running ({platform_name}, config: {keymap._config_path}). "
-                "Press Ctrl+C to quit.")
+    logger.info(f"Keyhac 2 running headless ({platform_name}, "
+                f"config: {keymap._config_path}). Press Ctrl+C to quit.")
 
     try:
         loop.run()
     finally:
         hook.uninstall()
+        keymap.clipboard_history.flush()
 
     logger.info("Keyhac 2 stopped.")
     return 0

@@ -39,28 +39,42 @@ class Console:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._lines: deque[str] = deque(maxlen=Console.max_lines)
+        self._lines: deque[tuple[str, int]] = deque(maxlen=Console.max_lines)
+        self._pending: list[tuple[str, int]] = []  # lines the UI has not pulled yet
         self._texts: dict[str, str] = {}
         self.log_level = logging.INFO
         self.mirror_stderr = True
 
     def write(self, s: str, log_level: int = 100) -> None:
+        """Append plain text (no ANSI codes) with a logging level; the stderr
+        mirror colors by level, the console window styles by level."""
         if log_level < self.log_level:
             return
         with self._lock:
             for line in s.splitlines():
-                self._lines.append(line)
+                self._lines.append((line, log_level))
+                self._pending.append((line, log_level))
         if self.mirror_stderr:
             try:
-                sys.stderr.write(s)
+                color = _COLORS.get(log_level, "")
+                reset = _RESET if color else ""
+                sys.stderr.write(f"{color}{s}{reset}")
                 if not s.endswith("\n"):
                     sys.stderr.write("\n")
             except Exception:
                 pass
 
-    def lines(self) -> list[str]:
+    def lines(self) -> list[tuple[str, int]]:
         with self._lock:
             return list(self._lines)
+
+    def pull_lines(self) -> list[tuple[str, int]]:
+        """Return and clear the lines appended since the last pull (single
+        consumer: the console window's refresh tick)."""
+        with self._lock:
+            pending = self._pending
+            self._pending = []
+        return pending
 
     def set_text(self, name: str, text: str) -> None:
         with self._lock:
@@ -75,9 +89,7 @@ class _ConsoleLoggingHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            msg = self.format(record)
-            color = _COLORS.get(record.levelno, _COLORS[logging.INFO])
-            Console.get_instance().write(f"{color}{msg}{_RESET}", record.levelno)
+            Console.get_instance().write(self.format(record), record.levelno)
         except Exception:
             self.handleError(record)
 

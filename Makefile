@@ -63,8 +63,11 @@ help:
 	@echo ""
 	@echo "  (Packaging / release targets will be added in M5.)"
 
-$(VENV_STAMP): pyproject.toml
+# PuiKit is installed editable from the sibling checkout until the
+# window-management extensions (puikit PR #76) ship in a PyPI release.
+$(VENV_STAMP): pyproject.toml ../puikit/pyproject.toml
 	$(PYTHON) -m venv $(VENV)
+	$(VENV_PIP) install -e ../puikit
 	$(VENV_PIP) install -e ".[$(EXTRAS)]"
 	@touch $(VENV_STAMP)
 

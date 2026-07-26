@@ -10,6 +10,15 @@ from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core.log import getLogger, Console
+from keyhac.core.action import ThreadedAction, LaunchApplication
+from keyhac.core.clipboard_history import ClipboardHistory
+from keyhac.actions import (
+    ChooserAction,
+    DateTimeSnippet,
+    ShowClipboardHistory,
+    ShowClipboardSnippets,
+    ShowClipboardTools,
+)
 from keyhac.platform.base import Focus, KeyEvent
 
 __all__ = [
@@ -20,6 +29,14 @@ __all__ = [
     "InputContext",
     "Focus",
     "KeyEvent",
+    "ThreadedAction",
+    "LaunchApplication",
+    "ClipboardHistory",
+    "ChooserAction",
+    "ShowClipboardHistory",
+    "ShowClipboardSnippets",
+    "ShowClipboardTools",
+    "DateTimeSnippet",
     "getLogger",
     "Console",
     "__version__",

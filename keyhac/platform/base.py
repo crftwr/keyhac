@@ -96,3 +96,28 @@ class EventLoop(ABC):
 
     @abstractmethod
     def call_later(self, delay_seconds: float, func: Callable[[], None]) -> None: ...
+
+
+class ClipboardProvider(ABC):
+    """OS clipboard access + change detection (poll() driven by the app's
+    periodic tick; event-driven listeners can layer on later)."""
+
+    @abstractmethod
+    def get_text(self) -> str | None: ...
+
+    @abstractmethod
+    def set_text(self, s: str) -> None: ...
+
+    @abstractmethod
+    def poll(self) -> bool:
+        """Return True when the clipboard changed since the last poll."""
+
+
+class AppControl(ABC):
+    """Application-level actions (activate, launch)."""
+
+    @abstractmethod
+    def activate_pid(self, pid: int) -> bool: ...
+
+    @abstractmethod
+    def launch(self, app_name: str) -> None: ...

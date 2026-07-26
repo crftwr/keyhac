@@ -53,6 +53,23 @@ def configure(keymap):
         # kt_notepad["C-A"] = "Home"    # short forms C-/A-/S-/W- also work
 
     # ------------------------------------------------------------------
+    # Clipboard history / snippets (chooser window)
+
+    if keymap.platform == "mac":
+        kt_global["Cmd-Shift-V"] = ShowClipboardHistory()
+    else:
+        kt_global["W-V"] = ShowClipboardHistory()
+
+    # kt_global["Cmd-Shift-S"] = ShowClipboardSnippets([
+    #     ("📝", "name@example.com"),
+    #     ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),
+    # ])
+    # kt_global["Cmd-Shift-T"] = ShowClipboardTools([
+    #     ("👉", "Quote", ShowClipboardTools.quote),
+    #     ("👉", "Unindent", ShowClipboardTools.unindent),
+    # ])
+
+    # ------------------------------------------------------------------
     # Multi-stroke key table sample
 
     # kt_ctrlx = keymap.define_keytable(name="Ctrl-X")

@@ -60,6 +60,10 @@ class Keymap:
         self._modifier = 0                  # tracked modifier state
         self._last_keydown = None           # for one-shot detection
 
+        # Wired by main(): platform services + clipboard history
+        self.app_control = None             # platform AppControl
+        self._clipboard_history = None      # core ClipboardHistory
+
         Keymap._instance = self
 
     # ------------------------------------------------------------------
@@ -372,3 +376,8 @@ class Keymap:
     def focus(self) -> Focus | None:
         """Portable snapshot of the current keyboard focus."""
         return self._focus
+
+    @property
+    def clipboard_history(self):
+        """The ClipboardHistory object (None while running without one)."""
+        return self._clipboard_history

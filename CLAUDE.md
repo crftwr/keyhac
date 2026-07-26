@@ -104,6 +104,29 @@ keyhac/
   key through. Two upstream keyhac-mac bugs intentionally fixed in the mac hook port —
   see the module docstring of `keyhac/platform/mac/hook.py`.
 
-Next: M2 (console window on PuiKit — needs PuiKit extensions developed on a branch + PR
-in `../puikit`; see [doc/04-puikit.md](doc/04-puikit.md)), then clipboard/chooser (M3).
+M2 progress:
+
+- PuiKit window-management extensions live on branch `keyhac-window-extensions` in
+  `../puikit` (**PR #76**, awaiting review): `WindowStyle`
+  (frameless/topmost/activates/resizable/tool), `MacOSBackend activation_policy=
+  "accessory"` (agent app), `Backend.call_later`. All additive per PuiKit's policy;
+  1540 puikit tests green; validated live on macOS. keyhac2's Makefile installs
+  `../puikit` editable until this ships in a release.
+- `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
+  last-key/focus-path inspector). The console backend runs the process event loop;
+  the hook shares it (tap source on the same run loop / GetMessage pump). Verified
+  live on macOS incl. screenshot. `keyhac/main.py`: console by default, `--no-ui`
+  for the headless M1 mode.
+- Still open in M2: Windows console session, stdout redirect to console, tray /
+  menu-bar extra (M4 dependency for reopening a closed console).
+
+M3 progress (macOS verified live; Windows pending): clipboard history
+(`core/clipboard_history.py` + `platform/*/clipboard.py` poll-based providers, JSON
+format compatible with keyhac-mac), chooser window (`ui/chooser.py`, on puikit
+`create_window`), actions (`keyhac/actions.py`: ChooserAction/ShowClipboard* with
+refocus-then-paste flow; `core/action.py`: ThreadedAction/LaunchApplication).
+`keyhac/ui/runtime.py` holds the app's PuiKit backend for chooser/balloon windows.
+With `--config PATH`, clipboard.json lives beside the config (sandbox isolation).
+Remaining in M3: Windows session (clipboard provider + WinAppControl + chooser),
+InputText/ActivateWindow/MoveWindow, UIElement AX port.
 See [doc/07-roadmap.md](doc/07-roadmap.md).

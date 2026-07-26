@@ -42,6 +42,11 @@ Ordered by how hard Keyhac2 depends on them. "Cap" = new/implemented capability 
 Keyhac2 shows **console + chooser + balloon** (up to all three) simultaneously; PuiKit
 binds one backend to one window, and `Panel` to one backend.
 
+**Fidelity decision (2026-07, crftwr):** secondary windows are *real* windows on every
+backend that has them — native OS windows on macOS/Windows, real browser windows on the
+web backend (`window.open` companion page, same server session) — and degrade to layers
+only on TUI. Recorded in puikit `docs/window_management.md`.
+
 Proposed additive design (details to be negotiated in ../puikit):
 
 ```python
