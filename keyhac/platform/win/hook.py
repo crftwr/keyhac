@@ -10,8 +10,15 @@ Reimplements the behavior keyhac-win got from pyauto (pyautocore.pyd):
   check (ported from keyhac-win Keymap.checkSanity) detects modifier-state
   changes that arrived without hook callbacks and re-installs the hook
 
-STATUS: written to spec, NOT yet run on Windows (M1 was developed on macOS).
-The first Windows session must run tools/hook_echo.py before anything else.
+STATUS: first Windows bring-up done.  Validated live: hook install/uninstall,
+callback delivery, SendInput injection with dwExtraInfo classification (own
+events filtered, replay events re-processed), layout query.  NOT yet exercised
+interactively: consume decisions on physical keys, extended-key flags per VK,
+and the sanity-check re-install path.  Run tools/hook_echo.py for those.
+
+Every ctypes prototype below is declared explicitly.  This is not optional on
+64-bit: the default restype of c_int truncates handles, which is what made
+SetWindowsHookExW fail with ERROR_MOD_NOT_FOUND (126) on a truncated HMODULE.
 """
 
 import ctypes
@@ -26,8 +33,15 @@ logger = log.getLogger("WinHook")
 if sys.platform == "win32":
     from ctypes import wintypes
 
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    # LRESULT / LONG_PTR: pointer-sized.  wintypes has no LRESULT; LPARAM is
+    # the same underlying type.  Declaring every prototype below is mandatory
+    # on 64-bit: ctypes defaults restype to c_int, which truncates handles
+    # (a truncated HMODULE makes SetWindowsHookExW fail with 126).
+    LRESULT = wintypes.LPARAM
+    ULONG_PTR = ctypes.c_size_t
 
     WH_KEYBOARD_LL = 13
     WM_KEYDOWN = 0x0100
@@ -67,11 +81,13 @@ if sys.platform == "win32":
             ("scanCode", wintypes.DWORD),
             ("flags", wintypes.DWORD),
             ("time", wintypes.DWORD),
-            ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+            ("dwExtraInfo", ULONG_PTR),
         ]
 
+    # lParam stays an integer here and is cast in the callback, so the same
+    # value can be handed straight back to CallNextHookEx.
     LowLevelKeyboardProc = ctypes.WINFUNCTYPE(
-        ctypes.c_long, ctypes.c_int, wintypes.WPARAM, ctypes.POINTER(KBDLLHOOKSTRUCT))
+        LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 
     class KEYBDINPUT(ctypes.Structure):
         _fields_ = [
@@ -87,6 +103,25 @@ if sys.platform == "win32":
 
     class INPUT(ctypes.Structure):
         _fields_ = [("type", wintypes.DWORD), ("union", _INPUT_UNION)]
+
+    user32.SetWindowsHookExW.argtypes = [
+        ctypes.c_int, LowLevelKeyboardProc, wintypes.HINSTANCE, wintypes.DWORD]
+    user32.SetWindowsHookExW.restype = wintypes.HHOOK
+    user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+    user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+    user32.CallNextHookEx.argtypes = [
+        wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+    user32.CallNextHookEx.restype = LRESULT
+    user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    user32.SendInput.restype = wintypes.UINT
+    user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
+    user32.MapVirtualKeyW.restype = wintypes.UINT
+    user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    user32.GetAsyncKeyState.restype = ctypes.c_short
+    user32.GetKeyboardType.argtypes = [ctypes.c_int]
+    user32.GetKeyboardType.restype = ctypes.c_int
+    kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+    kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 
 class WinInputHook(InputHook):
@@ -121,7 +156,10 @@ class WinInputHook(InputHook):
             WH_KEYBOARD_LL, self._hook_proc_ref,
             kernel32.GetModuleHandleW(None), 0)
         if not self._hook_handle:
-            raise RuntimeError(f"SetWindowsHookExW failed: {kernel32.GetLastError()}")
+            error = ctypes.get_last_error()
+            self._hook_handle = None
+            raise RuntimeError(
+                f"SetWindowsHookExW failed: {error} ({ctypes.FormatError(error)})")
 
         logger.info("Keyboard hook installed.")
 
@@ -144,11 +182,11 @@ class WinInputHook(InputHook):
             return user32.CallNextHookEx(None, n_code, w_param, l_param)
 
         self._callback_seen = True
-        kbd = l_param.contents
+        kbd = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
         vk = int(kbd.vkCode)
         down = w_param in (WM_KEYDOWN, WM_SYSKEYDOWN)
 
-        extra = ctypes.cast(kbd.dwExtraInfo, ctypes.c_void_p).value or 0
+        extra = int(kbd.dwExtraInfo)
         if extra == EXTRA_INFO_OWN:
             # Our own translated output - never re-processed
             return user32.CallNextHookEx(None, n_code, w_param, l_param)
@@ -180,8 +218,9 @@ class WinInputHook(InputHook):
             inputs[i].union.ki = KEYBDINPUT(vk, scan, flags, 0, extra)
         sent = user32.SendInput(len(events), inputs, ctypes.sizeof(INPUT))
         if sent != len(events):
+            error = ctypes.get_last_error()
             logger.error(f"SendInput sent {sent}/{len(events)} events "
-                         f"(error {kernel32.GetLastError()})")
+                         f"(error {error}: {ctypes.FormatError(error)})")
 
     # ------------------------------------------------------------------
 
