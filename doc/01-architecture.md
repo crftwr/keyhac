@@ -144,7 +144,8 @@ engine owns one `threading.RLock` guarding modifier state + injection, and
 
 User config code runs inside the hook deadline, so every user callable is wrapped:
 exceptions are caught, logged to the console window with traceback, and the key event is
-still answered (configurable: consume on error, default, matching both predecessors).
+still answered (passed through on error, matching both predecessors — typing keeps working
+even when the config is broken).
 A config that fails to compile keeps the previous keymap active and shows the error in
 the console (keyhac-win behavior).
 

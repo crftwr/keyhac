@@ -75,9 +75,31 @@ keyhac/
   UI is tested against PuiKit's `MemoryBackend`.
 - PuiKit changes are developed in `../puikit` and must respect its additive API policy
   (new capability flags default off; new `Backend` methods get base no-op/raise).
+  **Always on a feature branch with a pull request — never commit directly to its main.**
+- `../keyhac-win` and `../keyhac-mac` are **read-only** references. Never modify them.
 
 ## Status
 
-Planning stage — design docs written, no implementation yet.
-Next step: **M0 feasibility spikes** (hook latency from pure Python on both OSes, PuiKit
-multi-window prototype) — see [doc/07-roadmap.md](doc/07-roadmap.md).
+**M1 in progress.** Done so far:
+
+- `keyhac/core/` engine complete and unit-tested (`​.venv/bin/python -m pytest`, 64 tests):
+  key expressions (full names + keyhac-win short aliases), 16-bit modifier planes
+  (Alt/Ctrl/Shift/Win/Cmd/Fn/User0-3 × generic/L/R), one-shot, multi-stroke, user
+  modifiers, replace_key, focus conditions (app/title/class_name/focus_path_pattern/
+  custom func), InputContext modifier reconciliation.
+- `keyhac/platform/mac/` complete and **validated live on this machine** (M0 spike S2
+  answered yes): CGEventTap from PyObjC works, incl. private event sources, own-event
+  filtering, replay re-entry, deferred-real-event machinery, Carbon layout detection via
+  ctypes (four-char codes 'ANSI'/'JIS '/'ISO ' — removed from modern SDK headers).
+- `keyhac/platform/win/` written to spec against keyhac-win/pyauto behavior but **never
+  executed** (developed on macOS). Windows bring-up must start with `tools/hook_echo.py`.
+- Deliberate ports of subtle behaviors (do not "simplify" these): KeyCondition hashes by
+  vk only with L/R-agnostic `__eq__`; output resolves modifiers to left-side keys
+  (`force_LR`); user modifiers are never physically emitted (except replay); unmatched
+  key-down leaving multi-stroke mode is still consumed; errors in user callables pass the
+  key through. Two upstream keyhac-mac bugs intentionally fixed in the mac hook port —
+  see the module docstring of `keyhac/platform/mac/hook.py`.
+
+Next: M2 (console window on PuiKit — needs PuiKit extensions developed on a branch + PR
+in `../puikit`; see [doc/04-puikit.md](doc/04-puikit.md)), then clipboard/chooser (M3).
+See [doc/07-roadmap.md](doc/07-roadmap.md).

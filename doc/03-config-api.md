@@ -37,7 +37,7 @@ def configure(keymap):
 
 ```python
 # global (matches everything)
-kt_global = keymap.define_keytable(focus_pattern="*")        # mac-compat spelling kept
+kt_global = keymap.define_keytable(focus_path_pattern="*")   # mac-compat spelling kept
 
 # portable app matching — NEW in Keyhac2
 kt_term  = keymap.define_keytable(app="WindowsTerminal|Terminal|iTerm2")
@@ -150,7 +150,7 @@ Expected breaks (list kept current during development):
 | keyhac-win | Keyhac2 |
 |---|---|
 | `keymap.defineWindowKeymap(exe_name="notepad.exe", class_name="Edit")` | `keymap.define_keytable(app="notepad", class_name="Edit")` |
-| `keymap.defineWindowKeymap()` | `keymap.define_keytable(focus_pattern="*")` |
+| `keymap.defineWindowKeymap()` | `keymap.define_keytable(focus_path_pattern="*")` |
 | `keymap.defineMultiStrokeKeymap(help)` | `keymap.define_keytable(name=…)` (+ balloon help restored) |
 | `keymap.replaceKey / defineModifier` | `replace_key / define_modifier` |
 | `keymap.InputKeyCommand("C-X")` | `"Ctrl-X"` (bare assignment) or `InputKey("Ctrl-X")` |
@@ -178,6 +178,6 @@ source of reentrancy in keyhac-win).
 1. Platform-foreign kwargs (`class_name=` on mac): warn-and-never-match vs raise at
    config load. Leaning **warn**, so one config file loads everywhere.
 2. Ship `Mod-` built-in or as opt-in `define_alias`?
-3. `focus_pattern="*"` vs a dedicated `keymap.global_keytable` property.
+3. `focus_path_pattern="*"` vs a dedicated `keymap.global_keytable` property.
 4. Cron-style periodic tasks: keep out (users can ThreadedAction+sleep loop) or provide
    `keymap.every(seconds, func)`.
