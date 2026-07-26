@@ -277,3 +277,51 @@ class TestConfigErrorContainment:
         e = engine(configure)
         # The exception is logged; the event is passed through, not raised
         assert e.down("F1") is False
+
+
+class TestMacroRecording:
+
+    def test_record_normalize_playback(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        rb = e.keymap.replay_buffer
+        rb.start_recording()
+        e.stroke("A")
+        e.down("B")            # unmatched down - dropped by normalization
+        rb.stop_recording()
+        assert rb.seq == [(e.vk("A"), True), (e.vk("A"), False)]
+
+        e.hook.clear()
+        rb.playback()
+        # replay events re-enter the engine (kind="replay" via FakeInputHook)
+        assert (e.vk("A"), True, True) in e.hook.sent
+
+    def test_playback_of_bound_key_reevaluated(self, engine):
+        fired = []
+
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["F5"] = lambda: fired.append(1)
+
+        e = engine(configure)
+        rb = e.keymap.replay_buffer
+        rb.start_recording()
+        e.stroke("F5")
+        rb.stop_recording()
+        fired.clear()
+        rb.playback()
+        assert fired == [1]    # the replayed key ran the binding again
+
+
+class TestInputText:
+
+    def test_send_text_through_hook(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        from keyhac.core.action import InputText
+        InputText("hello, 世界")()
+        assert e.hook.sent_text == ["hello, 世界"]

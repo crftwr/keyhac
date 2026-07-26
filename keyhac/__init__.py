@@ -10,9 +10,15 @@ from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core.log import getLogger, Console
-from keyhac.core.action import ThreadedAction, LaunchApplication
+from keyhac.core.action import (
+    ThreadedAction, LaunchApplication, InputText,
+    StartRecordingKeys, StopRecordingKeys, ToggleRecordingKeys,
+    PlaybackRecordedKeys,
+)
 from keyhac.core.clipboard_history import ClipboardHistory
 from keyhac.actions import (
+    ActivateWindow,
+    MoveWindow,
     ChooserAction,
     DateTimeSnippet,
     ShowClipboardHistory,
@@ -31,8 +37,15 @@ __all__ = [
     "KeyEvent",
     "ThreadedAction",
     "LaunchApplication",
+    "InputText",
+    "StartRecordingKeys",
+    "StopRecordingKeys",
+    "ToggleRecordingKeys",
+    "PlaybackRecordedKeys",
     "ClipboardHistory",
     "ChooserAction",
+    "MoveWindow",
+    "ActivateWindow",
     "ShowClipboardHistory",
     "ShowClipboardSnippets",
     "ShowClipboardTools",

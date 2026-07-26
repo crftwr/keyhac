@@ -66,6 +66,9 @@ class Keymap:
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
 
+        from keyhac.core.replay import KeyReplayBuffer
+        self.replay_buffer = KeyReplayBuffer()
+
         Keymap._instance = self
 
     # ------------------------------------------------------------------
@@ -192,6 +195,9 @@ class Keymap:
 
         self._check_focus_change()
 
+        if self.replay_buffer.recording:
+            self.replay_buffer.record(vk, True)
+
         try:
             vk = self._vk_vk_map[vk]
             replaced = True
@@ -235,6 +241,9 @@ class Keymap:
     def _on_key_up(self, vk):
 
         self._check_focus_change()
+
+        if self.replay_buffer.recording:
+            self.replay_buffer.record(vk, False)
 
         try:
             vk = self._vk_vk_map[vk]
@@ -387,6 +396,13 @@ class Keymap:
     def focus(self) -> Focus | None:
         """Portable snapshot of the current keyboard focus."""
         return self._focus
+
+    def app_control_running_apps(self):
+        """[(app_name, pid)] via the platform (empty when unavailable)."""
+        if self.platform == "mac":
+            from keyhac.platform.mac.uielement import UIElement
+            return UIElement.get_running_applications()
+        return []
 
     @property
     def clipboard_history(self):

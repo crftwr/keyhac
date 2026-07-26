@@ -68,3 +68,51 @@ class LaunchApplication(ThreadedAction):
 
     def __repr__(self):
         return f'LaunchApplication("{self.app_name}")'
+
+
+class StartRecordingKeys:
+    """Start recording keystrokes into the replay buffer."""
+
+    def __call__(self):
+        from keyhac.core.keymap import Keymap
+        Keymap.get_instance().replay_buffer.start_recording()
+
+
+class StopRecordingKeys:
+    """Stop recording and normalize the buffer."""
+
+    def __call__(self):
+        from keyhac.core.keymap import Keymap
+        Keymap.get_instance().replay_buffer.stop_recording()
+
+
+class ToggleRecordingKeys:
+    """Toggle keystroke recording."""
+
+    def __call__(self):
+        from keyhac.core.keymap import Keymap
+        Keymap.get_instance().replay_buffer.toggle_recording()
+
+
+class PlaybackRecordedKeys:
+    """Play back the recorded keystrokes (re-evaluated by the keymap)."""
+
+    def __call__(self):
+        from keyhac.core.keymap import Keymap
+        Keymap.get_instance().replay_buffer.playback()
+
+
+class InputText:
+    """Type a literal string into the focused application."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def __call__(self):
+        from keyhac.core.keymap import Keymap
+        keymap = Keymap.get_instance()
+        with keymap._lock:
+            keymap._hook.send_text(self.text)
+
+    def __repr__(self):
+        return f'InputText("{self.text}")'

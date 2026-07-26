@@ -7,6 +7,7 @@ they are the user-facing glue between the two.
 import datetime
 
 from keyhac.core.const import MODKEY_SHIFT
+from keyhac.core.action import ThreadedAction
 from keyhac.core.keymap import Keymap
 from keyhac.core import log
 
@@ -178,3 +179,68 @@ class DateTimeSnippet:
 
     def __call__(self):
         return datetime.datetime.now().strftime(self.fmt)
+
+
+class MoveWindow(ThreadedAction):
+    """Move the focused window (macOS: AX position). Simplified port of
+    keyhac-mac's MoveWindow: direction + distance, clamped to the screen's
+    work area; edge-snapping refinements return with the full port."""
+
+    def __init__(self, direction: str = "", distance: float = 10):
+        self.direction = direction
+        self.distance = distance
+
+    def run(self):
+        from keyhac.ui import runtime
+        keymap = Keymap.get_instance()
+        focus = keymap.focus
+        elm = focus.native if focus else None
+        window = None
+        while elm is not None:
+            role = elm.get_attribute_value("AXRole")
+            if role == "AXWindow":
+                window = elm
+                break
+            elm = elm.get_attribute_value("AXParent")
+        if window is None:
+            logger.warning("MoveWindow: no focused window.")
+            return
+        x, y = window.get_attribute_value("AXPosition")
+        w, h = window.get_attribute_value("AXSize")
+        dx = {"left": -1, "right": 1}.get(self.direction, 0) * self.distance
+        dy = {"up": -1, "down": 1}.get(self.direction, 0) * self.distance
+        nx, ny = x + dx, y + dy
+        try:
+            frames = runtime.backend.screen_frames() if runtime.backend else []
+            if frames:
+                (_fx, _fy, fw, fh), _vis = frames[0]
+                nx = max(0, min(nx, fw - w))
+                ny = max(0, min(ny, fh - h))
+        except Exception:
+            pass
+        window.set_attribute_value("AXPosition", "point", (nx, ny))
+
+    def __repr__(self):
+        return f'MoveWindow(direction="{self.direction}")'
+
+
+class ActivateWindow(ThreadedAction):
+    """Activate an application by name pattern (portable subset of
+    keyhac-win's ActivateWindowCommand)."""
+
+    def __init__(self, app: str):
+        self.app = app
+
+    def run(self):
+        import fnmatch
+        keymap = Keymap.get_instance()
+        pattern = self.app.lower()
+        for name, pid in keymap.app_control_running_apps():
+            if any(fnmatch.fnmatch(name.lower(), p.strip())
+                   for p in pattern.split("|")):
+                keymap.app_control.activate_pid(pid)
+                return
+        logger.warning(f"ActivateWindow: no running app matches {self.app!r}")
+
+    def __repr__(self):
+        return f'ActivateWindow(app="{self.app}")'

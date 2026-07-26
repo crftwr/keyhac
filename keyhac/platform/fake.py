@@ -17,6 +17,7 @@ class FakeInputHook(InputHook):
         self._on_restored = None
         self._installed = False
         self.sent: list[tuple[int, bool, bool]] = []  # (vk, down, replay)
+        self.sent_text: list[str] = []
         self.decisions: list[bool] = []               # consume decisions
 
     # InputHook interface -------------------------------------------------
@@ -43,6 +44,9 @@ class FakeInputHook(InputHook):
 
     def keyboard_layout(self) -> str:
         return self._layout
+
+    def send_text(self, s: str) -> None:
+        self.sent_text.append(s)
 
     # Test helpers ---------------------------------------------------------
 

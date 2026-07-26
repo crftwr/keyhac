@@ -8,6 +8,7 @@ from AppKit import NSWorkspace
 import ApplicationServices as AS
 
 from keyhac.platform.base import FocusProvider, Focus
+from keyhac.platform.mac.uielement import UIElement
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
@@ -64,7 +65,7 @@ class MacFocusProvider(FocusProvider):
             window_title=window_title,
             class_name=None,
             path=path,
-            native=element,
+            native=UIElement(element),
         )
 
     @staticmethod

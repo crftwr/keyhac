@@ -73,6 +73,10 @@ class InputHook(ABC):
     def keyboard_layout(self) -> str:
         """Return "ansi", "jis" or "iso"."""
 
+    def send_text(self, s: str) -> None:
+        """Type a literal string (unicode injection). Platform-optional."""
+        raise NotImplementedError
+
     def check_health(self) -> None:
         """Called periodically (~100 ms) from the event loop.  Platforms that
         need watchdog recovery (Windows silent unhook) override this; others

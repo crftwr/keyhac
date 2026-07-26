@@ -285,6 +285,21 @@ class MacInputHook(InputHook):
             self._flush_countdown = MacInputHook.FLUSH_REAL_KEY_EVENTS_TIMEOUT
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
+    def send_text(self, s: str) -> None:
+        """Type a literal string via CGEventKeyboardSetUnicodeString
+        (chunked - the API accepts ~20 UTF-16 units per event)."""
+        if self._source_translated is None:
+            logger.error("Cannot send text - hook is not installed.")
+            return
+        for i in range(0, len(s), 20):
+            chunk = s[i:i + 20]
+            for down in (True, False):
+                event = Quartz.CGEventCreateKeyboardEvent(self._source_translated, 0, down)
+                Quartz.CGEventKeyboardSetUnicodeString(event, len(chunk), chunk)
+                self._num_pending_virtual += 1
+                self._flush_countdown = MacInputHook.FLUSH_REAL_KEY_EVENTS_TIMEOUT
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
     # ------------------------------------------------------------------
 
     def _on_timer(self, timer, info=None):
