@@ -91,8 +91,12 @@ keyhac/
   answered yes): CGEventTap from PyObjC works, incl. private event sources, own-event
   filtering, replay re-entry, deferred-real-event machinery, Carbon layout detection via
   ctypes (four-char codes 'ANSI'/'JIS '/'ISO ' — removed from modern SDK headers).
-- `keyhac/platform/win/` written to spec against keyhac-win/pyauto behavior but **never
-  executed** (developed on macOS). Windows bring-up must start with `tools/hook_echo.py`.
+- `keyhac/platform/win/` first Windows bring-up done (commit 37cfd5c): every ctypes
+  prototype is now declared explicitly — mandatory on 64-bit, where the default c_int
+  restype truncates handles (this broke SetWindowsHookExW with error 126). Validated:
+  hook install/callbacks, SendInput + dwExtraInfo classification, focus query, pump,
+  timers. Not yet exercised interactively: physical-key consume decisions, per-VK
+  extended-key flags, sanity-check re-install (see the platform/win module docstrings).
 - Deliberate ports of subtle behaviors (do not "simplify" these): KeyCondition hashes by
   vk only with L/R-agnostic `__eq__`; output resolves modifiers to left-side keys
   (`force_LR`); user modifiers are never physically emitted (except replay); unmatched

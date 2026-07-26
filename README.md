@@ -18,8 +18,11 @@ Project guide for coding agents: [CLAUDE.md](CLAUDE.md).
   focus conditions, InputContext batching).
 - macOS platform (PyObjC CGEventTap): done, validated live (tap install,
   injection, event-source classification, replay re-entry).
-- Windows platform (ctypes WH_KEYBOARD_LL): written to spec, **not yet run on
-  Windows** — bring-up starts with `tools/hook_echo.py`.
+- Windows platform (ctypes WH_KEYBOARD_LL): first bring-up done — hook
+  install/callbacks, SendInput injection + dwExtraInfo classification, focus
+  query, message pump and timers validated on Windows. Still to exercise
+  interactively: consume decisions on physical keys, per-VK extended-key
+  flags, and the sanity-check re-install path (`tools/hook_echo.py`).
 - UI (console/chooser/balloon/tray): M2+, PuiKit-based.
 
 ## Development (macOS)
