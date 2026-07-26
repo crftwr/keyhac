@@ -251,3 +251,25 @@ class WinInputHook(InputHook):
     def keyboard_layout(self) -> str:
         # GetKeyboardType(0) == 7 means a Japanese keyboard (keyhac-win rule)
         return "jis" if user32.GetKeyboardType(0) == 7 else "ansi"
+
+    KEYEVENTF_UNICODE = 0x0004
+
+    def send_text(self, s: str) -> None:
+        """Type a literal string via KEYEVENTF_UNICODE (one down+up pair per
+        UTF-16 code unit; surrogate pairs arrive as two units, which is the
+        documented way to inject non-BMP characters)."""
+        units = s.encode("utf-16-le")
+        n = len(units) // 2
+        if n == 0:
+            return
+        inputs = (INPUT * (n * 2))()
+        for i in range(n):
+            code = int.from_bytes(units[i * 2:i * 2 + 2], "little")
+            for j, flags in ((0, WinInputHook.KEYEVENTF_UNICODE),
+                             (1, WinInputHook.KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)):
+                inputs[i * 2 + j].type = INPUT_KEYBOARD
+                inputs[i * 2 + j].union.ki = KEYBDINPUT(
+                    0, code, flags, 0, EXTRA_INFO_OWN)
+        sent = user32.SendInput(n * 2, inputs, ctypes.sizeof(INPUT))
+        if sent != n * 2:
+            logger.error(f"send_text sent {sent}/{n * 2} events")

@@ -63,8 +63,9 @@ def main() -> int:
         keymap.app_control = MacAppControl()
     else:
         from keyhac.platform.win.clipboard import WinClipboardProvider
+        from keyhac.platform.win.apps import WinAppControl
         clipboard_provider = WinClipboardProvider()
-        keymap.app_control = None  # WinAppControl lands with the Windows session
+        keymap.app_control = WinAppControl()
     # With an explicit --config, keep the history beside it (sandbox testing
     # must not touch the real ~/.keyhac/clipboard.json).
     import os

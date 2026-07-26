@@ -378,21 +378,43 @@ class MoveWindow(ThreadedAction):
 
 class ActivateWindow(ThreadedAction):
     """Activate an application by name pattern (portable subset of
-    keyhac-win's ActivateWindowCommand)."""
+    keyhac-win's ActivateWindowCommand).
+
+    Thread contract: the AppKit-backed enumeration happens in starting()
+    (main thread), run() is pure matching, and the AppKit activation call is
+    posted back to the main thread in finished()."""
 
     def __init__(self, app: str):
         self.app = app
+        self.apps = []
+
+    def starting(self):
+        self.apps = Keymap.get_instance().app_control_running_apps()
 
     def run(self):
         import fnmatch
-        keymap = Keymap.get_instance()
         pattern = self.app.lower()
-        for name, pid in keymap.app_control_running_apps():
+        for name, pid in self.apps:
             if any(fnmatch.fnmatch(name.lower(), p.strip())
                    for p in pattern.split("|")):
-                keymap.app_control.activate_pid(pid)
-                return
+                return pid
         logger.warning(f"ActivateWindow: no running app matches {self.app!r}")
+        return None
+
+    def finished(self, pid):
+        if pid is None:
+            return
+        from keyhac.ui import runtime
+        keymap = Keymap.get_instance()
+
+        def _apply():
+            keymap.app_control.activate_pid(pid)
+
+        if runtime.backend is None or not runtime.backend.capabilities.supports(
+                "main_thread_dispatch"):
+            _apply()
+        else:
+            runtime.backend.call_on_main_thread(_apply)
 
     def __repr__(self):
         return f'ActivateWindow(app="{self.app}")'
