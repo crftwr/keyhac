@@ -1,15 +1,26 @@
-"""Windows focus provider - Win32 via ctypes.
+"""Windows focus provider - Win32 for the window, UI Automation for the path.
 
-Reimplements the subset of pyauto.Window that keyhac-win's WindowKeymap
-matching used: exe name, window class, window text of the focused window.
+The focus path is the full control hierarchy down to the focused element, the
+same granularity as the macOS AX path, rendered as
+``/Application(Code)/Window(title)/Pane()/.../Edit()``.  UI Automation
+supplies the hierarchy: walking HWND parents cannot, because a UWP/WinUI,
+Electron or Chrome window is a single HWND containing the whole UI.
 
-The focus path string is a provisional synthesized format
-"/{app_name}/{class_name}({title})" so that focus_path_pattern="*" (the
-global key table) works portably; app/title/class_name matching is preferred
-on Windows.
+COST, and why this file caches.  ``get_focus()`` is called from inside the
+low-level keyboard hook on every key down *and* up.  A full UIA focus walk
+measured **~33 ms** on a deep Electron tree (VS Code, 20 levels) - three
+thousand times the ~0.01 ms of the Win32 probe below, and enough to risk the
+silent unhook that the hook's own sanity check exists to recover from.  So the
+Win32 probe runs every time and the UIA walk only when the probe changes;
+between focus changes the whole call is a dict comparison.
 
-STATUS: run on Windows - get_focus() returns correct app/title/class_name for
-the foreground window.
+Known follow-up: UIA cache requests (``IUIAutomationCacheRequest`` +
+``BuildUpdatedCache``) fetch a subtree's properties in one cross-process call
+instead of one per property per level, which is the standard fix for that
+33 ms and would make the walk cheap enough to stop worrying about.
+
+STATUS: run on Windows - app/title/class_name and the UIA path are verified
+against Win32 ground truth for the same window.
 """
 
 import ctypes
@@ -21,6 +32,9 @@ from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("WinFocus")
+
+#: Hang guard on the parent walk, mirroring the macOS provider's bound.
+MAX_PATH_DEPTH = 64
 
 if sys.platform == "win32":
     from ctypes import wintypes
@@ -66,7 +80,11 @@ if sys.platform == "win32":
 
 
 class NativeWindow:
-    """Minimal Win32 window wrapper exposed as Focus.native."""
+    """Minimal Win32 window wrapper exposed as Focus.native.
+
+    Deliberately HWND-level: the semantic element tree is UIElement (see
+    keyhac/platform/win/uielement.py), reachable as Focus.element.
+    """
 
     def __init__(self, hwnd):
         self.hwnd = hwnd
@@ -103,11 +121,19 @@ class NativeWindow:
         return pid.value
 
 
+def _component(role: str | None, name: str | None) -> str:
+    role = (role or "").translate(FOCUS_PATH_TRANS_TABLE)
+    name = (name or "").translate(FOCUS_PATH_TRANS_TABLE)
+    return f"{role}({name})"
+
+
 class WinFocusProvider(FocusProvider):
 
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinFocusProvider requires Windows")
+        self._probe = None      # last cheap Win32 probe
+        self._focus = None      # the Focus built for it
 
     def get_focus(self) -> Focus | None:
 
@@ -115,8 +141,8 @@ class WinFocusProvider(FocusProvider):
         if not foreground:
             return None
 
-        # The actually-focused child window (GUITHREADINFO.hwndFocus) gives
-        # the class name that keyhac-win configs match against (e.g. "Edit").
+        # The actually-focused child window (GUITHREADINFO.hwndFocus) gives the
+        # class name that keyhac-win configs match against (e.g. "Edit").
         focus_hwnd = foreground
         thread_id = user32.GetWindowThreadProcessId(foreground, None)
         info = GUITHREADINFO(cbSize=ctypes.sizeof(GUITHREADINFO))
@@ -125,20 +151,70 @@ class WinFocusProvider(FocusProvider):
 
         top = NativeWindow(foreground)
         focused = NativeWindow(focus_hwnd)
+        title = top.get_text()
+
+        # The whole cheap tier: two handles and a window title. Everything
+        # below - the process name query and the UIA walk - is skipped while
+        # these are unchanged, which is the common case (every keystroke
+        # typed into one window).
+        probe = (int(foreground), int(focus_hwnd), title)
+        if probe == self._probe and self._focus is not None:
+            return self._focus
 
         exe = top.get_process_name()
         app_name = exe.removesuffix(".exe").removesuffix(".EXE") if exe else None
-        title = top.get_text()
         class_name = focused.get_class_name()
+        path, element = self._build_path(app_name, title, class_name)
 
-        safe_title = (title or "").translate(FOCUS_PATH_TRANS_TABLE)
-        path = f"/{app_name or ''}/{class_name or ''}({safe_title})"
-
-        return Focus(
+        focus = Focus(
             app_name=app_name,
             pid=top.get_pid(),
             window_title=title,
             class_name=class_name,
             path=path,
             native=focused,
+            element=element,
         )
+        self._probe = probe
+        self._focus = focus
+        return focus
+
+    # ------------------------------------------------------------------
+
+    def _build_path(self, app_name: str | None, title: str, class_name: str):
+        """(path, focused UIElement). The UIA control hierarchy from the
+        application down to the focused element, or the window-level path when
+        UI Automation is unavailable."""
+        from keyhac.platform.win.uielement import UIElement
+
+        element = None
+        try:
+            element = UIElement.from_focus()
+        except Exception:
+            logger.debug("UIA focus query failed; falling back to window path.",
+                         exc_info=True)
+
+        if element is None:
+            # Same shape, one level deep - patterns written against the full
+            # path still parse, they just cannot match below the window.
+            return "/" + "/".join((_component("Application", app_name),
+                                   _component(class_name, title))), None
+
+        chain = []
+        elm = element
+        for _ in range(MAX_PATH_DEPTH):
+            if elm is None:
+                break
+            control_type = elm.get_attribute_value("ControlType")
+            # The desktop root is every app's parent and says nothing; stop
+            # there so the path is rooted at the application, like macOS's
+            # AXApplication.
+            if control_type == "Pane" and elm.get_attribute_value("ClassName") == "#32769":
+                break
+            chain.append((control_type, elm.get_attribute_value("Name")))
+            elm = elm.parent()
+
+        components = [""] + [_component("Application", app_name)]
+        for control_type, name in reversed(chain):
+            components.append(_component(control_type, name))
+        return "/".join(components), element

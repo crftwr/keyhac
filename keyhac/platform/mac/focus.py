@@ -59,13 +59,18 @@ class MacFocusProvider(FocusProvider):
 
         path, window_title = self._build_path(element)
 
+        # native and element are the same object here: on macOS the focused
+        # semantic element *is* the native handle. They diverge on Windows,
+        # where native is an HWND wrapper and element is a UIA element.
+        ui_element = UIElement(element)
         return Focus(
             app_name=app_name,
             pid=pid,
             window_title=window_title,
             class_name=None,
             path=path,
-            native=UIElement(element),
+            native=ui_element,
+            element=ui_element,
         )
 
     @staticmethod

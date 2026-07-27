@@ -35,7 +35,12 @@ class Focus:
       "/{app_name}/{class_name}({title})" (provisional format)
     - class_name: Win32 window class name (Windows only, None on macOS)
     - native: platform object for power users - UIElement (macOS) /
-      Window wrapper (Windows)
+      NativeWindow, an HWND wrapper (Windows)
+    - element: the focused *semantic* element - an AX UIElement (macOS) or a
+      UI Automation UIElement (Windows). Same shape on both (named attribute
+      reads, parent walk), but each OS's own attribute vocabulary: "AXRole"
+      vs "ControlType". Portable code uses app_name/window_title/class_name
+      and the focus path instead.
     """
     app_name: str | None = None
     pid: int | None = None
@@ -43,6 +48,7 @@ class Focus:
     class_name: str | None = None
     path: str | None = None
     native: Any = None
+    element: Any = None
 
     def __getattr__(self, name):
         # keyhac-mac's custom_condition_func received the UIElement itself;
