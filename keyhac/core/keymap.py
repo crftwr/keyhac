@@ -5,6 +5,8 @@ the OS is reached only through the InputHook / FocusProvider interfaces, so
 the engine runs unmodified on Windows, macOS, and in tests (FakeInputHook).
 """
 
+import functools
+import operator
 import os
 import threading
 import traceback
@@ -20,6 +22,21 @@ from keyhac.core.config import Config
 from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
 
 logger = log.getLogger("Keymap")
+
+# Generic-plane bit per modifier name, for diagnostics.
+_MODIFIER_BITS = (
+    ("Alt", MODKEY_ALT), ("Ctrl", MODKEY_CTRL), ("Shift", MODKEY_SHIFT),
+    ("Win", MODKEY_WIN), ("Cmd", MODKEY_CMD), ("Fn", MODKEY_FN),
+    ("User0", MODKEY_USER0), ("User1", MODKEY_USER1),
+    ("User2", MODKEY_USER2), ("User3", MODKEY_USER3),
+)
+
+
+def _collapse_planes(mod: int) -> int:
+    """Fold the Left and Right modifier planes down onto the generic plane."""
+    mod |= mod >> MODKEY_PLANE_BITS
+    mod |= mod >> MODKEY_PLANE_BITS
+    return mod & MODKEY_PLANE_MASK
 
 
 class Keymap:
@@ -51,6 +68,7 @@ class Keymap:
         self._lock = threading.RLock()
 
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
+        self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
@@ -85,6 +103,7 @@ class Keymap:
             init_key_names(self.platform, self._hook.keyboard_layout())
 
             self._keytable_list = []
+            self._all_keytables = []
             self._multi_stroke_keytable = None
             self._unified_keytable = {}
             self._vk_vk_map = {}
@@ -105,19 +124,49 @@ class Keymap:
                 logger.error(f"Loading configuration script failed:\n{traceback.format_exc()}")
                 return
 
+            self._warn_unreachable_modifiers()
+
+    def _warn_unreachable_modifiers(self) -> None:
+        """Warn about assignments whose modifier no key can produce here.
+
+        Modifier *names* are OS independent, so a macOS config running on
+        Windows parses "Cmd-V"/"Fn-V" without complaint - but nothing ever
+        sets those bits and the assignment silently never fires.  Report it
+        once per configuration load instead of leaving it to be discovered
+        by pressing the key.
+        """
+        available = _collapse_planes(
+            functools.reduce(operator.or_, self._vk_mod_map.values(), 0))
+
+        used = 0
+        for keytable in self._all_keytables:
+            for key in keytable.table:
+                used |= key.mod
+        used = _collapse_planes(used)
+
+        unreachable = used & ~available
+        if unreachable:
+            names = [n for n, bit in _MODIFIER_BITS if unreachable & bit]
+            noun = "modifier" if len(names) == 1 else "modifiers"
+            logger.warning(
+                f"No key produces the {', '.join(names)} {noun} on "
+                f"{self.platform}; key assignments using {'it' if len(names) == 1 else 'them'} "
+                f"never fire. Guard them with keymap.platform, or map a key "
+                f"with keymap.define_modifier().")
+
     def replace_key(self, src: str | int, dst: str | int) -> None:
         """Replace a key with a different key (pre-keytable substitution)."""
         try:
             if isinstance(src, str):
                 src = get_key_names().str_to_vk(src)
-        except ValueError:
-            logger.error(f"Invalid key expression for argument 'src': {src}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression for argument 'src': {src} ({e})")
             return
         try:
             if isinstance(dst, str):
                 dst = get_key_names().str_to_vk(dst)
-        except ValueError:
-            logger.error(f"Invalid key expression for argument 'dst': {dst}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression for argument 'dst': {dst} ({e})")
             return
         self._vk_vk_map[src] = dst
 
@@ -127,8 +176,8 @@ class Keymap:
         try:
             if isinstance(key, str):
                 key = get_key_names().str_to_vk(key)
-        except ValueError:
-            logger.error(f"Invalid key expression for argument 'key': {key}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression for argument 'key': {key} ({e})")
             return
         try:
             if isinstance(mod, str):
@@ -158,6 +207,7 @@ class Keymap:
             logger.warning("class_name= is Windows-only; this key table never activates on macOS.")
 
         keytable = KeyTable(name=name)
+        self._all_keytables.append(keytable)
         if focus_path_pattern or custom_condition_func or app or title or class_name:
             focus_condition = FocusCondition(
                 focus_path_pattern=focus_path_pattern,

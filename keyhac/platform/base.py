@@ -50,7 +50,16 @@ class Focus:
         # working unchanged (e.g. focus.get_attribute_value("AXWindow")).
         native = self.__dict__.get("native")
         if native is not None:
-            return getattr(native, name)
+            try:
+                return getattr(native, name)
+            except AttributeError:
+                # Typically an AX call from a macOS config running on Windows.
+                raise AttributeError(
+                    f"Focus has no attribute {name!r}, and neither does "
+                    f"{type(native).__name__} (Focus.native). Accessibility "
+                    f"attributes (get_attribute_value, get_attribute_names, "
+                    f"perform_action) exist only on macOS - branch on "
+                    f"keymap.platform.") from None
         raise AttributeError(
             f"Focus has no attribute {name!r} (and no native element to forward to)")
 

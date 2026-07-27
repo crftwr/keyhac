@@ -74,7 +74,6 @@ class KeyCondition:
     def from_str(s: str) -> "KeyCondition":
         """Parse a key expression like "Ctrl-X", "O-RCmd", "U-Fn-Space", "C-A"."""
         names = get_key_names()
-        s = s.upper()
 
         mod = 0
         down = True
@@ -82,16 +81,18 @@ class KeyCondition:
 
         token_list = s.split("-")
 
+        # Tokens keep their original case here so that error messages quote
+        # what the config actually wrote; the lookups upper-case internally.
         for token in token_list[:-1]:
             token = token.strip()
             try:
                 mod |= KeyNames.str_to_mod(token)
             except ValueError:
-                if token == "O":
+                if token.upper() == "O":
                     oneshot = True
-                elif token == "D":
+                elif token.upper() == "D":
                     down = True
-                elif token == "U":
+                elif token.upper() == "U":
                     down = False
                 else:
                     raise ValueError(f"Unknown modifier: {token}") from None
@@ -121,23 +122,23 @@ class KeyTable:
     def __setitem__(self, key, value):
         try:
             key = KeyCondition.from_str(key)
-        except ValueError:
-            logger.error(f"Invalid key expression: {key}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression: {key} ({e})")
             return
         self.table[key] = value
 
     def __getitem__(self, key):
         try:
             key = KeyCondition.from_str(key)
-        except ValueError:
-            logger.error(f"Invalid key expression: {key}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression: {key} ({e})")
             return None
         return self.table[key]
 
     def __delitem__(self, key):
         try:
             key = KeyCondition.from_str(key)
-        except ValueError:
-            logger.error(f"Invalid key expression: {key}")
+        except ValueError as e:
+            logger.error(f"Invalid key expression: {key} ({e})")
             return
         del self.table[key]

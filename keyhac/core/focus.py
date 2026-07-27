@@ -40,6 +40,9 @@ class FocusCondition:
         self.app = app
         self.title = title
         self.class_name = class_name
+        # A failing custom condition fails again on every focus change, so the
+        # traceback is reported once per configuration load.
+        self._error_reported = False
 
     def check(self, focus: Focus | None) -> bool:
 
@@ -73,8 +76,13 @@ class FocusCondition:
                 if not focus or not self.custom_condition_func(focus):
                     return False
             except Exception:
-                print()
-                logger.error(f"Running custom focus condition function failed:\n{traceback.format_exc()}")
+                if not self._error_reported:
+                    self._error_reported = True
+                    print()
+                    logger.error(
+                        f"Running custom focus condition function failed "
+                        f"(reported once per configuration load):"
+                        f"\n{traceback.format_exc()}")
                 return False
 
         return True

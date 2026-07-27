@@ -310,6 +310,20 @@ def _win_tables(layout: str):
     return str_vk, vk_str, modifier_vk_map
 
 
+_OS_LABEL = {"mac": "macOS", "windows": "Windows"}
+
+_other_os_names_cache: dict[tuple[str, str], set[str]] = {}
+
+
+def _os_key_names(os_name: str, layout: str) -> set[str]:
+    """Key names known on another OS - used only to explain lookup failures."""
+    cache_key = (os_name, layout)
+    if cache_key not in _other_os_names_cache:
+        tables = _mac_tables(layout) if os_name == "mac" else _win_tables(layout)
+        _other_os_names_cache[cache_key] = set(tables[0])
+    return _other_os_names_cache[cache_key]
+
+
 class KeyNames:
     """Key name <-> virtual key code translation for one OS + layout."""
 
@@ -327,10 +341,19 @@ class KeyNames:
         try:
             return self.str_vk_table[name.upper()]
         except KeyError:
-            try:
-                return int(name.strip("()"))
-            except Exception:
-                raise ValueError(f"Unknown key name: {name}") from None
+            pass
+        try:
+            return int(name.strip("()"))
+        except Exception:
+            pass
+        # A key of the *other* OS is the common case when a config written for
+        # one platform runs on the other; say so instead of "unknown".
+        other = "mac" if self.os_name == "windows" else "windows"
+        if name.upper() in _os_key_names(other, self.layout):
+            raise ValueError(
+                f"Unknown key name: {name} - that key exists only on "
+                f"{_OS_LABEL[other]}; guard it with keymap.platform")
+        raise ValueError(f"Unknown key name: {name}")
 
     def vk_to_str(self, vk: int) -> str:
         try:

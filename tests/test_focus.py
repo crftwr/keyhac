@@ -89,3 +89,18 @@ class TestNativeForwarding:
         import pytest
         with pytest.raises(AttributeError):
             Focus(app_name="X").get_attribute_value
+
+
+class TestCustomConditionErrorReporting:
+
+    def test_failure_is_logged_only_once(self, caplog):
+        import logging
+
+        def boom(focus):
+            raise RuntimeError("bug in user condition")
+
+        cond = FocusCondition(custom_condition_func=boom)
+        with caplog.at_level(logging.ERROR, logger="keyhac.Focus"):
+            for _ in range(5):
+                assert not cond.check(FOCUS)
+        assert len(caplog.records) == 1

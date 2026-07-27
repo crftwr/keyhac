@@ -120,3 +120,23 @@ class TestKeyConditionDict:
         kt = KeyTable(name="t")
         kt["Bogus-X"] = "A"  # logged, not raised
         assert len(kt.table) == 0
+
+
+class TestCrossPlatformDiagnostics:
+    """A config written for one OS should say *why* it fails on the other."""
+
+    def test_mac_only_key_on_windows(self, win_names):
+        with pytest.raises(ValueError, match="only on macOS"):
+            KeyCondition.from_str("O-RCmd")
+
+    def test_windows_only_key_on_mac(self, mac_names):
+        with pytest.raises(ValueError, match="only on Windows"):
+            KeyCondition.from_str("O-RWin")
+
+    def test_genuinely_unknown_key_is_plain(self, win_names):
+        with pytest.raises(ValueError, match="Unknown key name: Nonsense"):
+            KeyCondition.from_str("Nonsense")
+
+    def test_error_quotes_the_original_case(self, win_names):
+        with pytest.raises(ValueError, match="RCmd"):
+            KeyCondition.from_str("RCmd")

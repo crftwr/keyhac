@@ -325,3 +325,47 @@ class TestInputText:
         from keyhac.core.action import InputText
         InputText("hello, 世界")()
         assert e.hook.sent_text == ["hello, 世界"]
+
+
+class TestUnreachableModifierWarning:
+    """Cmd-/Fn- assignments parse on Windows but no key ever sets those bits."""
+
+    def _warnings(self, e, caplog):
+        import logging
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="keyhac.Keymap"):
+            e.keymap._warn_unreachable_modifiers()
+        return [r.getMessage() for r in caplog.records]
+
+    def test_mac_modifiers_reported_on_windows(self, engine, caplog):
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["Fn-V"] = "Left"
+            kt["Cmd-Shift-V"] = "Left"
+            kt["Ctrl-A"] = "Home"
+
+        e = engine(configure, platform="windows")
+        messages = self._warnings(e, caplog)
+        assert len(messages) == 1
+        assert "Cmd, Fn" in messages[0] and "Ctrl" not in messages[0]
+
+    def test_no_warning_when_every_modifier_is_reachable(self, engine, caplog):
+        def configure(keymap):
+            keymap.define_modifier("RAlt", "RUser0")
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["User0-J"] = "Left"
+            kt["Ctrl-Shift-A"] = "Home"
+
+        e = engine(configure, platform="windows")
+        assert self._warnings(e, caplog) == []
+
+    def test_multi_stroke_tables_are_scanned(self, engine, caplog):
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt_sub = keymap.define_keytable(name="Ctrl-X")
+            kt["Ctrl-X"] = kt_sub
+            kt_sub["Cmd-O"] = "Ctrl-O"
+
+        e = engine(configure, platform="windows")
+        messages = self._warnings(e, caplog)
+        assert len(messages) == 1 and "Cmd" in messages[0]

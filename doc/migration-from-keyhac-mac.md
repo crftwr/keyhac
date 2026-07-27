@@ -12,4 +12,18 @@ Most keyhac-mac configs run with small edits. Known differences:
 | `ThreadedAction`, `ShowClipboard*`, `LaunchApplication`, `define_keytable`, `replace_key`, `define_modifier`, key expressions incl. `Fn-`/`Cmd-` | unchanged |
 | — | new: `app=`/`title=` focus conditions, keyhac-win short forms (`C-`, `A-`...), `InputText`, `ActivateWindow`, `keymap.call_later` (planned), User2/User3 |
 
-The same config.py also runs on Windows: branch with `keymap.platform`.
+The same config.py also runs on Windows: branch with `keymap.platform`. Three things in a
+macOS config do not carry over, and Keyhac 2 reports each at load time:
+
+- **`Cmd`/`Fn` keys** (`"O-RCmd"`, `keymap.define_modifier("RCmd", ...)`) — no such key on
+  Windows: `Invalid key expression: O-RCmd (… that key exists only on macOS …)`.
+- **`Cmd-`/`Fn-` modifiers** — these *parse* on Windows (modifier names are OS
+  independent) but no key sets the bits, so the assignment silently never fires. After
+  loading, Keyhac warns once: `No key produces the Cmd, Fn modifiers on windows …`.
+- **AX calls on the focus** (`focus.get_attribute_value("AXWindow")`, `get_attribute_names`,
+  `perform_action`) — `Focus.native` is a Win32 window wrapper on Windows, so these raise
+  `AttributeError`. Inside a `custom_condition_func` the traceback is logged once per
+  configuration load and the condition evaluates to False.
+
+The Windows counterparts are `Win`/`Apps` keys, `app=`/`title=`/`class_name=` focus
+conditions, and `focus.native.get_text()` / `.get_class_name()` / `.get_process_name()`.
