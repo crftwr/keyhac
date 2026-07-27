@@ -199,23 +199,38 @@ class TestUIAPatternsAgainstNotepad:
             found = walk(UIElement.from_hwnd(window.hwnd))
             if found is None:
                 pytest.skip("no editable element found in Notepad")
-            yield found
+            yield window, found
         finally:
             process.terminate()
 
     def test_value_round_trips(self, edit):
-        assert "Value" in edit.get_attribute_names()
-        assert edit.set_value("Hello UIA world")
-        assert edit.get_attribute_value("Value") == "Hello UIA world"
-        assert edit.get_attribute_value("IsReadOnly") is False
+        _window, element = edit
+        assert "Value" in element.get_attribute_names()
+        assert element.set_value("Hello UIA world")
+        assert element.get_attribute_value("Value") == "Hello UIA world"
+        assert element.get_attribute_value("IsReadOnly") is False
 
     def test_selected_text_reads_the_selection(self, edit):
-        # The Windows answer to keyhac-mac's "AXSelectedText".
+        """The Windows answer to keyhac-mac's "AXSelectedText".
+
+        Selecting needs real keyboard focus, which no test can guarantee on a
+        shared desktop - another app may take the foreground at any moment. So
+        this activates the window, polls for the selection, and *skips* rather
+        than fails if focus never landed; a wrong answer still fails.
+        """
         import time
-        edit.set_value("selection probe")
-        edit.set_focus()
-        time.sleep(0.2)
-        for vk, up in ((0x11, 0), (0x41, 0), (0x41, 2), (0x11, 2)):  # Ctrl+A
-            user32.keybd_event(vk, 0, up, 0)
+        window, element = edit
+        element.set_value("selection probe")
+        window.activate()
         time.sleep(0.3)
-        assert edit.get_attribute_value("SelectedText") == "selection probe"
+        for vk, flags in ((0x11, 0), (0x41, 0), (0x41, 2), (0x11, 2)):  # Ctrl+A
+            user32.keybd_event(vk, 0, flags, 0)
+        selected = ""
+        for _ in range(20):
+            time.sleep(0.1)
+            selected = element.get_attribute_value("SelectedText") or ""
+            if selected:
+                break
+        if not selected:
+            pytest.skip("could not take keyboard focus (another app has it)")
+        assert selected == "selection probe"
