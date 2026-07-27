@@ -18,10 +18,10 @@ log lines into the view and doubles as the hook health tick.
 import logging
 import time
 
-from puikit import Panel, Style, WindowStyle
+from puikit import Font, Panel, Style, WindowStyle
 from puikit.backends import create_backend
 from puikit.layout import HSplit, Item, VSplit
-from puikit.widgets import Button, Checkbox, DropDown, Label, LogView
+from puikit.widgets import Button, Checkbox, DropDown, Label, LayoutView, LogView
 
 from keyhac.core import log
 
@@ -46,6 +46,23 @@ _LEVELS = [
 
 _HEALTH_TICK_INTERVAL = 0.1
 
+_BORDER_STYLE = Style(fg=(120, 120, 132))
+
+
+class Frame(LayoutView):
+    """A LayoutView that draws a clear border line around its own extent.
+    draw_border() also clips the hosted content to the interior, so children
+    can fill up to the line without painting over it."""
+
+    def __init__(self, layout, margin_px: float = 6.0,
+                 line_style: Style = _BORDER_STYLE):
+        super().__init__(layout, margin_px=margin_px)
+        self.line_style = line_style
+
+    def draw(self, ctx) -> None:
+        ctx.draw_border(self.line_style)
+        super().draw(ctx)
+
 
 class ConsoleWindow:
     """Owns the PuiKit backend/panel; main() runs its event loop."""
@@ -64,6 +81,8 @@ class ConsoleWindow:
             width=100,
             height=30,
             title="Keyhac",
+            # 12pt console; the UI font shares the base font's size
+            base_font=Font(size=12, monospace=True),
             frame_autosave_name="KeyhacConsole",
             style=WindowStyle(),                 # a normal resizable window
             activation_policy="accessory",       # agent app: no Dock icon (macOS)
@@ -82,42 +101,77 @@ class ConsoleWindow:
             width=12,
         )
         self._log_view = LogView(max_lines=log.Console.max_lines,
-                                 style=_DEFAULT_LINE_STYLE)
+                                 style=_DEFAULT_LINE_STYLE, wrap="word")
         self._last_key_label = Label("")
         self._focus_path_label = Label("")
 
         self.panel = Panel(self.backend)
-        self.panel.set_layout(VSplit(
+
+        # Issue #7 layout: a page margin (LayoutView inset), the log and the
+        # two inspector values in bordered "content"-surface panes (Frame),
+        # breathing room between the rows, inspector labels on a shared fixed
+        # width so the values line up, and the toolbar/label rows centered on
+        # their cross axis.
+        # The flexible spacer absorbs the middle, so the only visible gap in
+        # this row is label <-> dropdown; keep it tight.
+        toolbar = HSplit(
+            Item(self._hook_checkbox, size="content", align="center"),
+            Item(Label(""), weight=1),
+            Item(Label("Log level:"), size="content", align="center"),
+            Item(self._level_dropdown, size="content", align="center"),
+            gap=0.3,
+        )
+        log_pane = Frame(VSplit(Item(self._log_view, weight=1)), margin_px=6)
+
+        def _value_field(value_label):
+            return Frame(VSplit(Item(value_label, weight=1)), margin_px=4)
+
+        # Both caption slots share one width so the value fields stay
+        # X-aligned; the placeholder 12 shrinks to the widest caption as
+        # actually drawn in open(), once the fonts exist to measure with.
+        self._caption_items = [
+            Item(Label("Last key:"), size=12, align="center"),
+            Item(Label("Focus path:"), size=12, align="center"),
+        ]
+        inspector = VSplit(
             Item(HSplit(
-                Item(self._hook_checkbox, size="content"),
-                Item(Label(""), weight=1),
-                Item(Label("Log level:"), size="content"),
-                Item(self._level_dropdown, size="content"),
-                gap=1,
-            ), size="content"),
-            Item(self._log_view, weight=1),
-            Item(HSplit(
-                Item(Label("Last key:"), size="content"),
-                Item(self._last_key_label, weight=1),
+                self._caption_items[0],
+                Item(_value_field(self._last_key_label), weight=1,
+                     hints={"surface": "content"}),
                 Item(Button("Copy", on_click=self._copy_last_key, variant="secondary"),
-                     size="content"),
+                     size="content", align="center"),
                 gap=1,
             ), size="content"),
             Item(HSplit(
-                Item(Label("Focus path:"), size="content"),
-                Item(self._focus_path_label, weight=1),
+                self._caption_items[1],
+                Item(_value_field(self._focus_path_label), weight=1,
+                     hints={"surface": "content"}),
                 Item(Button("Copy", on_click=self._copy_focus_path, variant="secondary"),
-                     size="content"),
+                     size="content", align="center"),
                 gap=1,
             ), size="content"),
-            gap=0,
-        ))
+            gap=0.3,
+        )
+        page = VSplit(
+            Item(toolbar, size="content"),
+            Item(log_pane, weight=1, hints={"surface": "content"}),
+            Item(inspector, size="content"),
+            gap=0.5,
+        )
+        self.panel.set_layout(VSplit(Item(LayoutView(page, margin_px=10), weight=1)))
 
     # ------------------------------------------------------------------
     # Lifecycle (main() drives the loop)
 
     def open(self) -> None:
         self.backend.open()
+        # Fit the shared caption width to the widest caption as drawn (the
+        # rects recompute from Item.size on every render, so mutating it here
+        # is enough); measuring needs the fonts open() just created.
+        width = max(self.backend.measure_text(item.content.text)
+                    for item in self._caption_items)
+        for item in self._caption_items:
+            item.size = width
         # Backfill lines logged before the window existed, then keep pulling.
         for text, level in self._console.lines():
             self._append_line(text, level)
