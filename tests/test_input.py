@@ -59,3 +59,68 @@ class TestInputContext:
             ctx.send_key("F1")
         # replay events go back through the keymap (FakeInputHook mimics this)
         assert seen == ["F1"]
+
+
+class TestSendText:
+
+    def _record_interleaved(self, hook):
+        """Route send()/send_text() into one list to assert their ordering."""
+        events = []
+        hook.send = lambda seq, replay=False: events.append(("keys", list(seq)))
+        hook.send_text = lambda s: events.append(("text", s))
+        return events
+
+    def test_send_text_plain(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        with e.keymap.get_input_context() as ctx:
+            ctx.send_text("hello")
+        assert e.hook.sent_text == ["hello"]
+        assert e.hook.sent == []  # no modifiers held: no reconciliation events
+
+    def test_send_text_releases_held_modifiers(self, engine):
+        # Issue #2: with the triggering modifier (Fn) still physically held,
+        # the injected text events became system shortcuts (Globe-A = Dock).
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        e.down("Fn")
+        e.hook.clear()
+        events = self._record_interleaved(e.hook)
+        with e.keymap.get_input_context() as ctx:
+            ctx.send_text("me@example.com")
+        fn = e.vk("Fn")
+        assert events == [
+            ("keys", [(fn, False)]),        # Fn released before the text
+            ("text", "me@example.com"),
+            ("keys", [(fn, True)]),         # and restored after
+        ]
+
+    def test_send_text_between_keys_keeps_order(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        events = self._record_interleaved(e.hook)
+        with e.keymap.get_input_context() as ctx:
+            ctx.send_key("Tab")
+            ctx.send_text("x")
+            ctx.send_key("Enter")
+        tab, enter = e.vk("Tab"), e.vk("Enter")
+        assert events == [
+            ("keys", [(tab, True), (tab, False)]),
+            ("text", "x"),
+            ("keys", [(enter, True), (enter, False)]),
+        ]
+
+    def test_send_text_outside_context_raises(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")
+
+        e = engine(configure)
+        ctx = e.keymap.get_input_context()
+        with pytest.raises(ValueError):
+            ctx.send_text("x")

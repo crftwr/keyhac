@@ -98,6 +98,12 @@ class ChooserWindow:
             if self._on_canceled is not None:
                 self._on_canceled()
 
+    def dismiss(self) -> None:
+        """Close without invoking the callbacks (the owner is replacing it)."""
+        if not self._done:
+            self._done = True
+            self.window.close()
+
     def _finish(self, item, modifier_flags: int) -> None:
         if self._done:
             return

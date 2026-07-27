@@ -4,6 +4,7 @@ keyhac-mac's KeyhacCore_UIElement, in PyObjC). Exposed as Focus.native."""
 import ApplicationServices as AS
 import Quartz
 from AppKit import NSWorkspace
+from Foundation import NSArray, NSDictionary
 
 _AX_TYPES = {
     "point": AS.kAXValueCGPointType, "size": AS.kAXValueCGSizeType,
@@ -14,7 +15,6 @@ _AX_TYPES = {
 def _from_ax(value):
     if value is None:
         return None
-    type_id = getattr(value, "_cfTypeID", None)
     if AS.CFGetTypeID(value) == AS.AXUIElementGetTypeID():
         return UIElement(value)
     if AS.CFGetTypeID(value) == AS.AXValueGetTypeID():
@@ -31,10 +31,13 @@ def _from_ax(value):
         if ax_type == AS.kAXValueCFRangeType:
             return (out.location, out.length)
         return None
-    if isinstance(value, (list, tuple)):
+    # AX collections arrive as NSArray/NSDictionary proxies, which are NOT
+    # list/dict instances - matching only the Python types silently turned
+    # e.g. AXWindows into its str() description (issue #6).
+    if isinstance(value, (list, tuple, NSArray)):
         return [_from_ax(v) for v in value]
-    if isinstance(value, dict):
-        return {str(k): _from_ax(v) for k, v in value.items()}
+    if isinstance(value, (dict, NSDictionary)):
+        return {str(k): _from_ax(value[k]) for k in value}
     if isinstance(value, (str, int, float, bool)):
         return value
     try:  # NSString/NSNumber bridge

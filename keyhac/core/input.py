@@ -96,6 +96,16 @@ class InputContext:
             raise ValueError("Not in the context.")
         self._input_seq.append((vk, down))
 
+    def send_text(self, s: str) -> None:
+        """Type a literal string.  Like an unmodified send_key, held modifiers
+        are released first (and restored when the context exits) - otherwise
+        e.g. a physically held Fn turns the injected keystrokes into macOS
+        system shortcuts (Fn/Globe-A opens the Dock)."""
+        if not self._entered:
+            raise ValueError("Not in the context.")
+        self.send_modifier_keys(0)
+        self._input_seq.append(("text", s))
+
     def send_modifier_keys(self, mod: int) -> None:
         """Emit modifier key downs/ups so the virtual modifier state matches
         the target state `mod`."""
@@ -120,6 +130,15 @@ class InputContext:
 
     def _flush(self):
         self.send_modifier_keys(self._real_modifier)
-        if self._input_seq:
-            self._keymap._hook.send(self._input_seq, replay=self._replay)
-        self._input_seq = []
+        seq, self._input_seq = self._input_seq, []
+        batch = []
+        for item in seq:
+            if item[0] == "text":
+                if batch:
+                    self._keymap._hook.send(batch, replay=self._replay)
+                    batch = []
+                self._keymap._hook.send_text(item[1])
+            else:
+                batch.append(item)
+        if batch:
+            self._keymap._hook.send(batch, replay=self._replay)

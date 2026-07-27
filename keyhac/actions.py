@@ -24,6 +24,9 @@ class ChooserAction:
     Derive and implement list_items() -> [(icon, label, ...)] and
     on_chosen(item, modifier_flags)."""
 
+    #: The one chooser currently open: (action, window, original_pid).
+    _open = None
+
     def __repr__(self):
         return f"{type(self).__name__}()"
 
@@ -36,22 +39,40 @@ class ChooserAction:
             return
 
         keymap = Keymap.get_instance()
-        focus = keymap.focus
-        original_pid = focus.pid if focus else None
+
+        # Only one chooser at a time (issue #3): pressing the same action's
+        # key again toggles its chooser closed; a different chooser action
+        # replaces the open one. Either way the replacement inherits the app
+        # to refocus - at this point the focus is the chooser itself, not the
+        # window the user was working in.
+        open_entry, ChooserAction._open = ChooserAction._open, None
+        if open_entry is not None:
+            prev_action, prev_chooser, original_pid = open_entry
+            prev_chooser.dismiss()
+            if prev_action is self:
+                if original_pid is not None and keymap.app_control is not None:
+                    keymap.app_control.activate_pid(original_pid)
+                return
+        else:
+            focus = keymap.focus
+            original_pid = focus.pid if focus else None
 
         def _refocus_original_app():
             if original_pid is not None and keymap.app_control is not None:
                 keymap.app_control.activate_pid(original_pid)
 
         def _on_selected(item, modifier_flags):
+            ChooserAction._open = None
             _refocus_original_app()
             self.on_chosen(item, modifier_flags)
 
         def _on_canceled():
+            ChooserAction._open = None
             _refocus_original_app()
 
-        ChooserWindow(runtime.backend, self.list_items(),
-                      on_selected=_on_selected, on_canceled=_on_canceled)
+        chooser = ChooserWindow(runtime.backend, self.list_items(),
+                                on_selected=_on_selected, on_canceled=_on_canceled)
+        ChooserAction._open = (self, chooser, original_pid)
 
         # Keyhac runs as an accessory (agent) app, so the chooser must
         # deliberately activate our own process to take keyboard input; the
@@ -394,14 +415,14 @@ class ActivateWindow(ThreadedAction):
 
     def starting(self):
         keymap = Keymap.get_instance()
+        self.windows = []
         if keymap.window_provider is not None:
             # Snapshot identity here, on the main thread; run() must not touch
             # a Window (its accessors are UI-thread only).
             self.windows = [(w, w.app_name, w.title, w.class_name)
                             for w in keymap.list_windows()]
-            self.apps = []
-            return
-        self.windows = []
+        # Running apps as a fallback: an app with no windows (or none the
+        # provider can see) can still be activated by name.
         self.apps = keymap.app_control_running_apps()
 
     def run(self):
@@ -412,18 +433,15 @@ class ActivateWindow(ThreadedAction):
             return name is not None and any(
                 fnmatch.fnmatch(name.lower(), p.strip()) for p in pattern.split("|"))
 
-        if self.windows:
-            for window, app_name, _title, _class_name in self.windows:
-                # ".exe"-optional, like define_keytable(app=...)
-                if _matches(app_name) or _matches((app_name or "") + ".exe"):
-                    return window
-            logger.warning(f"ActivateWindow: no window matches {self.app!r}")
-            return None
+        for window, app_name, _title, _class_name in self.windows:
+            # ".exe"-optional, like define_keytable(app=...)
+            if _matches(app_name) or _matches((app_name or "") + ".exe"):
+                return window
 
         for name, pid in self.apps:
             if _matches(name):
                 return pid
-        logger.warning(f"ActivateWindow: no running app matches {self.app!r}")
+        logger.warning(f"ActivateWindow: no window or running app matches {self.app!r}")
         return None
 
     def finished(self, target):

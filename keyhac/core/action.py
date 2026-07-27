@@ -111,8 +111,11 @@ class InputText:
     def __call__(self):
         from keyhac.core.keymap import Keymap
         keymap = Keymap.get_instance()
-        with keymap._lock:
-            keymap._hook.send_text(self.text)
+        # Through the input context so held modifiers are released around the
+        # text and restored after (issue #2: with the triggering modifier still
+        # physically down, the injected events became system shortcuts).
+        with keymap.get_input_context() as ctx:
+            ctx.send_text(self.text)
 
     def __repr__(self):
         return f'InputText("{self.text}")'

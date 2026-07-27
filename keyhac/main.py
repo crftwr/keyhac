@@ -32,6 +32,11 @@ def main() -> int:
 
     log.set_debug(args.debug)
 
+    if not args.no_ui:
+        # print() from user configs must reach the console window; do this
+        # before the first configure() so config-load output is captured too.
+        log.redirect_std_streams()
+
     if sys.platform == "darwin":
         platform_name = "mac"
         import keyhac.platform.mac as platform_module
