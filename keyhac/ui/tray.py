@@ -11,11 +11,12 @@ _ASSETS = Path(__file__).with_name("assets")
 def _tray_image() -> str | None:
     """Path of the keycap icon (the keyhac-win app-icon design, regenerated
     by tools/make_tray_icons.py): a color .ico for the Windows tray, and for
-    the macOS menu bar extra a grayscale AppKit template PNG — menu extras
-    must be monochrome, so the face shading rides in the alpha channel and
-    the system recolors it for dark mode / menu highlight."""
+    the macOS menu bar extra a vector AppKit template SVG (NSImage loads SVG
+    natively on macOS 11+) — menu extras must be monochrome, so the face
+    shading rides in the ink opacity and the system recolors it for dark
+    mode / menu highlight."""
     if sys.platform == "darwin":
-        return str(_ASSETS / "MenuExtraTemplate.png")
+        return str(_ASSETS / "MenuExtraTemplate.svg")
     if sys.platform == "win32":
         return str(_ASSETS / "keyhac.ico")
     return None
