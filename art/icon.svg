@@ -1,0 +1,17 @@
+<!-- Keyhac app icon: the keycap from keyhac-win's icon.svg (group g3216),
+     cleaned to the plain-SVG subset tools/svgrender.py rasterizes.
+     Maintained by hand - tools/make_icons.py renders keyhac.ico /
+     keyhac.icns and the other raster targets from this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"
+     viewBox="0 0 512 512">
+  <g transform="translate(-82.9762 -203.0125) scale(0.945540)">
+    <path d="M240 312.4 L220 512.4 L134 658.5 L172.5 365 Z" fill="#e9e9ff"/>
+    <path d="M240 312.4 L470 312.4 L490 512.4 L220 512.4 Z" fill="#afafde"/>
+    <path d="M470 312.4 L544 364 L583 658 L490 512.4 Z" fill="#8686bf"/>
+    <path d="M220 512.4 L490 512.4 L583 658 L134 658.5 Z" fill="#d7d7ff"/>
+    <path d="M240 312.4 L470 312.4 L544 364 L583 658 L134 658.5 L172.5 365 Z" fill="none" stroke="#000"
+          stroke-width="60" stroke-linejoin="round"/>
+    <path d="M240 312.4 L220 512.4 M220 512.4 L490 512.4 M470 312.4 L490 512.4 M220 512.4 L134 658.5 M490 512.4 L583 658" fill="none" stroke="#000"
+          stroke-width="15"/>
+  </g>
+</svg>

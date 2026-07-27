@@ -1,0 +1,142 @@
+"""Render Keyhac's raster icon assets from the maintained SVG sources.
+
+The vector artwork is the source of truth and lives in the repo, edited by
+hand (Inkscape or a text editor), in the plain-SVG subset documented in
+``tools/svgrender.py`` — a pure-stdlib rasterizer, so this script runs the
+same on macOS and Windows with no image tooling installed:
+
+- ``art/icon.svg`` — the color keycap (keyhac-win's app-icon design).
+  Rendered here into every raster target.
+- ``keyhac/ui/assets/MenuExtraTemplate.svg`` — the macOS menu bar extra.
+  *Not* rendered: NSImage loads it directly at runtime (macOS 11+). This
+  script only lints it against the svgrender subset so the two files keep
+  the same dialect.
+
+Raster targets (all checked in; re-run only when the artwork changes):
+
+- ``keyhac/ui/assets/keyhac.ico`` — Windows system tray *and* app icon.
+  16/20/24/32/40/48 px as classic 32bpp BMP entries (the tray's small-icon
+  metric across DPI scales, maximum shell compatibility), 64/128/256 px as
+  PNG entries (Vista+) for Explorer's large views.
+- ``keyhac/ui/assets/keyhac.icns`` — macOS app icon for the bundled app
+  (doc/06-packaging.md), PNG entries at every standard slot up to 1024.
+
+Adding a target (store banner, README art, …) is one line in ``main()``:
+render the source SVG at the needed size and hand it to an encoder.
+
+Usage: ``.venv/bin/python tools/make_icons.py``
+"""
+
+from __future__ import annotations
+
+import struct
+import zlib
+from pathlib import Path
+
+import svgrender
+
+ROOT = Path(__file__).resolve().parent.parent
+ART = ROOT / "art"
+ASSETS = ROOT / "keyhac" / "ui" / "assets"
+
+
+# --- encoders ---------------------------------------------------------------
+
+def png_bytes(pixels):
+    h = len(pixels)
+    w = len(pixels[0])
+    raw = b"".join(
+        b"\x00" + b"".join(bytes(px) for px in row) for row in pixels
+    )
+
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(
+            ">I", zlib.crc32(body))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9))
+            + chunk(b"IEND", b""))
+
+
+def write_png(path, pixels):
+    path.write_bytes(png_bytes(pixels))
+
+
+def write_ico(path, bmp_images, png_images=()):
+    """``bmp_images``: pixel grids written as classic 32bpp BMP entries (the
+    doubled-height header + empty AND mask); ``png_images``: pixel grids
+    written as PNG entries (valid from Vista on, and the only option at
+    256 px). All squares."""
+    entries = []
+    for pixels in bmp_images:
+        n = len(pixels)
+        xor = b"".join(  # bottom-up BGRA rows
+            bytes(c for px in row for c in (px[2], px[1], px[0], px[3]))
+            for row in reversed(pixels)
+        )
+        and_stride = ((n + 31) // 32) * 4
+        blob = struct.pack("<IiiHHIIiiII", 40, n, n * 2, 1, 32, 0,
+                           len(xor), 0, 0, 0, 0) + xor + b"\x00" * (and_stride * n)
+        entries.append((n, blob))
+    for pixels in png_images:
+        entries.append((len(pixels), png_bytes(pixels)))
+
+    offset = 6 + 16 * len(entries)
+    directory = struct.pack("<HHH", 0, 1, len(entries))
+    for n, blob in entries:
+        directory += struct.pack("<BBBBHHII", n % 256, n % 256, 0, 0, 1, 32,
+                                 len(blob), offset)
+        offset += len(blob)
+    path.write_bytes(directory + b"".join(blob for _n, blob in entries))
+
+
+# icns entry types by (render px, type): the @2x slots (ic11-ic14) reuse the
+# corresponding double-resolution render — same pixels, different point size.
+_ICNS_SLOTS = (
+    (16, b"icp4"), (32, b"icp5"), (64, b"icp6"),
+    (128, b"ic07"), (256, b"ic08"), (512, b"ic09"), (1024, b"ic10"),
+    (32, b"ic11"), (64, b"ic12"), (256, b"ic13"), (512, b"ic14"),
+)
+
+
+def write_icns(path, renders):
+    """``renders``: {size_px: pixel grid} covering the sizes in _ICNS_SLOTS."""
+    pngs = {size: png_bytes(pixels) for size, pixels in renders.items()}
+    chunks = b"".join(
+        icns_type + struct.pack(">I", 8 + len(pngs[size])) + pngs[size]
+        for size, icns_type in _ICNS_SLOTS
+    )
+    path.write_bytes(b"icns" + struct.pack(">I", 8 + len(chunks)) + chunks)
+
+
+# --- main -------------------------------------------------------------------
+
+def main():
+    ASSETS.mkdir(parents=True, exist_ok=True)
+    source = (ART / "icon.svg").read_text(encoding="utf-8")
+
+    def render(size):
+        return svgrender.render(source, size)
+
+    # Windows tray + app icon. Small sizes: 16 px at 100% DPI, scaling
+    # through 20/24/32 at 125/150/200%.
+    write_ico(ASSETS / "keyhac.ico",
+              bmp_images=[render(s) for s in (16, 20, 24, 32, 40, 48)],
+              png_images=[render(s) for s in (64, 128, 256)])
+
+    # macOS app icon.
+    sizes = sorted({size for size, _t in _ICNS_SLOTS})
+    write_icns(ASSETS / "keyhac.icns", {s: render(s) for s in sizes})
+
+    # The menu extra template ships as vector; just keep it inside the
+    # svgrender dialect so both sources stay editable the same way.
+    svgrender.render_file(ASSETS / "MenuExtraTemplate.svg", 36)
+
+    for f in sorted(ASSETS.iterdir()):
+        print(f"{f.relative_to(ROOT)}  {f.stat().st_size} bytes")
+
+
+if __name__ == "__main__":
+    main()
