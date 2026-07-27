@@ -150,3 +150,109 @@ class AppControl(ABC):
 
     @abstractmethod
     def launch(self, app_name: str) -> None: ...
+
+
+class Window(ABC):
+    """A top-level OS window - the portable half of keyhac-win's pyauto.Window
+    and keyhac-mac's AXWindow element.
+
+    Window *operations* unify cleanly across both OSes (find, activate, move,
+    restore, title, process), unlike element introspection, whose attribute
+    vocabularies do not - see Focus.element.
+
+    THREAD CONTRACT.  Everything on this class is **UI-thread only**: on macOS
+    these are Accessibility calls, and AX into our own process off the main
+    thread crashes with SIGTRAP (the rule established when MoveWindow was
+    fixed).  A ThreadedAction reads windows in starting(), computes in run(),
+    and writes back in finished().  The thread-safe queries a run() may call
+    are WindowProvider.screen_frames() / window_frames().
+    """
+
+    @property
+    @abstractmethod
+    def title(self) -> str | None: ...
+
+    @property
+    @abstractmethod
+    def app_name(self) -> str | None:
+        """Process base name without extension (Windows) / localized
+        application name (macOS)."""
+
+    @property
+    @abstractmethod
+    def pid(self) -> int | None: ...
+
+    @property
+    def class_name(self) -> str | None:
+        """Win32 window class. None on macOS, which has no such concept."""
+        return None
+
+    @abstractmethod
+    def get_frame(self) -> tuple[float, float, float, float] | None:
+        """(x, y, w, h) in global top-left-origin screen coordinates."""
+
+    @abstractmethod
+    def set_frame(self, x: float, y: float,
+                  w: float = None, h: float = None) -> bool:
+        """Move (and optionally resize). w/h None keeps the current size."""
+
+    @abstractmethod
+    def activate(self) -> bool:
+        """Bring this window and its application to the front."""
+
+    def is_minimized(self) -> bool:
+        return False
+
+    def restore(self) -> bool:
+        """Un-minimize. Base is a no-op returning False."""
+        return False
+
+    def minimize(self) -> bool:
+        return False
+
+    @property
+    def native(self) -> Any:
+        """The underlying platform object (HWND wrapper / AX UIElement)."""
+        return None
+
+
+class WindowProvider(ABC):
+    """Window discovery and screen geometry.
+
+    find_window/list_windows/get_active_window follow Window's UI-thread
+    contract; screen_frames/window_frames are deliberately thread-safe so that
+    geometry math can run in a ThreadedAction worker.
+
+    That split is not cosmetic on either OS. On macOS the safe pair uses
+    CoreGraphics rather than AppKit/AX. On Windows, reading a window's *title*
+    is a blocking SendMessage(WM_GETTEXT) to the owning thread, so anything
+    that touches titles - list_windows, find_window - can wedge against a UI
+    thread that is not pumping, while the pure-geometry queries never message
+    another thread at all.
+    """
+
+    @abstractmethod
+    def get_active_window(self) -> Window | None: ...
+
+    @abstractmethod
+    def list_windows(self) -> list[Window]:
+        """Visible top-level windows, front-most first where the OS says so."""
+
+    def find_window(self, app: str = None, title: str = None,
+                    class_name: str = None) -> Window | None:
+        """First visible window matching the given patterns (fnmatch, '|'
+        alternation, case-insensitive - the same matching as focus
+        conditions). All given conditions must match."""
+        from keyhac.core.focus import match_window_fields
+        for window in self.list_windows():
+            if match_window_fields(window, app, title, class_name):
+                return window
+        return None
+
+    @abstractmethod
+    def screen_frames(self) -> list[tuple[float, float, float, float]]:
+        """(x, y, w, h) per screen, primary first. Thread-safe."""
+
+    @abstractmethod
+    def window_frames(self) -> list[tuple[float, float, float, float]]:
+        """Frames of all normal on-screen windows. Thread-safe."""

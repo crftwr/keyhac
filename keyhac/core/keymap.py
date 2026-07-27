@@ -80,6 +80,7 @@ class Keymap:
 
         # Wired by main(): platform services + clipboard history + UI hooks
         self.app_control = None             # platform AppControl
+        self.window_provider = None         # platform WindowProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
@@ -446,6 +447,30 @@ class Keymap:
     def focus(self) -> Focus | None:
         """Portable snapshot of the current keyboard focus."""
         return self._focus
+
+    # ------------------------------------------------------------------
+    # Window access (config-facing; see keyhac.platform.base.Window)
+
+    def get_active_window(self):
+        """The frontmost window, or None. UI-thread only (see Window)."""
+        if self.window_provider is None:
+            return None
+        return self.window_provider.get_active_window()
+
+    def list_windows(self) -> list:
+        """Visible top-level windows, front-most first. UI-thread only."""
+        if self.window_provider is None:
+            return []
+        return self.window_provider.list_windows()
+
+    def find_window(self, app: str = None, title: str = None,
+                    class_name: str = None):
+        """First visible window matching the patterns, or None - same matching
+        as define_keytable's app=/title=/class_name=. UI-thread only."""
+        if self.window_provider is None:
+            return None
+        return self.window_provider.find_window(
+            app=app, title=title, class_name=class_name)
 
     def app_control_running_apps(self):
         """[(app_name, pid)] via the platform (empty when unavailable)."""

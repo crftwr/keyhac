@@ -61,11 +61,15 @@ def main() -> int:
         from keyhac.platform.mac.apps import MacAppControl
         clipboard_provider = MacClipboardProvider()
         keymap.app_control = MacAppControl()
+        # No macOS WindowProvider yet; window actions fall back to the
+        # AppKit/AX paths they have always used there.
     else:
         from keyhac.platform.win.clipboard import WinClipboardProvider
         from keyhac.platform.win.apps import WinAppControl
+        from keyhac.platform.win.window import WinWindowProvider
         clipboard_provider = WinClipboardProvider()
         keymap.app_control = WinAppControl()
+        keymap.window_provider = WinWindowProvider()
     # With an explicit --config, keep the history beside it (sandbox testing
     # must not touch the real ~/.keyhac/clipboard.json).
     import os

@@ -21,6 +21,28 @@ def _match_any(value: str, pattern: str) -> bool:
     return any(fnmatch.fnmatch(value, p.strip().lower()) for p in pattern.split("|"))
 
 
+def match_window_fields(window, app: str = None, title: str = None,
+                        class_name: str = None) -> bool:
+    """Whether a Window matches the given patterns (all specified must match).
+
+    Shared with FocusCondition so that `define_keytable(app=...)` and
+    `find_window(app=...)` cannot mean different things - same fnmatch, same
+    '|' alternation, same ".exe"-optional app names.
+    """
+    if app is not None:
+        name = (window.app_name or "").lower().removesuffix(".exe")
+        pattern = "|".join(p.strip().removesuffix(".exe") for p in app.split("|"))
+        if not name or not _match_any(name, pattern):
+            return False
+    if title is not None:
+        if window.title is None or not _match_any(window.title, title):
+            return False
+    if class_name is not None:
+        if window.class_name is None or not _match_any(window.class_name, class_name):
+            return False
+    return True
+
+
 class FocusCondition:
     """Condition deciding whether a key table is active for the current focus.
 

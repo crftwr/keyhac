@@ -377,38 +377,68 @@ class MoveWindow(ThreadedAction):
 
 
 class ActivateWindow(ThreadedAction):
-    """Activate an application by name pattern (portable subset of
+    """Activate a window by application name pattern (portable subset of
     keyhac-win's ActivateWindowCommand).
 
-    Thread contract: the AppKit-backed enumeration happens in starting()
-    (main thread), run() is pure matching, and the AppKit activation call is
-    posted back to the main thread in finished()."""
+    Where the platform provides a WindowProvider (Windows), this matches and
+    raises an actual window, so it can restore a minimized one and pick the
+    front-most match. Otherwise (macOS today) it falls back to activating the
+    matching *application* by pid, which is what it has always done there.
+
+    Thread contract: all window/AppKit enumeration happens in starting() (main
+    thread), run() is pure matching, and the activation is posted back to the
+    main thread in finished() - Window and AX are both UI-thread only."""
 
     def __init__(self, app: str):
         self.app = app
         self.apps = []
+        self.windows = []
 
     def starting(self):
-        self.apps = Keymap.get_instance().app_control_running_apps()
+        keymap = Keymap.get_instance()
+        if keymap.window_provider is not None:
+            # Snapshot identity here, on the main thread; run() must not touch
+            # a Window (its accessors are UI-thread only).
+            self.windows = [(w, w.app_name, w.title, w.class_name)
+                            for w in keymap.list_windows()]
+            self.apps = []
+            return
+        self.windows = []
+        self.apps = keymap.app_control_running_apps()
 
     def run(self):
         import fnmatch
         pattern = self.app.lower()
+
+        def _matches(name):
+            return name is not None and any(
+                fnmatch.fnmatch(name.lower(), p.strip()) for p in pattern.split("|"))
+
+        if self.windows:
+            for window, app_name, _title, _class_name in self.windows:
+                # ".exe"-optional, like define_keytable(app=...)
+                if _matches(app_name) or _matches((app_name or "") + ".exe"):
+                    return window
+            logger.warning(f"ActivateWindow: no window matches {self.app!r}")
+            return None
+
         for name, pid in self.apps:
-            if any(fnmatch.fnmatch(name.lower(), p.strip())
-                   for p in pattern.split("|")):
+            if _matches(name):
                 return pid
         logger.warning(f"ActivateWindow: no running app matches {self.app!r}")
         return None
 
-    def finished(self, pid):
-        if pid is None:
+    def finished(self, target):
+        if target is None:
             return
         from keyhac.ui import runtime
         keymap = Keymap.get_instance()
 
         def _apply():
-            keymap.app_control.activate_pid(pid)
+            if isinstance(target, int):
+                keymap.app_control.activate_pid(target)
+            else:
+                target.activate()
 
         if runtime.backend is None or not runtime.backend.capabilities.supports(
                 "main_thread_dispatch"):
