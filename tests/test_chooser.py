@@ -74,3 +74,33 @@ class TestChooserSingleInstance:
         chooser._finish(None, 0)
         assert ChooserAction._open is None
         assert action.chosen == []
+
+
+class TestChooserCentering:
+    """Issue #4: the chooser centers on the focused window's frame.
+
+    The memory backend creates 72x20 windows at (160, 160) with 1 px per
+    cell, so the geometry below is exact."""
+
+    def _window(self, ui_backend, **kwargs):
+        from keyhac.ui.chooser import ChooserWindow
+        return ChooserWindow(ui_backend, [("*", "a", 1)], **kwargs)
+
+    def test_default_position_untouched(self, ui_backend):
+        chooser = self._window(ui_backend)
+        assert chooser.window.frame_px() == (160.0, 160.0, 72.0, 20.0)
+
+    def test_centers_on_rect(self, ui_backend):
+        chooser = self._window(ui_backend, center_on=(100, 100, 400, 300))
+        # center (300, 250) minus half of 72x20
+        assert chooser.window.frame_px() == (264.0, 240.0, 72.0, 20.0)
+
+    def test_clamped_to_screen(self, ui_backend):
+        chooser = self._window(ui_backend, center_on=(100, 100, 400, 300),
+                               clamp_to=(0, 0, 300, 250))
+        assert chooser.window.frame_px() == (228.0, 230.0, 72.0, 20.0)
+
+    def test_clamped_at_origin(self, ui_backend):
+        chooser = self._window(ui_backend, center_on=(-500, -500, 100, 100),
+                               clamp_to=(0, 0, 800, 600))
+        assert chooser.window.frame_px() == (0.0, 0.0, 72.0, 20.0)

@@ -24,10 +24,15 @@ _EVENT_MODKEYS = {
 
 
 class ChooserWindow:
-    """items are tuples: (icon, label, *payload)."""
+    """items are tuples: (icon, label, *payload).
+
+    center_on: a screen rect (x, y, w, h) to center the window on - the
+    focused window's frame (issue #4); clamp_to keeps the result on the
+    given screen rect. Both are in puikit's portable screen coordinates
+    (top-left origin), the same space keyhac's Window/WindowProvider report."""
 
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
-                 title="Keyhac"):
+                 title="Keyhac", center_on=None, clamp_to=None):
         self._items = list(items)
         self._filtered = list(self._items)
         self._on_selected = on_selected
@@ -36,6 +41,8 @@ class ChooserWindow:
 
         self.window = backend.create_window(
             72, 20, title=title, style=WindowStyle(topmost=True, resizable=False))
+        if center_on is not None:
+            self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.
         self.window.on_event = self._on_event
         self.window.on_close = self._on_user_close
@@ -55,6 +62,19 @@ class ChooserWindow:
         ))
         self.panel.focus(self._edit)
         self.panel.render()
+
+    def _center_on(self, rect, clamp_to) -> None:
+        frame = self.window.frame_px()
+        if frame is None:
+            return
+        _x, _y, w, h = frame
+        x = rect[0] + (rect[2] - w) / 2
+        y = rect[1] + (rect[3] - h) / 2
+        if clamp_to is not None:
+            sx, sy, sw, sh = clamp_to
+            x = max(sx, min(x, sx + sw - w))
+            y = max(sy, min(y, sy + sh - h))
+        self.window.move_to_px(x, y)
 
     def _labels(self):
         return [f"{item[0]} {item[1]}" if item[0] else item[1]

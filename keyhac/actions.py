@@ -70,8 +70,21 @@ class ChooserAction:
             ChooserAction._open = None
             _refocus_original_app()
 
+        # Center the chooser on the focused window (issue #4). Both frames are
+        # portable top-left screen coordinates on both OSes; clamp to the
+        # screen the window mostly lives on. UI thread here, so the window
+        # accessors are allowed.
+        center_on = clamp_to = None
+        active = keymap.get_active_window()
+        if active is not None:
+            center_on = active.get_frame()
+        if center_on is not None and keymap.window_provider is not None:
+            clamp_to = MoveWindow._get_best_screen(
+                center_on, keymap.window_provider.screen_frames())
+
         chooser = ChooserWindow(runtime.backend, self.list_items(),
-                                on_selected=_on_selected, on_canceled=_on_canceled)
+                                on_selected=_on_selected, on_canceled=_on_canceled,
+                                center_on=center_on, clamp_to=clamp_to)
         ChooserAction._open = (self, chooser, original_pid)
 
         # Keyhac runs as an accessory (agent) app, so the chooser must

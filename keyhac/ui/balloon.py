@@ -30,14 +30,14 @@ class BalloonManager:
         panel.add(Label(f"  {text}"), 0, 1, width - 1, 1)
         panel.render()
 
-        # Top-right of the main screen's work area (bottom-left origin pts)
+        # Top-right of the main screen's work area (portable top-left
+        # coordinates on both OSes since puikit PR #80)
         try:
             frames = self._backend.screen_frames()
             if frames:
                 _full, (vx, vy, vw, vh) = frames[0]
-                base_w, base_h = self._backend.base_size
-                win.move_px(vx + vw - width * base_w - 24,
-                            vy + vh - 3 * base_h - 24)
+                base_w, _base_h = self._backend.base_size
+                win.move_to_px(vx + vw - width * base_w - 24, vy + 24)
         except Exception:
             logger.debug("Balloon placement unavailable; using default position.")
 
