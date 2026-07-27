@@ -26,4 +26,8 @@ macOS config do not carry over, and Keyhac 2 reports each at load time:
   configuration load and the condition evaluates to False.
 
 The Windows counterparts are `Win`/`Apps` keys, `app=`/`title=`/`class_name=` focus
-conditions, and `focus.native.get_text()` / `.get_class_name()` / `.get_process_name()`.
+conditions, and — for element work — `focus.element` with UI Automation's vocabulary
+(`ControlType`/`Name`/`Value`/`SelectedText`, `perform_action("Invoke")`) instead of AX's.
+See [03-config-api.md](03-config-api.md#windows-and-elements) for the mapping table.
+Window operations (`keymap.get_active_window()`, `find_window()`, `MoveWindow`,
+`ActivateWindow`) are portable and need no branch.

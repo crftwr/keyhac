@@ -114,3 +114,108 @@ class TestFocusPath:
             pytest.skip("no foreground window")
         provider._probe = (0, 0, "something else")
         assert provider.get_focus() is not first
+
+
+class TestUIAPatterns:
+    """Actions and pattern-backed attributes.
+
+    Pattern vtable slots need the same live cross-check as the element ones:
+    IUIAutomationTextRange::GetText sits at 12, and calling slot 11
+    (GetEnclosingElement, whose out-param is an element pointer) as
+    GetText(int, BSTR*) access-violates rather than failing quietly.
+    """
+
+    def test_unknown_action_is_refused_not_raised(self, automation):
+        element = UIElement.from_hwnd(user32.GetDesktopWindow())
+        # A macOS action name reaching a Windows element must not raise on the
+        # key path; it logs the available names and returns False.
+        assert element.perform_action("AXPress") is False
+
+    def test_action_names_are_only_the_supported_ones(self, automation):
+        element = UIElement.from_hwnd(user32.GetDesktopWindow())
+        names = element.get_action_names()
+        assert set(names) <= {"Invoke", "Toggle", "Expand", "Collapse"}
+
+    def test_pattern_attributes_are_listed_only_when_supported(self, automation):
+        # The desktop pane is not a value/text control, so those attributes are
+        # absent from its names - get_attribute_names answers "what can I read
+        # from *this* element", like AXUIElementCopyAttributeNames.
+        names = UIElement.from_hwnd(user32.GetDesktopWindow()).get_attribute_names()
+        assert "Value" not in names and "SelectedText" not in names
+        assert "Name" in names and "ControlType" in names
+
+    def test_unsupported_pattern_attribute_reads_none(self, automation):
+        element = UIElement.from_hwnd(user32.GetDesktopWindow())
+        assert element.get_attribute_value("Value") is None
+        assert element.get_attribute_value("SelectedText") is None
+
+
+@pytest.mark.slow
+class TestUIAPatternsAgainstNotepad:
+    """The read/write paths against a real editable control.
+
+    Launches Notepad, so it is marked slow and skips cleanly if unavailable.
+    """
+
+    @pytest.fixture
+    def edit(self, automation):
+        import subprocess
+        import time
+        from keyhac.platform.win.window import WinWindowProvider
+        from keyhac.platform.win.uielement import (
+            _control_view_walker, _element_out, _IUIAutomationTreeWalker)
+
+        try:
+            process = subprocess.Popen(["notepad.exe"])
+        except OSError:
+            pytest.skip("notepad.exe unavailable")
+        try:
+            window = None
+            for _ in range(30):
+                time.sleep(0.1)
+                window = WinWindowProvider().find_window(app="notepad")
+                if window is not None:
+                    break
+            if window is None:
+                pytest.skip("Notepad window did not appear")
+
+            def walk(element, depth=0):
+                if element.get_attribute_value("ControlType") in ("Edit", "Document"):
+                    return element
+                if depth > 5:
+                    return None
+                walker = _control_view_walker()
+                child = _element_out(walker, _IUIAutomationTreeWalker.GetFirstChildElement,
+                                     ctypes.c_void_p(element._ptr.value))
+                while child:
+                    node = UIElement(child)
+                    found = walk(node, depth + 1)
+                    if found is not None:
+                        return found
+                    child = _element_out(walker, _IUIAutomationTreeWalker.GetNextSiblingElement,
+                                         ctypes.c_void_p(node._ptr.value))
+                return None
+
+            found = walk(UIElement.from_hwnd(window.hwnd))
+            if found is None:
+                pytest.skip("no editable element found in Notepad")
+            yield found
+        finally:
+            process.terminate()
+
+    def test_value_round_trips(self, edit):
+        assert "Value" in edit.get_attribute_names()
+        assert edit.set_value("Hello UIA world")
+        assert edit.get_attribute_value("Value") == "Hello UIA world"
+        assert edit.get_attribute_value("IsReadOnly") is False
+
+    def test_selected_text_reads_the_selection(self, edit):
+        # The Windows answer to keyhac-mac's "AXSelectedText".
+        import time
+        edit.set_value("selection probe")
+        edit.set_focus()
+        time.sleep(0.2)
+        for vk, up in ((0x11, 0), (0x41, 0), (0x41, 2), (0x11, 2)):  # Ctrl+A
+            user32.keybd_event(vk, 0, up, 0)
+        time.sleep(0.3)
+        assert edit.get_attribute_value("SelectedText") == "selection probe"

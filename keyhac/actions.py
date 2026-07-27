@@ -185,7 +185,12 @@ class MoveWindow(ThreadedAction):
     """Move the focused window - full port of keyhac-mac's MoveWindow:
     direction/distance, stop at other windows' edges (window_edge) and
     screen edges (screen_edge), multi-monitor jump when already at the
-    edge. x/y are deprecated (since keyhac-mac v1.64)."""
+    edge. x/y are deprecated (since keyhac-mac v1.64).
+
+    Runs on both OSes: the geometry algorithm was already pure, so only the
+    frame reads/writes and the screen/window queries go through the portable
+    Window / WindowProvider API (keyhac.platform.base), which keeps macOS on
+    AX + CoreGraphics and Windows on Win32."""
 
     ADJACENT_SCREEN_TOLERANCE = 50   # menu-bar gap etc.
     EDGE_TOLERANCE = 2
@@ -211,25 +216,13 @@ class MoveWindow(ThreadedAction):
         self.wnd = None
 
     def starting(self):
-        # ALL AX reads happen here, on the main thread: AX calls into our OWN
-        # process off the main thread SIGTRAP (they are in-process, not IPC),
-        # and this action must also work on Keyhac's own windows.
+        # ALL window reads happen here, on the main thread. On macOS these are
+        # AX calls, and AX into our OWN process off the main thread SIGTRAPs
+        # (they are in-process, not IPC) - and this action must also work on
+        # Keyhac's own windows. Window's thread contract says the same.
         keymap = Keymap.get_instance()
-        elm = keymap.focus.native if keymap.focus else None
-        while elm is not None:
-            if elm.get_attribute_value("AXRole") == "AXWindow":
-                break
-            elm = elm.get_attribute_value("AXParent")
-        self.wnd = elm
-        self.frame = None
-        if elm is not None:
-            frame = elm.get_attribute_value("AXFrame")
-            if frame is None:
-                pos = elm.get_attribute_value("AXPosition")
-                size = elm.get_attribute_value("AXSize")
-                if pos is not None and size is not None:
-                    frame = (pos[0], pos[1], size[0], size[1])
-            self.frame = frame
+        self.wnd = keymap.get_active_window()
+        self.frame = self.wnd.get_frame() if self.wnd is not None else None
 
     @staticmethod
     def _get_best_screen(frame, screens):
@@ -271,12 +264,17 @@ class MoveWindow(ThreadedAction):
         if self.wnd is None or self.frame is None:
             logger.warning("MoveWindow: no focused window.")
             return None
-        # Worker thread: pure math + thread-safe CoreGraphics only (no AX).
-        from keyhac.platform.mac.uielement import UIElement
+        # Worker thread: pure math plus the WindowProvider's two thread-safe
+        # geometry queries only - never a Window accessor (AX on macOS,
+        # WM_GETTEXT-backed on Windows; both would block or crash here).
+        provider = Keymap.get_instance().window_provider
+        if provider is None:
+            logger.warning("MoveWindow: no window provider on this platform.")
+            return None
         frame = self.frame
         wx, wy, ww, wh = frame
 
-        screens = UIElement.get_screen_frames()
+        screens = provider.screen_frames()
         cur = self._get_best_screen(frame, screens)
         if cur is None:
             return None
@@ -329,7 +327,7 @@ class MoveWindow(ThreadedAction):
 
         if self.window_edge:
             gap = 1
-            for ox, oy, ow, oh in UIElement.get_onscreen_window_frames():
+            for ox, oy, ow, oh in provider.window_frames():
                 if (ox, oy, ow, oh) == frame:
                     continue
                 if self.direction in ("left", "right"):
@@ -362,7 +360,7 @@ class MoveWindow(ThreadedAction):
         from keyhac.ui import runtime
 
         def _apply():
-            self.wnd.set_attribute_value("AXPosition", "point", result)
+            self.wnd.set_frame(result[0], result[1])
 
         # The AX write must also run on the main thread (own-process safety);
         # call_on_main_thread is the one thread-safe puikit entry point.

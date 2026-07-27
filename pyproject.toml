@@ -41,3 +41,6 @@ version = { attr = "keyhac.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: drives a real third-party app (launches it, waits on its UI); run with -m 'not slow' to skip",
+]

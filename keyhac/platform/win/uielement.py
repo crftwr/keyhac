@@ -57,6 +57,8 @@ if sys.platform == "win32":
     ole32.CoCreateInstance.restype = ctypes.c_long
     oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
     oleaut32.SysFreeString.restype = None
+    oleaut32.SysAllocString.argtypes = [ctypes.c_wchar_p]
+    oleaut32.SysAllocString.restype = ctypes.c_void_p
 
     COINIT_APARTMENTTHREADED = 0x2
     CLSCTX_INPROC_SERVER = 0x1
@@ -80,6 +82,7 @@ class _IUIAutomation:
 
 class _IUIAutomationElement:
     SetFocus = 3
+    GetCurrentPattern = 16
     get_CurrentProcessId = 20
     get_CurrentControlType = 21
     get_CurrentLocalizedControlType = 22
@@ -97,6 +100,72 @@ class _IUIAutomationTreeWalker:
     GetParentElement = 3
     GetFirstChildElement = 4
     GetNextSiblingElement = 6
+
+
+# --------------------------------------------------------------------------
+# Control patterns.  UIA splits behavior into patterns an element may support;
+# they are the counterpart of AX actions and of AX value attributes at once.
+# GetCurrentPattern(id) returns the pattern interface, or NULL when the
+# element does not support it - which is also how support is tested.
+
+class _PatternId:
+    Invoke = 10000
+    Selection = 10001
+    Value = 10002
+    RangeValue = 10003
+    Scroll = 10004
+    ExpandCollapse = 10005
+    Grid = 10006
+    Toggle = 10015
+    Text = 10014
+    Window = 10009
+
+
+class _IUIAutomationInvokePattern:
+    Invoke = 3
+
+
+class _IUIAutomationTogglePattern:
+    Toggle = 3
+    get_CurrentToggleState = 4
+
+
+class _IUIAutomationExpandCollapsePattern:
+    Expand = 3
+    Collapse = 4
+
+
+class _IUIAutomationValuePattern:
+    SetValue = 3
+    get_CurrentValue = 4
+    get_CurrentIsReadOnly = 5
+
+
+class _IUIAutomationTextPattern:
+    GetSelection = 5
+
+
+class _IUIAutomationTextRangeArray:
+    get_Length = 3
+    GetElement = 4
+
+
+class _IUIAutomationTextRange:
+    # 11 is GetEnclosingElement, whose out-param is an element pointer - calling
+    # it as GetText(int, BSTR*) wrote through a bogus address and access-
+    # violated. Verified live, not read off a header.
+    GetText = 12
+
+
+#: Action name -> (pattern id, vtable slot).  Named after the UIA patterns
+#: rather than AX's "AXPress" etc., for the same reason attributes are (see the
+#: module docstring).
+_ACTIONS = {
+    "Invoke": (_PatternId.Invoke, _IUIAutomationInvokePattern.Invoke),
+    "Toggle": (_PatternId.Toggle, _IUIAutomationTogglePattern.Toggle),
+    "Expand": (_PatternId.ExpandCollapse, _IUIAutomationExpandCollapsePattern.Expand),
+    "Collapse": (_PatternId.ExpandCollapse, _IUIAutomationExpandCollapsePattern.Collapse),
+}
 
 
 #: UIA_ControlTypeIds -> the short role name used in focus paths.  Chosen to
@@ -236,6 +305,15 @@ class UIElement:
     }
     #: Computed / non-uniform attributes.
     _DERIVED_ATTRS = ("ControlType", "ControlTypeId", "BoundingRectangle", "Parent")
+    #: Pattern-backed attributes, listed only when the element supports the
+    #: pattern - so get_attribute_names() answers "what can I read from *this*
+    #: element", like AXUIElementCopyAttributeNames does on macOS.
+    _PATTERN_ATTRS = {
+        "Value": _PatternId.Value,
+        "IsReadOnly": _PatternId.Value,
+        "ToggleState": _PatternId.Toggle,
+        "SelectedText": _PatternId.Text,
+    }
 
     def __init__(self, ptr):
         self._ptr = ptr
@@ -254,7 +332,27 @@ class UIElement:
     # -- attributes ---------------------------------------------------------
 
     def get_attribute_names(self) -> list[str]:
-        return sorted([*self._STRING_ATTRS, *self._SCALAR_ATTRS, *self._DERIVED_ATTRS])
+        names = [*self._STRING_ATTRS, *self._SCALAR_ATTRS, *self._DERIVED_ATTRS]
+        names += [name for name, pattern_id in self._PATTERN_ATTRS.items()
+                  if self._pattern(pattern_id) is not None]
+        return sorted(names)
+
+    def _pattern(self, pattern_id: int):
+        """The pattern interface for `pattern_id`, or None when unsupported.
+
+        The caller owns the returned pointer and must release it; every use
+        below does so in a finally.
+        """
+        if not self._ptr:
+            return None
+        out = ctypes.c_void_p()
+        hr = _com_call(self._ptr, _IUIAutomationElement.GetCurrentPattern,
+                       ctypes.c_long,
+                       [ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
+                       ctypes.c_int(pattern_id), ctypes.byref(out))
+        if hr != S_OK or not out.value:
+            return None
+        return out
 
     def get_attribute_value(self, name: str) -> Any:
         if not self._ptr:
@@ -284,7 +382,71 @@ class UIElement:
             return (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
         if name == "Parent":
             return self.parent()
+        if name in self._PATTERN_ATTRS:
+            return self._pattern_attribute(name)
         return None
+
+    def _pattern_attribute(self, name: str):
+        pattern = self._pattern(self._PATTERN_ATTRS[name])
+        if pattern is None:
+            return None
+        try:
+            if name == "Value":
+                return _bstr_out(pattern, _IUIAutomationValuePattern.get_CurrentValue)
+            if name == "IsReadOnly":
+                value = _int_out(ctypes.c_int, pattern,
+                                 _IUIAutomationValuePattern.get_CurrentIsReadOnly)
+                return None if value is None else bool(value)
+            if name == "ToggleState":
+                # 0 off, 1 on, 2 indeterminate
+                return _int_out(ctypes.c_int, pattern,
+                                _IUIAutomationTogglePattern.get_CurrentToggleState)
+            if name == "SelectedText":
+                return self._selected_text(pattern)
+        finally:
+            _release(pattern)
+        return None
+
+    @staticmethod
+    def _selected_text(text_pattern) -> str | None:
+        """The selection as text, concatenated over the selected ranges.
+
+        The Windows answer to keyhac-mac configs reading "AXSelectedText":
+        TextPattern hands back an IUIAutomationTextRangeArray, each range
+        yielding its own string. maxLength -1 means "no limit".
+        """
+        ranges = ctypes.c_void_p()
+        hr = _com_call(text_pattern, _IUIAutomationTextPattern.GetSelection,
+                       ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                       ctypes.byref(ranges))
+        if hr != S_OK or not ranges.value:
+            return None
+        try:
+            count = _int_out(ctypes.c_int, ranges, _IUIAutomationTextRangeArray.get_Length)
+            if not count:
+                return ""
+            parts = []
+            for index in range(count):
+                text_range = _element_out(ranges, _IUIAutomationTextRangeArray.GetElement,
+                                          ctypes.c_int(index))
+                if text_range is None:
+                    continue
+                try:
+                    out = ctypes.c_void_p()
+                    hr = _com_call(text_range, _IUIAutomationTextRange.GetText,
+                                   ctypes.c_long,
+                                   [ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
+                                   ctypes.c_int(-1), ctypes.byref(out))
+                    if hr == S_OK and out.value:
+                        try:
+                            parts.append(ctypes.wstring_at(out.value))
+                        finally:
+                            oleaut32.SysFreeString(out)
+                finally:
+                    _release(text_range)
+            return "".join(parts)
+        finally:
+            _release(ranges)
 
     # -- tree ---------------------------------------------------------------
 
@@ -295,6 +457,47 @@ class UIElement:
         ptr = _element_out(walker, _IUIAutomationTreeWalker.GetParentElement,
                            ctypes.c_void_p(self._ptr.value))
         return UIElement(ptr) if ptr else None
+
+    # -- actions ------------------------------------------------------------
+
+    def get_action_names(self) -> list[str]:
+        """Actions this element actually supports (mirrors macOS's
+        AXUIElementCopyActionNames)."""
+        return sorted(name for name, (pattern_id, _slot) in _ACTIONS.items()
+                      if self._pattern(pattern_id) is not None)
+
+    def perform_action(self, name: str) -> bool:
+        """Run one of get_action_names(). Returns False (and logs) when the
+        element does not support it, rather than raising on the key path."""
+        entry = _ACTIONS.get(name)
+        if entry is None:
+            logger.warning(f"Unknown UI Automation action: {name!r} "
+                           f"(available: {', '.join(sorted(_ACTIONS))})")
+            return False
+        pattern_id, slot = entry
+        pattern = self._pattern(pattern_id)
+        if pattern is None:
+            return False
+        try:
+            return _com_call(pattern, slot, ctypes.c_long, []) == S_OK
+        finally:
+            _release(pattern)
+
+    def set_value(self, value: str) -> bool:
+        """Write through the Value pattern (the editable-control setter)."""
+        pattern = self._pattern(_PatternId.Value)
+        if pattern is None:
+            return False
+        try:
+            bstr = oleaut32.SysAllocString(ctypes.c_wchar_p(value))
+            try:
+                return _com_call(pattern, _IUIAutomationValuePattern.SetValue,
+                                 ctypes.c_long, [ctypes.c_void_p],
+                                 ctypes.c_void_p(bstr)) == S_OK
+            finally:
+                oleaut32.SysFreeString(ctypes.c_void_p(bstr))
+        finally:
+            _release(pattern)
 
     def set_focus(self) -> bool:
         if not self._ptr:

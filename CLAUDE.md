@@ -120,6 +120,41 @@ M2 progress:
 - Still open in M2: Windows console session, stdout redirect to console, tray /
   menu-bar extra (M4 dependency for reopening a closed console).
 
+Windows bring-up (second session, all verified live on Windows):
+
+- **PuiKit gaps closed** (PRs #76-#79, all merged): window extensions, the DPI
+  font-cache fix (every widget label rendered at half size on a 200% display —
+  text formats resolved before `open()` survived at the placeholder 1.0 scale),
+  Windows `create_window()` (real secondary HWNDs, one DXGI swap chain each on the
+  shared D3D device — this unblocked the chooser and balloon), and the
+  `system_tray` capability flag.
+- **Cross-platform config diagnostics**: an unknown key that exists on the *other*
+  OS says so; parse errors carry their reason; a warning names modifiers no key can
+  produce on this OS (`Cmd-`/`Fn-` bindings from a macOS config parse fine on
+  Windows but silently never fire).
+- **`keyhac/platform/win/uielement.py`**: UI Automation via raw ctypes (no comtypes),
+  vtable-slot calls like puikit's `_win32_dragdrop`. Element attributes, control-view
+  parent walk, Invoke/Toggle/Expand/Collapse actions, Value/SelectedText patterns.
+  UIA rather than the HWND tree because a UWP/Electron/Chrome window is one HWND
+  holding the whole UI. **Every slot index is pinned by a test cross-checking it
+  against the Win32 answer for the same window** — two wrong slots were caught that
+  way (BoundingRectangle read a UiaRect of doubles over a RECT of LONGs; TextRange
+  `GetText` sat at 12, and slot 11 access-violated).
+- **Windows focus path** is now the full UIA control hierarchy
+  (`/Application(Code)/Window(…)/…/Edit(Message input)`), matching macOS AX
+  granularity. A full walk costs ~33 ms, so the provider caches on a ~0.01 ms Win32
+  probe and walks only on change — it runs inside the hook on every key event.
+- **Portable `Window`/`WindowProvider`** (`platform/base.py` + `win/window.py` +
+  `mac/window.py`): find/enumerate/activate/restore/move. `MoveWindow` and
+  `ActivateWindow` now run on both OSes. Thread contract is explicit: window
+  accessors are UI-thread only (AX SIGTRAPs off-main on macOS; window-title reads
+  are a blocking `SendMessage` on Windows), and only `screen_frames()` /
+  `window_frames()` are safe from a `ThreadedAction` worker.
+- Not yet run on Windows: clipboard provider, `send_text`, tray, balloon, and — most
+  importantly — **key consumption** (every session so far logged only PASSTHRU).
+  `mac/window.py` is written to spec and needs a live macOS pass.
+  See [doc/windows-session.md](doc/windows-session.md).
+
 M3 progress (macOS verified live; Windows pending): clipboard history
 (`core/clipboard_history.py` + `platform/*/clipboard.py` poll-based providers, JSON
 format compatible with keyhac-mac), chooser window (`ui/chooser.py`, on puikit

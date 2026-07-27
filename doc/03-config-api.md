@@ -118,6 +118,7 @@ keyhac-mac's `make api-reference`):
 | `keymap.define_keytable / replace_key / define_modifier / define_alias` | mac (+new) | |
 | `keymap.get_input_context(replay=False)` → `with … as ctx: ctx.send_key("Ctrl-C")` | mac | thread-safe via engine lock |
 | `keymap.focus` → `Focus` | mac (`keymap.focus` was `UIElement`) | now portable object; `.native` for the old power |
+| `keymap.get_active_window() / list_windows() / find_window(app=, title=, class_name=)` → `Window` | win `pyauto.Window` (+mac) | portable window ops; **UI-thread only** (see below) |
 | `keymap.clipboard_history` | both | items/add/get_current/set_current, JSON persistence |
 | `keymap.editor` (path or callable), `keymap.edit_config()`, `keymap.reload_config()` | win | tray/menu uses these too |
 | `ThreadedAction` (starting/run/finished) | mac | the one background-work primitive |
@@ -132,7 +133,65 @@ keyhac-mac's `make api-reference`):
 | `Start/Stop/Toggle/PlaybackRecordedKeys` | mac (win macro semantics merged) | |
 | `keymap.pop_balloon(name, text, timeout)` / `close_balloon` | win | PuiKit balloon window |
 | `getLogger(name)`, `print()` → console | mac | |
-| `Chooser`, `Clipboard`, `UIElement` (mac), `Window` (win) | both | lower-level, platform-flagged |
+| `Chooser`, `Clipboard` | both | lower-level, platform-flagged |
+| `focus.element` → `UIElement` | mac AX / win UI Automation | same shape, per-OS attribute names — see below |
+
+## Windows and elements
+
+Two different things, split deliberately.
+
+**Windows are portable.** `Window` (`keymap.get_active_window()`, `list_windows()`,
+`find_window(...)`) exposes `title`, `app_name`, `pid`, `class_name` (Windows only),
+`get_frame()` / `set_frame(x, y, w=None, h=None)`, `activate()`, `is_minimized()`,
+`restore()`, `minimize()`, `native`. macOS backs it with AX window elements, Windows with
+HWNDs. `find_window` matches exactly like `define_keytable(app=/title=/class_name=)`:
+`fnmatch` wildcards, `|` alternation, case-insensitive, `.exe` optional.
+
+**Elements are not.** `focus.element` is the focused *semantic* element — an AX
+`UIElement` on macOS, a UI Automation one on Windows. Both offer the same shape
+(`get_attribute_names()`, `get_attribute_value(name)`, `get_action_names()`,
+`perform_action(name)`, `parent()`), but each uses **its own OS's vocabulary**, because a
+portable façade would have to invent a third one and misrepresent both:
+
+| | macOS (AX) | Windows (UI Automation) |
+|---|---|---|
+| role | `AXRole` | `ControlType` (`"Edit"`, `"Window"`, `"Button"`, …) |
+| label | `AXTitle` | `Name` |
+| text value | `AXValue` | `Value` |
+| selection | `AXSelectedText` | `SelectedText` |
+| press | `perform_action("AXPress")` | `perform_action("Invoke")` |
+
+So element-level config code branches on `keymap.platform`. An unsupported attribute
+reads `None` and an unknown action logs and returns `False` — a macOS name reaching a
+Windows element never raises on the key path. `get_attribute_names()` lists only what
+*this* element actually supports.
+
+`Focus.native` keeps its per-OS meaning: the same `UIElement` on macOS, an HWND wrapper
+on Windows (the `pyauto.Window` analogue a migrating keyhac-win config expects).
+
+### Thread contract
+
+`Window` accessors and `focus.element` are **UI-thread only**. On macOS they are AX calls,
+and AX into our own process off the main thread crashes with `SIGTRAP`; on Windows,
+reading a window title is a blocking `SendMessage(WM_GETTEXT)` that deadlocks against a
+UI thread which is not pumping. A `ThreadedAction` therefore reads windows in
+`starting()`, computes in `run()`, and writes back in `finished()`. The only geometry
+queries safe to call from `run()` are the provider's `screen_frames()` and
+`window_frames()`, which use CoreGraphics on macOS and pure `GetWindowRect` on Windows.
+`MoveWindow` is built exactly that way.
+
+### Windows focus paths
+
+The Windows focus path is the full UI Automation control hierarchy, the same granularity
+as the macOS AX path:
+
+```
+/Application(Code)/Window(…)/Pane()/…/Document()/Group()/Edit(Message input)
+```
+
+UI Automation rather than the HWND tree, because a UWP/WinUI, Electron or Chrome window is
+one HWND containing the entire UI — walking HWND parents adds no levels precisely in the
+apps people work in. Use `*` to skip depth, as on macOS: `focus_path_pattern="*/Edit()"`.
 
 ## Compatibility matrix
 

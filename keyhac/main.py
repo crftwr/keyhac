@@ -59,10 +59,10 @@ def main() -> int:
     if platform_name == "mac":
         from keyhac.platform.mac.clipboard import MacClipboardProvider
         from keyhac.platform.mac.apps import MacAppControl
+        from keyhac.platform.mac.window import MacWindowProvider
         clipboard_provider = MacClipboardProvider()
         keymap.app_control = MacAppControl()
-        # No macOS WindowProvider yet; window actions fall back to the
-        # AppKit/AX paths they have always used there.
+        keymap.window_provider = MacWindowProvider()
     else:
         from keyhac.platform.win.clipboard import WinClipboardProvider
         from keyhac.platform.win.apps import WinAppControl
