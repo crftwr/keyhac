@@ -1,5 +1,6 @@
 """The menu bar extra / system tray icon."""
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -39,5 +40,13 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
     )
     image = _tray_image()
-    console.backend.set_tray("⌨" if image is None else None, menu,
-                             tooltip="Keyhac", image=image)
+    # ``image`` is a puikit addition still in review (puikit PR #82); until it
+    # ships, degrade to the pre-image behavior (Windows shows the host exe's
+    # embedded icon, macOS the title glyph).
+    set_tray = console.backend.set_tray
+    if "image" not in inspect.signature(set_tray).parameters:
+        image = None
+    if image is None:
+        set_tray("⌨", menu, tooltip="Keyhac")
+    else:
+        set_tray(None, menu, tooltip="Keyhac", image=image)
