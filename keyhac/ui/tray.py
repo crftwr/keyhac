@@ -14,8 +14,9 @@ def _tray_image() -> str | None:
     raster targets rendered by tools/make_icons.py): a color .ico for the
     Windows tray, and for the macOS menu bar extra the template SVG itself
     (NSImage loads SVG natively on macOS 11+) — menu extras must be
-    monochrome, so the face shading rides in the ink opacity and the system
-    recolors it for dark mode / menu highlight."""
+    monochrome, so the keycap is drawn as solid line art (alpha only from
+    anti-aliasing) and the system recolors the ink for dark mode / menu
+    highlight."""
     if sys.platform == "darwin":
         return str(_ASSETS / "MenuExtraTemplate.svg")
     if sys.platform == "win32":

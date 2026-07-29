@@ -123,9 +123,10 @@ M2 progress:
   design. The vector artwork is the hand-maintained source of truth:
   `art/icon.svg` (color) and `keyhac/ui/assets/MenuExtraTemplate.svg` (the
   menu extra itself — NSImage loads the SVG directly on macOS 11+; AppKit
-  template, so the face shading rides in ink *opacity*, because template
-  rendering keeps only alpha — the color icon.svg would show as a solid
-  silhouette). `tools/make_icons.py` renders `art/icon.svg` through
+  template, so the keycap is solid line art with alpha only from
+  anti-aliasing — translucent shading would let the menu bar bleed
+  through, and the color icon.svg would show as a solid silhouette).
+  `tools/make_icons.py` renders `art/icon.svg` through
   `tools/svgrender.py` — a pure-stdlib SVG-subset rasterizer (documented
   subset, fails loudly outside it) that runs identically on macOS and
   Windows, no NSImage/Direct2D/pip deps — into `keyhac/ui/assets/keyhac.ico`
