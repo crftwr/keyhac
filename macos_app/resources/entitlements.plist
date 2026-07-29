@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Hardened Runtime entitlements for the embedded CPython interpreter.
+
+      Keyhac ships its own Python.framework plus C-extension modules (.so) and
+      vendored dylibs that we re-sign ourselves rather than being part of the
+      main executable's signature. Under the Hardened Runtime (required for
+      notarization) those need explicit relief:
+
+      - disable-library-validation: allow the interpreter to dlopen() the
+        bundled .so / .dylib files (they are signed by us, not embedded in the
+        main binary's signature). Without this, importing any C extension aborts.
+      - allow-unsigned-executable-memory / allow-jit: ctypes/libffi allocate
+        executable trampolines for callbacks — Keyhac's platform layer uses
+        ctypes (Carbon layout detection) and PyObjC's runtime bridges heavily,
+        so these are required, not optional.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>

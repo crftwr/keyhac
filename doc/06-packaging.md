@@ -16,6 +16,43 @@ both predecessors already use the same PyConfig API).
 Dependencies (runtime): `puikit`, `pyobjc-framework-{Cocoa,Quartz,ApplicationServices}`
 (mac), `pillow` (via puikit). Windows: no binary deps beyond CPython + puikit.
 
+## Status: IMPLEMENTED — as a port of XeFM's pipeline, not the sketches below
+
+Both launchers and bundle builds exist, ported from XeFM (the author's shipped
+PuiKit app, whose pipeline post-dates and supersedes the keyhac-win/keyhac-mac
+schemes sketched in the sections below; those remain as historical reference):
+
+- `windows_app/`: `src/launcher.c` (C, GUI subsystem, static CRT, delay-loaded
+  `python3XX.dll`, PEP 587 explicit search paths), `resources/Keyhac.rc` +
+  `Keyhac.manifest` (icon, version info, Per-Monitor-V2 DPI), `build.ps1`
+  (embeddable CPython download → bundle assembly → deps collection → notices →
+  compileall → cl.exe), `install_zip.ps1`. Layout: `Keyhac.exe` +
+  `runtime\` (CPython) + `Lib\site-packages\` + `app\{keyhac,puikit}`.
+  **Built and smoke-tested on Windows** (embedded runtime imports keyhac +
+  puikit + numpy; full interactive run pending).
+- `macos_app/`: `src/main.m` + `KeyhacAppDelegate.m` (NSApplication +
+  embedded Python.framework), `build.sh` (framework embed, delocate,
+  signing/notarization via gitignored `signing.env`), `create_dmg.sh`,
+  `resources/{Info.plist.template,entitlements.plist,sitecustomize.py}`.
+  `LSUIElement=YES`; bundle id defaults to `crftwr.Keyhac2`, overridable with
+  `BUNDLE_ID=crftwr.Keyhac` (open decision 07-roadmap #4 — reusing the 1.x id
+  carries the Accessibility permission over). **Written to spec; needs a live
+  macOS pass.**
+- Shared: `tools/collect_dependencies.py` (runtime closure of pyproject.toml's
+  `[project]` dependencies; markers gate pyobjc off Windows) and
+  `tools/generate_third_party_notices.py` (license aggregation, fails on a
+  bundled dist without discoverable license text).
+- Makefile: `windows-app` / `windows-zip` / `macos-app` / `macos-dmg`,
+  `install-*` / `uninstall-*`, `clean-*`, and `release-windows-zip` /
+  `release-macos-dmg` wired into the tag → release-github → release-*
+  pipeline.
+
+Differences from the sketches below, all inherited deliberately from XeFM:
+the Windows stdlib comes from the python.org *embeddable* package under
+`runtime\` (not a hand-trimmed `modules/Lib`); portable mode and the
+`extension/` drop-in dir are not implemented yet; `_pth` is deleted and paths
+come from PyConfig alone.
+
 ## Windows layout (inherits keyhac-win's proven scheme)
 
 ```

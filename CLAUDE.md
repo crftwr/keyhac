@@ -183,3 +183,13 @@ With `--config PATH`, clipboard.json lives beside the config (sandbox isolation)
 Remaining in M3: Windows session (clipboard provider + WinAppControl + chooser),
 InputText/ActivateWindow/MoveWindow, UIElement AX port.
 See [doc/07-roadmap.md](doc/07-roadmap.md).
+
+Packaging (M5, pulled forward): release pipeline + both native launchers exist,
+ported from XeFM's Makefile/bundle system (the standard to follow for build
+infra). `make tag` / `release-github` / `release-whl` / `release-status` +
+`tools/{release_preflight,bump_version,_version_source}.py`;
+`windows_app/` (launcher.c + build.ps1, **built and import-smoke-tested on
+Windows**, interactive run pending) and `macos_app/` (main.m + AppDelegate +
+build.sh + create_dmg.sh, written to spec, needs a live macOS pass). Bundle id
+defaults to `crftwr.Keyhac2` (`BUNDLE_ID=` overrides; roadmap open decision #4).
+Details in [doc/06-packaging.md](doc/06-packaging.md).

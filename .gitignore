@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 .sandbox/
 Makefile.local
+windows_app/.cache/
+macos_app/signing.env
 *.egg-info/
 dist/
 build/

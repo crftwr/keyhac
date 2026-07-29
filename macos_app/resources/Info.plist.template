@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- {{BUNDLE_ID}} is substituted by build.sh (BUNDLE_ID env var; default
+         crftwr.Keyhac2). Open decision doc/07-roadmap.md #4: switching this to
+         crftwr.Keyhac would carry the Accessibility permission over from
+         keyhac-mac 1.x, at the cost of colliding with an installed 1.x. -->
+    <key>CFBundleIdentifier</key>
+    <string>{{BUNDLE_ID}}</string>
+
+    <key>CFBundleName</key>
+    <string>Keyhac</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>Keyhac</string>
+
+    <key>CFBundleExecutable</key>
+    <string>Keyhac</string>
+
+    <key>CFBundleIconFile</key>
+    <string>Keyhac.icns</string>
+
+    <key>CFBundleVersion</key>
+    <string>{{VERSION}}</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>{{VERSION}}</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <!-- macOS 11+: NSImage loads the menu-extra template SVG directly, and
+         keyhac-mac's supported floor is the same. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+
+    <!-- Agent app: menu-bar extra + tool windows, no Dock icon, no app menu.
+         Matches keyhac-mac 1.x (LSUIElement = YES) and puikit's
+         activation_policy="accessory". -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © craftware</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>
