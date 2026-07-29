@@ -110,8 +110,11 @@ M2 progress:
   `../puikit` (**PR #76**, awaiting review): `WindowStyle`
   (frameless/topmost/activates/resizable/tool), `MacOSBackend activation_policy=
   "accessory"` (agent app), `Backend.call_later`. All additive per PuiKit's policy;
-  1540 puikit tests green; validated live on macOS. keyhac2's Makefile installs
-  `../puikit` editable until this ships in a release.
+  1540 puikit tests green; validated live on macOS. (Shipped in puikit 1.0.4;
+  keyhac2 now depends on `puikit>=1.0.6` from PyPI. The Makefile installs a
+  local checkout editable only when `PUIKIT_DIR` is set — via gitignored
+  `Makefile.local` or the environment — and `make install-puikit` switches an
+  existing venv between the two sources.)
 - `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
   last-key/focus-path inspector). The console backend runs the process event loop;
   the hook shares it (tap source on the same run loop / GetMessage pump). Verified

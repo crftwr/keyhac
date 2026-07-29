@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .sandbox/
+Makefile.local
 *.egg-info/
 dist/
 build/

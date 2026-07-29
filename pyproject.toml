@@ -11,10 +11,11 @@ license = { text = "MIT" }
 authors = [{ name = "craftware" }]
 dynamic = ["version"]
 dependencies = [
-    # Until the window-management extensions ship in a PuiKit release, dev
-    # installs use the sibling checkout: the Makefile venv target runs
-    # `pip install -e ../puikit` (branch keyhac-window-extensions / PR #76).
-    "puikit>=1.0.3",
+    # 1.0.6 covers everything keyhac uses except set_tray(image=) (puikit
+    # PR #82, merged but unreleased) — ui/tray.py feature-detects that and
+    # degrades to the default icon. To develop against a local checkout,
+    # set PUIKIT_DIR (see Makefile).
+    "puikit>=1.0.6",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
