@@ -803,15 +803,25 @@ fi
 log_success "Info.plist generated and validated"
 
 # ============================================================================
-# Step 6: Code Signing (optional; required for notarized distribution)
+# Step 6: Code Signing (always; identity optional)
 # ============================================================================
 #
-# Signing is skipped unless CODESIGN_IDENTITY is set. Signing the .app alone is
-# not enough for Gatekeeper / notarization: every Mach-O binary inside it must
-# be signed with a secure timestamp and the Hardened Runtime, from the inside
-# out (nested libraries first, the .app last). The embedded CPython interpreter
-# loads C-extension modules (.so) and vendored dylibs at runtime, so it also
-# needs the entitlements in resources/entitlements.plist.
+# With CODESIGN_IDENTITY set, this is the distributable signing pass: every
+# Mach-O binary inside the bundle signed with a secure timestamp and the
+# Hardened Runtime, from the inside out (nested libraries first, the .app
+# last) - signing the .app alone is not enough for Gatekeeper /
+# notarization. The embedded CPython interpreter loads C-extension modules
+# (.so) and vendored dylibs at runtime, so it also needs the entitlements in
+# resources/entitlements.plist.
+#
+# Without an identity the same sweep runs with an ad-hoc signature
+# (codesign -s -). Skipping is not an option: the embed steps above rewrite
+# install names in the copied binaries (install_name_tool), which
+# invalidates their original signatures, and arm64 dyld refuses to load a
+# binary whose signature no longer matches its content - the app aborts at
+# launch with "code signature invalid". Ad-hoc carries no identity, secure
+# timestamp, Hardened Runtime, or entitlements: it makes the build run on
+# this machine, not distributable.
 
 if [ -n "${CODESIGN_IDENTITY}" ]; then
     log_info "Step 6: Code signing bundle (inside-out, Hardened Runtime)..."
@@ -827,6 +837,10 @@ if [ -n "${CODESIGN_IDENTITY}" ]; then
     # interpreter entitlements.
     SIGN=(codesign --force --timestamp --options runtime \
           --entitlements "${ENTITLEMENTS_FILE}" --sign "${CODESIGN_IDENTITY}")
+else
+    log_info "Step 6: Ad-hoc code signing (CODESIGN_IDENTITY not set; dev build)..."
+    SIGN=(codesign --force --sign -)
+fi
 
     # The Python-embedding step above strips the framework's Resources/ dir,
     # which removes the Info.plist codesign needs to seal Python.framework as a
@@ -890,18 +904,17 @@ PLIST
     "${SIGN[@]}" "${APP_BUNDLE}" \
         || { log_error "Failed to sign ${APP_BUNDLE}"; exit 1; }
 
-    # Verify the whole static code tree strictly (as Gatekeeper would).
-    log_info "  Verifying signature..."
-    if codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"; then
-        log_success "Code signing completed and verified"
-    else
-        log_error "Code signing verification failed"
-        exit 1
-    fi
+# Verify the whole static code tree strictly (as Gatekeeper would).
+log_info "  Verifying signature..."
+if codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"; then
+    log_success "Code signing completed and verified"
+else
+    log_error "Code signing verification failed"
+    exit 1
+fi
+if [ -n "${CODESIGN_IDENTITY}" ]; then
     log_info "  (After notarization, confirm Gatekeeper acceptance with:"
     log_info "     spctl -a -vvv --type exec \"${APP_BUNDLE}\")"
-else
-    log_info "Step 6: Skipping code signing (CODESIGN_IDENTITY not set)"
 fi
 
 # ============================================================================

@@ -1,0 +1,31 @@
+<!-- The macOS menu bar extra: the keycap from keyhac-win's icon.svg as an
+     AppKit template image. Maintained by hand, in step with icon.svg:
+     the same keycap drawn as line art - the outline plus the key-top
+     edges as lines, all faces open (the menu bar shows through), per
+     design review: solid-filled sides read wrong for the keycap's
+     perspective. The outline is 44 units (1.7pt) and the edges 28
+     (1.1pt) - heavier strokes fuse the tapering side faces shut at
+     menu bar size and the icon reads as a blob. Geometry is icon.svg's
+     keycap with y squashed 0.87 about the ink center (the full-height
+     version stood too tall next to the neighboring extras): ink
+     19.4x13.6pt in the 20.4x18pt canvas, horizontally and vertically
+     centered, wider than tall because the keycap is - menu extra
+     images need not be square. Ink is binary; alpha appears only from
+     anti-aliasing, and the system recolors it for dark mode / menu
+     highlight. Not loaded at runtime: tools/make_icons.py rasterizes
+     it (via tools/svgrender.py - keep this file inside that documented
+     SVG subset) into assets/MenuExtraTemplate.png + @2x. It used to
+     ship as the runtime image itself, but macOS caches a system-side
+     rasterization of a vector status-item image keyed by the file's
+     identity, so an in-place edit could leave menu bars compositing a
+     stale raster of old artwork. Bitmaps don't go through that
+     pipeline. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20.4" height="18"
+     viewBox="0 0 20.4 18">
+  <g transform="translate(-3.8865 -10.0748) scale(0.039293)">
+    <path d="M240 334.9 L470 334.9 L544 379.8 L583 635.6 L134 636.0 L172.5 380.7 Z" fill="none" stroke="#000"
+          stroke-width="44" stroke-linejoin="round"/>
+    <path d="M240 334.9 L220 508.9 M220 508.9 L490 508.9 M470 334.9 L490 508.9 M220 508.9 L134 636.0 M490 508.9 L583 635.6" fill="none" stroke="#000"
+          stroke-width="28"/>
+  </g>
+</svg>

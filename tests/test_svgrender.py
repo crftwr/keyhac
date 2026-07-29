@@ -105,13 +105,20 @@ def test_icon_svg_renders_all_four_faces_and_outline():
 
 
 def test_menu_extra_template_stays_in_the_subset():
-    # The template ships as vector for NSImage; the icon build lints it with
-    # this same render call, and its face shading must ride in alpha.
-    pixels = svgrender.render_file(
-        _ROOT / "keyhac" / "ui" / "assets" / "MenuExtraTemplate.svg", 36)
-    alphas = {px[3] for row in pixels for px in row}
-    assert 255 in alphas                      # outline ink
-    assert any(0 < a < 255 for a in alphas)   # face shading
+    # The icon build rasterizes the template with this same render call.
+    # Line-art template: outline and key-top edge lines are solid ink and
+    # every face stays open (the menu bar shows through).
+    pixels = svgrender.render_file(_ROOT / "art" / "MenuExtraTemplate.svg",
+                                   42, 36)
+
+    def alpha(x_pt, y_pt):  # canvas pt -> 2x pixel
+        return pixels[round(y_pt * 2)][round(x_pt * 2)][3]
+
+    # Art coords map to canvas pt via x*0.039293 - 3.8865 / y*0.039293 - 10.0748.
+    assert alpha(10.2, 3.08) == 255   # top outline (y=334.9)
+    assert alpha(10.2, 9.93) == 255   # key-top bottom edge line (y=508.9)
+    assert alpha(10.2, 6.5) == 0      # top face open
+    assert alpha(10.2, 12.5) == 0     # bottom face open
 
 
 def test_ico_container_layout(tmp_path):

@@ -7,10 +7,12 @@ same on macOS and Windows with no image tooling installed:
 
 - ``art/icon.svg`` — the color keycap (keyhac-win's app-icon design).
   Rendered here into every raster target.
-- ``keyhac/ui/assets/MenuExtraTemplate.svg`` — the macOS menu bar extra.
-  *Not* rendered: NSImage loads it directly at runtime (macOS 11+). This
-  script only lints it against the svgrender subset so the two files keep
-  the same dialect.
+- ``art/MenuExtraTemplate.svg`` — the macOS menu bar extra (line-art
+  keycap, template alpha). Rendered here into the 1x/2x PNG pair; it is
+  deliberately *not* loaded as SVG at runtime — macOS caches a
+  system-side rasterization of vector status-item images by file
+  identity, and an in-place edit of the SVG left menu bars compositing
+  the stale raster of the old artwork (see the comment in the SVG).
 
 Raster targets (all checked in; re-run only when the artwork changes):
 
@@ -20,6 +22,10 @@ Raster targets (all checked in; re-run only when the artwork changes):
   PNG entries (Vista+) for Explorer's large views.
 - ``keyhac/ui/assets/keyhac.icns`` — macOS app icon for the bundled app
   (doc/06-packaging.md), PNG entries at every standard slot up to 1024.
+- ``keyhac/ui/assets/MenuExtraTemplate.png`` + ``@2x`` — the menu bar
+  extra at 21x18 pt (the 20.4x18 canvas centered at exact 1x/2x scale;
+  puikit's tray loader pairs the @2x sibling and applies the AppKit
+  "…Template" naming convention).
 
 Adding a target (store banner, README art, …) is one line in ``build()``:
 render the source SVG at the needed size and hand it to an encoder.
@@ -168,6 +174,8 @@ def _asset_equal(path, old, new):
     if old == new:
         return True
     try:
+        if path.suffix == ".png":
+            return _blob_equal(old, new)
         split = _ico_entries if path.suffix == ".ico" else _icns_entries
         olds, news = split(old), split(new)
         return len(olds) == len(news) and all(
@@ -194,11 +202,18 @@ def build():
     sizes = sorted({size for size, _t in _ICNS_SLOTS})
     icns = icns_bytes({s: render(s) for s in sizes})
 
-    # The menu extra template ships as vector; just keep it inside the
-    # svgrender dialect so both sources stay editable the same way.
-    svgrender.render_file(ASSETS / "MenuExtraTemplate.svg", 36)
+    # macOS menu bar extra: the 20.4x18 canvas fits a 21x18 grid at exactly
+    # scale 1 (42x36 at exactly 2), centered with the leftover 0.3 pt margin.
+    template = (ART / "MenuExtraTemplate.svg").read_text(encoding="utf-8")
 
-    return {ASSETS / "keyhac.ico": ico, ASSETS / "keyhac.icns": icns}
+    return {
+        ASSETS / "keyhac.ico": ico,
+        ASSETS / "keyhac.icns": icns,
+        ASSETS / "MenuExtraTemplate.png":
+            png_bytes(svgrender.render(template, 21, 18)),
+        ASSETS / "MenuExtraTemplate@2x.png":
+            png_bytes(svgrender.render(template, 42, 36)),
+    }
 
 
 def main(argv=None):

@@ -114,7 +114,11 @@ M2 progress:
   keyhac2 now depends on `puikit>=1.0.6` from PyPI. The Makefile installs a
   local checkout editable only when `PUIKIT_DIR` is set — via gitignored
   `Makefile.local` or the environment — and `make install-puikit` switches an
-  existing venv between the two sources.)
+  existing venv between the two sources. **Caveat**: `set_tray(image=…)`
+  (PR #82) merged after the 1.0.6 release, so until 1.0.7 ships the venv
+  needs the editable checkout or the menu bar extra silently degrades to the
+  tiny "⌨" text glyph — this happened once when a PyPI install replaced the
+  editable one; `Makefile.local` with `PUIKIT_DIR = ../puikit` now pins it.)
 - `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
   last-key/focus-path inspector). The console backend runs the process event loop;
   the hook shares it (tap source on the same run loop / GetMessage pump). Verified
@@ -123,20 +127,25 @@ M2 progress:
 - Still open in M2: Windows console session, stdout redirect to console.
 - Tray / menu-bar extra (`keyhac/ui/tray.py`): menu (console / reload / hook
   toggle / quit) plus the keycap icon from issue #8 — the keyhac-win app-icon
-  design. The vector artwork is the hand-maintained source of truth:
-  `art/icon.svg` (color) and `keyhac/ui/assets/MenuExtraTemplate.svg` (the
-  menu extra itself — NSImage loads the SVG directly on macOS 11+; AppKit
-  template, so the keycap is solid line art with alpha only from
-  anti-aliasing — translucent shading would let the menu bar bleed
-  through, and the color icon.svg would show as a solid silhouette).
-  `tools/make_icons.py` renders `art/icon.svg` through
-  `tools/svgrender.py` — a pure-stdlib SVG-subset rasterizer (documented
-  subset, fails loudly outside it) that runs identically on macOS and
-  Windows, no NSImage/Direct2D/pip deps — into `keyhac/ui/assets/keyhac.ico`
-  (Windows tray + app icon, 16-256 px) and `keyhac.icns` (macOS app icon up
-  to 1024 px); store banners etc. are one more line in its `main()`. Needs
-  puikit's `set_tray(image=…)` (PR #82). macOS NSStatusItem state verified
-  live; Windows tray icon not yet run.
+  design. The vector artwork is the hand-maintained source of truth, both in
+  `art/`: `icon.svg` (color) and `MenuExtraTemplate.svg` (the menu extra — an
+  AppKit-template glyph: the keycap as line art, outline plus key-top edge
+  lines, faces open, y squashed 0.87, strokes kept light (1.7pt/1.1pt)
+  because heavier ones fuse the tapering side faces shut at menu-bar size;
+  shaded faces are no option either — template rendering keeps only alpha,
+  so they let the menu bar bleed through). `tools/make_icons.py`
+  renders both through `tools/svgrender.py` — a pure-stdlib SVG-subset
+  rasterizer (documented subset, fails loudly outside it) that runs
+  identically on macOS and Windows, no NSImage/Direct2D/pip deps — into
+  `keyhac/ui/assets/keyhac.ico` (Windows tray + app icon, 16-256 px),
+  `keyhac.icns` (macOS app icon up to 1024 px), and
+  `MenuExtraTemplate.png` + `@2x` (the menu extra; deliberately a bitmap
+  pair, not a runtime-loaded SVG — macOS caches a system-side
+  rasterization of vector status-item images by file identity, so
+  in-place SVG edits could leave menu bars compositing stale artwork);
+  store banners etc. are one more line in its `main()`. Uses puikit's
+  `set_tray(image=…)` (PR #82, merged). macOS NSStatusItem verified live
+  incl. menu-bar screenshots; Windows tray icon not yet run.
 
 Windows bring-up (second session, all verified live on Windows):
 
