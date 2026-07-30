@@ -438,9 +438,20 @@ if [ "$USE_FRAMEWORK" = true ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
-    
+
+    # Remove the static-linking config dir. It holds link-time artifacts only
+    # (python.o, Makefile, makesetup) that are never loaded at runtime, and the
+    # unsigned python.o object file fails notarization ("The binary is not
+    # signed").
+    for config_dir in "${PYTHON_DEST}/lib/python${PYTHON_VERSION}"/config-*; do
+        if [ -d "${config_dir}" ]; then
+            rm -rf "${config_dir}"
+            log_info "  Removed lib/python${PYTHON_VERSION}/$(basename "${config_dir}")/"
+        fi
+    done
+
     log_success "Unnecessary files removed"
-    
+
     # Pre-compile Python standard library
     log_info "Pre-compiling Python standard library..."
     STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
@@ -454,7 +465,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
             # -f: force recompilation even if .pyc files exist
             if "${BUNDLE_PYTHON}" -m compileall -q -f "${STDLIB_PATH}"; then
                 log_info "  Compiled Python standard library"
-                
+
                 # Count compiled files for verification
                 PYC_COUNT=$(find "${STDLIB_PATH}" -name "*.pyc" | wc -l | tr -d ' ')
                 PY_COUNT=$(find "${STDLIB_PATH}" -name "*.py" | wc -l | tr -d ' ')
@@ -468,7 +479,7 @@ if [ "$USE_FRAMEWORK" = true ]; then
     else
         log_warning "Standard library path not found: ${STDLIB_PATH}"
     fi
-    
+
     # Update install names to use embedded framework
     log_info "Updating install names to use embedded framework..."
     install_name_tool -change \
@@ -567,7 +578,16 @@ else
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
-    
+
+    # Remove the static-linking config dir (link-time artifacts only; its
+    # unsigned python.o fails notarization).
+    for config_dir in "${PYTHON_DEST}/lib/python${PYTHON_VERSION}"/config-*; do
+        if [ -d "${config_dir}" ]; then
+            rm -rf "${config_dir}"
+            log_info "  Removed lib/python${PYTHON_VERSION}/$(basename "${config_dir}")/"
+        fi
+    done
+
     log_success "Unnecessary files removed"
     
     # Pre-compile Python standard library
@@ -873,6 +893,18 @@ PLIST
         "${SIGN[@]}" "${lib}" || { log_error "Failed to sign ${lib}"; exit 1; }
     done < <(find "${APP_BUNDLE}" -type f \( -name "*.so" -o -name "*.dylib" \) -print0)
 
+    # 1b. delocate also vendors extensionless framework binaries (e.g. Tcl/Tk
+    #     out of python.org's Tcl.framework/Tk.framework) into .dylibs/, and its
+    #     install_name_tool rewrite invalidates their upstream signatures —
+    #     notarization rejects them ("The signature of the binary is invalid").
+    #     Sweep .dylibs/ again by content for anything the extension match missed.
+    log_info "  Signing extensionless vendored libraries in .dylibs/..."
+    while IFS= read -r -d '' lib; do
+        case "${lib}" in *.so|*.dylib) continue ;; esac
+        file "${lib}" | grep -q "Mach-O" || continue
+        "${SIGN[@]}" "${lib}" || { log_error "Failed to sign ${lib}"; exit 1; }
+    done < <(find "${APP_BUNDLE}" -path "*/.dylibs/*" -type f -print0)
+
     # 2. Standalone Mach-O executables inside the framework's bin/ (e.g.
     #    pythonX.Y). Skip symlinks and non-Mach-O helper scripts.
     log_info "  Signing embedded interpreter executables..."
@@ -943,16 +975,28 @@ if [ -n "${NOTARY_PROFILE}" ]; then
     /usr/bin/ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARIZE_ZIP}"
 
     log_info "  Submitting to Apple notary service (this can take a few minutes)..."
-    if xcrun notarytool submit "${NOTARIZE_ZIP}" \
-            --keychain-profile "${NOTARY_PROFILE}" --wait; then
+    # notarytool submit --wait exits 0 even when the verdict is Invalid, so the
+    # exit code alone is not a success signal — parse the reported status. tee
+    # keeps the live progress output visible while capturing it.
+    SUBMIT_OUTPUT=$(xcrun notarytool submit "${NOTARIZE_ZIP}" \
+            --keychain-profile "${NOTARY_PROFILE}" --wait 2>&1 | tee /dev/stderr) || true
+    SUBMISSION_ID=$(echo "${SUBMIT_OUTPUT}" | sed -n 's/^[[:space:]]*id: //p' | head -1)
+    if echo "${SUBMIT_OUTPUT}" | grep -q "status: Accepted"; then
         log_info "  Stapling notarization ticket to the app..."
         xcrun stapler staple "${APP_BUNDLE}"
         xcrun stapler validate "${APP_BUNDLE}"
         rm -f "${NOTARIZE_ZIP}"
         log_success "Notarization completed and stapled"
     else
-        log_error "Notarization failed. Inspect the full log with:"
-        log_error "  xcrun notarytool log <submission-id> --keychain-profile \"${NOTARY_PROFILE}\""
+        log_error "Notarization was not accepted."
+        if [ -n "${SUBMISSION_ID}" ]; then
+            log_error "Notary log for submission ${SUBMISSION_ID}:"
+            xcrun notarytool log "${SUBMISSION_ID}" \
+                --keychain-profile "${NOTARY_PROFILE}" >&2 || true
+        else
+            log_error "Could not determine the submission id; list recent ones with:"
+            log_error "  xcrun notarytool history --keychain-profile \"${NOTARY_PROFILE}\""
+        fi
         rm -f "${NOTARIZE_ZIP}"
         exit 1
     fi

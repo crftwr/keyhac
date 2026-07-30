@@ -235,14 +235,25 @@ main() {
 
         if [ -n "${NOTARY_PROFILE}" ]; then
             log_info "Notarizing DMG (this can take a few minutes)..."
-            if xcrun notarytool submit "${DMG_PATH}" \
-                    --keychain-profile "${NOTARY_PROFILE}" --wait; then
+            # notarytool submit --wait exits 0 even when the verdict is
+            # Invalid — parse the reported status instead of the exit code.
+            SUBMIT_OUTPUT=$(xcrun notarytool submit "${DMG_PATH}" \
+                    --keychain-profile "${NOTARY_PROFILE}" --wait 2>&1 | tee /dev/stderr) || true
+            SUBMISSION_ID=$(echo "${SUBMIT_OUTPUT}" | sed -n 's/^[[:space:]]*id: //p' | head -1)
+            if echo "${SUBMIT_OUTPUT}" | grep -q "status: Accepted"; then
                 xcrun stapler staple "${DMG_PATH}"
                 xcrun stapler validate "${DMG_PATH}"
                 log_info "DMG notarized and stapled"
             else
-                log_error "DMG notarization failed. Inspect the log with:"
-                log_error "  xcrun notarytool log <submission-id> --keychain-profile \"${NOTARY_PROFILE}\""
+                log_error "DMG notarization was not accepted."
+                if [ -n "${SUBMISSION_ID}" ]; then
+                    log_error "Notary log for submission ${SUBMISSION_ID}:"
+                    xcrun notarytool log "${SUBMISSION_ID}" \
+                        --keychain-profile "${NOTARY_PROFILE}" >&2 || true
+                else
+                    log_error "Could not determine the submission id; list recent ones with:"
+                    log_error "  xcrun notarytool history --keychain-profile \"${NOTARY_PROFILE}\""
+                fi
                 exit 1
             fi
         else
