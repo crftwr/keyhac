@@ -14,3 +14,13 @@ def create_platform():
     from keyhac.platform.mac.focus import MacFocusProvider
     from keyhac.platform.mac.loop import MacEventLoop
     return MacInputHook(), MacFocusProvider(), MacEventLoop()
+
+
+def acquire_instance_lock():
+    from keyhac.platform.mac.instance import acquire_instance_lock
+    return acquire_instance_lock()
+
+
+def notify_already_running():
+    from keyhac.platform.mac.instance import notify_already_running
+    notify_already_running()

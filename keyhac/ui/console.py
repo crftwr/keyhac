@@ -67,7 +67,7 @@ class Frame(LayoutView):
 class ConsoleWindow:
     """Owns the PuiKit backend/panel; main() runs its event loop."""
 
-    def __init__(self, keymap, hook):
+    def __init__(self, keymap, hook, settings=None):
         self._keymap = keymap
         self._hook = hook
         self._console = log.Console.get_instance()
@@ -75,6 +75,21 @@ class ConsoleWindow:
         self._clipboard_provider = None
         self._clipboard_history = None
         self._last_clipboard_flush = time.monotonic()
+        # App settings (keyhac.core.settings): the window's shown/hidden state
+        # is restored from "console_visible" and written back whenever it
+        # changes (close button hides, tray "Open Console" re-shows) — the
+        # keyhac-win [CONSOLE] visible behavior. None (tests) = always show.
+        self._settings = settings
+        self._last_visible = None
+
+        # start_hidden / is_main_window_visible shipped together in puikit
+        # (PR #84); on an older puikit the console simply always starts
+        # visible and nothing is persisted.
+        from puikit.backend import Backend
+        self._visibility_api = hasattr(Backend, "is_main_window_visible")
+        visible = True
+        if settings is not None and self._visibility_api:
+            visible = bool(settings.get("console_visible", True))
 
         self.backend = create_backend(
             "gui",
@@ -90,6 +105,7 @@ class ConsoleWindow:
             style=WindowStyle(tool=True),
             activation_policy="accessory",       # agent app: no Dock icon (macOS)
             main_window_close="hide",            # tray-app lifecycle: close hides
+            **({"start_hidden": not visible} if self._visibility_api else {}),
         )
 
         initial_level_index = next(
@@ -225,6 +241,15 @@ class ConsoleWindow:
                     and now - self._last_clipboard_flush >= 5.0):
                 self._last_clipboard_flush = now
                 self._clipboard_history.flush()
+            # Persist visibility changes as they happen (polled rather than
+            # event-driven: PuiKit has no visibility-change callback, and the
+            # window is also hidden/shown from outside this class — the close
+            # button, the tray menu). Settings.set() no-ops when unchanged.
+            if self._settings is not None and self._visibility_api:
+                visible = self.backend.is_main_window_visible()
+                if visible != self._last_visible:
+                    self._last_visible = visible
+                    self._settings.set("console_visible", visible)
 
         if changed:
             self.panel.render()

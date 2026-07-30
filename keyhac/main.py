@@ -32,28 +32,40 @@ def main() -> int:
 
     log.set_debug(args.debug)
 
+    if sys.platform == "darwin":
+        platform_name = "mac"
+        import keyhac.platform.mac as platform_module
+    elif sys.platform == "win32":
+        platform_name = "windows"
+        import keyhac.platform.win as platform_module
+    else:
+        logger.error(f"Unsupported platform: {sys.platform}")
+        return 1
+
+    # Single instance: two Keyhacs would both install low-level hooks and
+    # fight over every key. Checked before the std-stream redirect so the
+    # error still lands on stderr (this process's console window never
+    # opens). The lock object must stay referenced until the process ends.
+    instance_lock = platform_module.acquire_instance_lock()
+    if instance_lock is None:
+        logger.error("Keyhac is already running.")
+        if not args.no_ui:
+            # Feedback for a double-click launch: surface the running
+            # instance (its console may be hidden to the tray).
+            platform_module.notify_already_running()
+        return 1
+
     if not args.no_ui:
         # print() from user configs must reach the console window; do this
         # before the first configure() so config-load output is captured too.
         log.redirect_std_streams()
 
-    if sys.platform == "darwin":
-        platform_name = "mac"
-        import keyhac.platform.mac as platform_module
-
+    if platform_name == "mac":
         if not platform_module.check_accessibility(prompt=True):
             logger.error(
                 "Accessibility permission is required. Grant it in "
                 "System Settings > Privacy & Security > Accessibility, then restart Keyhac.")
             return 1
-
-    elif sys.platform == "win32":
-        platform_name = "windows"
-        import keyhac.platform.win as platform_module
-
-    else:
-        logger.error(f"Unsupported platform: {sys.platform}")
-        return 1
 
     hook, focus_provider, native_loop = platform_module.create_platform()
 
@@ -75,12 +87,12 @@ def main() -> int:
         clipboard_provider = WinClipboardProvider()
         keymap.app_control = WinAppControl()
         keymap.window_provider = WinWindowProvider()
-    # With an explicit --config, keep the history beside it (sandbox testing
-    # must not touch the real ~/.keyhac/clipboard.json).
+    # With an explicit --config, keep the app-state files beside it (sandbox
+    # testing must not touch the real ~/.keyhac/clipboard.json etc.).
     import os
-    history_path = (os.path.join(os.path.dirname(os.path.abspath(args.config)),
-                                 "clipboard.json")
-                    if args.config else None)
+    state_dir = (os.path.dirname(os.path.abspath(args.config))
+                 if args.config else None)
+    history_path = os.path.join(state_dir, "clipboard.json") if state_dir else None
     keymap._clipboard_history = ClipboardHistory(clipboard_provider, history_path)
 
     keymap.configure()
@@ -88,14 +100,19 @@ def main() -> int:
     if args.no_ui:
         return _run_headless(keymap, hook, native_loop, platform_name,
                              clipboard_provider)
-    return _run_with_console(keymap, hook, platform_name, clipboard_provider)
+
+    from keyhac.core.settings import Settings
+    settings_path = os.path.join(state_dir, "settings.json") if state_dir else None
+    return _run_with_console(keymap, hook, platform_name, clipboard_provider,
+                             Settings(settings_path))
 
 
-def _run_with_console(keymap, hook, platform_name: str, clipboard_provider) -> int:
+def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
+                      settings) -> int:
     from keyhac.ui.console import ConsoleWindow
     from keyhac.ui import runtime
 
-    console = ConsoleWindow(keymap, hook)
+    console = ConsoleWindow(keymap, hook, settings=settings)
     console.open()
     runtime.backend = console.backend
     console.attach_clipboard(clipboard_provider, keymap.clipboard_history)

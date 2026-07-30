@@ -118,7 +118,8 @@ M2 progress:
   (PR #82) merged after the 1.0.6 release, so until 1.0.7 ships the venv
   needs the editable checkout or the menu bar extra silently degrades to the
   tiny "⌨" text glyph — this happened once when a PyPI install replaced the
-  editable one; `Makefile.local` with `PUIKIT_DIR = ../puikit` now pins it.)
+  editable one; `Makefile.local` with `PUIKIT_DIR = ../puikit` now pins it.
+  The main-window visibility API (PR #84, below) is in the same boat.)
 - `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
   last-key/focus-path inspector). The console backend runs the process event loop;
   the hook shares it (tap source on the same run loop / GetMessage pump). Verified
@@ -187,10 +188,25 @@ Windows bring-up (second session, all verified live on Windows):
   puikit **PR #83** (awaiting review) fixes frame autosave persisting a minimized
   window's iconic rect (−32000,−32000 → console restored unreachably off-screen;
   the poisoned `HKCU\Software\PuiKit\FrameAutosave\KeyhacConsole` value was
-  deleted by hand). PR #83 also adds tests/conftest.py so puikit's suite runs on
-  Windows at all (pytest-timeout signal→thread), exposing 4 pre-existing
-  Windows-only test failures (fcntl guard ×2, background_3d naming, a
-  measure_text metric) left for a separate fix.
+  deleted by hand). PR #83 (merged) also adds tests/conftest.py so puikit's
+  suite runs on Windows at all (pytest-timeout signal→thread), exposing 4
+  pre-existing Windows-only test failures (background_3d gate,
+  terminal_graphics ×2, a measure_text metric) left for a separate fix.
+- Single-instance guard + console-visibility restore (both verified live on
+  Windows, incl. cross-process): `platform/{win,mac}/instance.py` — a
+  session-local named mutex on Windows; flock under ~/.keyhac on macOS
+  (written to spec, needs a live mac pass) — checked in main() *before* the
+  std-stream redirect so the refusal reaches stderr. A second UI-mode launch
+  exits 1 and re-shows the running instance's console
+  (FindWindow "PuiKitWindowClass"/"Keyhac" — a deliberately pinned puikit
+  internal — with a message-box fallback). The console's shown/hidden state
+  persists as `console_visible` in `settings.json` (`core/settings.py`,
+  write-through JSON; lives beside the config under --config like
+  clipboard.json), polled from the console's health tick since PuiKit has no
+  visibility-change callback. Needs puikit **PR #84** (`start_hidden` ctor
+  flag, `Backend.hide_main_window` / `is_main_window_visible`; awaiting
+  review) — feature-detected via `hasattr(Backend, "is_main_window_visible")`,
+  so on a pre-1.0.7 PyPI puikit the console just always starts visible.
 
 M3 progress (macOS verified live; Windows pending): clipboard history
 (`core/clipboard_history.py` + `platform/*/clipboard.py` poll-based providers, JSON
