@@ -40,7 +40,9 @@ class ChooserWindow:
         self._done = False
 
         self.window = backend.create_window(
-            72, 20, title=title, style=WindowStyle(topmost=True, resizable=False))
+            72, 20, title=title,
+            # tool: a transient picker gets no taskbar button (no-op on macOS)
+            style=WindowStyle(topmost=True, resizable=False, tool=True))
         if center_on is not None:
             self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.

@@ -84,7 +84,10 @@ class ConsoleWindow:
             # 12pt console; the UI font shares the base font's size
             base_font=Font(size=12, monospace=True),
             frame_autosave_name="KeyhacConsole",
-            style=WindowStyle(),                 # a normal resizable window
+            # tool: no taskbar button / Alt-Tab entry on Windows (no-op on
+            # macOS) — the tray icon is the app's sole persistent presence,
+            # mirroring what activation_policy="accessory" gives macOS.
+            style=WindowStyle(tool=True),
             activation_policy="accessory",       # agent app: no Dock icon (macOS)
             main_window_close="hide",            # tray-app lifecycle: close hides
         )

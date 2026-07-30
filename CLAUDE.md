@@ -177,10 +177,20 @@ Windows bring-up (second session, all verified live on Windows):
   accessors are UI-thread only (AX SIGTRAPs off-main on macOS; window-title reads
   are a blocking `SendMessage` on Windows), and only `screen_frames()` /
   `window_frames()` are safe from a `ThreadedAction` worker.
-- Not yet run on Windows: clipboard provider, `send_text`, tray, balloon, and — most
+- Not yet run on Windows: clipboard provider, `send_text`, balloon, and — most
   importantly — **key consumption** (every session so far logged only PASSTHRU).
   `mac/window.py` is written to spec and needs a live macOS pass.
   See [doc/windows-session.md](doc/windows-session.md).
+- Windows tray now runs live; first Keyhac.exe bundle session surfaced two fixes:
+  the console (and chooser) are now `WindowStyle(tool=True)` — tray-only presence,
+  no taskbar button, the Windows analog of `activation_policy="accessory"` — and
+  puikit **PR #83** (awaiting review) fixes frame autosave persisting a minimized
+  window's iconic rect (−32000,−32000 → console restored unreachably off-screen;
+  the poisoned `HKCU\Software\PuiKit\FrameAutosave\KeyhacConsole` value was
+  deleted by hand). PR #83 also adds tests/conftest.py so puikit's suite runs on
+  Windows at all (pytest-timeout signal→thread), exposing 4 pre-existing
+  Windows-only test failures (fcntl guard ×2, background_3d naming, a
+  measure_text metric) left for a separate fix.
 
 M3 progress (macOS verified live; Windows pending): clipboard history
 (`core/clipboard_history.py` + `platform/*/clipboard.py` poll-based providers, JSON
