@@ -33,6 +33,16 @@ Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
 - **Console window**: live log, last-key and focus-path inspector — see exactly what to
   bind. Runs from the system tray (Windows) / menu-bar extra (macOS).
 
+## Screenshots
+
+| Console (macOS) | Console (Windows) |
+|---|---|
+| ![Keyhac console window on macOS: keyboard-hook toggle, log level selector, live key-event log, last-key and focus-path inspector](doc/images/console-mac.jpg) | ![Keyhac console window on Windows: keyboard-hook toggle, log level selector, live key-event log, last-key and focus-path inspector](doc/images/console-win.jpg) |
+
+| Menu-bar extra (macOS) | Task tray (Windows) |
+|---|---|
+| ![Keyhac menu-bar extra on macOS with its menu open: Open Console, Edit Config, Reload Config, Keyboard Hook, Quit Keyhac](doc/images/menubar-extra-icon-mac.jpg) | ![Keyhac task-tray icon on Windows with its menu open: Open Console, Edit Config, Reload Config, Keyboard Hook, Quit Keyhac](doc/images/tasktray-icon-win.jpg) |
+
 ## Install
 
 Download from [Releases](https://github.com/crftwr/keyhac2/releases):
