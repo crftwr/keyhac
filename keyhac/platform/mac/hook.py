@@ -16,6 +16,13 @@ Deviations from the Swift original (deliberate fixes):
   (KeyhacCore_Hook.swift:398-403); here the check really runs once per second
 - NX_CONTROLMASK is included in the stripped modifier mask (upstream used
   NX_COMMANDMASK twice and never stripped the generic control flag)
+- re-posted deferred real events are tagged (kCGEventSourceUserData) and
+  counted in flight; fresh real events keep deferring until every re-post has
+  returned through the tap.  Upstream clears the deferred list on flush and
+  forgets the re-posts, so a real event arriving during their round-trip was
+  processed ahead of earlier real input - observed live as a few percent of
+  tools/hook_echo.py --stress-ordering rounds, always transposing the flush
+  window's last keystrokes.
 """
 
 import ctypes
@@ -55,6 +62,11 @@ MODIFIER_FLAGS_MASK = (
 )
 
 VK_CAPITAL = 0x39
+
+# kCGEventSourceUserData value marking a deferred real event we re-posted.
+# Hardware events carry 0; a foreign synthetic event colliding with this
+# exact value would merely skip one deferral, so no stronger scheme is needed.
+REPOST_TAG = 0x4B484143  # "KHAC"
 
 # modifier key code -> its device flag
 _KEYCODE_FLAGS = {
@@ -106,6 +118,7 @@ class MacInputHook(InputHook):
 
         # Event order handling
         self._num_pending_virtual = 0
+        self._num_pending_reposts = 0
         self._deferred_real_events = []
         self._flush_countdown = 0.0
         self._sanity_countdown = MacInputHook.SANITY_CHECK_INTERVAL
@@ -154,6 +167,7 @@ class MacInputHook(InputHook):
         self._source_replay_id = Quartz.CGEventSourceGetSourceStateID(self._source_replay)
 
         self._num_pending_virtual = 0
+        self._num_pending_reposts = 0
         self._deferred_real_events = []
 
         self._timer = Quartz.CFRunLoopTimerCreate(
@@ -184,6 +198,7 @@ class MacInputHook(InputHook):
         self._source_translated = None
         self._source_replay = None
         self._num_pending_virtual = 0
+        self._num_pending_reposts = 0
         self._deferred_real_events = []
         logger.info("Keyboard hook uninstalled.")
 
@@ -211,10 +226,18 @@ class MacInputHook(InputHook):
         else:
             kind = "real"
 
-        # Event order handling: postpone real events while injected events
-        # are in flight (or earlier real events are already postponed).
+        # Event order handling: postpone real events while injected events or
+        # re-posted deferred reals are in flight (or earlier real events are
+        # already postponed).  A returning re-post is recognized by its tag
+        # and passes - it is earlier input coming back in order.
+        is_repost = False
         if kind == "real":
-            if self._num_pending_virtual > 0 or self._deferred_real_events:
+            is_repost = (Quartz.CGEventGetIntegerValueField(
+                event, Quartz.kCGEventSourceUserData) == REPOST_TAG)
+            if is_repost:
+                self._num_pending_reposts = max(self._num_pending_reposts - 1, 0)
+            elif (self._num_pending_virtual > 0 or self._num_pending_reposts > 0
+                    or self._deferred_real_events):
                 self._deferred_real_events.append(event)
                 return None
 
@@ -264,11 +287,13 @@ class MacInputHook(InputHook):
             break
 
         # Event order handling: process postponed real events once all
-        # injected events have come back through the tap.
+        # in-flight events (injected and re-posted) have come back.
         if kind in ("translated", "replay"):
             self._num_pending_virtual = max(self._num_pending_virtual - 1, 0)
-            if self._num_pending_virtual == 0:
-                self._flush_real_key_events()
+        if ((kind in ("translated", "replay") or is_repost)
+                and self._num_pending_virtual == 0
+                and self._num_pending_reposts == 0):
+            self._flush_real_key_events()
 
         return event
 
@@ -320,6 +345,7 @@ class MacInputHook(InputHook):
 
     def _restore_hook(self):
         self._num_pending_virtual = 0
+        self._num_pending_reposts = 0
         self._deferred_real_events = []
         if self._event_tap is not None:
             Quartz.CGEventTapEnable(self._event_tap, True)
@@ -327,12 +353,21 @@ class MacInputHook(InputHook):
             self._on_restored()
 
     def _flush_real_key_events(self):
+        """Re-post the deferred real events.  Called when everything in flight
+        has drained, or by the watchdog when something never returned (which
+        is also why the counters are cleared unconditionally here)."""
         self._num_pending_virtual = 0
+        self._num_pending_reposts = 0
         if self._deferred_real_events:
             deferred = self._deferred_real_events
             self._deferred_real_events = []
             for event in deferred:
+                Quartz.CGEventSetIntegerValueField(
+                    event, Quartz.kCGEventSourceUserData, REPOST_TAG)
+                self._num_pending_reposts += 1
                 Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+            # The watchdog now also guards the re-posts themselves.
+            self._flush_countdown = MacInputHook.FLUSH_REAL_KEY_EVENTS_TIMEOUT
 
     # ------------------------------------------------------------------
 

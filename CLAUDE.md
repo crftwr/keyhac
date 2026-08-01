@@ -101,8 +101,15 @@ keyhac/
   vk only with L/R-agnostic `__eq__`; output resolves modifiers to left-side keys
   (`force_LR`); user modifiers are never physically emitted (except replay); unmatched
   key-down leaving multi-stroke mode is still consumed; errors in user callables pass the
-  key through. Two upstream keyhac-mac bugs intentionally fixed in the mac hook port —
-  see the module docstring of `keyhac/platform/mac/hook.py`.
+  key through. Three upstream keyhac-mac bugs intentionally fixed in the mac hook port —
+  see the module docstring of `keyhac/platform/mac/hook.py`. The third (fresh real
+  input could overtake re-posted deferred reals during the flush window) was found by
+  the ordering verification added later: `tests/test_mac_hook.py` unit-tests the
+  deferral state machine against faked Quartz calls, and `tools/hook_echo.py
+  --stress-ordering` manufactures the injected-vs-physical race live (a third private
+  CGEventSource / unsigned-`dwExtraInfo` `SendInput` posts events the hook must
+  classify as real); 100/100 rounds green on macOS after the fix, and a crippled-hook
+  negative control confirms the harness catches violations.
 
 M2 progress:
 
@@ -178,7 +185,9 @@ Windows bring-up (second session, all verified live on Windows):
   accessors are UI-thread only (AX SIGTRAPs off-main on macOS; window-title reads
   are a blocking `SendMessage` on Windows), and only `screen_frames()` /
   `window_frames()` are safe from a `ThreadedAction` worker.
-- Not yet run on Windows: clipboard provider, `send_text`, balloon, and — most
+- Not yet run on Windows: clipboard provider, `send_text`, balloon,
+  `tools/hook_echo.py --stress-ordering` (would empirically validate the
+  SendInput queue-order assumption), and — most
   importantly — **key consumption** (every session so far logged only PASSTHRU).
   `mac/window.py` is written to spec and needs a live macOS pass.
   See [doc/windows-session.md](doc/windows-session.md).
