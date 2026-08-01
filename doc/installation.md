@@ -11,7 +11,7 @@ update check and no telemetry.
 ## macOS
 
 1. Download `Keyhac-<version>-macos.dmg` from
-   [Releases](https://github.com/crftwr/keyhac2/releases), open it and drag
+   [Releases](https://github.com/crftwr/keyhac/releases), open it and drag
    **Keyhac.app** into **Applications**.
 2. Launch Keyhac. It is a menu-bar app — look for the keycap icon in the menu bar;
    there is no Dock icon.
@@ -26,7 +26,7 @@ System Settings → General → Login Items.
 ## Windows
 
 1. Download `Keyhac-<version>-win64.zip` from
-   [Releases](https://github.com/crftwr/keyhac2/releases) and unzip it anywhere
+   [Releases](https://github.com/crftwr/keyhac/releases) and unzip it anywhere
    (for example `C:\Program Files\Keyhac` or a folder in your home directory).
 2. Run `Keyhac.exe`. Keyhac appears as a keycap icon in the task-tray notification
    area; the console window opens on first run.

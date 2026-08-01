@@ -45,7 +45,7 @@ Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
 
 ## Install
 
-Download from [Releases](https://github.com/crftwr/keyhac2/releases):
+Download from [Releases](https://github.com/crftwr/keyhac/releases):
 
 - **macOS 15+** — `Keyhac-<version>-macos.dmg`: drag Keyhac.app into Applications and
   launch it. Grant the Accessibility permission when prompted (required for the

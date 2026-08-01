@@ -138,7 +138,7 @@ If Keyhac fails to launch:
    an update if keys stop being processed)
 3. Try reinstalling by dragging Keyhac.app to Trash and reinstalling
 
-For more information, visit: https://github.com/crftwr/keyhac2
+For more information, visit: https://github.com/crftwr/keyhac
 
 EOF
     fi
