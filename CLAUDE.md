@@ -285,6 +285,10 @@ macOS session (2026-08-01, all verified live on this machine):
 - `UIElement.parent()` added on macOS (AXParent) — the element-shape parity
   doc/03-config-api.md promises had it on Windows only; live-tested (an
   AXWindow's parent is its AXApplication).
+- Macro record/playback verified interactively on macOS (template
+  `LEADER-[` / `LEADER-]`): the end-to-end record → playback loop works on
+  top of the already stress-tested replay machinery. (M4 item; Windows
+  pass still pending with the rest of the Windows session.)
 - `macos_app/` launcher verified live end to end: build.sh rebuilt the bundle
   (Developer ID signed; the notarize+staple+DMG path had already run
   successfully on Jul 30 — the stapled bundle validates), and the app runs the
