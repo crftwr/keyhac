@@ -8,7 +8,7 @@ remapping keys, binding keys to Python functions, and driving windows, applicati
 the clipboard from the keyboard.
 
 Keyhac 2 is the successor to both
-[Keyhac for Windows](https://github.com/crftwr/keyhac) and
+[Keyhac for Windows](https://github.com/crftwr/keyhac-win) and
 [Keyhac for macOS](https://github.com/crftwr/keyhac-mac), rebuilt as one shared codebase.
 Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
 
