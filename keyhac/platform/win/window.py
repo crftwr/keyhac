@@ -280,13 +280,25 @@ class WinWindowProvider(WindowProvider):
         return windows
 
     def screen_frames(self):
+        return self._monitor_frames("rcMonitor")
+
+    def screen_work_frames(self):
+        """Work area per monitor (taskbar excluded), primary first.
+
+        STATUS: written to spec (rcWork sits in the same MONITORINFO that
+        screen_frames() already reads); not yet run on Windows.
+        """
+        return self._monitor_frames("rcWork")
+
+    @staticmethod
+    def _monitor_frames(rect_field: str):
         results = []
 
         def _callback(hmonitor, _hdc, _rect, _lparam):
             info = MONITORINFO()
             info.cbSize = ctypes.sizeof(MONITORINFO)
             if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
-                m = info.rcMonitor
+                m = getattr(info, rect_field)
                 results.append(((float(m.left), float(m.top),
                                  float(m.right - m.left), float(m.bottom - m.top)),
                                 bool(info.dwFlags & MONITORINFOF_PRIMARY)))

@@ -19,6 +19,7 @@ from keyhac.core.clipboard_history import ClipboardHistory
 from keyhac.actions import (
     ActivateWindow,
     MoveWindow,
+    SnapWindow,
     ChooserAction,
     DateTimeSnippet,
     ShowClipboardHistory,
@@ -45,6 +46,7 @@ __all__ = [
     "ClipboardHistory",
     "ChooserAction",
     "MoveWindow",
+    "SnapWindow",
     "ActivateWindow",
     "ShowClipboardHistory",
     "ShowClipboardSnippets",

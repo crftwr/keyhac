@@ -85,6 +85,10 @@ by intervening keys and mouse clicks).
   `"(nnn)"`).
 - Condition side is L/R-agnostic (`Ctrl-A` matches either Ctrl; `LCtrl-A` only left);
   output side resolves to left-hand physical keys — both inherited behaviors.
+- **macOS Fn-arrow gotcha**: Apple keyboards translate `Fn-Left/Right/Up/Down` into
+  `Home`/`End`/`PageUp`/`PageDown` in hardware (the `Fn` modifier itself still
+  arrives), so a `Fn-…-Left` binding never fires — bind `Fn-…-Home` etc. instead.
+  The shipped template's MoveWindow samples show the per-OS spelling.
 
 ### Portable "primary command" modifier — open proposal
 
@@ -124,6 +128,7 @@ keyhac-mac's `make api-reference`):
 | `ThreadedAction` (starting/run/finished) | mac | the one background-work primitive |
 | `keymap.call_later(seconds, func)` | win `delayedCall` | needs PuiKit/platform timer |
 | `MoveWindow(direction=…, distance=…, …)` | mac | Windows impl via SetWindowPos; keeps mac's multi-monitor edge logic |
+| `SnapWindow(position, ratio=0.5)` | new | left/right/top/bottom/full within the screen's work area |
 | `LaunchApplication(name)` | mac | win: shell_execute |
 | `ShellExecute(verb, file, param, dir, swmode)` | win | mac: degrade to `open` |
 | `ActivateApplication / ActivateWindow(app=…, title=…)` | win `ActivateWindowCommand` | portable subset; returns native window or None |
@@ -146,6 +151,10 @@ Two different things, split deliberately.
 `restore()`, `minimize()`, `native`. macOS backs it with AX window elements, Windows with
 HWNDs. `find_window` matches exactly like `define_keytable(app=/title=/class_name=)`:
 `fnmatch` wildcards, `|` alternation, case-insensitive, `.exe` optional.
+
+Screen geometry lives on `keymap` too: `screen_frames()` (whole screens, primary
+first), `screen_work_frames()` (the same minus menu bar / Dock / taskbar — what
+`SnapWindow` tiles against), and `window_frames()` (all normal on-screen windows).
 
 **Elements are not.** `focus.element` is the focused *semantic* element — an AX
 `UIElement` on macOS, a UI Automation one on Windows. Both offer the same shape
@@ -176,9 +185,12 @@ and AX into our own process off the main thread crashes with `SIGTRAP`; on Windo
 reading a window title is a blocking `SendMessage(WM_GETTEXT)` that deadlocks against a
 UI thread which is not pumping. A `ThreadedAction` therefore reads windows in
 `starting()`, computes in `run()`, and writes back in `finished()`. The only geometry
-queries safe to call from `run()` are the provider's `screen_frames()` and
-`window_frames()`, which use CoreGraphics on macOS and pure `GetWindowRect` on Windows.
-`MoveWindow` is built exactly that way.
+queries safe to call from `run()` are `screen_frames()` and `window_frames()`, which
+use CoreGraphics on macOS and pure `GetWindowRect` on Windows. `MoveWindow` is built
+exactly that way. `screen_work_frames()` is the exception among the geometry calls:
+its macOS source is AppKit (`NSScreen.visibleFrame` — CoreGraphics knows nothing about
+the Dock), so it is UI-thread only; `SnapWindow` is accordingly a plain main-thread
+action (no edge scan to push off-thread, just arithmetic).
 
 ### Windows focus paths
 

@@ -252,6 +252,20 @@ macOS session (2026-08-01, all verified live on this machine):
   real processes, holder-pid note preserved, kernel drops the lock on SIGKILL
   (no stale-lock case), and main() refuses a second launch in both UI and
   --no-ui modes — tested against a genuinely running dev instance.
+- Window-control gap-fill (same session): `SnapWindow(position, ratio=0.5)`
+  in `keyhac/actions.py` — left/right/top/bottom/full tiling within the
+  screen's **work area**, best-screen pick reused from MoveWindow;
+  deliberately a plain main-thread action (no edge scan, and the work-area
+  source is AppKit). New `WindowProvider.screen_work_frames()`
+  (NSScreen.visibleFrame flipped to AX coords on macOS — UI-thread only,
+  unlike the CG-backed thread-safe pair; rcWork on Windows, written to
+  spec, not yet run there) plus `keymap.screen_frames() /
+  screen_work_frames() / window_frames()` wrappers. Template gained snap
+  (`LEADER-Ctrl-J/L/I/K`, `LEADER-F`) and minimize (`LEADER-M`) samples.
+  Geometry pinned in tests/test_actions.py (fakes); live macOS snap +
+  work-frames tests in test_mac_window.py. Testing lesson recorded there:
+  fixture discovery polls must pump the run loop too (NSWorkspace-backed
+  find_window in a sleep loop intermittently never sees the helper app).
 - `macos_app/` launcher verified live end to end: build.sh rebuilt the bundle
   (Developer ID signed; the notarize+staple+DMG path had already run
   successfully on Jul 30 — the stapled bundle validates), and the app runs the

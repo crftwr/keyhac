@@ -408,6 +408,70 @@ class MoveWindow(ThreadedAction):
         return f'MoveWindow(direction="{self.direction}")'
 
 
+class SnapWindow:
+    """Snap the focused window to a region of its screen (tiling).
+
+    position: "left" | "right" | "top" | "bottom" | "full"
+    ratio:    the fraction of the work area the window covers along the snap
+              axis (0.5 = half the screen). Ignored for "full".
+
+    The region is the screen's *work area* - menu bar and Dock on macOS,
+    taskbar on Windows stay uncovered. "Its screen" is the one the window
+    overlaps most, so repeated snaps keep a window on the monitor it is on.
+
+    Deliberately a plain main-thread action, not a ThreadedAction: unlike
+    MoveWindow there is no window-edge scan to push off-thread, just
+    arithmetic - and both the Window accessors and the work-area query
+    (AppKit-backed on macOS) are UI-thread only anyway.
+    """
+
+    POSITIONS = ("left", "right", "top", "bottom", "full")
+
+    def __init__(self, position: str, ratio: float = 0.5):
+        if position not in self.POSITIONS:
+            raise ValueError(
+                f"SnapWindow position must be one of {self.POSITIONS}, "
+                f"not {position!r}")
+        if not 0.1 <= ratio <= 1.0:
+            raise ValueError(f"SnapWindow ratio must be in [0.1, 1.0], "
+                             f"not {ratio}")
+        self.position = position
+        self.ratio = ratio
+
+    def __call__(self):
+        keymap = Keymap.get_instance()
+        window = keymap.get_active_window()
+        if window is None:
+            logger.warning("SnapWindow: no focused window.")
+            return
+        frame = window.get_frame()
+        if frame is None:
+            logger.warning("SnapWindow: the focused window has no frame.")
+            return
+        screens = keymap.screen_work_frames() or keymap.screen_frames()
+        screen = MoveWindow._get_best_screen(frame, screens)
+        if screen is None:
+            return
+        sx, sy, sw, sh = screen
+        r = self.ratio
+        if self.position == "left":
+            target = (sx, sy, sw * r, sh)
+        elif self.position == "right":
+            target = (sx + sw * (1 - r), sy, sw * r, sh)
+        elif self.position == "top":
+            target = (sx, sy, sw, sh * r)
+        elif self.position == "bottom":
+            target = (sx, sy + sh * (1 - r), sw, sh * r)
+        else:
+            target = (sx, sy, sw, sh)
+        if window.is_minimized():
+            window.restore()
+        window.set_frame(*target)
+
+    def __repr__(self):
+        return f'SnapWindow("{self.position}")'
+
+
 class ActivateWindow(ThreadedAction):
     """Activate a window by application name pattern (portable subset of
     keyhac-win's ActivateWindowCommand).

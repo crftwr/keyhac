@@ -72,7 +72,13 @@ a Japanese IME is the case to watch.
 ## 7. Still missing on Windows
 - Mouse output commands + WH_MOUSE_LL one-shot cancel (M4) — no mouse code
   exists on either OS yet.
-- `settings.json`, single-instance guard (M2 leftovers).
+- `screen_work_frames()` / `SnapWindow`: **written to spec** — rcWork from
+  the same MONITORINFO screen_frames() already reads. Check: snap
+  left/right/full lands inside the taskbar-free work area (auto-hide
+  taskbar and per-monitor DPI are the suspects), and the template's
+  `LEADER-Ctrl-J/L/I/K` + `LEADER-F` bindings.
+  (`settings.json` and the single-instance guard, formerly listed here,
+  were verified live — see CLAUDE.md.)
 
 ## 8. Known-suspect list (cold-written code most likely to need fixes)
 - KEYBDINPUT wScan for send_text vs MapVirtualKeyW interplay

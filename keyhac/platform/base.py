@@ -263,5 +263,12 @@ class WindowProvider(ABC):
         """(x, y, w, h) per screen, primary first. Thread-safe."""
 
     @abstractmethod
+    def screen_work_frames(self) -> list[tuple[float, float, float, float]]:
+        """Like screen_frames(), but the *work area*: the part of each screen
+        not covered by the menu bar / Dock (macOS) or taskbar (Windows).
+        Same order as screen_frames(). UI-thread only in portable code: the
+        macOS implementation is an AppKit query (thread-safe on Windows)."""
+
+    @abstractmethod
     def window_frames(self) -> list[tuple[float, float, float, float]]:
         """Frames of all normal on-screen windows. Thread-safe."""

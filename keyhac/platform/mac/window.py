@@ -188,3 +188,27 @@ class MacWindowProvider(WindowProvider):
 
     def window_frames(self):
         return UIElement.get_onscreen_window_frames()
+
+    # -- geometry (UI thread only: AppKit) ------------------------------------
+
+    def screen_work_frames(self):
+        """Work area per screen (menu bar and Dock excluded), primary first.
+
+        NSScreen.visibleFrame is the only source for this - CoreGraphics has
+        no Dock knowledge - so unlike the two queries above this one is
+        AppKit-backed and must stay on the main thread."""
+        from AppKit import NSScreen
+        screens = NSScreen.screens()
+        if not screens:
+            return []
+        # AppKit frames are bottom-left-origin global; the primary screen's
+        # frame has origin (0, 0), so its height anchors the flip into the
+        # AX/CoreGraphics top-left coordinates everything else here uses.
+        primary_height = screens[0].frame().size.height
+        frames = []
+        for screen in screens:
+            v = screen.visibleFrame()
+            frames.append((float(v.origin.x),
+                           float(primary_height - v.origin.y - v.size.height),
+                           float(v.size.width), float(v.size.height)))
+        return frames

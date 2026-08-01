@@ -472,6 +472,25 @@ class Keymap:
         return self.window_provider.find_window(
             app=app, title=title, class_name=class_name)
 
+    def screen_frames(self) -> list:
+        """(x, y, w, h) per screen, primary first. Thread-safe."""
+        if self.window_provider is None:
+            return []
+        return self.window_provider.screen_frames()
+
+    def screen_work_frames(self) -> list:
+        """screen_frames() minus the menu bar / Dock / taskbar. UI-thread
+        only (AppKit-backed on macOS)."""
+        if self.window_provider is None:
+            return []
+        return self.window_provider.screen_work_frames()
+
+    def window_frames(self) -> list:
+        """Frames of all normal on-screen windows. Thread-safe."""
+        if self.window_provider is None:
+            return []
+        return self.window_provider.window_frames()
+
     def app_control_running_apps(self):
         """[(app_name, pid)] via the platform (empty when unavailable)."""
         if self.platform == "mac":

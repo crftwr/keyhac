@@ -91,13 +91,20 @@ def helper():
 
 @pytest.fixture(scope="module")
 def own_window(provider, helper):
-    """The helper's window, discovered the way configs do it."""
+    """The helper's window, discovered the way configs do it.
+
+    The discovery poll must pump (see _wait_for): find_window enumerates via
+    NSWorkspace, whose app list refreshes only through run loop callbacks -
+    with a plain sleep the helper may never appear in this process's view.
+    """
+    from Foundation import NSRunLoop, NSDate
     window = None
     deadline = time.monotonic() + 5
     while window is None and time.monotonic() < deadline:
         window = provider.find_window(title=WINDOW_TITLE)
         if window is None:
-            time.sleep(0.1)
+            NSRunLoop.currentRunLoop().runUntilDate_(
+                NSDate.dateWithTimeIntervalSinceNow_(0.1))
     assert window is not None, "helper window not found by find_window()"
     return window
 
@@ -139,6 +146,20 @@ class TestEnumeration:
         assert all(w > 0 and h > 0 for _x, _y, w, h in frames)
         # CGDisplayBounds of the main display has origin (0, 0) by definition.
         assert frames[0][0] == 0.0 and frames[0][1] == 0.0
+
+    def test_work_frames_sit_inside_the_screens(self, provider):
+        """NSScreen.visibleFrame flipped into AX coordinates: one work area
+        per screen, each contained in some screen frame (the menu bar/Dock
+        cut can only shrink it)."""
+        screens = provider.screen_frames()
+        works = provider.screen_work_frames()
+        assert len(works) == len(screens)
+        for wx, wy, ww, wh in works:
+            assert ww > 0 and wh > 0
+            assert any(sx - 1 <= wx and sy - 1 <= wy
+                       and wx + ww <= sx + sw + 1
+                       and wy + wh <= sy + sh + 1
+                       for sx, sy, sw, sh in screens)
 
     def test_window_frames_are_callable_from_a_worker_thread(self, provider, own_window):
         """MoveWindow's run() calls these from the thread pool.
@@ -202,6 +223,48 @@ class TestFrameWrites:
         assert own_window.restore()
         assert _wait_for(lambda: not own_window.is_minimized()), \
             "window did not deminiaturize"
+
+
+class TestSnapLive:
+
+    def test_snap_left_covers_the_left_half_of_the_work_area(
+            self, provider, own_window, monkeypatch):
+        """SnapWindow end to end: real work-area query, real AX frame write.
+
+        Keymap.get_instance() is stubbed so no engine is needed - the point
+        here is the platform half (the arithmetic is pinned in
+        test_actions.py).
+        """
+        from keyhac.actions import MoveWindow, SnapWindow
+        from keyhac.core.keymap import Keymap
+
+        class Stub:
+            def get_active_window(self):
+                return own_window
+
+            def screen_work_frames(self):
+                return provider.screen_work_frames()
+
+            def screen_frames(self):
+                return provider.screen_frames()
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(Stub))
+
+        # The frame is briefly unreadable while the previous test's
+        # deminiaturize animation settles.
+        assert _wait_for(lambda: own_window.get_frame() is not None), \
+            "window frame never became readable"
+
+        works = provider.screen_work_frames()
+        sx, sy, sw, sh = MoveWindow._get_best_screen(
+            own_window.get_frame(), works)
+        expected = (sx, sy, sw / 2, sh)
+
+        SnapWindow("left")()
+        assert _wait_for(
+            lambda: all(abs(a - b) <= 2.0
+                        for a, b in zip(own_window.get_frame(), expected))), \
+            f"frame {own_window.get_frame()} never approached {expected}"
 
 
 class TestActivate:

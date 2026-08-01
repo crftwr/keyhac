@@ -71,8 +71,19 @@ def configure(keymap):
     kt[f"{LEADER}-A"] = "Home", "Shift-End"
 
     # --- one-shot: tap for one key, hold to modify ---------------------
-    # Tapping right Shift alone types Escape; holding it still shifts.
-    kt["O-RShift"] = "Escape"
+    # A one-shot key held down still works as its modifier; only a lone
+    # tap-and-release fires the assignment.  Picked so a stray tap is
+    # harmless (an Escape here, say, would cancel dialogs mid-typing).
+    if mac:
+        # The classic macOS setup: tap Left/Right Cmd alone for Eisu/Kana
+        # (IME off/on) - a no-op unless a Japanese input source is
+        # installed.  Held, they are still plain Cmd.
+        kt["O-LCmd"] = "Eisu"
+        kt["O-RCmd"] = "Kana"
+    else:
+        # Tap right Ctrl alone to open the Start-menu search; held, it is
+        # still plain Ctrl.
+        kt["O-RCtrl"] = "Win-S"
 
     # --- key -> your own function --------------------------------------
     def hello():
@@ -136,18 +147,50 @@ def configure(keymap):
     # ==================================================================
 
     # --- move the focused window ---------------------------------------
+    # Apple keyboards translate Fn-Arrow into Home/End/PageUp/PageDown in
+    # hardware (the Fn modifier itself still arrives), so with LEADER = Fn
+    # the "...-Left" spellings would never fire on macOS - bind the keys
+    # that actually arrive there.  Ctrl/Alt rather than Shift, because
+    # Fn-Shift-Arrow is how you *select text* on a Mac laptop (it arrives
+    # as Shift-Home etc.) - a Shift binding here would steal it.
+    LEFT, RIGHT, UP, DOWN = (("Home", "End", "PageUp", "PageDown") if mac
+                             else ("Left", "Right", "Up", "Down"))
+
     # Nudge by 20 px...
-    kt[f"{LEADER}-Shift-Left"] = MoveWindow(direction="left", distance=20)
-    kt[f"{LEADER}-Shift-Right"] = MoveWindow(direction="right", distance=20)
-    kt[f"{LEADER}-Shift-Up"] = MoveWindow(direction="up", distance=20)
-    kt[f"{LEADER}-Shift-Down"] = MoveWindow(direction="down", distance=20)
+    kt[f"{LEADER}-Ctrl-{LEFT}"] = MoveWindow(direction="left", distance=20)
+    kt[f"{LEADER}-Ctrl-{RIGHT}"] = MoveWindow(direction="right", distance=20)
+    kt[f"{LEADER}-Ctrl-{UP}"] = MoveWindow(direction="up", distance=20)
+    kt[f"{LEADER}-Ctrl-{DOWN}"] = MoveWindow(direction="down", distance=20)
 
     # ...or send it as far as it goes, stopping at other windows' edges
     # and screen edges (and hopping to the next monitor when already there).
-    kt[f"{LEADER}-Ctrl-Left"] = MoveWindow(direction="left", distance=9999,
-                                           window_edge=True, screen_edge=True)
-    kt[f"{LEADER}-Ctrl-Right"] = MoveWindow(direction="right", distance=9999,
+    kt[f"{LEADER}-Alt-{LEFT}"] = MoveWindow(direction="left", distance=9999,
                                             window_edge=True, screen_edge=True)
+    kt[f"{LEADER}-Alt-{RIGHT}"] = MoveWindow(direction="right", distance=9999,
+                                             window_edge=True, screen_edge=True)
+    kt[f"{LEADER}-Alt-{UP}"] = MoveWindow(direction="up", distance=9999,
+                                          window_edge=True, screen_edge=True)
+    kt[f"{LEADER}-Alt-{DOWN}"] = MoveWindow(direction="down", distance=9999,
+                                            window_edge=True, screen_edge=True)
+
+    # --- snap to screen regions (tiling) --------------------------------
+    # Resizes to a half of the window's current screen, inside the work
+    # area (menu bar, Dock and taskbar stay uncovered).  Same IJKL layout
+    # as the arrows above.  ratio= picks a different split, e.g.
+    # SnapWindow("left", ratio=2/3).
+    kt[f"{LEADER}-Ctrl-J"] = SnapWindow("left")
+    kt[f"{LEADER}-Ctrl-L"] = SnapWindow("right")
+    kt[f"{LEADER}-Ctrl-I"] = SnapWindow("top")
+    kt[f"{LEADER}-Ctrl-K"] = SnapWindow("bottom")
+    kt[f"{LEADER}-F"] = SnapWindow("full")
+
+    # --- minimize the focused window -------------------------------------
+    def minimize_window():
+        window = keymap.get_active_window()
+        if window is not None:
+            window.minimize()
+
+    kt[f"{LEADER}-M"] = minimize_window
 
     # --- bring an application forward -----------------------------------
     # Matches like the focus conditions below: wildcards, "|" alternation,
@@ -164,8 +207,12 @@ def configure(keymap):
     # --- inspect windows yourself ---------------------------------------
     # keymap.get_active_window() / find_window() / list_windows() return
     # portable Window objects: title, app_name, pid, class_name (Windows),
-    # get_frame(), set_frame(), activate(), is_minimized(), restore().
-    # They are UI-thread only - never touch one from a ThreadedAction.run().
+    # get_frame(), set_frame(), activate(), minimize(), is_minimized(),
+    # restore().  Screen geometry: keymap.screen_frames() (whole screens),
+    # keymap.screen_work_frames() (minus menu bar / Dock / taskbar) and
+    # keymap.window_frames().  Window objects and screen_work_frames() are
+    # UI-thread only - never touch them from a ThreadedAction.run(); the
+    # thread-safe pair there is screen_frames() / window_frames().
     def describe_window():
         window = keymap.get_active_window()
         if window is None:
@@ -174,7 +221,8 @@ def configure(keymap):
         x, y, w, h = window.get_frame()
         logger.info(f"{window.app_name}: \"{window.title}\" "
                     f"at ({x:.0f},{y:.0f}) {w:.0f}x{h:.0f}")
-        logger.info(f"{len(keymap.list_windows())} windows open")
+        logger.info(f"{len(keymap.list_windows())} windows open on "
+                    f"{len(keymap.screen_frames())} screen(s)")
 
     kt[f"{LEADER}-W"] = describe_window
 
