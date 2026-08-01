@@ -133,6 +133,10 @@ class TestWindowIdentity:
         names = element.get_attribute_names()
         assert "AXTitle" in names and "AXPosition" in names
         assert "AXRaise" in element.get_action_names()
+        # parent(): an AXWindow's parent is its AXApplication.
+        parent = element.parent()
+        assert parent is not None
+        assert parent.get_attribute_value("AXRole") == "AXApplication"
 
 
 class TestEnumeration:

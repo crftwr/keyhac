@@ -83,6 +83,12 @@ class UIElement:
     def set_attribute_value(self, name: str, type_name: str, value) -> None:
         AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
 
+    def parent(self) -> "UIElement | None":
+        """The AX parent element (the same shape the Windows UIElement's
+        control-view parent() walk gives - doc/03-config-api.md)."""
+        parent = self.get_attribute_value("AXParent")
+        return parent if isinstance(parent, UIElement) else None
+
     def get_action_names(self) -> list[str]:
         err, names = AS.AXUIElementCopyActionNames(self._ref, None)
         return [str(n) for n in names] if err == 0 and names else []
