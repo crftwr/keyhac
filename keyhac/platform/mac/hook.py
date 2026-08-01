@@ -10,6 +10,11 @@ Faithful port of keyhac-mac Keyhac/ExtensionApiLayer/KeyhacCore_Hook.swift:
 - passthrough events get their modifier flags rewritten from the tracked
   virtual modifier state
 - a periodic timer re-enables the tap if the OS disabled it (timeout)
+- mouse output (send_mouse / cursor_pos - new in keyhac2, keyhac-mac had
+  none): CGEvent mouse events posted from the same private sources; with
+  on_mouse wired, the tap also watches button-down/scroll types for
+  one-shot cancellation (WH_MOUSE_LL parity), classified by source like
+  keys, never consumed, never deferred
 
 Deviations from the Swift original (deliberate fixes):
 - the sanity-check countdown constants were swapped upstream
@@ -26,6 +31,7 @@ Deviations from the Swift original (deliberate fixes):
 """
 
 import ctypes
+import time
 from typing import Callable, Sequence
 
 import Quartz
@@ -83,6 +89,37 @@ _KEYCODE_FLAGS = {
 }
 
 
+# Mouse event types that cancel a pending one-shot modifier when physical
+# (button downs + wheel; plain movement deliberately does not — keyhac-win
+# behavior — and tapping kCGEventMouseMoved would put Python in the path of
+# every pointer movement).
+_MOUSE_CANCEL_TYPES = frozenset({
+    Quartz.kCGEventLeftMouseDown,
+    Quartz.kCGEventRightMouseDown,
+    Quartz.kCGEventOtherMouseDown,
+    Quartz.kCGEventScrollWheel,
+})
+
+# send_mouse button vocabulary -> (event type, CGMouseButton)
+_MOUSE_BUTTON_EVENTS = {
+    ("left", True): (Quartz.kCGEventLeftMouseDown, Quartz.kCGMouseButtonLeft),
+    ("left", False): (Quartz.kCGEventLeftMouseUp, Quartz.kCGMouseButtonLeft),
+    ("right", True): (Quartz.kCGEventRightMouseDown, Quartz.kCGMouseButtonRight),
+    ("right", False): (Quartz.kCGEventRightMouseUp, Quartz.kCGMouseButtonRight),
+    ("middle", True): (Quartz.kCGEventOtherMouseDown, Quartz.kCGMouseButtonCenter),
+    ("middle", False): (Quartz.kCGEventOtherMouseUp, Quartz.kCGMouseButtonCenter),
+}
+
+# Injected motion while a button is held must be that button's *dragged*
+# event type - a plain mouse-moved with a button down is ignored by most
+# apps' drag tracking.
+_MOUSE_DRAG_EVENTS = (
+    (Quartz.kCGMouseButtonLeft, Quartz.kCGEventLeftMouseDragged),
+    (Quartz.kCGMouseButtonRight, Quartz.kCGEventRightMouseDragged),
+    (Quartz.kCGMouseButtonCenter, Quartz.kCGEventOtherMouseDragged),
+)
+
+
 def _virtual_modifier_to_event_flags(src: int) -> int:
     dst = src
     if src & (NX_DEVICELCTLKEYMASK | NX_DEVICERCTLKEYMASK):
@@ -104,9 +141,31 @@ class MacInputHook(InputHook):
     SANITY_CHECK_INTERVAL = 1.0
     FLUSH_REAL_KEY_EVENTS_TIMEOUT = 0.2
 
+    # One wheel "notch" (the keyhac config unit, from keyhac-win where a
+    # notch is WHEEL_DELTA) injected as CG scroll lines. 3 lines matches the
+    # Windows default lines-per-notch, so a migrated config scrolls about
+    # the same distance on both OSes.
+    LINES_PER_NOTCH = 3
+
+    # Successive injected downs of one button within this window escalate
+    # kCGMouseEventClickState (1, 2, 3...), which is how macOS apps detect
+    # double-clicks on synthetic input - the OS click timer only serves
+    # hardware events. Fixed value rather than NSEvent.doubleClickInterval
+    # to keep AppKit out of the hook; any intervening move resets the run,
+    # approximating the OS movement-slop rule.
+    DOUBLE_CLICK_INTERVAL = 0.5
+
     def __init__(self):
         self._on_key: Callable[[KeyEvent], bool] | None = None
         self._on_restored: Callable[[], None] | None = None
+        self._on_mouse: Callable[[], None] | None = None
+
+        # Mouse output state: buttons we injected down (motion between a
+        # down and its up must be posted as dragged events), and the
+        # (button, time, count) of the last injected down for click-state
+        # escalation.
+        self._mouse_buttons_down: set = set()
+        self._last_click: tuple[str, float, int] | None = None
 
         self._event_tap = None
         self._run_loop_source = None
@@ -136,16 +195,21 @@ class MacInputHook(InputHook):
 
         self._on_key = on_key
         self._on_restored = on_restored
-        # on_mouse (one-shot cancellation on mouse input) is not implemented
-        # on macOS yet - keyhac-mac never had it either, so a one-shot simply
-        # survives mouse input here. Adding mouse types to the tap mask is
-        # the planned route (doc/05-features.md).
+        self._on_mouse = on_mouse
 
         event_mask = (
             (1 << Quartz.kCGEventKeyDown)
             | (1 << Quartz.kCGEventKeyUp)
             | (1 << Quartz.kCGEventFlagsChanged)
         )
+        if on_mouse is not None:
+            # One-shot cancellation (keyhac-win parity; keyhac-mac never had
+            # it): tap the cancel types too. Motion is deliberately not
+            # tapped, so mouse events never join the key deferral queue -
+            # a deferred click would be re-posted after moves that followed
+            # it (see the mouse branch in _tap_callback).
+            for cancel_type in _MOUSE_CANCEL_TYPES:
+                event_mask |= 1 << cancel_type
 
         self._event_tap = Quartz.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
@@ -204,6 +268,8 @@ class MacInputHook(InputHook):
         self._num_pending_virtual = 0
         self._num_pending_reposts = 0
         self._deferred_real_events = []
+        self._mouse_buttons_down = set()
+        self._last_click = None
         logger.info("Keyboard hook uninstalled.")
 
     @property
@@ -220,8 +286,6 @@ class MacInputHook(InputHook):
             self._restore_hook()
             return event
 
-        key_code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
-
         source_id = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGEventSourceStateID)
         if source_id == self._source_translated_id:
             kind = "translated"
@@ -229,6 +293,24 @@ class MacInputHook(InputHook):
             kind = "replay"
         else:
             kind = "real"
+
+        # Mouse events (tapped only when on_mouse is wired): observation
+        # only, mirroring the Windows WH_MOUSE_LL rule - physical button
+        # downs and wheel turns cancel a pending one-shot; our own injected
+        # mouse output does not. Never consumed and never deferred: the
+        # deferral queue orders *keyboard* events, and motion is not tapped,
+        # so a deferred click would be re-posted after moves that followed
+        # it. (Injected mouse events are not counted in flight either -
+        # see send_mouse.)
+        if event_type in _MOUSE_CANCEL_TYPES:
+            if kind == "real" and self._on_mouse is not None:
+                try:
+                    self._on_mouse()
+                except Exception:
+                    logger.error("Mouse handler raised; event passed through.")
+            return event
+
+        key_code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
 
         # Event order handling: postpone real events while injected events or
         # re-posted deferred reals are in flight (or earlier real events are
@@ -328,6 +410,110 @@ class MacInputHook(InputHook):
                 self._num_pending_virtual += 1
                 self._flush_countdown = MacInputHook.FLUSH_REAL_KEY_EVENTS_TIMEOUT
                 Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
+    # ------------------------------------------------------------------
+
+    def cursor_pos(self) -> tuple[int, int]:
+        """Cursor position in CG global coordinates (top-left of the main
+        display, y down) - the same space CGEventPost positions mouse events
+        in and screen_frames() reports, so it is already the portable
+        top-left contract."""
+        point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        return (int(round(point.x)), int(round(point.y)))
+
+    def send_mouse(self, events, replay: bool = False) -> None:
+        """Inject mouse events (see InputHook.send_mouse for the item
+        vocabulary). CG mouse events are inherently absolute, so relative
+        moves accumulate onto the real cursor position - the same
+        relative-as-absolute scheme the Windows side uses against pointer
+        acceleration, only here it falls out of the API.
+
+        Unlike send(), nothing is counted in flight: motion and button-up
+        types are not in the tap mask (they could never be counted back
+        down), and posts from this thread enter the HID stream in post
+        order anyway - the ordering assumption send() already relies on
+        within a batch - so the key-deferral machinery is not needed for
+        the mouse channel."""
+        source = self._source_replay if replay else self._source_translated
+        if source is None:
+            logger.error("Cannot send mouse events - hook is not installed.")
+            return
+        pos = None  # running cursor position across the batch
+        for event in events:
+            kind = event[0]
+            if kind == "move":
+                if pos is None:
+                    pos = self.cursor_pos()
+                dx, dy = int(event[1]), int(event[2])
+                pos = (pos[0] + dx, pos[1] + dy)
+                event_type, button = self._motion_event_type()
+                cg = Quartz.CGEventCreateMouseEvent(source, event_type, pos, button)
+                # Hardware motion carries per-event deltas; some apps (games,
+                # pointer-lock) read those instead of the position.
+                Quartz.CGEventSetIntegerValueField(cg, Quartz.kCGMouseEventDeltaX, dx)
+                Quartz.CGEventSetIntegerValueField(cg, Quartz.kCGMouseEventDeltaY, dy)
+                self._last_click = None  # movement breaks a multi-click run
+            elif kind in ("wheel", "hwheel"):
+                lines = float(event[1]) * MacInputHook.LINES_PER_NOTCH
+                # CG sign conventions: wheel1 positive scrolls up (away from
+                # the user) - matching the portable contract - and wheel2
+                # positive scrolls *left*, so the positive-right contract
+                # negates it.
+                v = lines if kind == "wheel" else 0.0
+                h = -lines if kind == "hwheel" else 0.0
+                cg = Quartz.CGEventCreateScrollWheelEvent(
+                    source, Quartz.kCGScrollEventUnitLine, 2, int(v), int(h))
+                # The integer line counts truncate; the fixed-point fields
+                # carry the exact value for smooth-scrolling consumers (and
+                # make fractional notches mean something).
+                Quartz.CGEventSetDoubleValueField(
+                    cg, Quartz.kCGScrollWheelEventFixedPtDeltaAxis1, v)
+                Quartz.CGEventSetDoubleValueField(
+                    cg, Quartz.kCGScrollWheelEventFixedPtDeltaAxis2, h)
+            else:
+                try:
+                    event_type, button = _MOUSE_BUTTON_EVENTS[(kind, bool(event[1]))]
+                except KeyError:
+                    raise ValueError(f"Unknown mouse event: {event!r}") from None
+                down = bool(event[1])
+                if pos is None:
+                    pos = self.cursor_pos()
+                cg = Quartz.CGEventCreateMouseEvent(source, event_type, pos, button)
+                Quartz.CGEventSetIntegerValueField(
+                    cg, Quartz.kCGMouseEventClickState, self._click_state(kind, down))
+                if down:
+                    self._mouse_buttons_down.add(button)
+                else:
+                    self._mouse_buttons_down.discard(button)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, cg)
+
+    def _motion_event_type(self):
+        """(event type, button) for injected motion: the dragged type of a
+        held button - ours, or a physically held one via the combined
+        session button state - else plain mouse-moved."""
+        for button, drag_type in _MOUSE_DRAG_EVENTS:
+            if button in self._mouse_buttons_down or Quartz.CGEventSourceButtonState(
+                    Quartz.kCGEventSourceStateCombinedSessionState, button):
+                return drag_type, button
+        return Quartz.kCGEventMouseMoved, Quartz.kCGMouseButtonLeft
+
+    def _click_state(self, name: str, down: bool) -> int:
+        """kCGMouseEventClickState for an injected button event: downs of the
+        same button within DOUBLE_CLICK_INTERVAL escalate 1 -> 2 -> 3...; the
+        matching up mirrors its down's count (an up whose down we never sent
+        counts 1)."""
+        if down:
+            now = time.monotonic()
+            last = self._last_click
+            if (last is not None and last[0] == name
+                    and now - last[1] <= MacInputHook.DOUBLE_CLICK_INTERVAL):
+                count = last[2] + 1
+            else:
+                count = 1
+            self._last_click = (name, now, count)
+            return count
+        last = self._last_click
+        return last[2] if last is not None and last[0] == name else 1
 
     # ------------------------------------------------------------------
 

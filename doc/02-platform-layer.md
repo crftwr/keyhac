@@ -114,8 +114,10 @@ house style for raw-ctypes Win32/COM):
   `WM_CLIPBOARDUPDATE` (event-driven; keyhac-win moved to this in 1.75). Text via
   `CF_UNICODETEXT`; optionally capture `CF_HTML`/`CF_DIB` payloads for history fidelity.
 - **Caret**: `GetGUIThreadInfo().rcCaret` + `ClientToScreen` (balloon placement).
-- **Mouse** (later milestone): `WH_MOUSE_LL` for one-shot cancellation on click;
-  `SendInput` mouse events for output commands.
+- **Mouse** (shipped in M4): `WH_MOUSE_LL` for one-shot cancellation on click
+  (observation-only; own output recognized by dwExtraInfo); `SendInput` mouse
+  events for output commands, relative moves injected as absolute
+  virtual-desktop positions so pointer acceleration cannot distort them.
 
 ## macOS implementation notes (`keyhac/platform/mac/`, PyObjC)
 
@@ -151,6 +153,20 @@ known-workable but some AX calls need care).
   (keyhac-mac polls at 30 Hz — reduce; clipboard history does not need 33 ms latency).
 - **Injection**: `CGEventCreateKeyboardEvent` + `CGEventPost(kCGHIDEventTap)` with the
   proper source; set flags from tracked virtual modifiers.
+- **Mouse** (shipped in M4): output via `CGEventCreateMouseEvent` /
+  `CGEventCreateScrollWheelEvent` posted from the same private sources. CG
+  mouse events are inherently absolute, so relative moves accumulate onto
+  `cursor_pos()` (the Windows relative-as-absolute scheme for free); motion
+  while a button is held — ours, or physical via
+  `CGEventSourceButtonState` — posts the button's *dragged* type;
+  `kCGMouseEventClickState` escalates for rapid same-button downs so
+  synthetic double-clicks register (the OS click timer only serves hardware
+  events); wheels scroll 3 lines per notch (Windows default feel), exact
+  value in the fixed-point delta fields. One-shot cancellation: button-down
+  + scrollWheel types join the tap mask (motion deliberately not — Python
+  would sit in the path of every pointer movement); mouse events are never
+  consumed and never enter the key deferral queue, and own output is
+  recognized by event source, mirroring the WH_MOUSE_LL rules.
 
 ## Keycode & layout strategy
 

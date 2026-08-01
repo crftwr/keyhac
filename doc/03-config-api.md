@@ -31,7 +31,7 @@ def configure(keymap):
   `ShellExecute`, `MoveWindow`, logging.
 - Platform-only escape hatches (documented as such): `Focus.native` (Win32 window
   wrapper / AX `UIElement`), `class_name=` (Windows), `focus_path_pattern=` (macOS),
-  `Cmd`/`Fn` (macOS), `Win`/`Apps` (Windows), mouse output (Windows first).
+  `Cmd`/`Fn` (macOS), `Win`/`Apps` (Windows).
 
 ## Keymap definition
 
@@ -133,7 +133,7 @@ keyhac-mac's `make api-reference`):
 | `ShellExecute(verb, file, param, dir, swmode)` | win | mac: degrade to `open` |
 | `ActivateApplication / ActivateWindow(app=…, title=…)` | win `ActivateWindowCommand` | portable subset; returns native window or None |
 | `InputText("…")` | win `InputTextCommand` | win: `SendInput` unicode; mac: CGEvent `keyboardSetUnicodeString` |
-| `MouseMove(dx,dy)`, `MouseButtonDown/Up/Click(button)`, `MouseWheel(n)`, `MouseHorizontalWheel(n)`; `ctx.send_mouse_*` | win | Windows done (SendInput mouse; buttons/wheels release held modifiers, keyhac-win behavior); macOS later (CGEvent mouse) |
+| `MouseMove(dx,dy)`, `MouseButtonDown/Up/Click(button)`, `MouseWheel(n)`, `MouseHorizontalWheel(n)`; `ctx.send_mouse_*` | win | both (SendInput mouse / CGEvent mouse; buttons/wheels release held modifiers, keyhac-win behavior; one wheel notch scrolls 3 lines on macOS) |
 | `ChooserAction`, `ShowClipboardHistory/Snippets/Tools` | mac | chooser UI now PuiKit |
 | `Start/Stop/Toggle/PlaybackRecordedKeys` | mac (win macro semantics merged) | |
 | `keymap.pop_balloon(name, text, timeout)` / `close_balloon` | win | PuiKit balloon window |

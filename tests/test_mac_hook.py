@@ -248,3 +248,63 @@ def test_restore_resets_ordering_state(h):
     assert h.hook._num_pending_virtual == 0
     assert h.hook._deferred_real_events == []    # dropped, not re-posted
     assert len(h.posted) == posted_before
+
+
+# -- mouse events: one-shot cancel branch (tap-mask route) -----------------
+
+def mouse_event(h, event_type, source_id=HID_ID):
+    return FakeEvent(0, source_id, event_type)
+
+
+def test_real_mouse_down_calls_on_mouse_and_passes(h):
+    cancels = []
+    h.hook._on_mouse = lambda: cancels.append(1)
+    event = mouse_event(h, h.Q.kCGEventLeftMouseDown)
+    assert h.deliver(event) is event         # observation only, never consumed
+    assert cancels == [1]
+    assert h.keys == []                      # never enters the key path
+
+
+def test_scroll_wheel_cancels_one_shot_too(h):
+    cancels = []
+    h.hook._on_mouse = lambda: cancels.append(1)
+    event = mouse_event(h, h.Q.kCGEventScrollWheel)
+    assert h.deliver(event) is event
+    assert cancels == [1]
+
+
+def test_own_and_replay_mouse_output_do_not_cancel(h):
+    cancels = []
+    h.hook._on_mouse = lambda: cancels.append(1)
+    for source_id in (TRANSLATED_ID, REPLAY_ID):
+        event = mouse_event(h, h.Q.kCGEventLeftMouseDown, source_id)
+        assert h.deliver(event) is event
+    assert cancels == []
+
+
+def test_mouse_events_bypass_the_deferral_queue(h):
+    # A physical click during the key-flush window must not be queued: the
+    # deferral machinery orders keyboard events, and motion is not tapped,
+    # so a re-posted click would land after moves that followed it.
+    cancels = []
+    h.hook._on_mouse = lambda: cancels.append(1)
+    h.hook.send([(0x04, True)])              # key batch in flight
+    event = mouse_event(h, h.Q.kCGEventRightMouseDown)
+    assert h.deliver(event) is event         # passed straight through
+    assert h.hook._deferred_real_events == []
+    assert cancels == [1]
+    assert h.hook._num_pending_virtual == 1  # and the key ledger untouched
+
+
+def test_mouse_handler_error_passes_event_through(h):
+    def boom():
+        raise RuntimeError("boom")
+    h.hook._on_mouse = boom
+    event = mouse_event(h, h.Q.kCGEventLeftMouseDown)
+    assert h.deliver(event) is event
+
+
+def test_mouse_event_without_handler_is_ignored(h):
+    event = mouse_event(h, h.Q.kCGEventOtherMouseDown)
+    assert h.deliver(event) is event
+    assert h.keys == []
