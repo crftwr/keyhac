@@ -10,7 +10,7 @@ Most keyhac-mac configs run with small edits. Known differences:
 | `MoveWindow(...)` | full port - same signature incl. window_edge/screen_edge, deprecated x/y |
 | `keymap.replay_buffer` (undocumented) | same name, documented |
 | `ThreadedAction`, `ShowClipboard*`, `LaunchApplication`, `define_keytable`, `replace_key`, `define_modifier`, key expressions incl. `Fn-`/`Cmd-` | unchanged |
-| — | new: `app=`/`title=` focus conditions, keyhac-win short forms (`C-`, `A-`...), `InputText`, `ActivateWindow`, `keymap.call_later` (planned), User2/User3 |
+| — | new: `app=`/`title=` focus conditions, keyhac-win short forms (`C-`, `A-`...), `InputText`, `ActivateWindow`, mouse output, balloons, `SnapWindow`, portable `Window` objects, User2/User3 |
 
 The same config.py also runs on Windows: branch with `keymap.platform`. Three things in a
 macOS config do not carry over, and Keyhac 2 reports each at load time:
@@ -28,6 +28,6 @@ macOS config do not carry over, and Keyhac 2 reports each at load time:
 The Windows counterparts are `Win`/`Apps` keys, `app=`/`title=`/`class_name=` focus
 conditions, and — for element work — `focus.element` with UI Automation's vocabulary
 (`ControlType`/`Name`/`Value`/`SelectedText`, `perform_action("Invoke")`) instead of AX's.
-See [03-config-api.md](03-config-api.md#windows-and-elements) for the mapping table.
+See [configuration.md](configuration.md#the-focus-object) for the mapping table.
 Window operations (`keymap.get_active_window()`, `find_window()`, `MoveWindow`,
 `ActivateWindow`) are portable and need no branch.

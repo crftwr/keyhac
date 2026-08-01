@@ -1,4 +1,7 @@
-# 00 — Overview
+# Design overview
+
+Why Keyhac 2 exists and the founding decisions behind it. This is the developer-facing
+design rationale; user documentation starts at [../../README.md](../../README.md).
 
 ## What Keyhac is
 
@@ -8,7 +11,7 @@ multi-stroke keys, user-defined modifiers, one-shot modifiers, clipboard history
 launcher/candidate windows, and keyboard macros. The user writes a `config.py` that
 defines `configure(keymap)`.
 
-Two independent implementations exist today:
+Two independent implementations preceded Keyhac 2:
 
 | | keyhac-win (v1.83) | keyhac-mac (v1.68) |
 |---|---|---|
@@ -27,7 +30,7 @@ Two independent implementations exist today:
   portably and better (DPI, IME, themes, testable MemoryBackend).
 - keyhac-mac put large parts of the product (console, chooser, menu bar) in **Swift**,
   which cannot be shared with Windows at all.
-- **PuiKit now exists** (v1.0.3): a pure-Python, capability-based UI toolkit with real
+- **PuiKit now exists**: a pure-Python, capability-based UI toolkit with real
   AppKit (PyObjC) and Direct2D (ctypes) backends, built by the same author. It removes
   the historical reason for ckit and for the Swift UI layer.
 
@@ -40,8 +43,8 @@ possible layer: the low-level hook, event injection, focus/window queries, and p
 1. One repository, one Python codebase, producing a native app for Windows 10/11 (x64)
    and macOS 15+.
 2. One documented user-facing config API; a single `config.py` can run on both OSes.
-3. Feature parity with the *union* of keyhac-win and keyhac-mac (phased; see
-   [05-features.md](05-features.md)).
+3. Feature parity with the *union* of keyhac-win and keyhac-mac (see
+   [design-notes.md](design-notes.md)).
 4. A pure-Python, fully unit-testable core (the old codebases were essentially untested).
 5. PuiKit becomes strictly better through the extensions Keyhac2 needs (tray, secondary
    windows, …), benefiting other PuiKit apps.
@@ -49,7 +52,8 @@ possible layer: the low-level hook, event injection, focus/window queries, and p
 ## Non-goals
 
 - Backward-compatible execution of keyhac-win `config.py` files (camelCase API). We
-  provide a migration guide, not a shim. (Decision — see [03-config-api.md](03-config-api.md).)
+  provide a migration guide
+  ([../migration-from-keyhac-win.md](../migration-from-keyhac-win.md)), not a shim.
 - 32-bit Windows, Linux, or Wayland support (Linux may become feasible later since PuiKit
   has a curses/web backend, but global hooks on Linux are a different world).
 - An in-app config editor / GUI configuration. Config stays a Python file.
@@ -66,7 +70,7 @@ Short answers; each links to the full analysis.
 code is a **tiny embedding launcher per OS** (~150 lines of C/C++ using the PEP 587
 `PyConfig` API, patterned on keyhac-win's `main.cpp` and keyhac-mac's `PythonBridge.cpp`)
 whose job is app identity + starting the interpreter. No ckit, no pyauto, no Swift app
-layer. → [06-packaging.md](06-packaging.md)
+layer. → [packaging.md](packaging.md)
 
 ### Q2. Which parts have to be OS-specific?
 
@@ -75,7 +79,7 @@ The list is short but deep: **key hook & recovery**, **event injection & orderin
 monitoring**, **permissions**, **packaging**. Notably, *both* hooks are synchronous
 consume-decisions (the "sync vs async" difference is real but lives in the surrounding
 machinery: macOS needs injected-vs-real event reordering and tap re-enable; Windows needs
-silent-unhook detection). → [02-platform-layer.md](02-platform-layer.md)
+silent-unhook detection). → [platform-layer.md](platform-layer.md)
 
 ### Q3. Can we use the same config.py format / user-facing APIs?
 
@@ -85,21 +89,22 @@ already diverged (camelCase vs snake_case, `defineWindowKeymap(exe_name=...)` vs
 existing keyhac-mac configs should run nearly unchanged — and adds portable focus
 matching (`app=`, `title=`) plus the missing keyhac-win features. One config file can
 serve both OSes, with `keymap.platform` branches for genuinely OS-specific parts.
-→ [03-config-api.md](03-config-api.md)
+→ [../configuration.md](../configuration.md)
 
 ### Q4. Do we have to extend PuiKit?
 
-**Yes.** PuiKit today is "one backend = one standard resizable window as a regular app".
-Keyhac2 needs: multiple simultaneous windows (console + chooser + balloon), frameless /
-always-on-top / no-activate popup styles, an agent-app mode (no Dock icon), a system tray
-icon / menu-bar extra, screen geometry queries, runtime window control (show/hide/move),
-and a `call_later` timer. All are additive and fit PuiKit's capability model; tray and
-several window capabilities are already declared in `PROFILE_GUI_DESKTOP` but unimplemented.
-→ [04-puikit.md](04-puikit.md)
+**Yes — and it happened.** PuiKit was "one backend = one standard resizable window as a
+regular app". Keyhac2 needed: multiple simultaneous windows (console + chooser +
+balloon), frameless / always-on-top / no-activate popup styles, an agent-app mode (no
+Dock icon), a system tray icon / menu-bar extra, screen geometry queries, runtime window
+control (show/hide/move), and a `call_later` timer. All were added additively under
+PuiKit's capability model and shipped in puikit ≥ 1.0.8.
+→ [puikit.md](puikit.md)
 
 ## Naming
 
 - Product: **Keyhac 2.0** (versioning restarts the two lines under one number).
 - Python package: `keyhac`. Repo: `keyhac2`.
-- User data: `~/.keyhac/` on **both** OSes (keyhac-mac already does this; keyhac-win used
-  `%APPDATA%\Keyhac` — migration note in [06-packaging.md](06-packaging.md)).
+- User data: `~/.keyhac/` on **both** OSes (keyhac-mac already did this; keyhac-win used
+  `%APPDATA%\Keyhac` — migration note in
+  [../migration-from-keyhac-win.md](../migration-from-keyhac-win.md)).

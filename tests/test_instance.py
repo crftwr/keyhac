@@ -4,7 +4,7 @@ The Windows mutex and the macOS flock both behave identically for a second
 acquire in the *same* process (CreateMutexW reports ERROR_ALREADY_EXISTS for
 an existing name regardless of the owning process; flock is per-open-file,
 not per-process), so the contended path is testable without spawning a
-process. The cross-process path is exercised live (doc/windows-session.md).
+process. The cross-process path is exercised live (doc/dev/testing.md).
 """
 
 import sys

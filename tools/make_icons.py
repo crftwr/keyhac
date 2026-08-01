@@ -21,7 +21,7 @@ Raster targets (all checked in; re-run only when the artwork changes):
   metric across DPI scales, maximum shell compatibility), 64/128/256 px as
   PNG entries (Vista+) for Explorer's large views.
 - ``keyhac/ui/assets/keyhac.icns`` — macOS app icon for the bundled app
-  (doc/06-packaging.md), PNG entries at every standard slot up to 1024.
+  (doc/dev/packaging.md), PNG entries at every standard slot up to 1024.
 - ``keyhac/ui/assets/MenuExtraTemplate.png`` + ``@2x`` — the menu bar
   extra at 19x18 pt (the 19x18 canvas at exact 1x/2x scale; puikit's
   tray loader pairs the @2x sibling and applies the AppKit "…Template"

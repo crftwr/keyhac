@@ -5,7 +5,7 @@ tested against faked Quartz calls, like test_mac_hook.py. The live section
 briefly moves the real cursor (and restores it); it skips rather than fails
 when the environment refuses event posting (no Accessibility grant, e.g. a
 sandboxed shell). Wheel *direction* and app-visible click/drag semantics
-need an interactive pass - see doc/05-features.md.
+need an interactive pass - tracked in the GitHub issues.
 """
 
 import sys

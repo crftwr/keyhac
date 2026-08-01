@@ -805,7 +805,7 @@ fi
 
 # Substitute version number
 log_info "Substituting version: ${VERSION}"
-# BUNDLE_ID default: crftwr.Keyhac2. Open decision doc/07-roadmap.md #4 —
+# BUNDLE_ID default: crftwr.Keyhac2. Open decision (GitHub issue) —
 # building with BUNDLE_ID=crftwr.Keyhac instead carries the Accessibility
 # permission over from keyhac-mac 1.x (same identity), but collides with an
 # installed 1.x.

@@ -1,4 +1,4 @@
-# 02 — Platform layer
+# Platform layer
 
 What is genuinely OS-specific, how the two OSes differ, and the interfaces that hide it.
 Everything here is grounded in how keyhac-win (pyauto/`WH_KEYBOARD_LL`) and keyhac-mac
@@ -38,51 +38,29 @@ Consequences for the shared engine:
 
 ## Interfaces (`keyhac/platform/base.py`)
 
-Sketches — final signatures decided during M1.
+`keyhac/platform/base.py` is the authoritative definition (docstrings included);
+summary of the surface:
 
-```python
-@dataclass(frozen=True)
-class KeyEvent:
-    vk: int              # OS-native virtual key code
-    down: bool
-    kind: str            # "real" | "own" | "replay"
-
-class InputHook(ABC):
-    def install(self, on_key: Callable[[KeyEvent], bool],
-                      on_restored: Callable[[], None]) -> None: ...
-    def uninstall(self) -> None: ...
-    @property
-    def installed(self) -> bool: ...
-    def check_health(self) -> None      # called from a periodic timer
-    def send(self, events: Sequence[tuple[int, bool]], replay: bool = False) -> None
-        # batch of (vk, down); platform handles atomicity/ordering/tagging
-    def keyboard_layout(self) -> str    # "ansi" | "jis" | "iso"
-
-class FocusProvider(ABC):
-    def get_focus(self) -> Focus | None: ...
-    # Focus: portable snapshot — app_name, pid, window_title,
-    #        plus .native (pyauto-like Window wrapper on win / UIElement on mac)
-    #        plus .path (macOS AX focus path string; None on Windows)
-
-class WindowControl(ABC):     # actions on the focused/top-level window
-    def get_top_level(self) -> NativeWindow | None: ...
-    # NativeWindow: get_rect/set_rect, activate, minimize/restore, close, title, ...
-
-class ClipboardMonitor(ABC):
-    def start(self, on_change: Callable[[], None]) -> None: ...
-    def get_text(self) -> str | None: ...
-    def set_text(self, s: str) -> None: ...
-    # rich formats (RTF/HTML/image) kept as opaque per-OS payloads for history fidelity
-
-class ScreenInfo(ABC):
-    def frames(self) -> list[ScreenFrame]: ...   # full + work area per monitor
-    def caret_rect(self) -> Rect | None: ...     # for balloon placement (GetGUIThreadInfo / AX)
-
-class AppServices(ABC):
-    def launch(self, name_or_path: str) -> None: ...
-    def shell_execute(self, verb, file, params, directory, show) -> None: ...  # win-flavored; mac maps to open/NSWorkspace
-    def running_apps(self) -> list[AppInfo]: ...
-```
+- **`KeyEvent`** — `vk` (OS-native virtual key code), `down`,
+  `kind` (`"real" | "own" | "replay"`).
+- **`Focus`** — portable focus snapshot: `app_name`, `pid`, `window_title`,
+  `class_name` (Windows), `path`, `element`, `native`. Unknown attributes forward to
+  `.native` (keyhac-mac config compatibility).
+- **`InputHook`** — `install(on_key, on_restored, on_mouse=None)` / `uninstall` /
+  `installed`; `send(events, replay=False)` (batch of `(vk, down)`; the platform
+  handles atomicity, ordering and self-event tagging); `send_text(s)`;
+  `send_mouse(events, replay=False)` / `cursor_pos()`; `keyboard_layout()`
+  (`"ansi" | "jis" | "iso"`); `check_health()` (periodic-timer driven recovery).
+- **`FocusProvider`** — `get_focus() -> Focus | None`.
+- **`EventLoop`** — `run` / `stop` / `call_later(delay_seconds, func)`; in UI mode
+  the PuiKit backend fills this role, in `--no-ui` mode a per-OS minimal loop does.
+- **`ClipboardProvider`** — `get_text` / `set_text` / `poll()` (change detection;
+  sequence number on Windows, changeCount on macOS).
+- **`AppControl`** — `activate_pid`, `launch`, `edit_file(path, editor=None)`.
+- **`Window` / `WindowProvider`** — portable window objects and
+  find/enumerate/activate/geometry queries (`screen_frames`, `screen_work_frames`,
+  `window_frames`); thread contract documented in
+  [../configuration.md](../configuration.md#windows-screens-and-applications).
 
 ## Windows implementation notes (`keyhac/platform/win/`, ctypes)
 
@@ -114,7 +92,7 @@ house style for raw-ctypes Win32/COM):
   `WM_CLIPBOARDUPDATE` (event-driven; keyhac-win moved to this in 1.75). Text via
   `CF_UNICODETEXT`; optionally capture `CF_HTML`/`CF_DIB` payloads for history fidelity.
 - **Caret**: `GetGUIThreadInfo().rcCaret` + `ClientToScreen` (balloon placement).
-- **Mouse** (shipped in M4): `WH_MOUSE_LL` for one-shot cancellation on click
+- **Mouse**: `WH_MOUSE_LL` for one-shot cancellation on click
   (observation-only; own output recognized by dwExtraInfo); `SendInput` mouse
   events for output commands, relative moves injected as absolute
   virtual-desktop positions so pointer acceleration cannot distort them.
@@ -123,8 +101,8 @@ house style for raw-ctypes Win32/COM):
 
 Reimplements keyhac-mac's Swift `KeyhacCore_Hook/UIElement/Clipboard` in Python.
 `pyobjc-framework-Quartz` exposes `CGEventTapCreate`/`CGEventPost`;
-`pyobjc-framework-ApplicationServices` exposes `AXUIElement*` (verify coverage in M0;
-known-workable but some AX calls need care).
+`pyobjc-framework-ApplicationServices` exposes `AXUIElement*` (both proven live —
+a few AX calls need `objc.loadBundleFunctions`-style care).
 
 - **Tap**: `CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
   kCGEventTapOptionDefault, mask(keyDown|keyUp|flagsChanged), callback, None)`; wrap in
@@ -153,7 +131,7 @@ known-workable but some AX calls need care).
   (keyhac-mac polls at 30 Hz — reduce; clipboard history does not need 33 ms latency).
 - **Injection**: `CGEventCreateKeyboardEvent` + `CGEventPost(kCGHIDEventTap)` with the
   proper source; set flags from tracked virtual modifiers.
-- **Mouse** (shipped in M4): output via `CGEventCreateMouseEvent` /
+- **Mouse**: output via `CGEventCreateMouseEvent` /
   `CGEventCreateScrollWheelEvent` posted from the same private sources. CG
   mouse events are inherently absolute, so relative moves accumulate onto
   `cursor_pos()` (the Windows relative-as-absolute scheme for free); motion
@@ -177,7 +155,8 @@ known-workable but some AX calls need care).
   `keyhac_const.py` + `keyhac_key.py`).
 - `KeyCondition` stores native vks at parse time (fast hook-path comparisons stay int).
 - Raw codes remain expressible as `"(123)"` for unmapped keys.
-- ISO layout on macOS: currently unsupported upstream; keep the warning, add later.
+- ISO layout on macOS: unsupported (as upstream keyhac-mac); a warning is logged.
+  Tracked in the issue tracker.
 
 ## What is deliberately NOT platform-abstracted
 

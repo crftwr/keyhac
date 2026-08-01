@@ -1,68 +1,100 @@
 # Keyhac 2
 
-Python-scriptable keyboard customization tool for **Windows and macOS**, from one shared
-codebase. The successor to
-[keyhac-win](https://github.com/crftwr/keyhac) and
-[keyhac-mac](https://github.com/crftwr/keyhac-mac), with UI built on
-[PuiKit](https://github.com/crftwr/puikit).
+Python-scriptable keyboard customization for **Windows and macOS**.
 
-Design documents: [doc/](doc/) — start with [doc/00-overview.md](doc/00-overview.md).
-Project guide for coding agents: [CLAUDE.md](CLAUDE.md).
+Keyhac installs a system-wide keyboard hook and lets you script what your keys do in
+Python. You write one file, `~/.keyhac/config.py`, and it runs unchanged on both OSes —
+remapping keys, binding keys to Python functions, and driving windows, applications and
+the clipboard from the keyboard.
 
-## Status
+Keyhac 2 is the successor to both
+[Keyhac for Windows](https://github.com/crftwr/keyhac) and
+[Keyhac for macOS](https://github.com/crftwr/keyhac-mac), rebuilt as one shared codebase.
+Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
 
-**M3 (clipboard history + chooser) — in progress.**
+## Features
 
-- Clipboard history: portable `ClipboardProvider` (NSPasteboard changeCount /
-  Win32 sequence-number polling), text history with dedup + JSON persistence
-  (debounced; file format compatible with keyhac-mac's `clipboard.json`).
-- Chooser window on PuiKit multi-window (`create_window`): search field +
-  filtered list, Up/Down/Enter/Escape, Shift-select = copy without paste.
-  Actions: `ShowClipboardHistory` / `ShowClipboardSnippets` /
-  `ShowClipboardTools`, `ChooserAction` base, `ThreadedAction`,
-  `LaunchApplication`. Verified live on macOS end-to-end (hotkey → chooser →
-  history entry).
-- Windows: clipboard provider written to spec (untested); `WinAppControl`
-  pending.
+- **Key remapping**: key → key, key → key sequence, key → Python function.
+- **Per-application key tables**: match by app name, window title, Win32 window class,
+  or the full accessibility focus path (AX on macOS, UI Automation on Windows) — down to
+  "only in this app's text editor pane".
+- **User modifiers**: turn any key into a modifier of your own (User0–User3), invisible
+  to applications.
+- **One-shot modifiers**: tap a modifier alone for one action, hold it to modify.
+- **Multi-stroke key tables**: Emacs-style prefix keys, with a balloon showing the
+  armed prefix.
+- **Clipboard history**: persistent history in a popup chooser — type to filter,
+  Enter pastes into the app you came from. Plus fixed snippets and scriptable
+  clipboard-transform tools.
+- **Window control**: move, snap/tile, minimize, activate and launch applications,
+  multi-monitor aware.
+- **Keyboard macros**: record and replay keys.
+- **Mouse output**: send clicks, wheel scrolls and pointer moves from key bindings.
+- **Console window**: live log, last-key and focus-path inspector — see exactly what to
+  bind. Runs from the system tray (Windows) / menu-bar extra (macOS).
 
-**M2 (console window) — done on macOS.**
+## Install
 
-- PuiKit console window working on macOS: LogView with per-level colors, hook
-  on/off toggle (re-enable reloads config), log-level selector, last-key /
-  focus-path inspector with copy buttons. The console's PuiKit backend runs
-  the process event loop; the CGEventTap shares it. Runs as an agent app (no
-  Dock icon) via the new PuiKit `activation_policy="accessory"`.
-- Requires the PuiKit window-management extensions
-  ([puikit PR #76](https://github.com/crftwr/puikit/pull/76)): `WindowStyle`,
-  `activation_policy`, `call_later`. Until that ships in a release, the
-  Makefile installs `../puikit` (branch) editable.
-- Windows console path written but pending the next Windows session.
-- `--no-ui` keeps the headless M1 mode.
+Download from [Releases](https://github.com/crftwr/keyhac2/releases):
 
-**M1 (engine + minimal hook) — done on macOS; Windows interactive checklist open.**
+- **macOS 15+** — `Keyhac-<version>-macos.dmg`: drag Keyhac.app into Applications and
+  launch it. Grant the Accessibility permission when prompted (required for the
+  keyboard hook).
+- **Windows 10/11 (x64)** — `Keyhac-<version>-win64.zip`: unzip anywhere and run
+  `Keyhac.exe`.
 
-- Core keymap engine: done, 64 unit tests green (key expressions, L/R-agnostic
-  modifier matching, one-shot, multi-stroke, user modifiers, replace_key,
-  focus conditions, InputContext batching).
-- macOS platform (PyObjC CGEventTap): done, validated live (tap install,
-  injection, event-source classification, replay re-entry).
-- Windows platform (ctypes WH_KEYBOARD_LL): first bring-up done — hook
-  install/callbacks, SendInput injection + dwExtraInfo classification, focus
-  query, message pump and timers validated on Windows. Still to exercise
-  interactively: consume decisions on physical keys, per-VK extended-key
-  flags, and the sanity-check re-install path (`tools/hook_echo.py`).
-- UI (console/chooser/balloon/tray): M2+, PuiKit-based.
+Details, data locations and privacy notes: [doc/installation.md](doc/installation.md).
 
-## Development (macOS)
+## Quick start
+
+On first run Keyhac creates `~/.keyhac/config.py` from a fully commented template.
+Open it from the tray / menu-bar icon ("Edit Config"), edit, then "Reload Config".
+A config defines one function:
+
+```python
+from keyhac import *
+
+def configure(keymap):
+    kt = keymap.define_keytable(focus_path_pattern="*")   # active everywhere
+
+    kt["Fn-J"] = "Left"                        # key -> key
+    kt["Fn-A"] = "Home", "Shift-End"           # key -> sequence
+
+    def hello():                               # key -> Python function
+        print("Hello from config.py")
+    kt["Fn-H"] = hello
+
+    kt["Fn-V"] = ShowClipboardHistory()        # clipboard history popup
+
+    kt_browser = keymap.define_keytable(app="chrome|Safari")   # per-app table
+    kt_browser["Fn-R"] = "Cmd-R"
+```
+
+The full reference is [doc/configuration.md](doc/configuration.md); the shipped
+template ([keyhac/_config.py](keyhac/_config.py)) is a working tour of every feature.
+
+## Documentation
+
+- [Installation](doc/installation.md) — install, permissions, data files, privacy.
+- [Configuration](doc/configuration.md) — the complete config.py reference.
+- [Migrating from Keyhac for macOS](doc/migration-from-keyhac-mac.md) — mostly drop-in.
+- [Migrating from Keyhac for Windows](doc/migration-from-keyhac-win.md) — API renamed;
+  translation table.
+- [Developer documentation](doc/dev/) — architecture, platform layer, packaging,
+  testing. Project guide for coding agents: [CLAUDE.md](CLAUDE.md).
+
+## Running from source
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest            # engine tests, no permissions needed
-
-.venv/bin/python tools/hook_echo.py   # echo key events (needs Accessibility permission)
-.venv/bin/python -m keyhac -d         # run with ~/.keyhac/config.py
+.venv/bin/python -m pytest          # engine + unit tests, no permissions needed
+.venv/bin/python -m keyhac          # run (macOS: needs Accessibility permission)
 ```
 
-Configuration lives at `~/.keyhac/config.py` (created from a template on first
-run) and defines `configure(keymap)` — see [keyhac/_config.py](keyhac/_config.py).
+`python -m keyhac -d` enables debug logging, `--no-ui` runs headless (hook + engine
+only), `--config PATH` uses an alternate config file (its data files live beside it).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

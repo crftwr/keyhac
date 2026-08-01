@@ -2,7 +2,7 @@
 
 STATUS: verified live on Windows - hook consume decisions, injection,
 sanity-check re-install, clipboard, send_text, mouse output, window/app
-control, UIA focus paths.  See doc/windows-session.md for what was run
+control, UIA focus paths.  See doc/dev/testing.md for what was run
 and how.
 """
 

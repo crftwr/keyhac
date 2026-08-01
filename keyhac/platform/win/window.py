@@ -216,7 +216,7 @@ class WinWindow(Window):
         method originally did - is no longer honored on current Windows 11
         when the lock is armed (the foreground app actively receiving
         input); the dual attach is, verified empirically against a
-        real armed lock (see doc/windows-session.md).  getLastActivePopup
+        real armed lock (see doc/dev/testing.md).  getLastActivePopup
         mirrors pyauto's behavior of raising the dialog a window currently
         owns rather than the frame behind it.
         """

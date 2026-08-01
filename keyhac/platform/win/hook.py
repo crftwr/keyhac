@@ -18,7 +18,7 @@ STATUS: verified live on Windows, including consume decisions on real
 (untagged) input, extended-key output flags, the sanity-check re-install
 path (provoked by covert unhook - note this Windows 11 build did NOT
 remove the hook after a single 0.6 s callback stall), send_text, and
-mouse injection + WH_MOUSE_LL classification.  See doc/windows-session.md.
+mouse injection + WH_MOUSE_LL classification.  See doc/dev/testing.md.
 
 Every ctypes prototype below is declared explicitly.  This is not optional on
 64-bit: the default restype of c_int truncates handles, which is what made

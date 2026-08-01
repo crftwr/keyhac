@@ -1,4 +1,4 @@
-# 01 — Architecture
+# Architecture
 
 ## Process & thread model
 
@@ -48,7 +48,7 @@ Rules:
 - `keyhac.ui` imports PuiKit only.
 - `keyhac.platform.win` / `.mac` are the *only* modules touching ctypes/PyObjC.
 
-## Module map (planned)
+## Module map
 
 | Module | Contents | Ported from |
 |---|---|---|
@@ -57,19 +57,23 @@ Rules:
 | `core/vk.py` | Portable key-name ↔ per-OS virtual-key tables, layout variants (US/JIS) | both (`keyhac_const.py`, `str_vk_table_*`) |
 | `core/focus.py` | `FocusCondition`: portable `app`/`title` match + per-OS extras + `custom_condition_func` | keyhac-mac `keyhac_focus.py` + keyhac-win `WindowKeymap.check` |
 | `core/input.py` | `InputContext`: batch building, modifier reconciliation, lone-Win/Alt cancellation | keyhac-mac `keyhac_input.py` + keyhac-win `setInput_*` |
-| `core/action.py` | `ThreadedAction`, `MoveWindow`, `LaunchApplication`, `ShellExecute`, chooser actions, record/playback actions | keyhac-mac `keyhac_action.py` + keyhac-win commands |
+| `core/action.py` | `ThreadedAction`, `LaunchApplication`, `InputText`, record/playback actions | keyhac-mac `keyhac_action.py` + keyhac-win commands |
 | `core/clipboard_history.py` | history model, persistence (JSON), snippets/tools listers | keyhac-mac `keyhac_clipboard.py` (persistence) + keyhac-win `cblister_*` (UX) |
 | `core/replay.py` | key record/normalize/playback buffer | keyhac-mac `keyhac_replay.py`, keyhac-win macro normalization |
 | `core/config.py` | config loading: copy template on first run, compile+exec, `configure(keymap)` call, reload | both |
 | `core/log.py` | `getLogger`, stdout/stderr redirection into the console ring buffer | keyhac-mac `keyhac_console.py`, keyhac-win `Log` |
-| `core/settings.py` | persisted app state (window geometry, flags) as JSON — replaces keyhac.ini | keyhac-win `keyhac_ini.py` (concept) |
-| `platform/base.py` | abstract interfaces + shared `KeyEvent` dataclass | new |
-| `platform/win/*` | hook, injection, focus/window, clipboard listener, shell | pyauto behaviors, reimplemented in ctypes |
-| `platform/mac/*` | tap, injection+reordering, AX focus, workspace, pasteboard | keyhac-mac Swift `KeyhacCore_*.swift`, reimplemented in PyObjC |
+| `core/settings.py` | persisted app state (console visibility, flags) as JSON — replaces keyhac.ini | keyhac-win `keyhac_ini.py` (concept) |
+| `core/vk.py`, `core/const.py` | key-name tables, modifier constants | both |
+| `actions.py` | action objects needing platform/UI wiring: `MoveWindow`, `SnapWindow`, `ActivateWindow`, mouse actions, `ChooserAction` + clipboard choosers | keyhac-mac `keyhac_action.py` + keyhac-win commands |
+| `platform/base.py` | abstract interfaces (`InputHook`, `FocusProvider`, `EventLoop`, `ClipboardProvider`, `AppControl`, `Window`, `WindowProvider`) + `KeyEvent`/`Focus` | new |
+| `platform/fake.py` | scripted fake hook/providers for engine unit tests | new |
+| `platform/win/*` | hook, injection, focus/UIA elements, windows, clipboard, apps, instance guard, loop | pyauto behaviors, reimplemented in ctypes |
+| `platform/mac/*` | tap, injection+reordering, AX focus/elements, windows, pasteboard, apps, instance guard, loop | keyhac-mac Swift `KeyhacCore_*.swift`, reimplemented in PyObjC |
 | `ui/console.py` | console window: LogView, hook toggle, log level, last-key / focus inspector | keyhac-mac `ConsoleWindowView.swift`, keyhac-win `ConsoleWindow` |
 | `ui/chooser.py` | candidate window: incremental filter, ↑↓/Enter/Esc, modifier-aware select | keyhac-mac `ChooserWindowView.swift`, keyhac-win `ListWindow` |
 | `ui/balloon.py` | frameless topmost tooltip (multi-stroke help, macro status) | keyhac-win `keyhac_balloon.py` |
 | `ui/tray.py` | tray icon / menu-bar extra + menu | keyhac-win `keyhac_tasktrayicon.py`, keyhac-mac `MenuView.swift` |
+| `ui/runtime.py` | holds the app's PuiKit backend for secondary windows (chooser/balloon) | new |
 | `main.py` | bootstrap (below) | both |
 
 ## The key-event lifecycle
@@ -93,7 +97,7 @@ OS delivers key event (hook callback, main thread, deadline-bound)
 
 The engine treats "which thread, which deadline, how injected events are distinguished
 and reordered" as platform concerns. What it requires from the platform is stated in
-[02-platform-layer.md](02-platform-layer.md).
+[platform-layer.md](platform-layer.md).
 
 ## Event loop integration
 
@@ -112,10 +116,8 @@ thread — any `GetMessage`/`PeekMessage` wait services them. PuiKit's
 `WindowsBackend.run_event_loop` is exactly such a `GetMessage` pump, so installing the
 hook on the main thread before calling it is sufficient; hook latency is bounded by pump
 responsiveness, and a blocking `GetMessage` pump is ideal (no polling, no idle CPU).
-Two refinements needed (see [04-puikit.md](04-puikit.md)):
-
-- a *host-loop* mode so one pump serves several PuiKit windows,
-- timers via `SetTimer` (already used internally by PuiKit) exposed as `call_later`.
+One pump serves all PuiKit windows (puikit `create_window`), and timers come from
+puikit's `Backend.call_later` (see [puikit.md](puikit.md)).
 
 ### Hook health watchdogs (timer-driven, both OSes)
 

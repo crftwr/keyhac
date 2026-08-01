@@ -85,7 +85,7 @@ class UIElement:
 
     def parent(self) -> "UIElement | None":
         """The AX parent element (the same shape the Windows UIElement's
-        control-view parent() walk gives - doc/03-config-api.md)."""
+        control-view parent() walk gives - doc/configuration.md)."""
         parent = self.get_attribute_value("AXParent")
         return parent if isinstance(parent, UIElement) else None
 

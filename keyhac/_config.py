@@ -369,4 +369,4 @@ def configure(keymap):
     # Opening a URL or a file: import subprocess and run
     #     subprocess.Popen(["open", url] if mac else ["cmd", "/c", "start", url])
     #
-    # Full reference: doc/03-config-api.md in the Keyhac 2 source tree.
+    # Full reference: doc/configuration.md in the Keyhac 2 source tree.
