@@ -239,6 +239,14 @@ class Keymap:
             # Modifier key state is not reliable anymore. Resetting.
             self._modifier = 0
 
+    def on_mouse_event(self) -> None:
+        """InputHook on_mouse callback: physical mouse button/wheel input
+        cancels a pending one-shot modifier (keyhac-win behavior - clicking
+        while holding a one-shot key means the hold was a drag/click
+        modifier, not a tap)."""
+        with self._lock:
+            self._last_keydown = None
+
     # ------------------------------------------------------------------
     # Key dispatch (ported from keyhac-mac)
 

@@ -76,11 +76,19 @@ class InputHook(ABC):
     @abstractmethod
     def install(self,
                 on_key: Callable[[KeyEvent], bool],
-                on_restored: Callable[[], None]) -> None:
+                on_restored: Callable[[], None],
+                on_mouse: Callable[[], None] | None = None) -> None:
         """Install the hook. on_key returns True to consume the event and is
         called synchronously on the thread that runs the event loop.
         on_restored is called when the OS disabled the hook and it was
-        re-installed/re-enabled (modifier state must be reset)."""
+        re-installed/re-enabled (modifier state must be reset).
+
+        on_mouse, when given, is called (no arguments; observation only,
+        mouse events are never consumed) on physical mouse button-down or
+        wheel input - the engine cancels a pending one-shot modifier on it
+        (keyhac-win's WH_MOUSE_LL behavior). Platforms without a mouse hook
+        may ignore it; a one-shot then simply survives mouse input, which is
+        what keyhac-mac always did."""
 
     @abstractmethod
     def uninstall(self) -> None: ...
@@ -109,6 +117,25 @@ class InputHook(ABC):
 
     def send_text(self, s: str) -> None:
         """Type a literal string (unicode injection). Platform-optional."""
+        raise NotImplementedError
+
+    def send_mouse(self, events: Sequence[tuple], replay: bool = False) -> None:
+        """Inject a batch of mouse events, tagged like send() so the hooks
+        can classify them. Platform-optional (Windows first; macOS later via
+        CGEvent mouse). Items:
+
+          ("move", dx, dy)          relative cursor move in pixels; injected
+                                    as an absolute position so pointer
+                                    acceleration cannot distort the distance
+          ("left"|"right"|"middle", down: bool)
+          ("wheel", notches) / ("hwheel", notches)   positive = away / right
+
+        Same ordering contract as send()."""
+        raise NotImplementedError
+
+    def cursor_pos(self) -> tuple[int, int]:
+        """Current cursor position in virtual-screen pixels (portable
+        top-left coordinates). Platform-optional."""
         raise NotImplementedError
 
     def check_health(self) -> None:

@@ -274,7 +274,8 @@ class ConsoleWindow:
             if not self._hook.installed:
                 try:
                     self._hook.install(self._keymap.on_key_event,
-                                       self._keymap.on_hook_restored)
+                                       self._keymap.on_hook_restored,
+                                       self._keymap.on_mouse_event)
                 except Exception as e:
                     logger.error(f"Failed to install the keyboard hook: {e}")
                     self._hook_checkbox.checked = False

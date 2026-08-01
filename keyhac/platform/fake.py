@@ -15,17 +15,22 @@ class FakeInputHook(InputHook):
         self._layout = layout
         self._on_key = None
         self._on_restored = None
+        self._on_mouse = None
         self._installed = False
         self.sent: list[tuple[int, bool, bool]] = []  # (vk, down, replay)
         self.sent_text: list[str] = []
+        self.sent_mouse: list[tuple] = []             # (event, replay)
         self.decisions: list[bool] = []               # consume decisions
+        self._cursor = (100, 100)
 
     # InputHook interface -------------------------------------------------
 
     def install(self, on_key: Callable[[KeyEvent], bool],
-                on_restored: Callable[[], None]) -> None:
+                on_restored: Callable[[], None],
+                on_mouse: Callable[[], None] | None = None) -> None:
         self._on_key = on_key
         self._on_restored = on_restored
+        self._on_mouse = on_mouse
         self._installed = True
 
     def uninstall(self) -> None:
@@ -48,7 +53,22 @@ class FakeInputHook(InputHook):
     def send_text(self, s: str) -> None:
         self.sent_text.append(s)
 
+    def send_mouse(self, events: Sequence[tuple], replay: bool = False) -> None:
+        for event in events:
+            self.sent_mouse.append((event, replay))
+            if event[0] == "move":
+                self._cursor = (self._cursor[0] + event[1],
+                                self._cursor[1] + event[2])
+
+    def cursor_pos(self) -> tuple[int, int]:
+        return self._cursor
+
     # Test helpers ---------------------------------------------------------
+
+    def mouse(self) -> None:
+        """Deliver one physical mouse button/wheel notification."""
+        if self._on_mouse is not None:
+            self._on_mouse()
 
     def key(self, vk: int, down: bool, kind: str = "real") -> bool:
         """Deliver one key event to the engine; returns the consume decision."""

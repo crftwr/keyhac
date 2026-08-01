@@ -24,7 +24,8 @@ class EngineFixture:
         self.keymap.config.namespace["_test_configure"] = configure
         self.keymap.config.call("configure", self.keymap)
 
-        self.hook.install(self.keymap.on_key_event, self.keymap.on_hook_restored)
+        self.hook.install(self.keymap.on_key_event, self.keymap.on_hook_restored,
+                          self.keymap.on_mouse_event)
 
     def vk(self, name: str) -> int:
         return get_key_names().str_to_vk(name)

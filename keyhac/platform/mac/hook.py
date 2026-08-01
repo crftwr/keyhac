@@ -128,7 +128,7 @@ class MacInputHook(InputHook):
 
     # ------------------------------------------------------------------
 
-    def install(self, on_key, on_restored) -> None:
+    def install(self, on_key, on_restored, on_mouse=None) -> None:
 
         if self._event_tap is not None:
             logger.warning("Keyboard hook is already installed.")
@@ -136,6 +136,10 @@ class MacInputHook(InputHook):
 
         self._on_key = on_key
         self._on_restored = on_restored
+        # on_mouse (one-shot cancellation on mouse input) is not implemented
+        # on macOS yet - keyhac-mac never had it either, so a one-shot simply
+        # survives mouse input here. Adding mouse types to the tap mask is
+        # the planned route (doc/05-features.md).
 
         event_mask = (
             (1 << Quartz.kCGEventKeyDown)

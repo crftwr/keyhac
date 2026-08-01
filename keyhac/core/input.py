@@ -106,6 +106,46 @@ class InputContext:
         self.send_modifier_keys(0)
         self._input_seq.append(("text", s))
 
+    def send_mouse_move(self, dx: int, dy: int) -> None:
+        """Move the mouse cursor by (dx, dy) pixels. Unlike buttons and
+        wheels, held modifiers stay held (keyhac-win behavior)."""
+        if not self._entered:
+            raise ValueError("Not in the context.")
+        self._input_seq.append(("mouse", ("move", dx, dy)))
+
+    def send_mouse_button(self, button: str = "left",
+                          down: bool | None = None) -> None:
+        """Press (down=True), release (down=False) or click (down=None) a
+        mouse button. Held modifiers are released first and restored when
+        the context exits - keyhac-win behavior, so a modifier-bound click
+        does not turn into a modified click."""
+        if not self._entered:
+            raise ValueError("Not in the context.")
+        if button not in ("left", "right", "middle"):
+            raise ValueError(f'Mouse button must be "left", "right" or '
+                             f'"middle", not {button!r}')
+        self.send_modifier_keys(0)
+        if down is None:
+            self._input_seq.append(("mouse", (button, True)))
+            self._input_seq.append(("mouse", (button, False)))
+        else:
+            self._input_seq.append(("mouse", (button, down)))
+
+    def send_mouse_wheel(self, notches: float) -> None:
+        """Turn the vertical wheel (positive = away from you). Held
+        modifiers are released first, like send_mouse_button."""
+        if not self._entered:
+            raise ValueError("Not in the context.")
+        self.send_modifier_keys(0)
+        self._input_seq.append(("mouse", ("wheel", notches)))
+
+    def send_mouse_horizontal_wheel(self, notches: float) -> None:
+        """Turn the horizontal wheel (positive = right)."""
+        if not self._entered:
+            raise ValueError("Not in the context.")
+        self.send_modifier_keys(0)
+        self._input_seq.append(("mouse", ("hwheel", notches)))
+
     def send_modifier_keys(self, mod: int) -> None:
         """Emit modifier key downs/ups so the virtual modifier state matches
         the target state `mod`."""
@@ -131,14 +171,33 @@ class InputContext:
     def _flush(self):
         self.send_modifier_keys(self._real_modifier)
         seq, self._input_seq = self._input_seq, []
-        batch = []
+
+        # Consecutive items of one kind go out as one platform batch; a kind
+        # change flushes, so overall ordering is preserved across the key /
+        # text / mouse channels.
+        keys = []
+        mouse = []
+
+        def flush_keys():
+            if keys:
+                self._keymap._hook.send(list(keys), replay=self._replay)
+                keys.clear()
+
+        def flush_mouse():
+            if mouse:
+                self._keymap._hook.send_mouse(list(mouse), replay=self._replay)
+                mouse.clear()
+
         for item in seq:
             if item[0] == "text":
-                if batch:
-                    self._keymap._hook.send(batch, replay=self._replay)
-                    batch = []
+                flush_keys()
+                flush_mouse()
                 self._keymap._hook.send_text(item[1])
+            elif item[0] == "mouse":
+                flush_keys()
+                mouse.append(item[1])
             else:
-                batch.append(item)
-        if batch:
-            self._keymap._hook.send(batch, replay=self._replay)
+                flush_mouse()
+                keys.append(item)
+        flush_keys()
+        flush_mouse()

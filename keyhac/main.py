@@ -128,7 +128,8 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
     keymap.on_leave_multi_stroke = lambda: balloon.close("MultiStroke")
     install_tray(console, keymap, hook)
 
-    hook.install(keymap.on_key_event, keymap.on_hook_restored)
+    hook.install(keymap.on_key_event, keymap.on_hook_restored,
+                 keymap.on_mouse_event)
     console._hook_checkbox.checked = True
 
     # Ctrl+C in the launching terminal stops the UI loop. The console's
@@ -149,7 +150,8 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
 
 
 def _run_headless(keymap, hook, loop, platform_name: str, clipboard_provider) -> int:
-    hook.install(keymap.on_key_event, keymap.on_hook_restored)
+    hook.install(keymap.on_key_event, keymap.on_hook_restored,
+                 keymap.on_mouse_event)
 
     # Periodic hook health check; the 100 ms Python tick also guarantees the
     # SIGINT handler below runs promptly while blocked in the native loop.

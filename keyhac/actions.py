@@ -215,6 +215,85 @@ class DateTimeSnippet:
         return datetime.datetime.now().strftime(self.fmt)
 
 
+class MouseMove:
+    """Move the mouse cursor by (dx, dy) pixels (keyhac-win
+    MouseMoveCommand). Held modifiers stay held."""
+
+    def __init__(self, dx: int, dy: int):
+        self.dx = dx
+        self.dy = dy
+
+    def __call__(self):
+        with Keymap.get_instance().get_input_context() as ctx:
+            ctx.send_mouse_move(self.dx, self.dy)
+
+    def __repr__(self):
+        return f"MouseMove({self.dx}, {self.dy})"
+
+
+class _MouseButtonAction:
+    """Common shape of the button actions: validate at config-load time,
+    send through the input context (which releases held modifiers around
+    the button and restores them after - keyhac-win behavior)."""
+
+    _down: bool | None = None
+
+    def __init__(self, button: str = "left"):
+        if button not in ("left", "right", "middle"):
+            raise ValueError(f'{type(self).__name__} button must be "left", '
+                             f'"right" or "middle", not {button!r}')
+        self.button = button
+
+    def __call__(self):
+        with Keymap.get_instance().get_input_context() as ctx:
+            ctx.send_mouse_button(self.button, self._down)
+
+    def __repr__(self):
+        return f'{type(self).__name__}("{self.button}")'
+
+
+class MouseButtonDown(_MouseButtonAction):
+    """Press a mouse button (keyhac-win MouseButtonDownCommand)."""
+    _down = True
+
+
+class MouseButtonUp(_MouseButtonAction):
+    """Release a mouse button (keyhac-win MouseButtonUpCommand)."""
+    _down = False
+
+
+class MouseButtonClick(_MouseButtonAction):
+    """Click a mouse button (keyhac-win MouseButtonClickCommand)."""
+    _down = None
+
+
+class MouseWheel:
+    """Turn the vertical mouse wheel; positive = away from you, 1.0 = one
+    notch (keyhac-win MouseWheelCommand)."""
+
+    _kind = "vertical"
+
+    def __init__(self, wheel: float):
+        self.wheel = wheel
+
+    def __call__(self):
+        with Keymap.get_instance().get_input_context() as ctx:
+            if self._kind == "vertical":
+                ctx.send_mouse_wheel(self.wheel)
+            else:
+                ctx.send_mouse_horizontal_wheel(self.wheel)
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.wheel})"
+
+
+class MouseHorizontalWheel(MouseWheel):
+    """Turn the horizontal mouse wheel; positive = right (keyhac-win
+    MouseHorizontalWheelCommand)."""
+
+    _kind = "horizontal"
+
+
 class MoveWindow(ThreadedAction):
     """Move the focused window - full port of keyhac-mac's MoveWindow:
     direction/distance, stop at other windows' edges (window_edge) and
