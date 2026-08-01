@@ -109,16 +109,16 @@ def test_menu_extra_template_stays_in_the_subset():
     # Line-art template: outline and key-top edge lines are solid ink and
     # every face stays open (the menu bar shows through).
     pixels = svgrender.render_file(_ROOT / "art" / "MenuExtraTemplate.svg",
-                                   42, 36)
+                                   38, 36)
 
     def alpha(x_pt, y_pt):  # canvas pt -> 2x pixel
         return pixels[round(y_pt * 2)][round(x_pt * 2)][3]
 
-    # Art coords map to canvas pt via x*0.039293 - 3.8865 / y*0.039293 - 10.0748.
-    assert alpha(10.2, 3.08) == 255   # top outline (y=334.9)
-    assert alpha(10.2, 9.93) == 255   # key-top bottom edge line (y=508.9)
-    assert alpha(10.2, 6.5) == 0      # top face open
-    assert alpha(10.2, 12.5) == 0     # bottom face open
+    # Art coords map to canvas pt via x*0.0367 - 3.657 / y*0.0367 - 8.316.
+    assert alpha(9.5, 3.15) == 255    # top outline (y=312.4)
+    assert alpha(9.5, 10.49) == 255   # key-top bottom edge line (y=512.4)
+    assert alpha(9.5, 7.0) == 0       # top face open
+    assert alpha(9.5, 13.0) == 0      # bottom face open
 
 
 def test_ico_container_layout(tmp_path):

@@ -138,7 +138,8 @@ M2 progress:
   design. The vector artwork is the hand-maintained source of truth, both in
   `art/`: `icon.svg` (color) and `MenuExtraTemplate.svg` (the menu extra — an
   AppKit-template glyph: the keycap as line art, outline plus key-top edge
-  lines, faces open, y squashed 0.87, strokes kept light (1.7pt/1.1pt)
+  lines, faces open, uniform scale so its proportions match the app icon
+  (an earlier 0.87 y-squash was reverted), strokes kept light (1.7pt/1.1pt)
   because heavier ones fuse the tapering side faces shut at menu-bar size;
   shaded faces are no option either — template rendering keeps only alpha,
   so they let the menu bar bleed through). `tools/make_icons.py`

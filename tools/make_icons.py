@@ -23,9 +23,9 @@ Raster targets (all checked in; re-run only when the artwork changes):
 - ``keyhac/ui/assets/keyhac.icns`` — macOS app icon for the bundled app
   (doc/06-packaging.md), PNG entries at every standard slot up to 1024.
 - ``keyhac/ui/assets/MenuExtraTemplate.png`` + ``@2x`` — the menu bar
-  extra at 21x18 pt (the 20.4x18 canvas centered at exact 1x/2x scale;
-  puikit's tray loader pairs the @2x sibling and applies the AppKit
-  "…Template" naming convention).
+  extra at 19x18 pt (the 19x18 canvas at exact 1x/2x scale; puikit's
+  tray loader pairs the @2x sibling and applies the AppKit "…Template"
+  naming convention).
 
 Adding a target (store banner, README art, …) is one line in ``build()``:
 render the source SVG at the needed size and hand it to an encoder.
@@ -202,17 +202,17 @@ def build():
     sizes = sorted({size for size, _t in _ICNS_SLOTS})
     icns = icns_bytes({s: render(s) for s in sizes})
 
-    # macOS menu bar extra: the 20.4x18 canvas fits a 21x18 grid at exactly
-    # scale 1 (42x36 at exactly 2), centered with the leftover 0.3 pt margin.
+    # macOS menu bar extra: the 19x18 canvas renders at exactly scale 1
+    # (38x36 at exactly 2).
     template = (ART / "MenuExtraTemplate.svg").read_text(encoding="utf-8")
 
     return {
         ASSETS / "keyhac.ico": ico,
         ASSETS / "keyhac.icns": icns,
         ASSETS / "MenuExtraTemplate.png":
-            png_bytes(svgrender.render(template, 21, 18)),
+            png_bytes(svgrender.render(template, 19, 18)),
         ASSETS / "MenuExtraTemplate@2x.png":
-            png_bytes(svgrender.render(template, 42, 36)),
+            png_bytes(svgrender.render(template, 38, 36)),
     }
 
 

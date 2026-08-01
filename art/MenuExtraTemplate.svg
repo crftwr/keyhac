@@ -3,29 +3,34 @@
      the same keycap drawn as line art - the outline plus the key-top
      edges as lines, all faces open (the menu bar shows through), per
      design review: solid-filled sides read wrong for the keycap's
-     perspective. The outline is 44 units (1.7pt) and the edges 28
+     perspective. The outline is 46.3 units (1.7pt) and the edges 30
      (1.1pt) - heavier strokes fuse the tapering side faces shut at
      menu bar size and the icon reads as a blob. Geometry is icon.svg's
-     keycap with y squashed 0.87 about the ink center (the full-height
-     version stood too tall next to the neighboring extras): ink
-     19.4x13.6pt in the 20.4x18pt canvas, horizontally and vertically
-     centered, wider than tall because the keycap is - menu extra
-     images need not be square. Ink is binary; alpha appears only from
-     anti-aliasing, and the system recolors it for dark mode / menu
-     highlight. Not loaded at runtime: tools/make_icons.py rasterizes
-     it (via tools/svgrender.py - keep this file inside that documented
-     SVG subset) into assets/MenuExtraTemplate.png + @2x. It used to
-     ship as the runtime image itself, but macOS caches a system-side
-     rasterization of a vector status-item image keyed by the file's
-     identity, so an in-place edit could leave menu bars compositing a
-     stale raster of old artwork. Bitmaps don't go through that
-     pipeline. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="20.4" height="18"
-     viewBox="0 0 20.4 18">
-  <g transform="translate(-3.8865 -10.0748) scale(0.039293)">
-    <path d="M240 334.9 L470 334.9 L544 379.8 L583 635.6 L134 636.0 L172.5 380.7 Z" fill="none" stroke="#000"
-          stroke-width="44" stroke-linejoin="round"/>
-    <path d="M240 334.9 L220 508.9 M220 508.9 L490 508.9 M470 334.9 L490 508.9 M220 508.9 L134 636.0 M490 508.9 L583 635.6" fill="none" stroke="#000"
-          stroke-width="28"/>
+     keycap verbatim at one uniform scale, so the proportions match the
+     app icon (an earlier 0.87 y-squash kept the glyph wider but
+     distorted the ratio; reverted per design review). Ink height is a
+     design-review-tuned 14.4pt (13.6 read slightly small, the
+     full-height ~15.3 stood too tall next to the neighboring extras),
+     so the ink is 18.2x14.4pt in the 19x18pt canvas, horizontally
+     centered and 0.5pt below the vertical center (design review:
+     centered sat too high in the menu bar; the status item centers
+     the image, so the offset is baked into the canvas). Ink is
+     binary; alpha appears
+     only from anti-aliasing, and the system recolors it for dark mode
+     / menu highlight. Not loaded at runtime: tools/make_icons.py
+     rasterizes it (via tools/svgrender.py - keep this file inside that
+     documented SVG subset) into assets/MenuExtraTemplate.png + @2x. It
+     used to ship as the runtime image itself, but macOS caches a
+     system-side rasterization of a vector status-item image keyed by
+     the file's identity, so an in-place edit could leave menu bars
+     compositing a stale raster of old artwork. Bitmaps don't go
+     through that pipeline. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="19" height="18"
+     viewBox="0 0 19 18">
+  <g transform="translate(-3.657 -8.316) scale(0.0367)">
+    <path d="M240 312.4 L470 312.4 L544 364 L583 658 L134 658.5 L172.5 365 Z" fill="none" stroke="#000"
+          stroke-width="46.3" stroke-linejoin="round"/>
+    <path d="M240 312.4 L220 512.4 M220 512.4 L490 512.4 M470 312.4 L490 512.4 M220 512.4 L134 658.5 M490 512.4 L583 658" fill="none" stroke="#000"
+          stroke-width="30"/>
   </g>
 </svg>
