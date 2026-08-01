@@ -27,15 +27,21 @@ def configure(keymap):
     # ==================================================================
 
     # --- user modifier -------------------------------------------------
-    # Turn the right Alt/Option key into User0, a modifier of your own that
-    # no application sees.  User0-User3 are available; a key used this way
-    # is never emitted, so RAlt stops acting as Alt.
-    keymap.define_modifier("RAlt", "RUser0")
+    # Turn a key into User0, a modifier of your own that no application
+    # sees.  User0-User3 are available; a key used this way is never
+    # emitted, so it loses its original meaning while defined.
+    if mac:
+        # The right Option key; it stops acting as Option.
+        keymap.define_modifier("RAlt", "RUser0")
+    else:
+        # The left Windows key; the Start menu no longer opens on a tap
+        # (bind kt["O-LWin"] = "LWin" below if you want that back).
+        keymap.define_modifier("LWin", "LUser0")
 
     # --- the two portability constants ---------------------------------
     # LEADER: the modifier most samples below hang off.
     #   macOS   - the Fn key, which Windows does not expose to software
-    #   Windows - User0, i.e. the right Alt key defined just above
+    #   Windows - User0, i.e. the left Windows key defined just above
     LEADER = "Fn" if mac else "User0"
 
     # MOD: the OS's primary shortcut modifier, so one binding can mean

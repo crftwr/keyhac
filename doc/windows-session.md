@@ -35,10 +35,19 @@ placeholder; fixed in puikit #77).
   (sequence-number poll); get/set round-trip incl. Japanese text.
 - send_text (KEYEVENTF_UNICODE): **written to spec** - ASCII + Japanese +
   emoji (surrogates).
-- WinAppControl.activate_pid: **written to spec**. Note `Window.activate()`
-  (platform/win/window.py) already carries the AttachThreadInput
-  foreground-lock workaround and is verified; if activate_pid is refused,
-  make it delegate there rather than re-solving it.
+- WinAppControl.activate_pid: **verified live** (chooser-focus fix). The
+  user-reported symptom was exactly the anticipated one: the chooser popped
+  up without keyboard focus because the original bare SetForegroundWindow is
+  refused under the foreground lock. activate_pid now delegates to
+  `Window.activate()` (platform/win/window.py), which carries the
+  AttachThreadInput workaround, and picks the first visible window in
+  Z-order so the topmost chooser wins over the console. Verified by a
+  two-process probe (scratchpad fg_probe2.py pattern): a WMI-spawned
+  "target" holds foreground and keeps the lock armed with synthesized F24
+  input (an idle desktop does NOT arm the lock — single-process probes and
+  foreground-chain-inherited shells both come back false-green); the
+  "thief" then reproduced the refusal and confirmed activate_pid wins
+  foreground + keyboard focus.
 - Chooser: renders on Windows (verified against the real ChooserWindow). The
   end-to-end paste flow — select, refocus, Ctrl-V — is untested, and it
   exercises the clipboard provider and activate_pid together, so run it
