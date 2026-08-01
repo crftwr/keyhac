@@ -4,7 +4,11 @@ Reimplements the behavior keyhac-win got from pyauto (pyautocore.pyd):
 - low-level keyboard hook installed on the main thread; callbacks are
   delivered while that thread pumps messages; return nonzero to consume
 - injection via SendInput() batches, tagged through dwExtraInfo so the hook
-  can classify its own events ("own" filtered, "replay" re-processed)
+  can classify its own events ("own" filtered, "replay" re-processed).
+  There is deliberately no counterpart to the macOS defer-real-events
+  machinery: SendInput inserts the batch atomically at the tail of the system
+  input queue, so ordering against subsequent physical input is guaranteed by
+  the OS (see InputHook.send in platform/base.py)
 - silent-unhook recovery: Windows removes a hook whose callback exceeds
   LowLevelHooksTimeout (~300 ms) without any notification; a periodic sanity
   check (ported from keyhac-win Keymap.checkSanity) detects modifier-state

@@ -92,7 +92,16 @@ class InputHook(ABC):
     @abstractmethod
     def send(self, events: Sequence[tuple[int, bool]], replay: bool = False) -> None:
         """Inject a batch of (vk, down) key events, tagged so the hook can
-        classify them ("own" filtered / "replay" re-processed)."""
+        classify them ("own" filtered / "replay" re-processed).
+
+        Ordering contract: delivery is asynchronous - the events enter the OS
+        input pipeline and re-enter the hook after the current callback
+        returns - but the batch is delivered as a unit and lands *before* any
+        physical key the user presses afterwards. How that is achieved is the
+        platform's business: on Windows SendInput's atomic queue-tail insert
+        gives it for free; on macOS CGEventPost has no such guarantee, so the
+        hook defers concurrent real events until the batch has drained (see
+        platform/mac/hook.py)."""
 
     @abstractmethod
     def keyboard_layout(self) -> str:
