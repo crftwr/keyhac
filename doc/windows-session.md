@@ -1,104 +1,141 @@
-# Windows session checklist
+# Windows session status
 
-Everything queued for the next Windows sitting, in dependency order.
-Code marked "written to spec" has never executed on Windows; everything else
-has been run there. Start a hook bring-up with `tools/hook_echo.py`.
+Originally the checklist for the Windows bring-up sittings; now the record
+of what has been verified there and how. As of 2026-08-01 everything
+automatable has been run live on this machine (Windows 11 Home 10.0.26200);
+the short list of genuinely-interactive leftovers is at the bottom.
 
-## 0. Setup
-- `git pull` both repos; puikit `main` (the window extensions, the DPI font
-  fix and Windows multi-window all shipped — PRs #76-#79).
-- `make venv` in keyhac2 (installs ../puikit editable).
+## How the automated verification works (patterns worth keeping)
 
-## 1. M1 interactive checklist (hook, still open)
-The hook installs, delivers callbacks, and reports focus live, but **no key
-has ever been consumed on Windows** — every run so far logged only PASSTHRU,
-because the sample config's bindings were all unreachable there. With the
-config now portable, this is the first thing to exercise.
-- `make echo`: fast typing burst - no silent unhook; JIS layout detection.
-- `make run-sandbox ARGS=-d`: remap, replace_key, one-shot, multi-stroke,
-  `C-`/`W-` short forms, `class_name=` table (notepad/Edit).
-- Put `time.sleep(0.5)` in a bound action: sanity-check re-install fires
-  ("Key hook force cancellation detected"), modifiers recover.
-- Extended keys: arrows/Home/End/PgUp/PgDn/Ins/Del/RCtrl/RAlt output
-  correctly (EXTENDED_VKS table in platform/win/hook.py may need tuning).
+- **In-process app harness** (scratchpad `harnessA.py` / `harnessB.py`
+  pattern): host the real engine in the test process - real `WinInputHook`,
+  real config loading, real `WinFocusProvider`/`ConsoleWindow`, the same
+  wiring `main.py` does - and play the user with *untagged* `SendInput`
+  (no Keyhac `dwExtraInfo` sentinel), which the hook classifies as real.
+  A probe window records every `WM_KEYDOWN`/`WM_CHAR` that reaches an app.
+  No subprocess, so no single-instance-guard collision: a concurrently
+  running production Keyhac is untouched (its hook sits later in the LL
+  chain; the harness binds only F13-F24, which no human config uses).
+- **Foreground-lock probes must arm the lock.** An idle desktop does NOT
+  arm it (steals succeed), and any process spawned from the
+  foreground-process chain inherits steal permission - both give
+  false-green results. A valid probe: WMI-spawn (outside the chain) a
+  "target" that takes foreground and keeps receiving synthesized F24 taps,
+  then reproduce/steal from a second WMI-spawned process.
+- **Window-class + ctypes wndproc in tests**: keep the probe module-scoped.
+  Re-registering the class in a second fixture instance leaves
+  `lpfnWndProc` pointing at the first instance's freed thunk - the next
+  message faults the interpreter.
 
-## 2. M2 console window — DONE
-Console opens, log streams, hook toggle and level dropdown work, inspector
-shows last key and focus path. Per-monitor DPI verified at 200% (the
-half-size widget text was puikit's font cache surviving the pre-open DPI
-placeholder; fixed in puikit #77).
-- Still open: WM_CLOSE with `main_window_close="hide"`; stdout redirect to
-  the console (`print()` from config.py still goes to the terminal).
+## 1. M1 hook + engine — DONE (harness, 19/19)
 
-## 3. M3 clipboard + app control
-- WinClipboardProvider: **written to spec** - copies land in history
-  (sequence-number poll); get/set round-trip incl. Japanese text.
-- send_text (KEYEVENTF_UNICODE): **written to spec** - ASCII + Japanese +
-  emoji (surrogates).
-- WinAppControl.activate_pid: **verified live** (chooser-focus fix). The
-  user-reported symptom was exactly the anticipated one: the chooser popped
-  up without keyboard focus because the original bare SetForegroundWindow is
-  refused under the foreground lock. activate_pid now delegates to
-  `Window.activate()` (platform/win/window.py), which carries the
-  AttachThreadInput workaround, and picks the first visible window in
-  Z-order so the topmost chooser wins over the console. Verified by a
-  two-process probe (scratchpad fg_probe2.py pattern): a WMI-spawned
-  "target" holds foreground and keeps the lock armed with synthesized F24
-  input (an idle desktop does NOT arm the lock — single-process probes and
-  foreground-chain-inherited shells both come back false-green); the
-  "thief" then reproduced the refusal and confirmed activate_pid wins
-  foreground + keyboard focus.
-- Chooser: renders on Windows (verified against the real ChooserWindow). The
-  end-to-end paste flow — select, refocus, Ctrl-V — is untested, and it
-  exercises the clipboard provider and activate_pid together, so run it
-  first.
+Remap, key sequence (ordered), replace_key, one-shot (lone tap fires /
+held+key acts as the plain modifier), `C-`/`S-` short forms, multi-stroke
+(match, and the unmatched key-down leaving the mode is still consumed),
+class_name-scoped table, extended-key output (Left arrives with the
+extended bit). Findings:
 
-## 4. M4 tray
-- set_tray: icon appears (host exe icon), tooltip, left/right click menu,
-  checkmark state, Quit works, icon removed on exit. **Written to spec** on
-  the keyhac side; puikit's implementation is real and now declares the
-  `system_tray` capability (#79).
-- show_main_window after close-to-hide.
-- Balloon window: unblocked by multi-window, never opened on Windows.
+- **F21-F24 were missing from the key-name tables** (`core/vk.py` built
+  the F row with `range(1, 21)`); Win32 defines VKs to F24 and they now
+  parse on Windows (macOS keeps F20 - no scan codes past it - and gets
+  the exists-only-on-Windows diagnostic).
+- **This Windows build survives a 0.6 s hook-callback stall** - the
+  LowLevelHooksTimeout removal did not fire, so the silent-unhook path
+  cannot be provoked that way here. The sanity check itself is verified by
+  covert removal (`UnhookWindowsHookEx` behind the hook object's back -
+  indistinguishable from the OS doing it): raw keys leak, four modifier
+  flips with no callbacks trigger "Key hook force cancellation detected -
+  re-installing", and consumption works again after.
+- Macro record/playback: recorded X,Y replay through the engine and land
+  in the probe again (Replay log start/stop/play).
+
+Still hardware-dependent, not automatable: JIS layout detection
+(`GetKeyboardType(0) == 7`) on a real JIS keyboard, and general typing
+feel under load.
+
+## 2. M2 console — DONE
+
+Console opens, log streams, hook toggle, level dropdown, inspector,
+per-monitor DPI at 200% (puikit #77). This session: **stdout redirect
+verified** (`print()` from a config lands in the console ring buffer;
+the old "still goes to the terminal" note was stale) and **WM_CLOSE
+hides** (`main_window_close="hide"`, loop stays alive,
+`show_main_window()` re-shows).
+
+## 3. M3 clipboard + app control + chooser — DONE
+
+- WinClipboardProvider: get/set round-trip incl. Japanese **and non-BMP
+  emoji** - the emoji case caught a real bug (`create_unicode_buffer`
+  sizes by code points, truncating surrogate pairs; set_text now encodes
+  UTF-16-LE explicitly). Sequence-number poll, empty clipboard. Tests:
+  `tests/test_win_clipboard.py`.
+- send_text (KEYEVENTF_UNICODE): ASCII + Japanese + emoji arrive through
+  the real VK_PACKET -> TranslateMessage -> WM_CHAR path.
+  Tests: `tests/test_win_send_text.py`.
+- WinAppControl.activate_pid: **the user-reported chooser-focus bug** was
+  the anticipated one - bare SetForegroundWindow refused under the
+  foreground lock. It now delegates to `Window.activate()`, picking the
+  process's first visible window in Z-order (topmost chooser wins over
+  the console).
+- **`Window.activate()` needed the dual attach**: attaching to the
+  foreground thread alone (the classic recipe and keyhac-win's) is no
+  longer honored by Windows 11 under an armed lock for a *cross-process*
+  target; attaching to both the foreground thread and the target's thread
+  works. Verified against a genuinely armed lock.
+- Chooser end-to-end (harness B, 14/14): chooser opens **with keyboard
+  focus**, filter narrows, Enter refocuses the original (cross-process)
+  app and Ctrl-V pastes into its real EDIT control, Shift-Enter sets the
+  clipboard without pasting, the hotkey toggles the chooser closed with
+  refocus.
+
+## 4. M4 tray, balloon, macro, mouse — DONE
+
+- Tray ran live in the earlier Keyhac.exe bundle session (see CLAUDE.md).
+- Balloon: frameless topmost no-activate secondary HWND opens without
+  stealing foreground, correct ex-styles, placed in the work area,
+  replace-by-name and close verified (`tests/test_win_balloon.py`).
+- Macro record/playback: harness-verified (see §1).
+- **Mouse output implemented** (this session): `MouseMove(dx, dy)`,
+  `MouseButtonDown/Up/Click(button)`, `MouseWheel(n)`,
+  `MouseHorizontalWheel(n)` action classes; `InputContext.send_mouse_*`
+  (buttons/wheels release held modifiers and restore them, keyhac-win
+  behavior; moves keep them); `InputHook.send_mouse()`/`cursor_pos()`;
+  Windows injection converts relative moves to absolute virtual-desktop
+  coordinates so pointer acceleration cannot distort them. **WH_MOUSE_LL
+  one-shot cancel**: observation-only hook; physical button/wheel input
+  cancels a pending one-shot (`Keymap.on_mouse_event`), Keyhac's own
+  tagged output is ignored. Live tests: `tests/test_win_mouse.py`;
+  engine tests: `tests/test_mouse.py`. macOS: not yet (as keyhac-mac;
+  planned route is mouse types in the tap mask).
 
 ## 5. Multi-window — DONE (puikit #78)
-`create_window()` gives real secondary HWNDs, each with its own DXGI swap
-chain on the shared D3D device. Chooser and balloon both work on it.
-Known limit: IME composition stays attached to the main HWND, so a popup
-text field types ASCII but does not compose — the chooser's filter box with
-a Japanese IME is the case to watch.
+
+Known limit, still open: IME composition stays attached to the main HWND,
+so a popup text field types ASCII but does not compose - the chooser's
+filter box with a Japanese IME is the case to watch (needs interactive
+confirmation, fix would be puikit work).
 
 ## 6. Windows API surface — DONE
-- `platform/win/window.py`: the portable `Window`/`WindowProvider` (the
-  pyauto.Window analogue). Enumeration excludes the shell desktop window and
-  DWM-cloaked windows; `activate()` handles the foreground lock.
-- `platform/win/uielement.py`: UI Automation via raw ctypes — element
-  attributes, control-view parent walk, Invoke/Toggle/Expand/Collapse
-  actions, Value/SelectedText patterns.
-- Focus path is now the full UIA control hierarchy.
-- `MoveWindow` and `ActivateWindow` both run on Windows.
 
-## 7. Still missing on Windows
-- Mouse output commands + WH_MOUSE_LL one-shot cancel (M4) — no mouse code
-  exists on either OS yet.
-- `screen_work_frames()` / `SnapWindow`: **written to spec** — rcWork from
-  the same MONITORINFO screen_frames() already reads. Check: snap
-  left/right/full lands inside the taskbar-free work area (auto-hide
-  taskbar and per-monitor DPI are the suspects), and the template's
-  `LEADER-Ctrl-J/L/I/K` + `LEADER-F` bindings.
-  (`settings.json` and the single-instance guard, formerly listed here,
-  were verified live — see CLAUDE.md.)
+window.py (portable Window/WindowProvider incl. work frames + SnapWindow,
+verified live in tests/test_win_window.py), uielement.py (UIA), full UIA
+focus path, MoveWindow/ActivateWindow.
 
-## 8. Known-suspect list (cold-written code most likely to need fixes)
-- KEYBDINPUT wScan for send_text vs MapVirtualKeyW interplay
-- Shell_NotifyIconW struct size on different Windows versions
-  (cbSize/legacy variants)
-- WinEventLoop thread-id timers vs the puikit pump (keyhac2 headless mode)
+## 7. Remaining (genuinely interactive / hardware)
 
-## 9. Performance note
+- Typing feel under real fast typing; JIS keyboard layout detection.
+- Chooser filter box with a Japanese IME (see §5).
+- `windows_app/` Keyhac.exe bundle: build + import smoke done and tray ran
+  live, but a full interactive pass on the bundle (as opposed to
+  `python -m keyhac`) hasn't been repeated since the fixes landed.
+- puikit 1.0.7 PyPI release (until then the venv must keep the editable
+  checkout: tray image + main-window visibility APIs).
+
+## 8. Performance note
+
 A full UIA focus walk costs ~33 ms on a deep Electron tree, so the focus
 provider caches on a ~0.01 ms Win32 probe (foreground hwnd, focused hwnd,
-title) and only walks when that changes. If focus paths ever feel slow after
-an app switch, the fix is UIA cache requests
-(`IUIAutomationCacheRequest` + `BuildUpdatedCache`), which fetch a subtree in
-one cross-process call instead of one per property per level.
+title) and only walks when that changes. If focus paths ever feel slow
+after an app switch, the fix is UIA cache requests
+(`IUIAutomationCacheRequest` + `BuildUpdatedCache`), which fetch a subtree
+in one cross-process call instead of one per property per level.

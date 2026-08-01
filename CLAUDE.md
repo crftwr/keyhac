@@ -188,8 +188,8 @@ Windows bring-up (second session, all verified live on Windows):
 - `tools/hook_echo.py --stress-ordering` now run live on Windows: 50/50 rounds
   green — the SendInput queue-order assumption behind the `send()` contract is
   empirically validated, not just assumed.
-- Not yet run on Windows: clipboard provider, `send_text`, balloon, and — most
-  importantly — **key consumption** (every session so far logged only PASSTHRU).
+- ~~Not yet run on Windows: clipboard provider, `send_text`, balloon, key
+  consumption~~ — all closed in the 2026-08-01 Windows session (below).
   See [doc/windows-session.md](doc/windows-session.md).
 - Windows tray now runs live; first Keyhac.exe bundle session surfaced two fixes:
   the console (and chooser) are now `WindowStyle(tool=True)` — tray-only presence,
@@ -224,10 +224,9 @@ format compatible with keyhac-mac), chooser window (`ui/chooser.py`, on puikit
 refocus-then-paste flow; `core/action.py`: ThreadedAction/LaunchApplication).
 `keyhac/ui/runtime.py` holds the app's PuiKit backend for chooser/balloon windows.
 With `--config PATH`, clipboard.json lives beside the config (sandbox isolation).
-Remaining in M3: the Windows session (clipboard provider + WinAppControl +
-chooser + `send_text`/InputText). The macOS side of M3 is closed: the
-UIElement AX port (`platform/mac/uielement.py`, the full keyhac-mac API
-surface incl. the 3-arg `set_attribute_value(name, type, value)`) and
+M3 is closed on both OSes (Windows side: 2026-08-01 session below). The macOS
+side: the UIElement AX port (`platform/mac/uielement.py`, the full keyhac-mac
+API surface incl. the 3-arg `set_attribute_value(name, type, value)`) and
 ActivateWindow/MoveWindow are live-verified.
 See [doc/07-roadmap.md](doc/07-roadmap.md).
 
@@ -310,3 +309,40 @@ build.sh + create_dmg.sh, **built, signed, notarized and run live on macOS** —
 see the macOS session notes above). Bundle id
 defaults to `crftwr.Keyhac2` (`BUNDLE_ID=` overrides; roadmap open decision #4).
 Details in [doc/06-packaging.md](doc/06-packaging.md).
+
+Windows session (2026-08-01, all verified live; details + reusable harness
+patterns in [doc/windows-session.md](doc/windows-session.md)):
+
+- **Chooser focus bug fixed** (user-reported): bare SetForegroundWindow is
+  refused under the foreground lock; `activate_pid` now delegates to
+  `Window.activate()`, which needed an upgrade of its own — on Windows 11
+  the classic attach-to-foreground-thread unlock no longer works for a
+  cross-process target under an armed lock; attaching to **both** the
+  foreground and target threads does. Verified with WMI-spawned probes that
+  genuinely arm the lock (an idle desktop or a foreground-chain child gives
+  false greens — recorded in the session doc).
+- **Key consumption fully verified** via an in-process harness driving the
+  real engine with untagged SendInput (19/19): remap, sequences,
+  replace_key, one-shot tap/held, short forms, multi-stroke incl.
+  unmatched-consume, class_name table, extended-key flags, sanity-check
+  re-install (covert-unhook provocation — this Windows build survives a
+  0.6 s callback stall without unhooking), macro record/playback.
+- **Chooser paste flow end-to-end** (14/14): open-with-focus, filter,
+  Enter → refocus original app → Ctrl-V into a real cross-process EDIT;
+  Shift-Enter sets clipboard only; hotkey toggle. Console stdout redirect
+  and WM_CLOSE-hides both verified (their doc notes were stale).
+- Clipboard provider (non-BMP truncation bug found+fixed), send_text,
+  balloon, SnapWindow/work-frames all live-tested
+  (tests/test_win_{clipboard,send_text,balloon,mouse}.py + window tests).
+- **F21–F24 added** to the Windows key-name table (`core/vk.py` stopped at
+  F20; Win32 defines to F24).
+- **Mouse output shipped** (M4, Windows): `MouseMove` /
+  `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel`
+  actions, `InputContext.send_mouse_*` (buttons/wheels release held
+  modifiers, keyhac-win behavior), `InputHook.send_mouse`/`cursor_pos`,
+  relative-move-as-absolute injection (defeats pointer acceleration), and
+  WH_MOUSE_LL one-shot cancel (`Keymap.on_mouse_event`; own output
+  ignored via dwExtraInfo). macOS mouse still pending (tap-mask route).
+- puikit PR #85 (merged #83's exposed Windows test failures — all stale
+  test contracts) opened from `windows-test-fixes`; puikit suite 1547/0 on
+  Windows. PR #84 is merged; PyPI 1.0.7 still pending.

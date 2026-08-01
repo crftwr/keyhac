@@ -19,8 +19,8 @@ milestone (M-numbers from [07-roadmap.md](07-roadmap.md)).
 | Console window | ✔ (ckit) | ✔ (SwiftTerm) | PuiKit LogView + toggle/level/inspector | M2 |
 | Balloon/tooltip | ✔ | ✖ | ✔ PuiKit frameless window (E1/E2) | M4 |
 | Tray icon / menu-bar extra | ✔ tray | ✔ MenuBarExtra | ✔ PuiKit E4 | M4 |
-| Mouse output commands | ✔ | ✖ | Windows M4; macOS after (CGEvent mouse) | M4+ |
-| One-shot cancel on mouse | ✔ (mouse LL hook) | ✖ | Windows M4 (WH_MOUSE_LL); macOS optional (add mouse types to tap mask) | M4+ |
+| Mouse output commands | ✔ | ✖ | ✔ Windows (SendInput mouse: `MouseMove/MouseButton*/MouseWheel*`); macOS after (CGEvent mouse) | M4 |
+| One-shot cancel on mouse | ✔ (mouse LL hook) | ✖ | ✔ Windows (WH_MOUSE_LL, observation-only); macOS optional (add mouse types to tap mask) | M4 |
 | InputText (literal string typing) | ✔ | ✖ | ✔ both (SendInput unicode / CGEvent unicode string) | M3 |
 | ActivateWindow / window enumeration | ✔ | ✖ | ✔ portable subset (`app`/`title`); native power via `Focus.native` | M3 |
 | MoveWindow (multi-monitor edges) | ✔ (monitor edge cmd) | ✔ (rich screen-edge logic) | ✔ mac logic + win SetWindowPos backend | M3 |
