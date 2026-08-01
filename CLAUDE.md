@@ -266,6 +266,21 @@ macOS session (2026-08-01, all verified live on this machine):
   work-frames tests in test_mac_window.py. Testing lesson recorded there:
   fixture discovery polls must pump the run loop too (NSWorkspace-backed
   find_window in a sleep loop intermittently never sees the helper app).
+- Chooser keyboard focus (user-reported): opening the chooser from a hotkey
+  left keyboard focus in the previous app. `activate_pid` used the
+  cooperative `NSRunningApplication activateWithOptions:`, which macOS 14+
+  ignores when the caller is not the active app — exactly the chooser-open
+  moment (refocus-for-paste kept working because there Keyhac *is* active
+  and merely yields). Now: own pid → `NSApp activateIgnoringOtherApps:`
+  (AX cannot target our own process — the write would be serviced by the
+  run loop we block; if this ever stops being honored, plan B is
+  keyhac-mac's proven trick of letting LaunchServices activate us via a
+  registered URL scheme); other pids → AXFrontmost write with the
+  cooperative call as fallback, mirroring `MacWindow.activate()` (verified
+  live against Finder). Caveat learned the hard way: the sandboxed
+  agent-shell environment can order windows front but is never granted
+  window-server key focus, so in-sandbox chooser-focus probes give
+  unreliable negatives — self-activation needs an interactive pass.
 - `macos_app/` launcher verified live end to end: build.sh rebuilt the bundle
   (Developer ID signed; the notarize+staple+DMG path had already run
   successfully on Jul 30 — the stapled bundle validates), and the app runs the
