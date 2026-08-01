@@ -1,8 +1,9 @@
 """Windows platform implementation (ctypes).
 
-STATUS: written to spec against keyhac-win/pyauto behavior, NOT yet run on
-Windows - M1 was developed on macOS.  First Windows session: run
-tools/hook_echo.py, then the full app.
+STATUS: verified live on Windows - hook consume decisions, injection,
+sanity-check re-install, clipboard, send_text, mouse output, window/app
+control, UIA focus paths.  See doc/windows-session.md for what was run
+and how.
 """
 
 

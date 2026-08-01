@@ -14,11 +14,11 @@ Reimplements the behavior keyhac-win got from pyauto (pyautocore.pyd):
   check (ported from keyhac-win Keymap.checkSanity) detects modifier-state
   changes that arrived without hook callbacks and re-installs the hook
 
-STATUS: first Windows bring-up done.  Validated live: hook install/uninstall,
-callback delivery, SendInput injection with dwExtraInfo classification (own
-events filtered, replay events re-processed), layout query.  NOT yet exercised
-interactively: consume decisions on physical keys, extended-key flags per VK,
-and the sanity-check re-install path.  Run tools/hook_echo.py for those.
+STATUS: verified live on Windows, including consume decisions on real
+(untagged) input, extended-key output flags, the sanity-check re-install
+path (provoked by covert unhook - note this Windows 11 build did NOT
+remove the hook after a single 0.6 s callback stall), send_text, and
+mouse injection + WH_MOUSE_LL classification.  See doc/windows-session.md.
 
 Every ctypes prototype below is declared explicitly.  This is not optional on
 64-bit: the default restype of c_int truncates handles, which is what made
@@ -48,20 +48,49 @@ if sys.platform == "win32":
     ULONG_PTR = ctypes.c_size_t
 
     WH_KEYBOARD_LL = 13
+    WH_MOUSE_LL = 14
     WM_KEYDOWN = 0x0100
     WM_KEYUP = 0x0101
     WM_SYSKEYDOWN = 0x0104
     WM_SYSKEYUP = 0x0105
 
+    # Mouse messages that cancel a pending one-shot (button downs + wheels;
+    # plain movement deliberately does not - keyhac-win behavior)
+    WM_LBUTTONDOWN = 0x0201
+    WM_RBUTTONDOWN = 0x0204
+    WM_MBUTTONDOWN = 0x0207
+    WM_XBUTTONDOWN = 0x020B
+    WM_MOUSEWHEEL = 0x020A
+    WM_MOUSEHWHEEL = 0x020E
+    MOUSE_CANCEL_MSGS = frozenset([
+        WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN,
+        WM_MOUSEWHEEL, WM_MOUSEHWHEEL,
+    ])
+
     LLKHF_EXTENDED = 0x01
     LLKHF_INJECTED = 0x10
     LLKHF_UP = 0x80
 
+    INPUT_MOUSE = 0
     INPUT_KEYBOARD = 1
     KEYEVENTF_EXTENDEDKEY = 0x0001
     KEYEVENTF_KEYUP = 0x0002
     KEYEVENTF_SCANCODE = 0x0008
     MAPVK_VK_TO_VSC = 0
+
+    MOUSEEVENTF_MOVE = 0x0001
+    MOUSEEVENTF_ABSOLUTE = 0x8000
+    MOUSEEVENTF_VIRTUALDESK = 0x4000
+    MOUSEEVENTF_WHEEL = 0x0800
+    MOUSEEVENTF_HWHEEL = 0x1000
+    WHEEL_DELTA = 120
+    MOUSEEVENTF_BUTTON = {
+        ("left", True): 0x0002, ("left", False): 0x0004,
+        ("right", True): 0x0008, ("right", False): 0x0010,
+        ("middle", True): 0x0020, ("middle", False): 0x0040,
+    }
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
 
     # dwExtraInfo signatures to classify our own injected events
     EXTRA_INFO_OWN = 0x4B484301    # "KHC" 0x01
@@ -93,6 +122,15 @@ if sys.platform == "win32":
     LowLevelKeyboardProc = ctypes.WINFUNCTYPE(
         LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 
+    class KBDLLMOUSESTRUCT(ctypes.Structure):  # MSLLHOOKSTRUCT
+        _fields_ = [
+            ("pt", wintypes.POINT),
+            ("mouseData", wintypes.DWORD),
+            ("flags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ULONG_PTR),
+        ]
+
     class KEYBDINPUT(ctypes.Structure):
         _fields_ = [
             ("wVk", wintypes.WORD),
@@ -102,8 +140,19 @@ if sys.platform == "win32":
             ("dwExtraInfo", ctypes.c_size_t),
         ]
 
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", wintypes.LONG),
+            ("dy", wintypes.LONG),
+            ("mouseData", wintypes.DWORD),
+            ("dwFlags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ctypes.c_size_t),
+        ]
+
     class _INPUT_UNION(ctypes.Union):
-        _fields_ = [("ki", KEYBDINPUT), ("padding", ctypes.c_byte * 32)]
+        _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT),
+                    ("padding", ctypes.c_byte * 32)]
 
     class INPUT(ctypes.Structure):
         _fields_ = [("type", wintypes.DWORD), ("union", _INPUT_UNION)]
@@ -120,6 +169,10 @@ if sys.platform == "win32":
     user32.SendInput.restype = wintypes.UINT
     user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
     user32.MapVirtualKeyW.restype = wintypes.UINT
+    user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    user32.GetCursorPos.restype = wintypes.BOOL
+    user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+    user32.GetSystemMetrics.restype = ctypes.c_int
     user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
     user32.GetAsyncKeyState.restype = ctypes.c_short
     user32.GetKeyboardType.argtypes = [ctypes.c_int]
@@ -138,8 +191,11 @@ class WinInputHook(InputHook):
 
         self._on_key: Callable[[KeyEvent], bool] | None = None
         self._on_restored: Callable[[], None] | None = None
+        self._on_mouse: Callable[[], None] | None = None
         self._hook_handle = None
         self._hook_proc_ref = None      # must outlive the hook
+        self._mouse_hook_handle = None
+        self._mouse_proc_ref = None     # must outlive the hook
         self._callback_seen = False     # reset by sanity check
         self._sanity_state = None
         self._sanity_count = 0
@@ -147,13 +203,14 @@ class WinInputHook(InputHook):
 
     # ------------------------------------------------------------------
 
-    def install(self, on_key, on_restored) -> None:
+    def install(self, on_key, on_restored, on_mouse=None) -> None:
         if self._hook_handle is not None:
             logger.warning("Keyboard hook is already installed.")
             return
 
         self._on_key = on_key
         self._on_restored = on_restored
+        self._on_mouse = on_mouse
         self._hook_proc_ref = LowLevelKeyboardProc(self._hook_proc)
 
         self._hook_handle = user32.SetWindowsHookExW(
@@ -165,9 +222,29 @@ class WinInputHook(InputHook):
             raise RuntimeError(
                 f"SetWindowsHookExW failed: {error} ({ctypes.FormatError(error)})")
 
+        if on_mouse is not None:
+            # Observation-only WH_MOUSE_LL for one-shot cancellation. Failing
+            # to install it degrades that one feature, not the app - warn and
+            # continue rather than tearing the keyboard hook down.
+            self._mouse_proc_ref = LowLevelKeyboardProc(self._mouse_hook_proc)
+            self._mouse_hook_handle = user32.SetWindowsHookExW(
+                WH_MOUSE_LL, self._mouse_proc_ref,
+                kernel32.GetModuleHandleW(None), 0)
+            if not self._mouse_hook_handle:
+                error = ctypes.get_last_error()
+                self._mouse_proc_ref = None
+                logger.warning(
+                    f"WH_MOUSE_LL install failed: {error} "
+                    f"({ctypes.FormatError(error)}); one-shot modifiers will "
+                    "not cancel on mouse input.")
+
         logger.info("Keyboard hook installed.")
 
     def uninstall(self) -> None:
+        if self._mouse_hook_handle is not None:
+            user32.UnhookWindowsHookEx(self._mouse_hook_handle)
+            self._mouse_hook_handle = None
+            self._mouse_proc_ref = None
         if self._hook_handle is None:
             return
         user32.UnhookWindowsHookEx(self._hook_handle)
@@ -204,6 +281,21 @@ class WinInputHook(InputHook):
 
         if consumed:
             return 1
+        return user32.CallNextHookEx(None, n_code, w_param, l_param)
+
+    def _mouse_hook_proc(self, n_code, w_param, l_param):
+        """WH_MOUSE_LL: observation only, never consumes. Physical button
+        downs and wheel turns cancel a pending one-shot modifier; our own
+        injected mouse output (sentinel dwExtraInfo) is ignored."""
+        if n_code >= 0 and w_param in MOUSE_CANCEL_MSGS:
+            mouse = ctypes.cast(
+                l_param, ctypes.POINTER(KBDLLMOUSESTRUCT)).contents
+            if int(mouse.dwExtraInfo) not in (EXTRA_INFO_OWN, EXTRA_INFO_REPLAY):
+                try:
+                    if self._on_mouse is not None:
+                        self._on_mouse()
+                except Exception:
+                    logger.error("Mouse handler raised; event passed through.")
         return user32.CallNextHookEx(None, n_code, w_param, l_param)
 
     # ------------------------------------------------------------------
@@ -247,14 +339,68 @@ class WinInputHook(InputHook):
                 logger.warning("Key hook force cancellation detected - re-installing.")
                 self._sanity_count = 0
                 on_key, on_restored = self._on_key, self._on_restored
+                on_mouse = self._on_mouse
                 self.uninstall()
-                self.install(on_key, on_restored)
+                self.install(on_key, on_restored, on_mouse)
                 if on_restored is not None:
                     on_restored()
 
     def keyboard_layout(self) -> str:
         # GetKeyboardType(0) == 7 means a Japanese keyboard (keyhac-win rule)
         return "jis" if user32.GetKeyboardType(0) == 7 else "ansi"
+
+    # ------------------------------------------------------------------
+
+    def cursor_pos(self) -> tuple[int, int]:
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        return (int(pt.x), int(pt.y))
+
+    def send_mouse(self, events, replay: bool = False) -> None:
+        """Inject mouse events (see InputHook.send_mouse for the item
+        vocabulary). Moves are converted from relative pixels to an absolute
+        virtual-desktop position: MOUSEEVENTF_MOVE alone is subject to
+        pointer acceleration, which would distort the requested distance
+        (the reason keyhac-win's MouseMoveCommand computed absolute
+        coordinates too)."""
+        if not events:
+            return
+        extra = EXTRA_INFO_REPLAY if replay else EXTRA_INFO_OWN
+        cur_x = cur_y = None
+        inputs = (INPUT * len(events))()
+        for i, event in enumerate(events):
+            kind = event[0]
+            dx = dy = 0
+            data = 0
+            if kind == "move":
+                if cur_x is None:
+                    cur_x, cur_y = self.cursor_pos()
+                cur_x += int(event[1])
+                cur_y += int(event[2])
+                vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+                vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+                vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+                vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+                dx = round((cur_x - vx) * 65535 / max(1, vw - 1))
+                dy = round((cur_y - vy) * 65535 / max(1, vh - 1))
+                flags = (MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE
+                         | MOUSEEVENTF_VIRTUALDESK)
+            elif kind in ("wheel", "hwheel"):
+                data = int(event[1] * WHEEL_DELTA) & 0xFFFFFFFF
+                flags = (MOUSEEVENTF_WHEEL if kind == "wheel"
+                         else MOUSEEVENTF_HWHEEL)
+            else:
+                try:
+                    flags = MOUSEEVENTF_BUTTON[(kind, bool(event[1]))]
+                except KeyError:
+                    raise ValueError(f"Unknown mouse event: {event!r}") from None
+            inputs[i].type = INPUT_MOUSE
+            inputs[i].union.mi = MOUSEINPUT(dx, dy, data, flags, 0, extra)
+        sent = user32.SendInput(len(events), inputs, ctypes.sizeof(INPUT))
+        if sent != len(events):
+            error = ctypes.get_last_error()
+            logger.error(f"SendInput sent {sent}/{len(events)} mouse events "
+                         f"(error {error}: {ctypes.FormatError(error)})")
 
     KEYEVENTF_UNICODE = 0x0004
 

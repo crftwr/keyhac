@@ -135,3 +135,82 @@ class TestFrameWrites:
         assert own_window.is_minimized()
         own_window.restore()
         assert not own_window.is_minimized()
+
+
+class TestWorkFrames:
+
+    def test_work_frames_sit_inside_the_screens(self, provider):
+        """rcWork per monitor: one work area per screen, each contained in
+        its screen frame (the taskbar cut can only shrink it)."""
+        screens = provider.screen_frames()
+        works = provider.screen_work_frames()
+        assert len(works) == len(screens)
+        for wx, wy, ww, wh in works:
+            assert ww > 0 and wh > 0
+            assert any(sx - 1 <= wx and sy - 1 <= wy
+                       and wx + ww <= sx + sw + 1
+                       and wy + wh <= sy + sh + 1
+                       for sx, sy, sw, sh in screens)
+
+
+class TestSnapLive:
+
+    def test_snap_left_covers_the_left_half_of_the_work_area(
+            self, provider, own_window, monkeypatch):
+        """SnapWindow end to end: real rcWork query, real SetWindowPos.
+
+        Keymap.get_instance() is stubbed so no engine is needed - the point
+        here is the platform half (the arithmetic is pinned in
+        test_actions.py). Mirrors test_mac_window.py's TestSnapLive.
+        """
+        from keyhac.actions import MoveWindow, SnapWindow
+        from keyhac.core.keymap import Keymap
+
+        class Stub:
+            def get_active_window(self):
+                return own_window
+
+            def screen_work_frames(self):
+                return provider.screen_work_frames()
+
+            def screen_frames(self):
+                return provider.screen_frames()
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(Stub))
+
+        works = provider.screen_work_frames()
+        sx, sy, sw, sh = MoveWindow._get_best_screen(
+            own_window.get_frame(), works)
+        expected = (sx, sy, sw / 2, sh)
+
+        SnapWindow("left")()
+        assert all(abs(a - b) <= 2.0
+                   for a, b in zip(own_window.get_frame(), expected)), \
+            f"frame {own_window.get_frame()} != {expected}"
+
+    def test_snap_restores_a_minimized_window_first(
+            self, provider, own_window, monkeypatch):
+        from keyhac.actions import SnapWindow
+        from keyhac.core.keymap import Keymap
+
+        class Stub:
+            def get_active_window(self):
+                return own_window
+
+            def screen_work_frames(self):
+                return provider.screen_work_frames()
+
+            def screen_frames(self):
+                return provider.screen_frames()
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(Stub))
+
+        own_window.minimize()
+        assert own_window.is_minimized()
+        SnapWindow("full")()
+        assert not own_window.is_minimized()
+        # A snapped-full window covers its whole work area.
+        wx, wy, ww, wh = own_window.get_frame()
+        assert any(abs(wx - sx) <= 2 and abs(wy - sy) <= 2
+                   and abs(ww - sw) <= 2 and abs(wh - sh) <= 2
+                   for sx, sy, sw, sh in provider.screen_work_frames())

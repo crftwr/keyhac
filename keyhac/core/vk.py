@@ -70,6 +70,10 @@ WIN_VK = dict(
     F1=0x70, F2=0x71, F3=0x72, F4=0x73, F5=0x74, F6=0x75, F7=0x76, F8=0x77,
     F9=0x78, F10=0x79, F11=0x7A, F12=0x7B, F13=0x7C, F14=0x7D, F15=0x7E,
     F16=0x7F, F17=0x80, F18=0x81, F19=0x82, F20=0x83,
+    # Win32 defines the F row to F24; no Mac scan codes past F20, so these
+    # four are Windows-only names (a mac config using them gets the
+    # exists-only-on-Windows diagnostic).
+    F21=0x84, F22=0x85, F23=0x86, F24=0x87,
     NUMLOCK=0x90, SCROLL=0x91,
     LSHIFT=0xA0, RSHIFT=0xA1, LCONTROL=0xA2, RCONTROL=0xA3,
     LMENU=0xA4, RMENU=0xA5,
@@ -224,7 +228,8 @@ def _win_tables(layout: str):
         "DIVIDE": v["DIVIDE"], "MULTIPLY": v["MULTIPLY"],
         "SUBTRACT": v["SUBTRACT"], "ADD": v["ADD"], "DECIMAL": v["DECIMAL"],
         **{f"NUM{n}": v[f"NUMPAD{n}"] for n in range(10)},
-        **{f"F{n}": v[f"F{n}"] for n in range(1, 21)},
+        # F row to F24: Win32 defines VKs that far (macOS stops at F20)
+        **{f"F{n}": v[f"F{n}"] for n in range(1, 25)},
         "LEFT": v["LEFT"], "RIGHT": v["RIGHT"], "UP": v["UP"], "DOWN": v["DOWN"],
         "SPACE": v["SPACE"], "TAB": v["TAB"], "BACK": v["BACK"],
         "RETURN": v["RETURN"], "ENTER": v["RETURN"],
@@ -250,7 +255,7 @@ def _win_tables(layout: str):
         v["DIVIDE"]: "Divide", v["MULTIPLY"]: "Multiply",
         v["SUBTRACT"]: "Subtract", v["ADD"]: "Add", v["DECIMAL"]: "Decimal",
         **{v[f"NUMPAD{n}"]: f"Num{n}" for n in range(10)},
-        **{v[f"F{n}"]: f"F{n}" for n in range(1, 21)},
+        **{v[f"F{n}"]: f"F{n}" for n in range(1, 25)},
         v["LEFT"]: "Left", v["RIGHT"]: "Right", v["UP"]: "Up", v["DOWN"]: "Down",
         v["SPACE"]: "Space", v["TAB"]: "Tab", v["BACK"]: "Back",
         v["RETURN"]: "Return", v["ESCAPE"]: "Escape", v["CAPITAL"]: "CapsLock",
