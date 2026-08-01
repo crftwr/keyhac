@@ -112,13 +112,23 @@ class MacWindow(Window):
         """Raise this window and bring its application forward.
 
         AXRaise alone orders the window within its app; the app itself still
-        has to be activated, which is NSRunningApplication's job.
+        has to be activated.  That is done by writing AXFrontmost on the
+        application element - the same call keyhac-mac shipped with - because
+        since macOS 14 the polite route (NSRunningApplication
+        activateWithOptions:) is a *cooperative* request that the system
+        ignores when the caller is not the active app, which Keyhac usually
+        is not.  A trusted process's AX write is honored unconditionally.
         """
         if self._pid is None:
             return False
         if self.is_minimized():
             self.restore()
         self._element.perform_action("AXRaise")
+        app_element = AS.AXUIElementCreateApplication(self._pid)
+        AS.AXUIElementSetMessagingTimeout(app_element, AX_MESSAGING_TIMEOUT)
+        if AS.AXUIElementSetAttributeValue(app_element, "AXFrontmost", True) == 0:
+            return True
+        # Fall back to the cooperative request (e.g. AXFrontmost refused).
         app = NSRunningApplication.runningApplicationWithProcessIdentifier_(self._pid)
         if app is None:
             return False

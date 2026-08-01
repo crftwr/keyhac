@@ -190,7 +190,6 @@ Windows bring-up (second session, all verified live on Windows):
   empirically validated, not just assumed.
 - Not yet run on Windows: clipboard provider, `send_text`, balloon, and — most
   importantly — **key consumption** (every session so far logged only PASSTHRU).
-  `mac/window.py` is written to spec and needs a live macOS pass.
   See [doc/windows-session.md](doc/windows-session.md).
 - Windows tray now runs live; first Keyhac.exe bundle session surfaced two fixes:
   the console (and chooser) are now `WindowStyle(tool=True)` — tray-only presence,
@@ -202,21 +201,21 @@ Windows bring-up (second session, all verified live on Windows):
   suite runs on Windows at all (pytest-timeout signal→thread), exposing 4
   pre-existing Windows-only test failures (background_3d gate,
   terminal_graphics ×2, a measure_text metric) left for a separate fix.
-- Single-instance guard + console-visibility restore (both verified live on
-  Windows, incl. cross-process): `platform/{win,mac}/instance.py` — a
-  session-local named mutex on Windows; flock under ~/.keyhac on macOS
-  (written to spec, needs a live mac pass) — checked in main() *before* the
-  std-stream redirect so the refusal reaches stderr. A second UI-mode launch
-  exits 1 and re-shows the running instance's console
-  (FindWindow "PuiKitWindowClass"/"Keyhac" — a deliberately pinned puikit
-  internal — with a message-box fallback). The console's shown/hidden state
-  persists as `console_visible` in `settings.json` (`core/settings.py`,
+- Single-instance guard + console-visibility restore (verified live on
+  Windows and macOS, incl. cross-process): `platform/{win,mac}/instance.py` — a
+  session-local named mutex on Windows; flock under ~/.keyhac on macOS —
+  checked in main() *before* the std-stream redirect so the refusal reaches
+  stderr. A second UI-mode launch exits 1 and re-shows the running instance's
+  console (FindWindow "PuiKitWindowClass"/"Keyhac" — a deliberately pinned
+  puikit internal — with a message-box fallback). The console's shown/hidden
+  state persists as `console_visible` in `settings.json` (`core/settings.py`,
   write-through JSON; lives beside the config under --config like
   clipboard.json), polled from the console's health tick since PuiKit has no
-  visibility-change callback. Needs puikit **PR #84** (`start_hidden` ctor
-  flag, `Backend.hide_main_window` / `is_main_window_visible`; awaiting
-  review) — feature-detected via `hasattr(Backend, "is_main_window_visible")`,
-  so on a pre-1.0.7 PyPI puikit the console just always starts visible.
+  visibility-change callback. Uses puikit **PR #84** (`start_hidden` ctor
+  flag, `Backend.hide_main_window` / `is_main_window_visible`; merged, and
+  the MacOSBackend implementation verified live) — feature-detected via
+  `hasattr(Backend, "is_main_window_visible")`, so on a pre-1.0.7 PyPI puikit
+  the console just always starts visible.
 
 M3 progress (macOS verified live; Windows pending): clipboard history
 (`core/clipboard_history.py` + `platform/*/clipboard.py` poll-based providers, JSON
@@ -225,9 +224,44 @@ format compatible with keyhac-mac), chooser window (`ui/chooser.py`, on puikit
 refocus-then-paste flow; `core/action.py`: ThreadedAction/LaunchApplication).
 `keyhac/ui/runtime.py` holds the app's PuiKit backend for chooser/balloon windows.
 With `--config PATH`, clipboard.json lives beside the config (sandbox isolation).
-Remaining in M3: Windows session (clipboard provider + WinAppControl + chooser),
-InputText/ActivateWindow/MoveWindow, UIElement AX port.
+Remaining in M3: the Windows session (clipboard provider + WinAppControl +
+chooser + `send_text`/InputText). The macOS side of M3 is closed: the
+UIElement AX port (`platform/mac/uielement.py`, the full keyhac-mac API
+surface incl. the 3-arg `set_attribute_value(name, type, value)`) and
+ActivateWindow/MoveWindow are live-verified.
 See [doc/07-roadmap.md](doc/07-roadmap.md).
+
+macOS session (2026-08-01, all verified live on this machine):
+
+- `tests/test_mac_window.py` — 15 live AX tests mirroring test_win_window.py
+  (identity, enumeration, find_window, frame writes, minimize/restore,
+  activate, worker-thread geometry). Two macOS facts the tests encode: AX
+  requests into *our own* process are serviced by the run loop we would be
+  blocking, so the mutable test window lives in a helper child process that
+  pumps its loop (a bare NSApplication also needs `finishLaunching()` or its
+  AX server never registers and every query fails with kAXErrorCannotComplete);
+  and NSWorkspace state (frontmostApplication etc.) is refreshed only by run
+  loop callbacks — a sleep-polling loop reads the process-start snapshot
+  forever, so waits must pump the run loop.
+- **`MacWindow.activate()` fix**: NSRunningApplication `activateWithOptions:`
+  is a *cooperative* request that macOS 14+ ignores when the caller is not the
+  active app (which Keyhac usually is not). Activation now writes AXFrontmost
+  on the application element — the call keyhac-mac shipped with — with the
+  cooperative route kept as fallback.
+- `platform/mac/instance.py` cross-process pass: flock contention between
+  real processes, holder-pid note preserved, kernel drops the lock on SIGKILL
+  (no stale-lock case), and main() refuses a second launch in both UI and
+  --no-ui modes — tested against a genuinely running dev instance.
+- `macos_app/` launcher verified live end to end: build.sh rebuilt the bundle
+  (Developer ID signed; the notarize+staple+DMG path had already run
+  successfully on Jul 30 — the stapled bundle validates), and the app runs the
+  real thing — embedded Python boots, keyhac.main imports from bundled
+  Resources, template config created on first run, **CGEventTap installs under
+  the bundle identity** (the Accessibility grant is attached to
+  crftwr.Keyhac2), console + menu-bar extra live, SIGINT quits cleanly (hook
+  uninstalled, exit 0 through the launcher; a second launch exits 1). Bundle
+  note: Resources/python_packages ships all of PyObjC incl. PyObjCTest —
+  pruning would cut bundle size and the per-.so signing time noticeably.
 
 Packaging (M5, pulled forward): release pipeline + both native launchers exist,
 ported from XeFM's Makefile/bundle system (the standard to follow for build
@@ -235,6 +269,7 @@ infra). `make tag` / `release-github` / `release-whl` / `release-status` +
 `tools/{release_preflight,bump_version,_version_source}.py`;
 `windows_app/` (launcher.c + build.ps1, **built and import-smoke-tested on
 Windows**, interactive run pending) and `macos_app/` (main.m + AppDelegate +
-build.sh + create_dmg.sh, written to spec, needs a live macOS pass). Bundle id
+build.sh + create_dmg.sh, **built, signed, notarized and run live on macOS** —
+see the macOS session notes above). Bundle id
 defaults to `crftwr.Keyhac2` (`BUNDLE_ID=` overrides; roadmap open decision #4).
 Details in [doc/06-packaging.md](doc/06-packaging.md).
