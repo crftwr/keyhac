@@ -101,7 +101,7 @@ tools/         # icon pipeline, release scripts, hook_echo diagnostic
 
 ## Status
 
-**Feature-complete for the 2.0 alpha release** (version in `keyhac/__init__.py`).
+**Released as 2.0.0 stable** (version in `keyhac/__init__.py`).
 The engine, both platform layers, all UI (console / chooser / balloon / tray), the
 config API surface, clipboard history, macros, window actions and mouse output are
 implemented and live-verified on both macOS and Windows; both native launchers build,

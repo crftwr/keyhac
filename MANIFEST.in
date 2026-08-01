@@ -1,0 +1,14 @@
+# Sdist contents (the wheel is governed by pyproject.toml's packages /
+# package-data). setuptools already ships the keyhac package sources, the
+# keyhac.ui assets declared as package-data, README, LICENSE and
+# pyproject.toml; the lines below prune everything not needed to install and
+# run Keyhac. Same scheme as XeFM's MANIFEST.in.
+
+# Development trees and build byproducts — kept out of the sdist.
+prune tests
+prune doc
+prune art
+prune tools
+prune macos_app
+prune windows_app
+global-exclude __pycache__ *.py[cod] .DS_Store

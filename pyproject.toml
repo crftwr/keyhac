@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,9 +7,24 @@ name = "keyhac"
 description = "Keyhac 2 - Python-scriptable keyboard customization tool for Windows and macOS"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "craftware" }]
+keywords = ["keyboard", "hotkey", "keymap", "macro", "remap", "customization"]
+# version -> single-sourced from keyhac/__init__.py's __version__ (see
+# [tool.setuptools.dynamic]).
 dynamic = ["version"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: MacOS X",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+]
 dependencies = [
     # 1.0.8 is the first release with every puikit API/fix keyhac uses:
     # set_tray(image=) (PR #82), main-window visibility (PR #84), and the
@@ -27,6 +42,11 @@ dev = ["pytest>=8"]
 [project.scripts]
 keyhac = "keyhac.main:main"
 
+[project.urls]
+Homepage = "https://github.com/crftwr/keyhac2"
+Repository = "https://github.com/crftwr/keyhac2"
+Issues = "https://github.com/crftwr/keyhac2/issues"
+
 [tool.setuptools]
 packages = [
     "keyhac",
@@ -36,6 +56,13 @@ packages = [
     "keyhac.platform.win",
     "keyhac.ui",
 ]
+
+[tool.setuptools.package-data]
+# Runtime images loaded from keyhac/ui/assets at import time: the tray/menu-bar
+# icons (keyhac/ui/tray.py) plus the .icns/.ico the bundle builders compile in.
+# Without this the wheel ships bare .py files and a pip-installed Keyhac has no
+# tray icon files to load.
+"keyhac.ui" = ["assets/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "keyhac.__version__" }
