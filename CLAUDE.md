@@ -185,9 +185,10 @@ Windows bring-up (second session, all verified live on Windows):
   accessors are UI-thread only (AX SIGTRAPs off-main on macOS; window-title reads
   are a blocking `SendMessage` on Windows), and only `screen_frames()` /
   `window_frames()` are safe from a `ThreadedAction` worker.
-- Not yet run on Windows: clipboard provider, `send_text`, balloon,
-  `tools/hook_echo.py --stress-ordering` (would empirically validate the
-  SendInput queue-order assumption), and — most
+- `tools/hook_echo.py --stress-ordering` now run live on Windows: 50/50 rounds
+  green — the SendInput queue-order assumption behind the `send()` contract is
+  empirically validated, not just assumed.
+- Not yet run on Windows: clipboard provider, `send_text`, balloon, and — most
   importantly — **key consumption** (every session so far logged only PASSTHRU).
   `mac/window.py` is written to spec and needs a live macOS pass.
   See [doc/windows-session.md](doc/windows-session.md).
