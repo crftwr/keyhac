@@ -84,6 +84,8 @@ if sys.platform == "win32":
     user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
     user32.AttachThreadInput.restype = wintypes.BOOL
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.BringWindowToTop.restype = wintypes.BOOL
     kernel32.GetCurrentThreadId.argtypes = []
     kernel32.GetCurrentThreadId.restype = wintypes.DWORD
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -207,11 +209,16 @@ class WinWindow(Window):
         """Foreground this window, restoring it first if minimized.
 
         Windows refuses SetForegroundWindow from a process that does not own
-        the foreground (the foreground lock).  keyhac-win's workaround, kept
-        here: briefly AttachThreadInput to the current foreground thread, which
-        makes the call succeed.  getLastActivePopup mirrors pyauto's behavior
-        of raising the dialog a window currently owns rather than the frame
-        behind it.
+        the foreground (the foreground lock).  keyhac-win's workaround,
+        extended: attach our input queue to BOTH the current foreground
+        thread and the target window's thread before the call.  Attaching to
+        the foreground thread alone - the classic recipe, and what this
+        method originally did - is no longer honored on current Windows 11
+        when the lock is armed (the foreground app actively receiving
+        input); the dual attach is, verified empirically against a
+        real armed lock (see doc/windows-session.md).  getLastActivePopup
+        mirrors pyauto's behavior of raising the dialog a window currently
+        owns rather than the frame behind it.
         """
         hwnd = self.hwnd
         if user32.IsIconic(hwnd):
@@ -223,18 +230,23 @@ class WinWindow(Window):
         if user32.SetForegroundWindow(hwnd):
             return True
 
-        foreground = user32.GetForegroundWindow()
-        if not foreground:
-            return False
-        target_thread = user32.GetWindowThreadProcessId(foreground, None)
         this_thread = kernel32.GetCurrentThreadId()
-        if target_thread == this_thread:
-            return False
-        user32.AttachThreadInput(this_thread, target_thread, True)
+        foreground = user32.GetForegroundWindow()
+        fg_thread = (user32.GetWindowThreadProcessId(foreground, None)
+                     if foreground else 0)
+        target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+        attached = []
+        for tid in {fg_thread, target_thread}:
+            if (tid and tid != this_thread
+                    and user32.AttachThreadInput(this_thread, tid, True)):
+                attached.append(tid)
         try:
-            return bool(user32.SetForegroundWindow(hwnd))
+            ok = bool(user32.SetForegroundWindow(hwnd))
+            user32.BringWindowToTop(hwnd)
         finally:
-            user32.AttachThreadInput(this_thread, target_thread, False)
+            for tid in attached:
+                user32.AttachThreadInput(this_thread, tid, False)
+        return ok or user32.GetForegroundWindow() == hwnd
 
 
 class WinWindowProvider(WindowProvider):
@@ -285,8 +297,8 @@ class WinWindowProvider(WindowProvider):
     def screen_work_frames(self):
         """Work area per monitor (taskbar excluded), primary first.
 
-        STATUS: written to spec (rcWork sits in the same MONITORINFO that
-        screen_frames() already reads); not yet run on Windows.
+        Verified live on Windows (tests/test_win_window.py TestWorkFrames /
+        TestSnapLive).
         """
         return self._monitor_frames("rcWork")
 
