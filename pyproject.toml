@@ -11,11 +11,11 @@ license = { text = "MIT" }
 authors = [{ name = "craftware" }]
 dynamic = ["version"]
 dependencies = [
-    # 1.0.6 covers everything keyhac uses except set_tray(image=) (puikit
-    # PR #82, merged but unreleased) — ui/tray.py feature-detects that and
-    # degrades to the default icon. To develop against a local checkout,
-    # set PUIKIT_DIR (see Makefile).
-    "puikit>=1.0.6",
+    # 1.0.8 is the first release with every puikit API/fix keyhac uses:
+    # set_tray(image=) (PR #82), main-window visibility (PR #84), and the
+    # LogView sized-font clip fix the 11pt console log needs (PR #86). To
+    # develop against a local checkout, set PUIKIT_DIR (see Makefile).
+    "puikit>=1.0.8",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',

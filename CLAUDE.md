@@ -127,11 +127,12 @@ M2 progress:
   tiny "⌨" text glyph — this happened once when a PyPI install replaced the
   editable one; `Makefile.local` with `PUIKIT_DIR = ../puikit` now pins it.
   The main-window visibility API (PR #84, below) is in the same boat.
-  Update: puikit 1.0.7 is on PyPI, closing both. The new same-boat item is
-  the LogView sized-font fix (**PR #86**, merged after 1.0.7): the console's
-  11pt log needs it, or every full wrapped row loses its right-hand tail —
-  LogView clipped and hit-tested by grid columns while the wrap packed rows
-  by native measure. Editable checkout carries it until 1.0.8 ships.)
+  Update: puikit 1.0.8 is on PyPI and carries everything keyhac2 uses —
+  set_tray image (PR #82), main-window visibility (PR #84), and the LogView
+  sized-font clip fix the 11pt console log needs (PR #86: LogView clipped
+  and hit-tested by grid columns while the wrap packed rows by native
+  measure). keyhac2 now requires `puikit>=1.0.8`; the editable checkout is
+  optional again, for puikit development only.)
 - `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
   last-key/focus-path inspector). The console backend runs the process event loop;
   the hook shares it (tap source on the same run loop / GetMessage pump). Verified
@@ -348,7 +349,41 @@ patterns in [doc/windows-session.md](doc/windows-session.md)):
   modifiers, keyhac-win behavior), `InputHook.send_mouse`/`cursor_pos`,
   relative-move-as-absolute injection (defeats pointer acceleration), and
   WH_MOUSE_LL one-shot cancel (`Keymap.on_mouse_event`; own output
-  ignored via dwExtraInfo). macOS mouse still pending (tap-mask route).
+  ignored via dwExtraInfo). macOS mouse: closed in the second macOS
+  session (below) — M4 now fully closed on both OSes.
 - puikit PR #85 (merged #83's exposed Windows test failures — all stale
   test contracts) opened from `windows-test-fixes`; puikit suite 1547/0 on
-  Windows. PR #84 is merged; PyPI 1.0.7 still pending.
+  Windows. PR #84 is merged. (puikit 1.0.8 has since shipped everything —
+  see the M2 caveat note above.)
+
+Second macOS session (2026-08-01, later the same day):
+
+- Console log dropped to 11pt (user feedback; toolbar/inspector stay at the
+  12pt base font). The shrink immediately exposed a puikit LogView bug —
+  sized-font rows wrap-packed by native measure but clipped/hit-tested by
+  grid columns, so every full wrapped row lost its right-hand tail — fixed
+  upstream as **puikit PR #86** (merged, in 1.0.8): both paths now branch
+  on `grid_aligned` like the wrap does. keyhac2 requires `puikit>=1.0.8`.
+- **macOS mouse output shipped — M4 closed on both OSes**
+  (`platform/mac/hook.py`): `send_mouse`/`cursor_pos` via
+  CGEventCreateMouseEvent / CGEventCreateScrollWheelEvent posted from the
+  same private sources as keys. CG mouse events are inherently absolute, so
+  relative moves accumulate onto `cursor_pos()` (the Windows
+  relative-as-absolute scheme for free); motion while a button is held
+  (ours, or physical via CGEventSourceButtonState) posts the *dragged*
+  type; `kCGMouseEventClickState` escalates rapid same-button downs within
+  0.5 s so synthetic double-clicks register (the OS click timer only serves
+  hardware events; a move resets the run); wheels scroll **3 lines per
+  notch** (Windows default feel), exact value in the fixed-pt delta fields
+  (positive wheel2 = left in CG, so hwheel negates). One-shot cancel via
+  the tap-mask route: button-downs + scrollWheel join the mask only when
+  `on_mouse` is wired; motion is deliberately not tapped (Python in the
+  path of every pointer move), and mouse events bypass the key deferral
+  queue entirely — a deferred click would be re-posted after the untapped
+  moves that followed it. Own output classified by event source (the
+  WH_MOUSE_LL dwExtraInfo rule, mac-style). Tests: cancel-branch cases in
+  tests/test_mac_hook.py (fake-Quartz harness), translation layer + live
+  cursor move in tests/test_mac_mouse.py — the live relative-move test ran
+  green in the agent sandbox (this environment holds an Accessibility
+  grant, unlike window-server key focus). Interactive pass still wanted
+  for wheel direction / drag / double-click feel in real apps.
