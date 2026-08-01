@@ -6,7 +6,14 @@ import subprocess
 import ApplicationServices as AS
 from AppKit import NSApplication, NSRunningApplication
 
+from keyhac.core import log
 from keyhac.platform.base import AppControl
+
+logger = log.getLogger("MacApps")
+
+#: edit_file's fallback cascade when no editor is configured (the keyhac-mac
+#: "Edit config.py" order): first installed one wins.
+_EDITOR_FALLBACKS = ("Visual Studio Code", "Xcode", "TextEdit")
 
 # NSApplicationActivateIgnoringOtherApps is deprecated but still the reliable
 # way to bring the previously-focused app back before a programmatic paste.
@@ -46,3 +53,18 @@ class MacAppControl(AppControl):
 
     def launch(self, app_name: str) -> None:
         subprocess.Popen(["open", "-a", app_name])
+
+    def edit_file(self, path: str, editor: str | None = None) -> None:
+        """``open -a`` the file in the editor, or in the first installed
+        fallback.  Each attempt blocks until LaunchServices accepts or
+        refuses it (well under a second) - acceptable for a menu action;
+        a config binding that cares should wrap it in a ThreadedAction."""
+        candidates = (editor,) if editor else _EDITOR_FALLBACKS
+        for app in candidates:
+            result = subprocess.run(["open", "-a", app, path],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                return
+        logger.warning(
+            f"No editor could open {path} (tried "
+            f"{', '.join(candidates)}): {result.stderr.strip()}")

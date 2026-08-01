@@ -53,6 +53,12 @@ def configure(keymap):
     # only ever sees the replacement.
     # keymap.replace_key("CapsLock", "LCtrl")
 
+    # --- text editor for "Edit Config" ---------------------------------
+    # The tray menu's "Edit Config" opens this file.  Unset, a default is
+    # picked (VS Code / Xcode / TextEdit on macOS, Notepad on Windows).
+    # Name an editor application, or set a callable taking the path:
+    # keymap.editor = "CotEditor" if mac else "notepad.exe"
+
     # --- clipboard history ---------------------------------------------
     keymap.clipboard_history.max_items = 500
     keymap.clipboard_history.max_data_size = 10 * 1024 * 1024

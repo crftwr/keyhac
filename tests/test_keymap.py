@@ -369,3 +369,96 @@ class TestUnreachableModifierWarning:
         e = engine(configure, platform="windows")
         messages = self._warnings(e, caplog)
         assert len(messages) == 1 and "Cmd" in messages[0]
+
+
+class FakeAppControl:
+
+    def __init__(self):
+        self.edited = []
+
+    def activate_pid(self, pid):
+        return True
+
+    def launch(self, app_name):
+        pass
+
+    def edit_file(self, path, editor=None):
+        self.edited.append((path, editor))
+
+
+class TestEditConfig:
+
+    def test_default_editor_routes_to_app_control(self, engine):
+        e = engine(lambda keymap: None)
+        e.keymap.app_control = FakeAppControl()
+        e.keymap.edit_config()
+        # Empty editor setting -> None, the platform-default marker.
+        assert e.keymap.app_control.edited == [(e.keymap._config_path, None)]
+
+    def test_string_editor_is_passed_through(self, engine):
+        e = engine(lambda keymap: None)
+        e.keymap.app_control = FakeAppControl()
+        e.keymap.editor = "CotEditor"
+        e.keymap.edit_config()
+        assert e.keymap.app_control.edited == [(e.keymap._config_path, "CotEditor")]
+
+    def test_callable_editor_receives_the_path(self, engine):
+        e = engine(lambda keymap: None)
+        e.keymap.app_control = FakeAppControl()
+        calls = []
+        e.keymap.editor = calls.append
+        e.keymap.edit_config()
+        assert calls == [e.keymap._config_path]
+        assert e.keymap.app_control.edited == []
+
+    def _messages(self, caplog, level, call):
+        import logging
+        caplog.clear()
+        with caplog.at_level(level, logger="keyhac.Keymap"):
+            call()
+        return [r.getMessage() for r in caplog.records]
+
+    def test_callable_editor_error_is_contained(self, engine, caplog):
+        import logging
+        e = engine(lambda keymap: None)
+
+        def bad_editor(path):
+            raise RuntimeError("boom")
+
+        e.keymap.editor = bad_editor
+        messages = self._messages(caplog, logging.ERROR, e.keymap.edit_config)
+        assert any("keymap.editor failed" in m for m in messages)
+
+    def test_without_app_control_logs_instead_of_crashing(self, engine, caplog):
+        import logging
+        e = engine(lambda keymap: None)
+        assert e.keymap.app_control is None
+        messages = self._messages(caplog, logging.WARNING, e.keymap.edit_config)
+        assert any("No editor available" in m for m in messages)
+
+    def test_deleted_config_is_recreated_before_opening(self, engine, tmp_path):
+        import os
+        e = engine(lambda keymap: None)
+        e.keymap.app_control = FakeAppControl()
+        # The fixture aliases template and config to one file; give the
+        # recreation a real template to copy from.
+        template = tmp_path / "template.py"
+        template.write_text("def configure(keymap):\n    pass\n")
+        e.keymap._template_path = str(template)
+        os.remove(e.keymap._config_path)
+        e.keymap.edit_config()
+        assert os.path.exists(e.keymap._config_path)
+        assert e.keymap.app_control.edited == [(e.keymap._config_path, None)]
+
+    def test_reload_resets_editor_to_default(self, engine):
+        e = engine(lambda keymap: None)
+        e.keymap.editor = "CotEditor"
+        e.keymap.configure()
+        assert e.keymap.editor == ""
+
+    def test_reload_config_is_an_alias_for_configure(self, engine, monkeypatch):
+        e = engine(lambda keymap: None)
+        calls = []
+        monkeypatch.setattr(e.keymap, "configure", lambda: calls.append(1))
+        e.keymap.reload_config()
+        assert calls == [1]

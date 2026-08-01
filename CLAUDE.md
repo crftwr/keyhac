@@ -387,3 +387,15 @@ Second macOS session (2026-08-01, later the same day):
   green in the agent sandbox (this environment holds an Accessibility
   grant, unlike window-server key focus). Interactive pass still wanted
   for wheel direction / drag / double-click feel in real apps.
+- **"Edit Config" tray menu item** (the last spec row of
+  doc/03-config-api.md's runtime-API table): `keymap.editor` (app
+  name/path or callable(path), reset to "" on reload), `keymap.
+  edit_config()` (recreates a deleted config.py from the template first),
+  `keymap.reload_config()` alias, `AppControl.edit_file(path, editor)` —
+  macOS `open -a` with keyhac-mac's VS Code → Xcode → TextEdit fallback
+  cascade (live-verified: cascade opened a scratch file; missing-editor
+  path logs, doesn't raise), Windows the keyhac-win ShellExecute call with
+  notepad.exe default (written to spec, not yet run — noted in
+  win/apps.py's STATUS). Template gained a commented `keymap.editor`
+  sample. Menu click itself pending an interactive pass (menu bar is not
+  drivable from the sandbox).

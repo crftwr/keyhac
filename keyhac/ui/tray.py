@@ -35,6 +35,7 @@ def install_tray(console, keymap, hook) -> None:
 
     menu = Menu(
         MenuItem("Open Console", on_select=console.backend.show_main_window),
+        MenuItem("Edit Config", on_select=keymap.edit_config),
         MenuItem("Reload Config", on_select=keymap.configure),
         MenuItem("Keyboard Hook", on_select=toggle_hook,
                  checked=lambda: hook.installed),

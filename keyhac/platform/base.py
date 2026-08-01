@@ -187,6 +187,12 @@ class AppControl(ABC):
     @abstractmethod
     def launch(self, app_name: str) -> None: ...
 
+    @abstractmethod
+    def edit_file(self, path: str, editor: str | None = None) -> None:
+        """Open a text file for editing.  ``editor`` names the editor
+        application (a name or path meaningful to the OS); None picks a
+        platform default.  Failure is logged, not raised."""
+
 
 class Window(ABC):
     """A top-level OS window - the portable half of keyhac-win's pyauto.Window

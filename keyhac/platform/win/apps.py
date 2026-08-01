@@ -3,14 +3,18 @@
 STATUS: activate_pid verified live on Windows (chooser-focus session: a
 two-process probe armed the foreground lock with synthesized input and
 confirmed plain SetForegroundWindow is refused while this path wins
-foreground + keyboard focus). launch() written to spec, not yet run.
+foreground + keyboard focus). launch() and edit_file() written to spec, not
+yet run.
 """
 
 import ctypes
 import os
 import sys
 
+from keyhac.core import log
 from keyhac.platform.base import AppControl
+
+logger = log.getLogger("WinApps")
 
 if sys.platform == "win32":
     from ctypes import wintypes
@@ -31,6 +35,14 @@ if sys.platform == "win32":
     user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.IsWindowVisible.restype = wintypes.BOOL
+
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.ShellExecuteW.argtypes = [
+        wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR,
+        wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.c_int]
+    shell32.ShellExecuteW.restype = wintypes.HINSTANCE
+
+    SW_SHOWNORMAL = 1
 
 
 class WinAppControl(AppControl):
@@ -58,3 +70,17 @@ class WinAppControl(AppControl):
 
     def launch(self, app_name: str) -> None:
         os.startfile(app_name)
+
+    def edit_file(self, path: str, editor: str | None = None) -> None:
+        """ShellExecute the editor with the quoted path (the keyhac-win
+        editTextFile call: PATH and App Paths both resolve the name, so
+        "notepad.exe" and registered editors like "Code.exe" work)."""
+        if sys.platform != "win32":
+            return
+        editor = editor or "notepad.exe"
+        result = shell32.ShellExecuteW(
+            None, None, editor, f'"{path}"', None, SW_SHOWNORMAL)
+        # Documented contract: the pseudo-HINSTANCE is > 32 on success.
+        if (result or 0) <= 32:
+            logger.warning(f"Could not open {path} with {editor} "
+                           f"(ShellExecute code {result}).")

@@ -8,6 +8,7 @@ the engine runs unmodified on Windows, macOS, and in tests (FakeInputHook).
 import functools
 import operator
 import os
+import shutil
 import threading
 import traceback
 from typing import Callable
@@ -77,6 +78,7 @@ class Keymap:
         self._focus = None                  # Focus snapshot
         self._modifier = 0                  # tracked modifier state
         self._last_keydown = None           # for one-shot detection
+        self.editor = ""                    # edit_config's editor: app name/path or callable(path)
 
         # Wired by main(): platform services + clipboard history + UI hooks
         self.app_control = None             # platform AppControl
@@ -111,6 +113,7 @@ class Keymap:
             self._focus_path = None
             self._focus = None
             self._modifier = 0
+            self.editor = ""
             self._vk_mod_map = dict(get_key_names().modifier_vk_map)
 
             logger.info("Loading configuration script.")
@@ -126,6 +129,37 @@ class Keymap:
                 return
 
             self._warn_unreachable_modifiers()
+
+    def reload_config(self) -> None:
+        """Reload the configuration file (the keyhac-win name for
+        configure(), kept because configs and docs refer to it)."""
+        self.configure()
+
+    def edit_config(self) -> None:
+        """Open the configuration file in a text editor.
+
+        ``keymap.editor`` chooses the editor: an application name or path
+        the OS can resolve, or a callable receiving the config path.  Left
+        empty, a platform default is used (Visual Studio Code / Xcode /
+        TextEdit on macOS, Notepad on Windows).  The tray menu's
+        "Edit Config" item calls this.
+        """
+        if not os.path.exists(self._config_path):
+            # Deleted while running; recreate it like Config's first run does
+            # ("open -a" refuses a nonexistent file on macOS).
+            os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
+            shutil.copyfile(self._template_path, self._config_path)
+        if callable(self.editor):
+            try:
+                self.editor(self._config_path)
+            except Exception:
+                print()
+                logger.error(f"keymap.editor failed:\n{traceback.format_exc()}")
+        elif self.app_control is not None:
+            self.app_control.edit_file(self._config_path, self.editor or None)
+        else:
+            logger.warning("No editor available (running without platform "
+                           "application control).")
 
     def _warn_unreachable_modifiers(self) -> None:
         """Warn about assignments whose modifier no key can produce here.
