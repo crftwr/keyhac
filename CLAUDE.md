@@ -126,7 +126,12 @@ M2 progress:
   needs the editable checkout or the menu bar extra silently degrades to the
   tiny "⌨" text glyph — this happened once when a PyPI install replaced the
   editable one; `Makefile.local` with `PUIKIT_DIR = ../puikit` now pins it.
-  The main-window visibility API (PR #84, below) is in the same boat.)
+  The main-window visibility API (PR #84, below) is in the same boat.
+  Update: puikit 1.0.7 is on PyPI, closing both. The new same-boat item is
+  the LogView sized-font fix (**PR #86**, merged after 1.0.7): the console's
+  11pt log needs it, or every full wrapped row loses its right-hand tail —
+  LogView clipped and hit-tested by grid columns while the wrap packed rows
+  by native measure. Editable checkout carries it until 1.0.8 ships.)
 - `keyhac/ui/console.py`: the console window (LogView + hook toggle + log level +
   last-key/focus-path inspector). The console backend runs the process event loop;
   the hook shares it (tap source on the same run loop / GetMessage pump). Verified

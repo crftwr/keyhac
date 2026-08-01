@@ -28,14 +28,20 @@ from keyhac.core import log
 logger = log.getLogger("Console")
 
 # Log line colors by level (matches the predecessors' scheme)
+# Log text is one point below the console's 12pt UI font. Every log style
+# must name the font explicitly: LogView leaves a style's font untouched once
+# set, but fills a font-less style with the base-size mono face — so a line
+# style without it would render at 12pt amid the 11pt stream.
+_LOG_FONT = Font(size=11, monospace=True)
+
 _LEVEL_STYLES = {
-    logging.DEBUG: Style(fg=(128, 128, 128)),
-    logging.INFO: Style(fg=(200, 200, 200)),
-    logging.WARNING: Style(fg=(255, 255, 128)),
-    logging.ERROR: Style(fg=(255, 128, 128)),
-    logging.CRITICAL: Style(fg=(255, 64, 64)),
+    logging.DEBUG: Style(fg=(128, 128, 128), font=_LOG_FONT),
+    logging.INFO: Style(fg=(200, 200, 200), font=_LOG_FONT),
+    logging.WARNING: Style(fg=(255, 255, 128), font=_LOG_FONT),
+    logging.ERROR: Style(fg=(255, 128, 128), font=_LOG_FONT),
+    logging.CRITICAL: Style(fg=(255, 64, 64), font=_LOG_FONT),
 }
-_DEFAULT_LINE_STYLE = Style(fg=(220, 220, 220))
+_DEFAULT_LINE_STYLE = Style(fg=(220, 220, 220), font=_LOG_FONT)
 
 _LEVELS = [
     ("Debug", logging.DEBUG),
@@ -97,6 +103,7 @@ class ConsoleWindow:
             height=30,
             title="Keyhac",
             # 12pt console; the UI font shares the base font's size
+            # (log lines are 11pt via _LOG_FONT)
             base_font=Font(size=12, monospace=True),
             frame_autosave_name="KeyhacConsole",
             # tool: no taskbar button / Alt-Tab entry on Windows (no-op on
