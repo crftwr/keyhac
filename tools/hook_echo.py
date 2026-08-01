@@ -65,6 +65,12 @@ class OrderingStress:
         self.deadline = 0.0
         self._last_stress = 0.0
 
+        # macOS posts the batch chunked so arrivals genuinely interleave and
+        # the deferral machinery has to repair the order.  Windows must post
+        # ONE SendInput batch: the OS guarantee is per-call atomicity, so
+        # interleaving between separate chunks would be legal queue order and
+        # the round would misreport it as a violation.
+        self.chunked_send = platform_name == "mac"
         if platform_name == "mac":
             self.virtual_vk = 0x69                                # F13
             self.real_vks = [0x6B, 0x71, 0x6A, 0x40, 0x4F]        # F14..F18
@@ -152,15 +158,18 @@ class OrderingStress:
         self.active = True
         self.deadline = time.monotonic() + self.ROUND_TIMEOUT
         threading.Thread(target=self._post_reals, daemon=True).start()
-        # Send the batch in small chunks with sleeps so the poster thread's
-        # events land in the HID system genuinely interleaved with the batch.
-        # This thread is the run loop, so nothing is processed until the whole
-        # round has been posted - without the ordering machinery the reals
-        # would be handled wherever they arrived, mid-batch.
         batch = [(self.virtual_vk, i % 2 == 0) for i in range(self.NUM_VIRTUAL)]
-        for i in range(0, len(batch), 2):
-            self.hook.send(batch[i:i + 2], replay=True)
-            time.sleep(0.001)
+        if self.chunked_send:
+            # Small chunks with sleeps so the poster thread's events land in
+            # the HID system genuinely interleaved with the batch.  This
+            # thread is the run loop, so nothing is processed until the whole
+            # round has been posted - without the ordering machinery the
+            # reals would be handled wherever they arrived, mid-batch.
+            for i in range(0, len(batch), 2):
+                self.hook.send(batch[i:i + 2], replay=True)
+                time.sleep(0.001)
+        else:
+            self.hook.send(batch, replay=True)
         self.loop.call_later(0.02, self._poll_round)
 
     def _post_reals(self):
@@ -206,12 +215,15 @@ class OrderingStress:
             self.loop.call_later(0.05, self._begin_round)
 
     def _evaluate(self, timeout):
+        """The contract: the batch is processed as a contiguous unit (a real
+        event that genuinely arrived first may legally precede it), and each
+        stream keeps its internal order, with nothing lost."""
         virtuals = [i for i, e in enumerate(self.seq) if e[0] == "virtual"]
         reals = [(vk, down) for kind, vk, down in self.seq if kind == "real"]
         if timeout or len(virtuals) != self.NUM_VIRTUAL or len(reals) != self.num_real:
             return False, (f"lost events ({len(virtuals)}/{self.NUM_VIRTUAL} virtual, "
                            f"{len(reals)}/{self.num_real} real)")
-        if any(e[0] == "real" for e in self.seq[:max(virtuals)]):
+        if max(virtuals) - min(virtuals) != self.NUM_VIRTUAL - 1:
             return False, "a real event was processed inside the virtual batch"
         downs = [self.seq[i][2] for i in virtuals]
         if downs != [i % 2 == 0 for i in range(len(downs))]:
