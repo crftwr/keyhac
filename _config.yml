@@ -1,3 +1,10 @@
 theme: jekyll-theme-primer
 title: "Keyhac"
 description: "Python-scriptable keyboard customization for Windows and macOS"
+
+# Jekyll drops files whose name starts with "_"; the README and
+# doc/configuration.md link to the config template, so force it in.
+# (Must be the bare basename — a path like keyhac/_config.py never
+# matches the per-directory entry filter.)
+include:
+  - _config.py
