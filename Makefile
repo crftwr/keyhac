@@ -187,6 +187,7 @@ icons-check: $(VENV_STAMP)
 # download cache; `clean` names both so "everything" is one command away.
 clean: clean-macos clean-windows
 	rm -rf build dist *.egg-info
+	rm -f README.pypi.md
 	find . -name __pycache__ -type d -not -path "./$(VENV)/*" -exec rm -rf {} +
 	rm -rf .pytest_cache
 	@echo ""
@@ -312,12 +313,19 @@ release-github:
 # extras. Invoked as `python -m ...` (not the venv's console scripts) so the
 # same recipe works on Windows, where those scripts live in Scripts/ and end
 # in .exe.
+# The PyPI long description (README.pypi.md) is generated here on the fly and
+# never committed: README.md keeps repo-relative image/link targets for GitHub,
+# and gen_pypi_readme.py rewrites them to version-tagged GitHub URLs so they
+# render on the PyPI page. `twine check --strict` promotes twine's
+# "description missing" warning to a failure, so a build that somehow skipped
+# generation can never upload an empty description.
 build: $(VENV_STAMP)
 	@echo "Building sdist + wheel..."
 	@$(VENV_PIP) install --quiet build twine
 	rm -rf dist build *.egg-info
+	$(VENV_PYTHON) tools/gen_pypi_readme.py
 	$(VENV_PYTHON) -m build
-	$(VENV_PYTHON) -m twine check dist/*
+	$(VENV_PYTHON) -m twine check --strict dist/*
 
 # The safe rehearsal for release-whl: same build and upload path, but a bad
 # TestPyPI version costs nothing. Deliberately NOT named release-* — it needs

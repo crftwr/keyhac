@@ -9,5 +9,6 @@ macos_app/signing.env
 *.egg-info/
 dist/
 build/
+README.pypi.md
 .pytest_cache/
 .DS_Store
