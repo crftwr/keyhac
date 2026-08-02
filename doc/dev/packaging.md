@@ -25,7 +25,44 @@ shipped PuiKit app, the standard to follow for build infra.
   from PyConfig alone. `install_zip.ps1` installs a built zip.
 - Layout: `Keyhac.exe` + `runtime\` (CPython) + `Lib\site-packages\` +
   `app\{keyhac,puikit}`.
-- Distribution: `Keyhac-<version>-win64.zip` via `make windows-zip`.
+- Distribution: `Keyhac-<version>-win64.zip` via `make windows-zip`, and the
+  Microsoft Store as an MSIX (below).
+
+### Microsoft Store (MSIX)
+
+Ported from XeFM's pipeline (`../xefm/windows_app/build_msix.ps1`,
+`doc/dev/WINDOWS_STORE_MSIX_PLAN.md` there has the full background). The Store
+route exists because it makes Windows code signing free: the package is uploaded
+**unsigned** and Microsoft re-signs it during certification — no certificate to
+buy, no SmartScreen warning, and a `winget install --source msstore` line for free.
+
+- `build_msix.ps1` — wraps the `windows_app\build\Keyhac` bundle into
+  `build\Keyhac-<version>.0-x64.msix` (the Store requires 4-part versions with
+  major ≥ 1 and revision 0, so `__version__` 2.0.0 packages as 2.0.0.0, derived
+  not hardcoded). Emits `AppxManifest.xml` at pack time: `runFullTrust`
+  (classic Win32 desktop app — the hook, `SendInput` and UIA all work
+  unchanged), plus a `windows.startupTask` extension — the MSIX-native
+  replacement for the manual `shell:startup` shortcut, on by default and
+  user-toggleable under Settings → Apps → Startup.
+- Store tiles (`windows_app/resources/Assets/*.png`) are **committed**,
+  rendered from `art/icon.svg` by `tools/make_icons.py` like every other icon
+  target (`icons-check` guards drift) — unlike XeFM, which generates them at
+  pack time.
+- Identity (`Package/Identity/Name`, `Publisher`, display name) comes from the
+  gitignored `windows_app/store.env` (copy `store.env.example`), values copied
+  verbatim from Partner Center → product → *Product identity*. Without it the
+  pack warns and uses a `Keyhac.Prototype` identity that sideloads but cannot
+  be submitted.
+- MSIX installs are read-only (`C:\Program Files\WindowsApps\...`); Keyhac is
+  already safe: all state including the launcher's crash log lives under
+  `~/.keyhac`, bytecode is precompiled, and nothing writes next to the exe.
+- Targets: `make windows-msix` (unsigned pack; `SIGN=1` to self-sign),
+  `make install-windows-msix` / `uninstall-windows-msix` (self-signed local
+  sideload test; trusting/untrusting the throwaway cert elevates via UAC), and
+  `make release-windows-msix` (repack unsigned + submit to the Store listing
+  via the `msstore` CLI — needs `msstore reconfigure` once, and
+  `KEYHAC_STORE_PRODUCT_ID` in `store.env`).
+- The Store listing links `PRIVACY.md` (repo root) as the privacy policy.
 
 ## macOS: `macos_app/`
 
@@ -55,7 +92,8 @@ shipped PuiKit app, the standard to follow for build infra.
 
 `make tag` → `make release-github` → `make release-macos-dmg` (on macOS) /
 `make release-windows-zip` (on Windows) → `make release-whl`; `make release-status`
-shows where a version stands. Supporting scripts:
+shows where a version stands. `make release-windows-msix` (on Windows) is the
+odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporting scripts:
 `tools/{release_preflight,bump_version,_version_source}.py`. The version lives in
 `keyhac/__init__.py` (`__version__`), one number for both OSes.
 

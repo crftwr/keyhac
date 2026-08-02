@@ -26,6 +26,11 @@ Raster targets (all checked in; re-run only when the artwork changes):
   extra at 19x18 pt (the 19x18 canvas at exact 1x/2x scale; puikit's
   tray loader pairs the @2x sibling and applies the AppKit "…Template"
   naming convention).
+- ``windows_app/resources/Assets/*.png`` — the MSIX / Microsoft Store
+  tiles (``windows_app/build_msix.ps1`` copies the directory into the
+  package payload): the scale-100 sizes the AppxManifest references,
+  scale-200 variants MSIX auto-selects on high DPI, and a wide tile
+  with the square icon centered on a transparent canvas.
 
 Adding a target (store banner, README art, …) is one line in ``build()``:
 render the source SVG at the needed size and hand it to an encoder.
@@ -53,6 +58,7 @@ import svgrender
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "art"
 ASSETS = ROOT / "keyhac" / "ui" / "assets"
+STORE_ASSETS = ROOT / "windows_app" / "resources" / "Assets"
 
 
 # --- encoders ---------------------------------------------------------------
@@ -186,6 +192,19 @@ def _asset_equal(path, old, new):
 
 # --- main -------------------------------------------------------------------
 
+def wide_tile(logo, width, height):
+    """The square ``logo`` render centered on a transparent canvas."""
+    n = len(logo)
+    x0, y0 = (width - n) // 2, (height - n) // 2
+    blank = (0, 0, 0, 0)
+    return [
+        [logo[y - y0][x - x0]
+         if y0 <= y < y0 + n and x0 <= x < x0 + n else blank
+         for x in range(width)]
+        for y in range(height)
+    ]
+
+
 def build():
     """Render every raster target into memory: {path: bytes}."""
     source = (ART / "icon.svg").read_text(encoding="utf-8")
@@ -213,6 +232,16 @@ def build():
             png_bytes(svgrender.render(template, 19, 18)),
         ASSETS / "MenuExtraTemplate@2x.png":
             png_bytes(svgrender.render(template, 38, 36)),
+        # MSIX / Microsoft Store tiles (referenced by the AppxManifest that
+        # windows_app/build_msix.ps1 emits).
+        STORE_ASSETS / "StoreLogo.png": png_bytes(render(50)),
+        STORE_ASSETS / "Square44x44Logo.png": png_bytes(render(44)),
+        STORE_ASSETS / "Square44x44Logo.scale-200.png": png_bytes(render(88)),
+        STORE_ASSETS / "Square150x150Logo.png": png_bytes(render(150)),
+        STORE_ASSETS / "Square150x150Logo.scale-200.png":
+            png_bytes(render(300)),
+        STORE_ASSETS / "Wide310x150Logo.png":
+            png_bytes(wide_tile(render(150), 310, 150)),
     }
 
 
@@ -238,10 +267,10 @@ def main(argv=None):
         print("Icon assets match the SVG masters.")
         return 0
 
-    ASSETS.mkdir(parents=True, exist_ok=True)
     for path, data in targets.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-    for f in sorted(ASSETS.iterdir()):
+    for f in sorted(targets):
         print(f"{f.relative_to(ROOT)}  {f.stat().st_size} bytes")
     return 0
 

@@ -58,7 +58,8 @@ VENV_STAMP := $(VENV)/.installed
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
-        windows-app windows-zip install-windows-zip uninstall-windows-zip release-windows-zip
+        windows-app windows-zip install-windows-zip uninstall-windows-zip release-windows-zip \
+        windows-msix install-windows-msix uninstall-windows-msix release-windows-msix
 
 help:
 	@echo "Keyhac 2 utility commands:"
@@ -88,8 +89,12 @@ help:
 	@echo "  App bundles:"
 	@echo "  make macos-app / macos-dmg           - (on macOS)   build Keyhac.app / its DMG"
 	@echo "  make windows-app / windows-zip       - (on Windows) build the bundle / its zip"
+	@echo "  make windows-msix                    - (on Windows) pack the bundle as an unsigned"
+	@echo "                                         MSIX (Store submission form; SIGN=1 to self-sign)"
 	@echo "  make install-macos-dmg / install-windows-zip     - install the built artifact"
+	@echo "  make install-windows-msix   - pack + self-sign, trust cert (elevates), install per-user"
 	@echo "  make uninstall-macos-dmg / uninstall-windows-zip - remove that install"
+	@echo "  make uninstall-windows-msix - remove the MSIX package + throwaway signing cert"
 	@echo "  make clean-macos / clean-windows / clean-windows-cache"
 	@echo ""
 	@echo "  Release (one target per artifact; run in this order):"
@@ -98,6 +103,7 @@ help:
 	@echo "  make release-whl       - upload sdist + wheel to PyPI, and to the Release"
 	@echo "  make release-macos-dmg   - (on macOS)   attach Keyhac-<ver>-macos.dmg"
 	@echo "  make release-windows-zip - (on Windows) attach Keyhac-<ver>-win64.zip"
+	@echo "  make release-windows-msix - (on Windows) submit the MSIX to the Microsoft Store"
 	@echo "  make release-status    - show which artifacts have landed so far"
 	@echo "  Supporting: make build (sdist + wheel into dist/, also a tag gate),"
 	@echo "  make publish-testpypi (rehearsal upload to TestPyPI)."
@@ -204,6 +210,7 @@ clean-venv:
 #
 #   make release-macos-dmg     macOS        Keyhac-<ver>-macos.dmg -> the Release
 #   make release-windows-zip   Windows      Keyhac-<ver>-win64.zip -> the Release
+#   make release-windows-msix  Windows      Keyhac-<ver>.0-x64.msix -> the Microsoft Store
 #
 # Order matters only twice: `tag` first (everything else names the tag it
 # creates), then `release-github` (the release-<artifact> targets upload into
@@ -211,7 +218,11 @@ clean-venv:
 # any order, on their own machine, because the artifacts build on different
 # platforms. Each one builds its artifact if it is missing, re-checks the
 # preconditions, and uploads with --clobber, so re-running any of them is safe.
-# (An MSIX/Store target like XeFM's release-windows-msix can slot in later.)
+#
+# release-windows-msix is the odd one out: it publishes to the Microsoft Store,
+# not the GitHub Release, so it needs no `release-github` — and it always
+# repacks rather than reusing an existing .msix, since the Store rejects a
+# resubmitted package version anyway (each submission must be strictly higher).
 #
 # The version's single source of truth is keyhac/__init__.py's __version__;
 # pyproject.toml derives it (dynamic version = attr) and the M5 bundle
@@ -578,11 +589,87 @@ uninstall-windows-zip:
 	@powershell -ExecutionPolicy Bypass -File windows_app/install_zip.ps1 \
 		-Uninstall $(if $(WINDOWS_INSTALL_DIR),-InstallDir "$(WINDOWS_INSTALL_DIR)")
 
+# --- MSIX (Microsoft Store / winget) packaging ------------------------------
+# Wraps the built bundle into an .msix; builds the bundle first if it is missing.
+#
+# UNSIGNED by default, because that is the form Partner Center wants: Microsoft
+# re-signs the package during certification, which is what makes Store signing
+# free and SmartScreen-warning-free. Self-signing is only useful for sideloading
+# on the dev box, so it is opt-in via SIGN=1 -- and 'install-windows-msix'
+# below passes it for you.
+#
+# Identity values come from the gitignored windows_app/store.env (copy
+# store.env.example); without it the pack falls back to a Keyhac.Prototype
+# identity that sideloads fine but cannot be submitted.
+windows-msix: $(WINDOWS_APP_BUNDLE)
+	@echo "Packaging Windows app as MSIX$(if $(SIGN), (self-signed, local testing), (unsigned, Store submission))..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 $(if $(SIGN),-Sign)
+
+# Trust the self-signed cert (self-elevates via UAC) then install per-user.
+#
+# Always re-packs with -Sign first rather than reusing whatever .msix is on
+# disk: both this and 'windows-msix' write the same
+# build\Keyhac-<version>-x64.msix, so an unsigned pack may have overwritten a
+# signed one. Add-AppxPackage cannot install an unsigned package, so packing
+# here is what guarantees the artifact it installs is actually signed.
+install-windows-msix: $(WINDOWS_APP_BUNDLE)
+	@echo "Packaging + self-signing MSIX for local install..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Sign
+	@echo "Installing MSIX package locally..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Install
+
+# Removes the package (per-user) and the throwaway signing cert; untrusting the
+# machine-store cert self-elevates via UAC.
+uninstall-windows-msix:
+	@echo "Removing installed MSIX package and throwaway cert..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall
+
+# --- release-windows-msix: submit the MSIX to the Microsoft Store -----------
+# Packs first via the 'windows-msix' target, not the file: signed and unsigned
+# packs write the same path, and Partner Center takes only the UNSIGNED form,
+# so repacking is what guarantees the upload is not a leftover self-signed
+# .msix from 'install-windows-msix'. The msstore CLI then uploads the package,
+# creates a new submission carrying the listing metadata of the previous one,
+# and commits it -- certification proceeds exactly as for a browser submission.
+#
+# One-time setup, both outside this Makefile (doc/dev/packaging.md):
+#   - the msstore CLI, configured once with the Partner Center API credentials
+#     ('msstore reconfigure'; they persist in Windows Credential Manager)
+#   - KEYHAC_STORE_PRODUCT_ID in windows_app/store.env: the listing's 9N...
+#     Store product ID (see store.env.example)
+#
+# Poll certification afterwards with: msstore submission status <product id>
+#
+# Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
+# __version__ literal as KEYHAC_VERSION, plus the Store-required ".0" revision,
+# so this is the path the pack above just wrote.
+WINDOWS_MSIX := windows_app/build/Keyhac-$(KEYHAC_VERSION).0-x64.msix
+
+release-windows-msix: windows-msix
+	@command -v msstore >/dev/null 2>&1 || { \
+		echo "ERROR: msstore CLI not found on PATH."; \
+		echo "       Install: winget install \"Microsoft Store Developer CLI\", then run 'msstore reconfigure'."; \
+		exit 1; }
+	@test -f windows_app/store.env || { \
+		echo "ERROR: windows_app/store.env not found."; \
+		echo "       Copy windows_app/store.env.example to store.env and fill it in."; \
+		exit 1; }
+	@. ./windows_app/store.env; \
+	test -n "$$KEYHAC_STORE_PRODUCT_ID" || { \
+		echo "ERROR: KEYHAC_STORE_PRODUCT_ID is not set in windows_app/store.env."; \
+		echo "       Add the listing's 9N... product ID (see store.env.example)."; \
+		exit 1; }; \
+	test -f "$(WINDOWS_MSIX)" || { \
+		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
+		exit 1; }; \
+	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$KEYHAC_STORE_PRODUCT_ID)..."; \
+	msstore publish "$(WINDOWS_MSIX)" -id "$$KEYHAC_STORE_PRODUCT_ID"
+
 # Everything the Windows build machinery generates. Plain rm rather than
 # `build.ps1 -Clean` (identical effect) so this works on any OS and
 # `make clean` does not fail on macOS.
 clean-windows:
-	@echo "Cleaning Windows build artifacts (bundle, zip)..."
+	@echo "Cleaning Windows build artifacts (bundle, zip, .msix, certs)..."
 	@rm -rf windows_app/build
 	@echo "Windows build artifacts removed"
 

@@ -4,6 +4,7 @@ __pycache__/
 .sandbox/
 Makefile.local
 windows_app/.cache/
+windows_app/store.env
 macos_app/signing.env
 *.egg-info/
 dist/

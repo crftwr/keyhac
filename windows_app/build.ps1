@@ -47,6 +47,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Git Bash/MSYS make can launch this script with a mangled PATHEXT (observed:
+# just ".CPL"), and PowerShell then refuses to execute ANY .exe ("cannot run a
+# document"). Restore the default so native tools (python, cl, rc) run.
+if ($env:PATHEXT -notmatch '(?i)\.EXE') { $env:PATHEXT = '.COM;.EXE;.BAT;.CMD' }
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
