@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img"
+     aria-label="Keyhac — Python-scriptable keyboard customization for Windows and macOS">
+  <title>Keyhac — Python-scriptable keyboard customization for Windows and macOS</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#151327"/>
+    </linearGradient>
+    <linearGradient id="wm" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d2a8ff"/>
+      <stop offset="1" stop-color="#79c0ff"/>
+    </linearGradient>
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="12" flood-color="#01040a" flood-opacity="0.55"/>
+    </filter>
+    <clipPath id="clip">
+      <rect width="1200" height="300" rx="14"/>
+    </clipPath>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1.1" fill="#e6edf3" opacity="0.05"/>
+    </pattern>
+    <g id="key">
+      <rect width="40" height="40" rx="8" fill="#11151c" stroke="#30363d"/>
+      <rect x="4" y="3" width="32" height="30" rx="5" fill="#1c232e"/>
+    </g>
+  </defs>
+
+  <rect width="1200" height="300" rx="14" fill="url(#bg)"/>
+  <g clip-path="url(#clip)">
+    <rect width="1200" height="300" fill="url(#dots)"/>
+    <ellipse cx="210" cy="152" rx="180" ry="100" fill="#bc8cff" opacity="0.13" filter="url(#soft)"/>
+    <ellipse cx="990" cy="152" rx="180" ry="100" fill="#388bfd" opacity="0.13" filter="url(#soft)"/>
+  </g>
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="13.5" fill="none" stroke="#30363d"/>
+
+  <!-- Keyboard: Fn and J highlighted -->
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+    <use href="#key" x="94" y="83"/>
+    <use href="#key" x="142" y="83"/>
+    <use href="#key" x="190" y="83"/>
+    <use href="#key" x="238" y="83"/>
+    <use href="#key" x="286" y="83"/>
+    <use href="#key" x="106" y="131"/>
+    <use href="#key" x="154" y="131"/>
+    <use href="#key" x="250" y="131"/>
+    <use href="#key" x="298" y="131"/>
+    <g>
+      <rect x="202" y="131" width="40" height="40" rx="8" fill="#221a33" stroke="#bc8cff" stroke-width="1.5"/>
+      <rect x="206" y="134" width="32" height="30" rx="5" fill="#2d2153"/>
+      <text x="222" y="155" font-size="15" font-weight="600" fill="#d2a8ff" text-anchor="middle">J</text>
+    </g>
+    <g>
+      <rect x="94" y="179" width="56" height="40" rx="8" fill="#221a33" stroke="#bc8cff" stroke-width="1.5"/>
+      <rect x="98" y="182" width="48" height="30" rx="5" fill="#2d2153"/>
+      <text x="122" y="203" font-size="15" font-weight="600" fill="#d2a8ff" text-anchor="middle">Fn</text>
+    </g>
+    <use href="#key" x="158" y="179"/>
+    <g>
+      <rect x="206" y="179" width="88" height="40" rx="8" fill="#11151c" stroke="#30363d"/>
+      <rect x="210" y="182" width="80" height="30" rx="5" fill="#1c232e"/>
+    </g>
+    <use href="#key" x="302" y="179"/>
+  </g>
+
+  <!-- config.py code card -->
+  <g font-family="ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+    <rect x="848" y="64" width="284" height="174" rx="10" fill="#0d1117" stroke="#30363d" filter="url(#drop)"/>
+    <path d="M848 92 V74 a10 10 0 0 1 10 -10 h264 a10 10 0 0 1 10 10 v18 z" fill="#161b22"/>
+    <rect x="848" y="91" width="284" height="1" fill="#21262d"/>
+    <text x="862" y="82" font-size="12" fill="#8b949e">~/.keyhac/config.py</text>
+    <text x="862" y="114" font-size="13" xml:space="preserve"><tspan fill="#ff7b72">from</tspan><tspan fill="#e6edf3"> keyhac </tspan><tspan fill="#ff7b72">import</tspan><tspan fill="#e6edf3"> *</tspan></text>
+    <text x="862" y="156" font-size="13" xml:space="preserve"><tspan fill="#ff7b72">def</tspan><tspan fill="#d2a8ff"> configure</tspan><tspan fill="#e6edf3">(keymap):</tspan></text>
+    <text x="862" y="177" font-size="13" xml:space="preserve"><tspan fill="#e6edf3">    kt = keymap.</tspan><tspan fill="#d2a8ff">define_keytable</tspan><tspan fill="#e6edf3">()</tspan></text>
+    <text x="862" y="198" font-size="13" xml:space="preserve"><tspan fill="#e6edf3">    kt[</tspan><tspan fill="#a5d6ff">"Fn-J"</tspan><tspan fill="#e6edf3">] = </tspan><tspan fill="#a5d6ff">"Left"</tspan></text>
+    <text x="862" y="219" font-size="13" xml:space="preserve"><tspan fill="#e6edf3">    kt[</tspan><tspan fill="#a5d6ff">"Fn-H"</tspan><tspan fill="#e6edf3">] = hello</tspan></text>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" text-anchor="middle">
+    <text x="600" y="136" font-size="68" font-weight="700" letter-spacing="-1.5" fill="url(#wm)">Keyhac</text>
+    <text x="600" y="178" font-size="19" fill="#9aa4b2">Script your keyboard in Python</text>
+    <rect x="525" y="196" width="150" height="28" rx="14" fill="#161b22" stroke="#30363d"/>
+    <text x="600" y="215" font-size="14" fill="#8b949e">Windows &#183; macOS</text>
+  </g>
+</svg>
