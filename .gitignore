@@ -12,3 +12,4 @@ build/
 README.pypi.md
 .pytest_cache/
 .DS_Store
+*.code-workspace
