@@ -35,14 +35,20 @@ directory. These files never leave your computer.
 | `~/.keyhac/config.py` | Your configuration: key bindings and the Python functions they run. |
 | `~/.keyhac/extensions/` | Optional Python modules that you choose to place there yourself. |
 | `~/.keyhac/clipboard.json` | The clipboard history, if you use that feature: recent text you copied, so you can paste it again later. |
-| `~/.keyhac/settings.json` | Application settings (window positions and similar UI state). |
+| `~/.keyhac/settings.json` | Small pieces of UI state the app remembers between runs, such as whether the console window was visible. |
+| `~/.keyhac/instance.lock` | An empty lock file (macOS only) that prevents two Keyhac instances from running at once. |
 | `~/.keyhac/keyhac-error.log` | A crash report written only if Keyhac fails to start. |
 
+The console window's position is remembered in your per-user OS preferences (the
+`HKEY_CURRENT_USER\Software\PuiKit\FrameAutosave` registry key on Windows; the user
+defaults database on macOS).
+
 Clipboard history in particular can contain personal information, because it holds
-text you copied. It is stored locally, in a file you own, readable only by you. You
-can limit how many entries are kept (down to zero) in your configuration, and you
-can delete `~/.keyhac/clipboard.json` — or the entire `~/.keyhac` folder — at any
-time.
+text you copied. It is stored locally, in a file you own, readable only by you. In
+your configuration you can limit how many entries are kept (down to zero), or set
+`keymap.clipboard_history.persist = False` to keep the history in memory only, so
+nothing is written to disk. You can also delete `~/.keyhac/clipboard.json` — or the
+entire `~/.keyhac` folder — at any time.
 
 ## Network connections
 
