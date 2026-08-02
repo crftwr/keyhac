@@ -78,9 +78,21 @@
     <text x="862" y="219" font-size="13" xml:space="preserve"><tspan fill="#e6edf3">    kt[</tspan><tspan fill="#a5d6ff">"Fn-H"</tspan><tspan fill="#e6edf3">] = hello</tspan></text>
   </g>
 
-  <!-- Wordmark -->
+  <!-- Wordmark with the app icon (art/icon.svg keycap) -->
   <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" text-anchor="middle">
-    <text x="600" y="136" font-size="68" font-weight="700" letter-spacing="-1.5" fill="url(#wm)">Keyhac</text>
+    <g transform="translate(440,76) scale(0.14)">
+      <g transform="translate(-82.9762 -203.0125) scale(0.945540)">
+        <path d="M240 312.4 L220 512.4 L134 658.5 L172.5 365 Z" fill="#e9e9ff"/>
+        <path d="M240 312.4 L470 312.4 L490 512.4 L220 512.4 Z" fill="#afafde"/>
+        <path d="M470 312.4 L544 364 L583 658 L490 512.4 Z" fill="#8686bf"/>
+        <path d="M220 512.4 L490 512.4 L583 658 L134 658.5 Z" fill="#d7d7ff"/>
+        <path d="M240 312.4 L470 312.4 L544 364 L583 658 L134 658.5 L172.5 365 Z" fill="none" stroke="#000"
+              stroke-width="60" stroke-linejoin="round"/>
+        <path d="M240 312.4 L220 512.4 M220 512.4 L490 512.4 M470 312.4 L490 512.4 M220 512.4 L134 658.5 M490 512.4 L583 658" fill="none" stroke="#000"
+              stroke-width="15"/>
+      </g>
+    </g>
+    <text x="646" y="136" font-size="68" font-weight="700" letter-spacing="-1.5" fill="url(#wm)">Keyhac</text>
     <text x="600" y="178" font-size="19" fill="#9aa4b2">Script your keyboard in Python</text>
     <rect x="525" y="196" width="150" height="28" rx="14" fill="#161b22" stroke="#30363d"/>
     <text x="600" y="215" font-size="14" fill="#8b949e">Windows &#183; macOS</text>
