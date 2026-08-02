@@ -47,10 +47,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Git Bash/MSYS make can launch this script with a mangled PATHEXT (observed:
-# just ".CPL"), and PowerShell then refuses to execute ANY .exe ("cannot run a
-# document"). Restore the default so native tools (python, cl, rc) run.
+# Git Bash/MSYS make can launch this script with a mangled environment:
+# - PATHEXT without ".EXE" (observed: just ".CPL"), which makes PowerShell
+#   refuse to execute ANY .exe ("cannot run a document");
+# - no 'ProgramFiles(x86)' (parentheses are not legal in a POSIX variable
+#   name, so MSYS never exports it), which breaks the vswhere lookup;
+# - TEMP/TMP empty, which fails any tool needing scratch space (cl.exe).
+# Restore all three so native tools (python, cl, rc) run.
 if ($env:PATHEXT -notmatch '(?i)\.EXE') { $env:PATHEXT = '.COM;.EXE;.BAT;.CMD' }
+if (-not ${env:ProgramFiles(x86)}) {
+    ${env:ProgramFiles(x86)} = "$env:SystemDrive\Program Files (x86)"
+}
+if (-not $env:TEMP) {
+    $env:TEMP = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Temp' } else { "$env:SystemRoot\Temp" }
+}
+if (-not $env:TMP) { $env:TMP = $env:TEMP }
 
 # ---------------------------------------------------------------------------
 # Paths
