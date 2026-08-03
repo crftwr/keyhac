@@ -105,6 +105,12 @@ python3 -m venv .venv
 `python -m keyhac -d` enables debug logging, `--no-ui` runs headless (hook + engine
 only), `--config PATH` uses an alternate config file (its data files live beside it).
 
+## Contact & Support
+
+- **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/keyhac/issues)
+- **PyPI**: [pypi.org/project/keyhac](https://pypi.org/project/keyhac/) — released versions
+- **Author's X (Twitter)**: [@crftwr](https://x.com/crftwr)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
