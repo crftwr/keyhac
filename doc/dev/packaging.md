@@ -63,6 +63,7 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
   via the `msstore` CLI — needs `msstore reconfigure` once, and
   `KEYHAC_STORE_PRODUCT_ID` in `store.env`).
 - The Store listing links `PRIVACY.md` (repo root) as the privacy policy.
+- Live listing: <https://apps.microsoft.com/detail/9P8H1PG6PRHH>.
 
 ## macOS: `macos_app/`
 

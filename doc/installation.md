@@ -25,15 +25,35 @@ System Settings → General → Login Items.
 
 ## Windows
 
+### Microsoft Store (recommended)
+
+Install **Keyhac** from the
+[Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH), or from a
+terminal:
+
+```
+winget install --id 9P8H1PG6PRHH --source msstore
+```
+
+The Store package updates automatically, shows no SmartScreen warning, and is
+set to **start at login by default** — toggle that under
+Settings → Apps → Startup.
+
+### Zip package
+
 1. Download `Keyhac-<version>-win64.zip` from
    [Releases](https://github.com/crftwr/keyhac/releases) and unzip it anywhere
    (for example `C:\Program Files\Keyhac` or a folder in your home directory).
-2. Run `Keyhac.exe`. Keyhac appears as a keycap icon in the task-tray notification
-   area; the console window opens on first run.
+2. Run `Keyhac.exe`.
 3. If SmartScreen warns about an unrecognized app, choose "More info" → "Run anyway".
 
-To start Keyhac at login, put a shortcut to `Keyhac.exe` into the Startup folder
-(`Win-R` → `shell:startup`).
+To start the zip version at login, put a shortcut to `Keyhac.exe` into the
+Startup folder (`Win-R` → `shell:startup`).
+
+### After launching
+
+Keyhac appears as a keycap icon in the task-tray notification area; the console
+window opens on first run.
 
 Keyhac cannot see or modify keyboard input going to **elevated** (administrator)
 windows unless Keyhac itself runs elevated. This is a Windows security boundary;
@@ -98,5 +118,8 @@ see [migration-from-keyhac-win.md](migration-from-keyhac-win.md).
 
 - **macOS**: quit Keyhac, delete Keyhac.app, delete `~/.keyhac`, and remove the
   Accessibility entry in System Settings → Privacy & Security → Accessibility.
-- **Windows**: quit Keyhac, delete the unzipped folder and `~/.keyhac`, and remove
-  the Startup shortcut if you created one.
+- **Windows (Microsoft Store)**: quit Keyhac, uninstall it from
+  Settings → Apps → Installed apps (or `winget uninstall Keyhac`), and delete
+  `~/.keyhac`.
+- **Windows (zip)**: quit Keyhac, delete the unzipped folder and `~/.keyhac`, and
+  remove the Startup shortcut if you created one.

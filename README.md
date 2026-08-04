@@ -7,10 +7,23 @@ Python. You write one file, `~/.keyhac/config.py`, and it runs unchanged on both
 remapping keys, binding keys to Python functions, and driving windows, applications and
 the clipboard from the keyboard.
 
-Keyhac 2 is the successor to both
-[Keyhac for Windows](https://github.com/crftwr/keyhac-win) and
-[Keyhac for macOS](https://github.com/crftwr/keyhac-mac), rebuilt as one shared codebase.
-Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
+<!-- pypi-exclude-start -->
+<p>
+  <a href="https://apps.microsoft.com/detail/9P8H1PG6PRHH">
+    <img src="doc/images/download-windows.svg" alt="Download Keyhac for Windows from the Microsoft Store" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/crftwr/keyhac/releases/latest">
+    <img src="doc/images/download-macos.svg" alt="Download Keyhac for macOS (.dmg) from GitHub Releases" />
+  </a>
+</p>
+<!-- pypi-exclude-end -->
+
+Keyhac 2 replaces the two previous-generation products, Keyhac for Windows (1.x)
+and Keyhac for macOS (1.x), rebuilt as one shared codebase. Those older versions
+are no longer developed — if you are coming from one of them, see the migration
+guides in [Documentation](#documentation) below.
+Keyhac 2's UI is built on [PuiKit](https://github.com/crftwr/puikit).
 
 ## Features
 
@@ -45,12 +58,15 @@ Its UI is built on [PuiKit](https://github.com/crftwr/puikit).
 
 ## Install
 
-Download from [Releases](https://github.com/crftwr/keyhac/releases):
-
-- **macOS 15+** — `Keyhac-<version>-macos.dmg`: drag Keyhac.app into Applications and
-  launch it. Grant the Accessibility permission when prompted (required for the
-  keyboard hook).
-- **Windows 10/11 (x64)** — `Keyhac-<version>-win64.zip`: unzip anywhere and run
+- **macOS 15+** — download `Keyhac-<version>-macos.dmg` from
+  [Releases](https://github.com/crftwr/keyhac/releases): drag Keyhac.app into
+  Applications and launch it. Grant the Accessibility permission when prompted
+  (required for the keyboard hook).
+- **Windows 10/11 (x64)** — install from the
+  [Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH)
+  (or `winget install --id 9P8H1PG6PRHH --source msstore`) — automatic updates, no
+  SmartScreen warning. Alternatively, download `Keyhac-<version>-win64.zip` from
+  [Releases](https://github.com/crftwr/keyhac/releases), unzip anywhere and run
   `Keyhac.exe`.
 
 Details, data locations and privacy notes: [doc/installation.md](doc/installation.md).
@@ -90,6 +106,9 @@ template ([keyhac/_config.py](keyhac/_config.py)) is a working tour of every fea
 - [Migrating from Keyhac for macOS](doc/migration-from-keyhac-mac.md) — mostly drop-in.
 - [Migrating from Keyhac for Windows](doc/migration-from-keyhac-win.md) — API renamed;
   translation table.
+- Legacy products (no longer developed, kept for reference):
+  [Keyhac for Windows 1.x](https://github.com/crftwr/keyhac-win),
+  [Keyhac for macOS 1.x](https://github.com/crftwr/keyhac-mac).
 - [Developer documentation](doc/dev/) — architecture, platform layer, packaging,
   testing. Project guide for coding agents: [CLAUDE.md](CLAUDE.md).
 
