@@ -166,6 +166,22 @@ class EventLoop(ABC):
     @abstractmethod
     def call_later(self, delay_seconds: float, func: Callable[[], None]) -> None: ...
 
+    @abstractmethod
+    def call_on_main_thread(self, callback: Callable[[], None]) -> None:
+        """Schedule *callback* to run on the loop's own thread, waking the loop
+        if it is blocked.
+
+        Thread-safe, and the only method here that may be called off-thread -
+        it is how a worker hands work back for main-thread-only APIs (UI, AX
+        writes).  call_later() is *not* a substitute: on Windows it posts
+        WM_TIMER to the calling thread's queue, so a worker's timer would never
+        be pumped.
+
+        With the console running, PuiKit's Backend.call_on_main_thread fills
+        this role and its loop is the one turning; this exists for --no-ui,
+        where there is no backend at all.  Whichever loop is actually running
+        provides the vehicle."""
+
 
 class ClipboardProvider(ABC):
     """OS clipboard access + change detection (poll() driven by the app's
