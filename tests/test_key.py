@@ -75,6 +75,71 @@ class TestParseWin:
         assert KeyCondition.from_str("Alt").vk == WIN_VK["MENU"]
 
 
+class TestParseWinJIS:
+    """The layout the engine picks up from GetKeyboardType(0) == 7.
+
+    The vk numbers themselves are pinned against Microsoft's kbd106.dll in
+    tests/test_win_layout.py; these check that a JIS config parses and
+    dispatches through the engine, which nothing exercised before.
+    """
+
+    @pytest.fixture
+    def jis_names(self):
+        from keyhac.core.vk import init_key_names
+        try:
+            yield init_key_names("windows", "jis")
+        finally:
+            init_key_names("windows", "ansi")
+
+    def test_punctuation_moves_to_its_jis_key(self, jis_names):
+        # On a JIS 106 these live on their own keys, not as shifted digits.
+        assert KeyCondition.from_str("Atmark").vk == WIN_VK["OEM_3"]
+        assert KeyCondition.from_str("Caret").vk == WIN_VK["OEM_7"]
+        assert KeyCondition.from_str("Semicolon").vk == WIN_VK["OEM_PLUS"]
+        assert KeyCondition.from_str("Colon").vk == WIN_VK["OEM_1"]
+
+    def test_quote_and_doublequote_are_shifted_digits(self, jis_names):
+        assert KeyCondition.from_str("Quote").vk == WIN_VK["KEY_7"]
+        assert KeyCondition.from_str("DoubleQuote").vk == WIN_VK["KEY_2"]
+
+    def test_the_two_backslash_keys_are_distinct(self, jis_names):
+        assert KeyCondition.from_str("BackSlash").vk == WIN_VK["OEM_102"]
+        assert KeyCondition.from_str("Yen").vk == WIN_VK["OEM_5"]
+
+    def test_modifiers_combine_with_jis_keys(self, jis_names):
+        k = KeyCondition.from_str("Ctrl-Shift-Atmark")
+        assert k.vk == WIN_VK["OEM_3"]
+        assert k.mod == MODKEY_CTRL | MODKEY_SHIFT
+
+    def test_remap_of_a_jis_key_dispatches(self, engine):
+        """A JIS config end to end: the engine resolves the name, matches the
+        incoming vk and sends the replacement."""
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["Ctrl-Atmark"] = "Escape"
+
+        e = engine(configure, platform="windows", layout="jis")
+        assert e.vk("Atmark") == WIN_VK["OEM_3"]
+        e.down("LCtrl")
+        e.hook.clear()
+        assert e.down("Atmark") is True
+        assert "D-Escape" in e.sent_names()
+
+    def test_the_same_config_hits_a_different_vk_on_ansi(self, engine):
+        """The layout genuinely changes dispatch: Atmark is Shift-2 on ANSI,
+        so the key that carries it on a JIS board must not trigger there."""
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["Ctrl-Atmark"] = "Escape"
+
+        e = engine(configure, platform="windows", layout="ansi")
+        assert e.vk("Atmark") == WIN_VK["KEY_2"]
+        e.down("LCtrl")
+        e.hook.clear()
+        assert e.hook.key(WIN_VK["OEM_3"], True) is False
+        assert "D-Escape" not in e.sent_names()
+
+
 class TestModEq:
 
     def test_generic_matches_either_side(self):
