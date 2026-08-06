@@ -38,7 +38,24 @@ live on each OS.
   every `WM_KEYDOWN`/`WM_CHAR` that reaches an app. No subprocess, so no
   single-instance-guard collision: a concurrently running production Keyhac is
   untouched (its hook sits later in the LL chain; the harness binds only F13–F24,
-  which no human config uses).
+  which no human config uses). Lives in `tests/test_win_typing_load.py`.
+- **Latency is measured, not felt.** `WH_KEYBOARD_LL` is synchronous, so typing lag
+  *is* the callback duration, and a callback overrunning `LowLevelHooksTimeout`
+  (300 ms) gets Keyhac silently unhooked. The harness times the callback and
+  reports percentiles, which turns "does typing feel OK" into a number.
+- **Load must come from other processes.** Loading the box with Python *threads*
+  measures GIL contention, not system load — a different (and much worse) thing.
+  `SystemLoad` spawns subprocesses; `GILLoad` is the separate, deliberate
+  in-process case.
+- **Re-assert keyboard focus per test, not once per module.** A heavy run can cost
+  the probe its focus, and every later test then silently injects into somebody
+  else's window. Skip rather than fail when focus is refused.
+- **Keyboard-type DLLs pin the layout tables** (`tests/test_win_layout.py`).
+  `kbdus.dll` / `kbd106.dll` export `KbdLayerDescriptor()` → `KBDTABLES`, whose
+  `pusVSCtoVK` is the scancode→vk truth for that keyboard *regardless of what is
+  plugged in*. `VkKeyScanEx` cannot do this job: `kbdjpn.dll` picks its variant
+  from `GetKeyboardType()`, so on ANSI hardware the "Japanese" layout returns the
+  US-101 mapping and would cheerfully confirm a wrong JIS table.
 - **Foreground-lock probes must arm the lock.** An idle desktop does NOT arm it
   (steals succeed), and any process spawned from the foreground-process chain
   inherits steal permission — both give false-green results. A valid probe:
@@ -96,11 +113,51 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
 - **Bundles**: `macos_app/` built, signed, notarized and run live end-to-end (tap
   installs under the bundle identity, template config created, SIGINT quits
   cleanly); `windows_app/` built and import-smoke-tested, tray ran live.
+- **Typing latency** (`tests/test_win_typing_load.py`, Windows 11 in a VM): at a
+  sustained 60 keys/s the hook callback runs p50 ≈ 1.0 ms / p95 ≈ 2.1 ms; a
+  200-event unpaced burst is p50 ≈ 0.8 ms with every keystroke translated and in
+  order; and with every core busy in *other* processes the numbers barely move
+  (p50 ≈ 1.4 ms). Typing feel is not load-sensitive in the ordinary sense.
+- **The one load shape that does hurt is our own GIL.** A single CPU-bound
+  pure-Python thread in-process — what a `ThreadedAction` doing heavy Python work
+  looks like — pushes the callback to p50 ≈ 64 ms / p95 ≈ 131 ms / max ≈ 500 ms,
+  i.e. past the 300 ms `LowLevelHooksTimeout`. `sys.setswitchinterval(0.001)`
+  roughly halves it (p50 ≈ 42 ms, max ≈ 295 ms) but does not remove it. Config
+  authors should keep CPU-bound Python out of `ThreadedAction`, or accept that
+  Windows may drop the hook and `check_health()` re-install it.
+- **`InputContext` from a worker blocks typing for exactly as long as it is held**
+  — it takes the same `RLock` the hook callback needs. Measured: a 50 ms hold
+  produces a ~50 ms callback. A hold longer than 300 ms will get Keyhac unhooked.
+- **Windows layout tables**: keyhac's `ansi` and `jis` vk tables match `kbdus.dll`
+  and `kbd106.dll` exactly on every physical key position where the two keyboards
+  differ — the semicolon, colon, atmark, caret and bracket keys, and the two JIS
+  backslash keys (¥ and ろ), which a US 101 renders as one. This is
+  hardware-independent, so only the `GetKeyboardType(0) == 7` *detection* still
+  needs a real JIS keyboard.
+- **`edit_config` on Windows**: `WinAppControl.edit_file` → `ShellExecuteW` run
+  live, 8/8 — default editor, explicit editor, a path containing spaces opening as
+  one file (the quoting), an unresolvable editor logging a warning instead of
+  raising (`ShellExecute` code 2), the full `Keymap.edit_config()` chain, and the
+  deleted-config-recreated-from-template path.
 
 ## Remaining genuinely-interactive / hardware checks
 
-Tracked as GitHub issues: JIS layout detection on a real JIS keyboard and typing
-feel under load (Windows), the chooser filter box under a Japanese IME (Windows),
-a full interactive pass of the Keyhac.exe bundle, `edit_config` on Windows, the
-macOS tray "Edit Config" menu click, and macOS mouse feel (wheel direction, drag,
-double-click) in real apps.
+Tracked in issue #10. What is genuinely left on Windows:
+
+- **JIS layout detection on real JIS hardware** — `GetKeyboardType(0) == 7`, one
+  line. The tables it selects are already pinned against `kbd106.dll`, so this is
+  the only part a JIS keyboard is needed for. It cannot be faked on this machine:
+  the VM presents a generic HID keyboard reporting type 4.
+- **The chooser filter box under a Japanese IME** — blocked upstream on #20.
+  PuiKit routes secondary-window messages through `_handle_secondary_message`,
+  which has no `WM_IME_*` cases, and all `Imm*` association targets the main HWND.
+- **The Keyhac.exe bundle's tray icon and console widgets by hand** — the tray
+  menu rendering and click response, and the log pane / hook checkbox / log-level
+  dropdown. Everything else about the bundle is mechanized in
+  `tools/bundle_pass.py` (tool-window styles, frame-autosave round trip,
+  off-screen-frame rejection, clean quit, single-instance guard). Run it with no
+  Keyhac running — it refuses otherwise, because the instance guard would
+  otherwise make every check fail for the wrong reason.
+
+On macOS: nothing outstanding — the tray "Edit Config" click and mouse feel were
+both verified live.
