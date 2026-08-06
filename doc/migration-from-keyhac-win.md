@@ -31,6 +31,7 @@ imported.
 | `cblister_FixedPhrase(…)` | `ShowClipboardSnippets([...])` |
 | `keymap.command_RecordStart/Stop/Toggle/Play` | `StartRecordingKeys()` / `StopRecordingKeys()` / `ToggleRecordingKeys()` / `PlaybackRecordedKeys()` |
 | `JobQueue` / `JobItem` | `ThreadedAction` (subclass with `starting()` / `run()` / `finished()`) |
+| `keymap.delayedCall(func, msec)`, `CronItem` / `CronTable` | no built-in equivalent — schedule with `threading` and hand the callback back with `keymap.call_on_main_thread(func)`; see [Timers](#timers-delayedcall--crontable) |
 | `keymap.popBalloon(name, text, timeout)` / `closeBalloon(name)` | `keymap.pop_balloon(…)` / `keymap.close_balloon(…)` |
 | `keymap.popListWindow(listers)` (blocking) | subclass `ChooserAction` (callback-based; there is no blocking list window) |
 | `keymap.getWindow()`, `pyauto.Window` | `keymap.get_active_window()` / `find_window(…)` / `list_windows()` — portable `Window` objects; the raw HWND wrapper is `focus.native` |
@@ -38,12 +39,10 @@ imported.
 
 ## Not carried over
 
-- **`keymap.delayedCall(func, msec)`** and **`CronItem`/`CronTable`** — no direct
-  equivalent yet (tracked in the issue tracker). A `ThreadedAction` whose `run()`
-  sleeps covers a one-shot delay meanwhile, but note that the pool is a single
-  shared worker: a short sleep is fine, while a periodic `while True:` loop would
-  hold the worker for the life of the process and stall every other threaded
-  action.
+- **`keymap.delayedCall(func, msec)`** and **`CronItem`/`CronTable`** — no built-in
+  equivalent, but both are a couple of lines of `threading` now that
+  `keymap.call_on_main_thread()` exists. See [Timers](#timers-delayedcall--crontable)
+  below.
 - **`keymap.setFont` / `keymap.setTheme`** — UI theme/font settings are not
   configurable yet (tracked in the issue tracker).
 - **Migemo matching** in the list window — not available (tracked in the issue
@@ -54,6 +53,49 @@ imported.
   semantics — dropped.
 - **Portable mode** (config next to keyhac.exe) — not implemented yet (tracked in
   the issue tracker).
+
+## Timers (delayedCall / CronTable)
+
+Keyhac 2 has no timer API of its own, because it does not need one: schedule with
+`threading`, and hand the callback back to the main thread with
+`keymap.call_on_main_thread(func)`. That last call is the important half — it is
+thread-safe, and it is what makes the callback safe to touch windows, the UI and
+the engine, exactly as `delayedCall` did in 1.x.
+
+```python
+import threading
+import time
+
+def configure(keymap):
+
+    # delayedCall(func, msec) — one-shot
+    def call_later(seconds, func):
+        timer = threading.Timer(seconds, lambda: keymap.call_on_main_thread(func))
+        timer.daemon = True   # so a pending timer never delays quitting
+        timer.start()
+        return timer          # .cancel() if you want to call it off
+
+    # CronItem / CronTable — periodic
+    def every(seconds, func):
+        def tick():
+            while True:
+                time.sleep(seconds)
+                keymap.call_on_main_thread(func)
+        threading.Thread(target=tick, daemon=True).start()
+
+    call_later(0.5, lambda: logger.info("half a second later"))
+    every(60, lambda: logger.info("once a minute"))
+```
+
+Two things to know:
+
+- Do **not** sleep inside a `ThreadedAction.run()` to get a delay. That pool is a
+  single worker shared by every threaded action, so the sleep stalls all of them —
+  and a periodic `while True:` loop there would hold the worker for the life of the
+  process.
+- Timers you start keep running until the process exits. Reloading the config does
+  **not** cancel them, so a timer scheduled at load time is scheduled again on every
+  reload. Keep them at module scope, or cancel your own if that matters to you.
 
 ## What you gain
 
