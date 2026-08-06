@@ -265,6 +265,25 @@ class TestHookRestore:
         assert e.keymap._modifier == 0
 
 
+class TestReloadWhileUnhooked:
+    """The console's hook checkbox reconfigures on re-enable, while the hook
+    is still uninstalled; the modifier release must not run then (issue #25)."""
+
+    def test_reload_sends_nothing_while_uninstalled(self, engine):
+        e = engine(lambda keymap: None)
+        e.hook.uninstall()
+        e.hook.sent.clear()
+        e.keymap.configure()
+        assert e.hook.sent == []
+
+    def test_reload_still_releases_modifiers_while_installed(self, engine):
+        e = engine(lambda keymap: None)
+        e.hook.sent.clear()
+        e.keymap.configure()
+        assert e.hook.sent
+        assert all(down is False for _vk, down, _replay in e.hook.sent)
+
+
 class TestConfigErrorContainment:
 
     def test_action_exception_passes_key_through(self, engine):

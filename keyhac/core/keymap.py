@@ -100,7 +100,14 @@ class Keymap:
 
         with self._lock:
 
-            if self._vk_mod_map:
+            # Release modifiers the engine may be holding down, so a reload
+            # cannot leave one stuck.  Only meaningful while hooked: the
+            # console's hook checkbox reconfigures on re-enable, and at that
+            # moment nothing is held (uninstall dropped the virtual state).
+            # Sending anyway logs "hook is not installed" on macOS, where
+            # uninstall destroys the event sources, and injects stray key-ups
+            # on Windows, where SendInput works with no hook at all.
+            if self._vk_mod_map and self._hook.installed:
                 self._release_modifier_all()
 
             init_key_names(self.platform, self._hook.keyboard_layout())
