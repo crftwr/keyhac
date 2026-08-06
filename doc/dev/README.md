@@ -15,5 +15,8 @@ people working on Keyhac itself.
 - [packaging.md](packaging.md) — launchers, bundles, release pipeline, data paths.
 - [testing.md](testing.md) — test layers, harness patterns, live verification
   record.
+- [ai-integration.md](ai-integration.md) — design handover for AI integration:
+  agent at authoring time producing plain-Python actions, observation /
+  state-reading / safety layers, MCP topologies.
 
 The project guide for coding agents is [CLAUDE.md](../../CLAUDE.md) at the repo root.

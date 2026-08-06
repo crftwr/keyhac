@@ -1,6 +1,8 @@
 # Keyhac AI Integration — Design Handover
 
-**Status:** design settled for layers 1–4; implementation not started
+**Status:** design settled for layers 1–4; implementation not started.
+Codebase claims were verified against source on 2026-08-05; file references
+point at that snapshot.
 **Audience:** coding agent (Claude Code) working in `crftwr/keyhac`
 **Related:** `CLAUDE.md`, `doc/configuration.md`, `doc/dev/`
 
@@ -129,7 +131,11 @@ worse than one that refuses to run.
 ```
 
 Keyhac cannot be spawned over stdio (it is a resident daemon), so a thin bridge
-executable registers as the MCP server and connects to the running instance.
+executable registers as the MCP server and connects to the running instance. The
+bridge exists for Claude Desktop, whose local-server config is stdio-only; Claude
+Code can attach to a local streamable-HTTP endpoint directly (`claude mcp add
+--transport http`), so if the daemon serves HTTP on localhost that client needs
+no bridge at all.
 
 Licensing note: Anthropic's Claude Code legal-and-compliance page states that OAuth
 authentication is intended for subscription holders' ordinary use of Claude Code and
@@ -167,26 +173,47 @@ Ordered by dependency. Layers 1–4 are the implementation target.
 
 Keyhac can record *input* but not *what happened*. Macro recording captures keys only.
 
-- **Mouse input hook** — output exists, input does not. macOS: add mouse events to the
-  existing `CGEventTap`. Windows: add `WH_MOUSE_LL`. Rides on the existing hook layer.
+- **Mouse input events** — output exists; input exists only as an observation-only
+  cancellation channel: `WH_MOUSE_LL` is already installed on Windows
+  (`keyhac/platform/win/hook.py`) and the macOS tap already masks button-down /
+  scroll types when `on_mouse` is wired (`keyhac/platform/mac/hook.py`), but the
+  callback carries no event data. The work is widening that channel to deliver full
+  events (button, position, wheel), not adding a hook — filtering out Keyhac's own
+  injected output (sentinel `dwExtraInfo` / private `CGEventSource`) is already
+  solved there.
 - **Outcome observation** — subscribe to AX notifications (`kAXWindowCreated`,
   `kAXUIElementDestroyed`, `kAXValueChanged`) and the UIA event handlers. Generalising
-  from a demonstration requires pairing input with **state transitions**.
+  from a demonstration requires pairing input with **state transitions**. Genuinely
+  new work: nothing in the tree subscribes to AX notifications or UIA events today
+  (no `AXObserver`, no `SetWinEventHook`, no UIA event handler).
 - **Structured trace (JSONL)** — timestamped unified stream of key / mouse / focus
   change / UI event / clipboard change. Separate layer from the human-readable console
   log. **Design the schema after capturing real traces, not before.**
 
 ### Layer 2 — State reading
 
-- `get_ui_tree(root, depth, filter)` — depth limiting and role filtering are mandatory;
-  Electron apps emit thousands of nodes
-- `find_element(pattern)` / `element.perform(action)` — AX actions and UIA patterns
-- `get_selection()` / `get_text(element)`
+More exists than an earlier draft of this document assumed. Both platforms already
+ship a `UIElement` with `perform_action()` / `get_action_names()`
+(`keyhac/platform/mac/uielement.py`, `keyhac/platform/win/uielement.py`); Windows
+adds `set_value()`, `set_focus()` and Text-pattern extraction; macOS attribute
+access is generic, so descendants are already reachable via
+`get_attribute_value("AXChildren")`. The accurate ceiling statement: **an action
+can act on the focused element and its ancestors, but cannot reach an element that
+is not focused** (except on macOS, awkwardly, through raw AX attributes).
 
-Focus path currently gives only the ancestor chain. Siblings and descendants are
-invisible, so an action cannot do anything beyond sending key sequences. **This layer
-determines the ceiling on action expressiveness — and it is the precondition for
-eliminating runtime LLM calls.**
+What is actually missing — unification and exposure, not green-field:
+
+- **Windows child traversal** — the wrapper is parent-only; the
+  `GetFirstChildElement` walker slot is declared in `win/uielement.py` but never
+  wrapped
+- `get_ui_tree(root, depth, filter)` — portable; depth limiting and role filtering
+  are mandatory, Electron apps emit thousands of nodes
+- `find_element(pattern)` — portable search by name / role / hierarchy
+- A unified `get_selection()` / `get_text(element)` vocabulary over AX attributes
+  and the UIA Text pattern
+
+**This layer still determines the ceiling on action expressiveness — and it is the
+precondition for eliminating runtime LLM calls.**
 
 ### Layer 3 — Execution safety
 
@@ -217,8 +244,9 @@ serves both.
   is a good fit (`starting()` is the right place to freeze origin; `finished()` the right
   place for approval). It is sufficient for single-shot transforms. It is insufficient for
   agent loops: no task handle so no cancellation, a thread pool rather than a resident
-  event loop so MCP connections cannot be reused, pool exhaustion by minutes-long runs,
-  no progress channel, no way to interact with the user mid-`run()`.
+  event loop so MCP connections cannot be reused, no progress channel, no way to interact
+  with the user mid-`run()` — and the pool is `max_workers=1` (`keyhac/core/action.py`),
+  so one minutes-long run would block every other `ThreadedAction` in the app.
   **However** — since runtime LLM calls are now the exception, this may not be needed at
   all. Decide after hand-writing a few actions.
 - **Automatic "you do this often, make it an Action" suggestion** — hard and low value.
@@ -287,14 +315,20 @@ investment still stands.**
 
 ## 7. Open questions — measure, do not deliberate
 
-- **Does Claude Desktop support MCP sampling?** The protocol allows a server to request
-  inference from the host, but client support is rare. Topology A's design depends on the
-  answer. Stand up a minimal MCP server and send a sampling request.
+- **MCP sampling is a bonus, not a dependency.** Topology A as described — a chat
+  client calling Keyhac tools — needs no sampling. Sampling would only decide whether
+  *runtime* `LLMAction` inference could ride the user's subscription instead of
+  topology B's API key / local model, and §2.3 already makes runtime inference the
+  local-first exception. Expect "no": as of early 2026 Claude Desktop does not support
+  sampling (VS Code's MCP client is the notable one that does). If it ever matters,
+  stand up a minimal server and send a sampling request rather than deliberating.
 - **Real AX/UIA tree size and retrieval cost** — measure on Electron apps, VSCode,
   browsers. Sets the default depth and filter.
 - **Local model latency on the target hardware** — is a 300 ms budget for `llm_choose()`
-  realistic? Note that setting a context window larger than available VRAM causes a
-  silent fallback to CPU that degrades structured-output reliability, not just speed.
+  realistic? Watch for the silent partial-CPU-offload trap: a context window larger
+  than available VRAM degrades speed first, and under a tight budget that surfaces as
+  timeouts and truncated JSON — structured-output failure arriving indirectly. Verify
+  on the actual hardware rather than trusting this note.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows
