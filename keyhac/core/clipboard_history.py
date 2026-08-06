@@ -21,11 +21,18 @@ logger = log.getLogger("Clipboard")
 class ClipboardHistory:
     """Automatically captures historical clipboard text.
 
-    Class variables configure limits:
-    - max_items: maximum entries kept (default 1000)
-    - max_label_length: maximum length of item labels (default 4096)
-    - max_data_size: maximum size of a single item (default 10 MB)
-    - max_persist_data_size: maximum size persisted per item (default 64 KB)
+    Reached from a configuration as ``keymap.clipboard_history``, and shown by
+    the ShowClipboardHistory action.
+
+    Attributes:
+        max_items: Maximum entries kept (default 1000).
+        max_label_length: Maximum length of item labels (default 4096).
+        max_data_size: Maximum size of a single captured item (default 10 MB).
+        max_persist_data_size: Maximum size of an item written to disk
+            (default 64 KB).
+        persist: Whether the history is saved across restarts (default True;
+            set False to keep it in memory only).
+        filename: Where it is saved (default ~/.keyhac/clipboard.json).
     """
 
     max_items = 1000
@@ -34,6 +41,11 @@ class ClipboardHistory:
     max_persist_data_size = 64 * 1024
 
     def __init__(self, provider: ClipboardProvider, filename: str = None):
+        """Created by Keyhac's bootstrap; configurations use
+        keymap.clipboard_history.
+
+        lazydocs: ignore
+        """
         self._provider = provider
         self.filename = filename or os.path.expanduser("~/.keyhac/clipboard.json")
         self.persist = True
@@ -44,18 +56,31 @@ class ClipboardHistory:
     # -- capture ------------------------------------------------------------
 
     def on_clipboard_changed(self) -> None:
-        """Called (on the UI thread) when the provider detected a change."""
+        """Called (on the UI thread) when the provider detected a change.
+
+        lazydocs: ignore
+        """
         s = self._provider.get_text()
         if s:
             self.add_item(s)
 
     def items(self):
-        """Iterate (text, label) pairs, latest first."""
+        """Iterate the history.
+
+        Yields:
+            (text, label) pairs, latest first.  The label is the text
+            collapsed onto one line for display.
+        """
         for s, label in reversed(self._items.items()):
             yield s, label
 
     def add_item(self, s: str) -> None:
-        """Add text to the history (duplicates move to the front)."""
+        """Add text to the history without touching the OS clipboard.
+
+        Args:
+            s: The text to add.  A duplicate moves to the front; anything
+                larger than max_data_size is dropped.
+        """
         if not s or len(s) > self.max_data_size:
             return
         if s in self._items:
@@ -66,11 +91,20 @@ class ClipboardHistory:
         self.dirty = True
 
     def set_current(self, s: str) -> None:
-        """Set text to the OS clipboard and the front of the history."""
+        """Set text to the OS clipboard and the front of the history.
+
+        Args:
+            s: The text to put on the clipboard.
+        """
         self.add_item(s)
         self._provider.set_text(s)
 
     def get_current(self) -> str | None:
+        """Get the most recent clipboard text.
+
+        Returns:
+            The newest history entry, or None when the history is empty.
+        """
         for s, _label in self.items():
             return s
         return None
@@ -78,7 +112,10 @@ class ClipboardHistory:
     # -- persistence ----------------------------------------------------------
 
     def flush(self) -> None:
-        """Save if there are unsaved changes (call periodically and on exit)."""
+        """Save if there are unsaved changes (call periodically and on exit).
+
+        lazydocs: ignore
+        """
         if self.dirty and self.persist:
             self._save()
 

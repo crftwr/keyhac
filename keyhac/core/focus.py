@@ -46,6 +46,9 @@ def match_window_fields(window, app: str = None, title: str = None,
 class FocusCondition:
     """Condition deciding whether a key table is active for the current focus.
 
+    ``keymap.define_keytable()`` builds one from the focus arguments it is
+    given, so configurations do not normally construct it themselves.
+
     All specified conditions must match (AND).  Within `app`/`title`/
     `class_name` patterns, "|" separates alternatives (OR) and fnmatch
     wildcards (*, ?, []) are available.
@@ -57,6 +60,16 @@ class FocusCondition:
                  app: str = None,
                  title: str = None,
                  class_name: str = None):
+        """Build a focus condition.
+
+        Args:
+            focus_path_pattern: Focus path pattern with wildcards.
+            custom_condition_func: A function receiving the current Focus and
+                returning whether the condition holds.
+            app: Application name pattern (".exe" optional on Windows).
+            title: Window title pattern.
+            class_name: Win32 window class name pattern (Windows only).
+        """
         self.focus_path_pattern = focus_path_pattern
         self.custom_condition_func = custom_condition_func
         self.app = app
@@ -67,6 +80,10 @@ class FocusCondition:
         self._error_reported = False
 
     def check(self, focus: Focus | None) -> bool:
+        """Whether the condition holds for this focus snapshot.
+
+        lazydocs: ignore
+        """
 
         if self.focus_path_pattern:
             if not focus or not focus.path or not fnmatch.fnmatch(focus.path, self.focus_path_pattern):
@@ -111,6 +128,10 @@ class FocusCondition:
 
     @staticmethod
     def has_condition(**kwargs) -> bool:
+        """Whether any focus condition argument was given.
+
+        lazydocs: ignore
+        """
         return any(v is not None for v in kwargs.values())
 
 

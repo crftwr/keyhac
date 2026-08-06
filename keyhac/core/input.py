@@ -15,15 +15,25 @@ class InputContext:
     """A context manager to send virtual key strokes.
 
     Key events are accumulated and sent as one batch when the context exits.
-    Real modifier state is released on entry as needed and restored on exit.
+    Physically held modifiers are released around the batch and restored
+    afterwards, so ``ctx.send_key("Ctrl-C")`` works even while the modifiers
+    of the binding that triggered it are still down.
 
-    usage:
-        with keymap.get_input_context() as ctx:
-            ctx.send_key("Cmd-Left")
-            ctx.send_key("Cmd-Shift-Right")
+    ``keymap.get_input_context()`` creates one.  It is safe to use from a
+    ThreadedAction worker thread.
+
+    ```python
+    with keymap.get_input_context() as ctx:
+        ctx.send_key("Cmd-Left")
+        ctx.send_key("Cmd-Shift-Right")
+    ```
     """
 
     def __init__(self, keymap, replay: bool = False):
+        """Created by keymap.get_input_context().
+
+        lazydocs: ignore
+        """
         self._keymap = keymap
         self._replay = replay
         self._entered = False
@@ -52,8 +62,17 @@ class InputContext:
         return str(self._input_seq)
 
     def send_key(self, s: str) -> None:
-        """Send a key stroke from a string expression (e.g. "Cmd-Left",
-        "D-Shift", "U-Shift")."""
+        """Send a key stroke from a key expression.
+
+        Args:
+            s: A key expression, e.g. "Cmd-Left", "D-Shift" (key down only)
+                or "U-Shift" (key up only).  Modifiers go out as their
+                left-side keys.
+
+        Raises:
+            ValueError: Used outside the context, or the expression names an
+                unknown modifier or key.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
 
@@ -91,34 +110,71 @@ class InputContext:
             self._input_seq.append((vk, False))
 
     def send_key_by_vk(self, vk: int, down: bool = True) -> None:
-        """Send a key stroke by virtual key code."""
+        """Send a key stroke by virtual key code.
+
+        Args:
+            vk: Virtual key code.
+            down: True for key down, False for key up.
+
+        Raises:
+            ValueError: Used outside the context.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         self._input_seq.append((vk, down))
 
     def send_text(self, s: str) -> None:
-        """Type a literal string.  Like an unmodified send_key, held modifiers
-        are released first (and restored when the context exits) - otherwise
-        e.g. a physically held Fn turns the injected keystrokes into macOS
-        system shortcuts (Fn/Globe-A opens the Dock)."""
+        """Type a literal string, whatever characters it holds.
+
+        Like an unmodified send_key, held modifiers are released first (and
+        restored when the context exits) - otherwise e.g. a physically held Fn
+        turns the injected keystrokes into macOS system shortcuts (Fn/Globe-A
+        opens the Dock).
+
+        Args:
+            s: The text to type.
+
+        Raises:
+            ValueError: Used outside the context.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         self.send_modifier_keys(0)
         self._input_seq.append(("text", s))
 
     def send_mouse_move(self, dx: int, dy: int) -> None:
-        """Move the mouse cursor by (dx, dy) pixels. Unlike buttons and
-        wheels, held modifiers stay held (keyhac-win behavior)."""
+        """Move the mouse cursor by a relative offset.
+
+        Injected as an absolute position, so pointer acceleration cannot
+        distort the distance.  Unlike buttons and wheels, held modifiers stay
+        held (keyhac-win behavior).
+
+        Args:
+            dx: Horizontal offset in pixels, positive = right.
+            dy: Vertical offset in pixels, positive = down.
+
+        Raises:
+            ValueError: Used outside the context.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         self._input_seq.append(("mouse", ("move", dx, dy)))
 
     def send_mouse_button(self, button: str = "left",
                           down: bool | None = None) -> None:
-        """Press (down=True), release (down=False) or click (down=None) a
-        mouse button. Held modifiers are released first and restored when
-        the context exits - keyhac-win behavior, so a modifier-bound click
-        does not turn into a modified click."""
+        """Press, release or click a mouse button.
+
+        Held modifiers are released first and restored when the context exits,
+        so a modifier-bound click does not turn into a modified click
+        (keyhac-win behavior).
+
+        Args:
+            button: "left", "right" or "middle".
+            down: True to press, False to release, None to click.
+
+        Raises:
+            ValueError: Used outside the context, or an unknown button name.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         if button not in ("left", "right", "middle"):
@@ -132,15 +188,30 @@ class InputContext:
             self._input_seq.append(("mouse", (button, down)))
 
     def send_mouse_wheel(self, notches: float) -> None:
-        """Turn the vertical wheel (positive = away from you). Held
-        modifiers are released first, like send_mouse_button."""
+        """Turn the vertical mouse wheel.
+
+        Held modifiers are released first, like send_mouse_button.
+
+        Args:
+            notches: Wheel notches; positive = away from you, 1.0 = one notch.
+
+        Raises:
+            ValueError: Used outside the context.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         self.send_modifier_keys(0)
         self._input_seq.append(("mouse", ("wheel", notches)))
 
     def send_mouse_horizontal_wheel(self, notches: float) -> None:
-        """Turn the horizontal wheel (positive = right)."""
+        """Turn the horizontal mouse wheel.
+
+        Args:
+            notches: Wheel notches; positive = right, 1.0 = one notch.
+
+        Raises:
+            ValueError: Used outside the context.
+        """
         if not self._entered:
             raise ValueError("Not in the context.")
         self.send_modifier_keys(0)
@@ -148,7 +219,10 @@ class InputContext:
 
     def send_modifier_keys(self, mod: int) -> None:
         """Emit modifier key downs/ups so the virtual modifier state matches
-        the target state `mod`."""
+        the target state `mod`.
+
+        lazydocs: ignore
+        """
 
         # Key down modifiers that are missing
         for vk, modkey in self._vk_mod_map.items():

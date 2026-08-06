@@ -12,9 +12,24 @@ logger = log.getLogger("Key")
 
 
 class KeyCondition:
-    """A single key stroke condition (vk + modifier state + down/up/oneshot)."""
+    """A single key stroke condition - the parsed form of a key expression.
+
+    Assigning to a key table parses the expression for you, so configurations
+    rarely build one directly; ``KeyCondition.from_str()`` is the way in when
+    they do.
+
+    Attributes:
+        vk: Virtual key code.
+        mod: Modifier bit mask.
+        down: True for a key-down condition, False for key-up.
+        oneshot: True for a one-shot ("O-") condition.
+    """
 
     def __init__(self, vk: int, mod: int = 0, down: bool = True, oneshot: bool = False):
+        """Build a condition from its parsed parts.
+
+        lazydocs: ignore
+        """
         self.vk = vk
         self.mod = mod
         self.down = down
@@ -72,7 +87,18 @@ class KeyCondition:
 
     @staticmethod
     def from_str(s: str) -> "KeyCondition":
-        """Parse a key expression like "Ctrl-X", "O-RCmd", "U-Fn-Space", "C-A"."""
+        """Parse a key expression.
+
+        Args:
+            s: A key expression such as "Ctrl-X", "O-RCmd", "U-Fn-Space" or
+                the short form "C-A".  Case-insensitive.
+
+        Returns:
+            The KeyCondition it describes.
+
+        Raises:
+            ValueError: The expression names an unknown modifier or key.
+        """
         names = get_key_names()
 
         mod = 0
@@ -106,13 +132,31 @@ class KeyCondition:
 class KeyTable:
     """Dict-like table assigning input key conditions to output actions.
 
-    Values may be:
-      - a key expression string, or a list/tuple of them (key output)
-      - any callable (executed on key down)
-      - another KeyTable (enters multi-stroke mode)
+    Subscript it with a key expression to bind a key.  Values may be:
+
+    - a key expression string, or a list/tuple of them (key output)
+    - any callable, including the action objects (executed on key down)
+    - another KeyTable (arms that table as a multi-stroke prefix)
+
+    ``keymap.define_keytable()`` creates them.
+
+    ```python
+    kt["Fn-J"] = "Left"                  # key -> key
+    kt["Fn-N"] = "Cmd-1", "Cmd-2"        # key -> sequence
+    kt["Fn-A"] = some_callable           # key -> function / action object
+    kt["Ctrl-X"] = kt_ctrlx              # key -> multi-stroke table
+    ```
+
+    Attributes:
+        name: Name given at definition time, shown in the balloon while the
+            table is armed as a multi-stroke prefix.
     """
 
     def __init__(self, name: str = None):
+        """Created by keymap.define_keytable().
+
+        lazydocs: ignore
+        """
         self.name = name
         self.table = {}
 

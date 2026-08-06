@@ -21,8 +21,19 @@ _PASTE_DELAY = 0.15
 class ChooserAction:
     """Base class for actions that open the chooser window.
 
-    Derive and implement list_items() -> [(icon, label, ...)] and
-    on_chosen(item, modifier_flags)."""
+    Derive from it to build your own popup: implement list_items() and
+    on_chosen(), and inherit the whole open / filter / refocus flow.  Only one
+    chooser is open at a time - pressing the same action's key again closes
+    it, and a different chooser action replaces it.
+
+    ```python
+    class PickBranch(ChooserAction):
+        def list_items(self):
+            return [("🌱", name) for name in git_branches()]
+        def on_chosen(self, item, modifier_flags):
+            checkout(item[1])
+    ```
+    """
 
     #: The one chooser currently open: (action, window, original_pid).
     _open = None
@@ -96,11 +107,22 @@ class ChooserAction:
             keymap.app_control.activate_pid(os.getpid())
 
     def list_items(self):
-        """Virtual: list of (icon, label, ...) tuples."""
+        """Build the list the chooser shows.  Override this.
+
+        Returns:
+            A list of (icon, label) or (icon, label, ...) tuples.  Anything
+            after the label is yours; on_chosen() receives the whole tuple.
+        """
         return []
 
     def on_chosen(self, item, modifier_flags: int) -> None:
-        """Virtual: handle the chosen item."""
+        """Handle the chosen item.  Override this.
+
+        Args:
+            item: The tuple list_items() produced for the chosen row.
+            modifier_flags: Modifiers held at selection time, as a bit mask -
+                the clipboard choosers read it to tell Enter from Shift-Enter.
+        """
 
 
 class ClipboardChooserAction(ChooserAction):
@@ -125,30 +147,53 @@ class ClipboardChooserAction(ChooserAction):
 
 
 class ShowClipboardHistory(ClipboardChooserAction):
-    """Show the clipboard history in the chooser window."""
+    """Show the clipboard history in the chooser window.
+
+    Type to filter, Enter pastes into the application you came from,
+    Shift-Enter only sets the clipboard, Escape cancels.
+    """
 
     def list_items(self):
+        """lazydocs: ignore"""
         history = Keymap.get_instance().clipboard_history
         return [("📋", label, s) for s, label in history.items()]
 
     def on_chosen(self, item, modifier_flags: int):
+        """lazydocs: ignore"""
         self._on_chosen_common(item[2], modifier_flags)
 
 
 class ShowClipboardSnippets(ClipboardChooserAction):
     """Show fixed snippets in the chooser window.
 
-    snippets: sequence of (icon, label) / (icon, label, text) /
-    (icon, label, callable) tuples; a callable's return value is pasted
-    (None pastes nothing)."""
+    Choosing one pastes it, exactly like the clipboard history.
+
+    ```python
+    ShowClipboardSnippets([
+        ("📧", "me@example.com"),                          # (icon, text)
+        ("📮", "Mailing address", "400 Broad St, ..."),    # (icon, label, text)
+        ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),       # (icon, label, callable)
+    ])
+    ```
+    """
 
     def __init__(self, snippets):
+        """Build the action.
+
+        Args:
+            snippets: Sequence of (icon, text), (icon, label, text) or
+                (icon, label, callable) tuples.  A callable is invoked when
+                the snippet is chosen and its return value is pasted;
+                returning None pastes nothing.
+        """
         self.snippets = list(snippets)
 
     def list_items(self):
+        """lazydocs: ignore"""
         return self.snippets
 
     def on_chosen(self, item, modifier_flags: int):
+        """lazydocs: ignore"""
         value = item[2] if len(item) > 2 else item[1]
         if callable(value):
             value = value()
@@ -158,18 +203,42 @@ class ShowClipboardSnippets(ClipboardChooserAction):
 
 
 class ShowClipboardTools(ClipboardChooserAction):
-    """Show clipboard conversion tools; each tool transforms the current
-    clipboard text. tools: sequence of (icon, label, func) tuples."""
+    """Show clipboard conversion tools in the chooser window.
+
+    Each tool transforms the current clipboard text; the result is pasted like
+    a history entry.  quote, unindent, to_half_width and to_full_width below
+    are the stock converters, and any str -> str callable works.
+
+    ```python
+    ShowClipboardTools([
+        ("🔄", "Quote", ShowClipboardTools.quote),
+        ("🔄", "Upper case", str.upper),
+        ("🔄", "Pretty JSON", my_pretty_json),      # str -> str
+    ])
+    ```
+
+    Attributes:
+        quote_mark: Prefix quote() puts on each line (default "> ").
+    """
 
     quote_mark = "> "
 
     def __init__(self, tools):
+        """Build the action.
+
+        Args:
+            tools: Sequence of (icon, label, func) tuples, where func takes
+                the current clipboard text and returns the replacement;
+                returning None leaves the clipboard alone.
+        """
         self.tools = list(tools)
 
     def list_items(self):
+        """lazydocs: ignore"""
         return self.tools
 
     def on_chosen(self, item, modifier_flags: int):
+        """lazydocs: ignore"""
         func = item[2]
         current = Keymap.get_instance().clipboard_history.get_current() or ""
         result = func(current)
@@ -181,34 +250,83 @@ class ShowClipboardTools(ClipboardChooserAction):
 
     @staticmethod
     def to_plain(s):
+        """Return the text unchanged (the identity converter).
+
+        Args:
+            s: Current clipboard text.
+
+        Returns:
+            The same text.
+        """
         return s
 
     @staticmethod
     def quote(s):
+        """Prefix every line with quote_mark.
+
+        Args:
+            s: Current clipboard text.
+
+        Returns:
+            The quoted text.
+        """
         return "\n".join(ShowClipboardTools.quote_mark + line
                          for line in s.splitlines())
 
     @staticmethod
     def unindent(s):
+        """Remove the common leading whitespace from every line.
+
+        Args:
+            s: Current clipboard text.
+
+        Returns:
+            The dedented text.
+        """
         import textwrap
         return textwrap.dedent(s)
 
     @staticmethod
     def to_half_width(s):
+        """Convert full-width characters to their half-width forms.
+
+        Args:
+            s: Current clipboard text.
+
+        Returns:
+            The converted text.
+        """
         return s.translate(str.maketrans(
             {chr(c): chr(c - 0xFEE0) for c in range(0xFF01, 0xFF5F)}) | {0x3000: " "})
 
     @staticmethod
     def to_full_width(s):
+        """Convert half-width characters to their full-width forms.
+
+        Args:
+            s: Current clipboard text.
+
+        Returns:
+            The converted text.
+        """
         return s.translate(str.maketrans(
             {chr(c): chr(c + 0xFEE0) for c in range(0x21, 0x7F)}) | {0x20: "　"})
 
 
 class DateTimeSnippet:
-    """Callable snippet value producing the current time, e.g.
-    ("🕒", "Date", DateTimeSnippet("%Y-%m-%d"))."""
+    """A ShowClipboardSnippets value that produces the current date and time.
+
+    ```python
+    ShowClipboardSnippets([("🕒", "Date", DateTimeSnippet("%Y-%m-%d"))])
+    ```
+    """
 
     def __init__(self, fmt: str):
+        """Build the snippet.
+
+        Args:
+            fmt: A strftime format string, e.g. "%Y-%m-%d".
+        """
         self.fmt = fmt
 
     def __call__(self):
@@ -216,10 +334,20 @@ class DateTimeSnippet:
 
 
 class MouseMove:
-    """Move the mouse cursor by (dx, dy) pixels (keyhac-win
-    MouseMoveCommand). Held modifiers stay held."""
+    """Move the mouse cursor by a relative offset.
+
+    Held modifiers stay held, unlike the button and wheel actions.  The move
+    is injected acceleration-proof, so the distance is exactly what you ask
+    for (keyhac-win MouseMoveCommand).
+    """
 
     def __init__(self, dx: int, dy: int):
+        """Build the action.
+
+        Args:
+            dx: Horizontal offset in pixels, positive = right.
+            dy: Vertical offset in pixels, positive = down.
+        """
         self.dx = dx
         self.dy = dy
 
@@ -239,6 +367,15 @@ class _MouseButtonAction:
     _down: bool | None = None
 
     def __init__(self, button: str = "left"):
+        """Build the action.
+
+        Args:
+            button: "left", "right" or "middle".
+
+        Raises:
+            ValueError: Unknown button name - reported when the configuration
+                loads, not when the key is pressed.
+        """
         if button not in ("left", "right", "middle"):
             raise ValueError(f'{type(self).__name__} button must be "left", '
                              f'"right" or "middle", not {button!r}')
@@ -253,27 +390,39 @@ class _MouseButtonAction:
 
 
 class MouseButtonDown(_MouseButtonAction):
-    """Press a mouse button (keyhac-win MouseButtonDownCommand)."""
+    """Press a mouse button and hold it.
+
+    Held modifiers are released first, so a modifier-bound press does not
+    become a modified one (keyhac-win MouseButtonDownCommand).
+    """
     _down = True
 
 
 class MouseButtonUp(_MouseButtonAction):
-    """Release a mouse button (keyhac-win MouseButtonUpCommand)."""
+    """Release a held mouse button (keyhac-win MouseButtonUpCommand)."""
     _down = False
 
 
 class MouseButtonClick(_MouseButtonAction):
-    """Click a mouse button (keyhac-win MouseButtonClickCommand)."""
+    """Click a mouse button.
+
+    Held modifiers are released first, and rapid synthetic clicks register as
+    double-clicks (keyhac-win MouseButtonClickCommand).
+    """
     _down = None
 
 
 class MouseWheel:
-    """Turn the vertical mouse wheel; positive = away from you, 1.0 = one
-    notch (keyhac-win MouseWheelCommand)."""
+    """Turn the vertical mouse wheel (keyhac-win MouseWheelCommand)."""
 
     _kind = "vertical"
 
     def __init__(self, wheel: float):
+        """Build the action.
+
+        Args:
+            wheel: Wheel notches; positive = away from you, 1.0 = one notch.
+        """
         self.wheel = wheel
 
     def __call__(self):
@@ -288,22 +437,39 @@ class MouseWheel:
 
 
 class MouseHorizontalWheel(MouseWheel):
-    """Turn the horizontal mouse wheel; positive = right (keyhac-win
+    """Turn the horizontal mouse wheel (keyhac-win
     MouseHorizontalWheelCommand)."""
 
     _kind = "horizontal"
 
+    def __init__(self, wheel: float):
+        """Build the action.
+
+        Args:
+            wheel: Wheel notches; positive = right, 1.0 = one notch.
+        """
+        super().__init__(wheel)
+
 
 class MoveWindow(ThreadedAction):
-    """Move the focused window - full port of keyhac-mac's MoveWindow:
-    direction/distance, stop at other windows' edges (window_edge) and
-    screen edges (screen_edge), multi-monitor jump when already at the
-    edge. x/y are deprecated (since keyhac-mac v1.64).
+    """Move the focused window.
 
-    Runs on both OSes: the geometry algorithm was already pure, so only the
-    frame reads/writes and the screen/window queries go through the portable
-    Window / WindowProvider API (keyhac.platform.base), which keeps macOS on
-    AX + CoreGraphics and Windows on Win32."""
+    It nudges the window by `distance` pixels, or - with `window_edge` /
+    `screen_edge` - travels until it meets another window's edge or the edge
+    of the screen.  A window already at the screen edge hops to the adjacent
+    monitor instead.
+
+    ```python
+    MoveWindow(direction="left", distance=20)
+    MoveWindow(direction="left", distance=9999, window_edge=True)
+    ```
+    """
+
+    # Full port of keyhac-mac's MoveWindow. Runs on both OSes: the geometry
+    # algorithm was already pure, so only the frame reads/writes and the
+    # screen/window queries go through the portable Window / WindowProvider
+    # API (keyhac.platform.base), which keeps macOS on AX + CoreGraphics and
+    # Windows on Win32.
 
     ADJACENT_SCREEN_TOLERANCE = 50   # menu-bar gap etc.
     EDGE_TOLERANCE = 2
@@ -311,6 +477,18 @@ class MoveWindow(ThreadedAction):
     def __init__(self, x: int = None, y: int = None, direction: str = "",
                  distance: float = 10, window_edge: bool = False,
                  screen_edge: bool = True):
+        """Build the action.
+
+        Args:
+            x: Deprecated since keyhac-mac v1.64; use direction and distance.
+            y: Deprecated since keyhac-mac v1.64; use direction and distance.
+            direction: "left", "right", "up" or "down".
+            distance: How far to move, in pixels (default 10).  Pass a large
+                value together with window_edge / screen_edge to travel until
+                something stops it.
+            window_edge: Stop at the edges of other windows (default False).
+            screen_edge: Stop at the edge of the screen (default True).
+        """
         if x or y:
             logger.warning("MoveWindow's arguments x, y are deprecated. "
                            "Use direction and distance instead.")
@@ -329,6 +507,7 @@ class MoveWindow(ThreadedAction):
         self.wnd = None
 
     def starting(self):
+        """lazydocs: ignore"""
         # ALL window reads happen here, on the main thread. On macOS these are
         # AX calls, and AX into our OWN process off the main thread SIGTRAPs
         # (they are in-process, not IPC) - and this action must also work on
@@ -374,6 +553,7 @@ class MoveWindow(ThreadedAction):
         return best
 
     def run(self):
+        """lazydocs: ignore"""
         if self.wnd is None or self.frame is None:
             logger.warning("MoveWindow: no focused window.")
             return None
@@ -468,6 +648,7 @@ class MoveWindow(ThreadedAction):
         return (wx, wy)
 
     def finished(self, result):
+        """lazydocs: ignore"""
         # finished() is on the event-loop thread, which is where the AX write
         # has to happen (own-process safety).
         if self.wnd is None or result is None:
@@ -481,23 +662,39 @@ class MoveWindow(ThreadedAction):
 class SnapWindow:
     """Snap the focused window to a region of its screen (tiling).
 
-    position: "left" | "right" | "top" | "bottom" | "full"
-    ratio:    the fraction of the work area the window covers along the snap
-              axis (0.5 = half the screen). Ignored for "full".
+    The region is the screen's *work area*, so the menu bar and Dock (macOS)
+    and the taskbar (Windows) stay uncovered.  "Its screen" is the one the
+    window overlaps most, so repeated snaps keep a window on the monitor it is
+    already on.
 
-    The region is the screen's *work area* - menu bar and Dock on macOS,
-    taskbar on Windows stay uncovered. "Its screen" is the one the window
-    overlaps most, so repeated snaps keep a window on the monitor it is on.
-
-    Deliberately a plain main-thread action, not a ThreadedAction: unlike
-    MoveWindow there is no window-edge scan to push off-thread, just
-    arithmetic - and both the Window accessors and the work-area query
-    (AppKit-backed on macOS) are UI-thread only anyway.
+    ```python
+    SnapWindow("left")               # left half
+    SnapWindow("left", ratio=2/3)    # left two thirds
+    SnapWindow("full")
+    ```
     """
+
+    # Deliberately a plain main-thread action, not a ThreadedAction: unlike
+    # MoveWindow there is no window-edge scan to push off-thread, just
+    # arithmetic - and both the Window accessors and the work-area query
+    # (AppKit-backed on macOS) are UI-thread only anyway.
 
     POSITIONS = ("left", "right", "top", "bottom", "full")
 
     def __init__(self, position: str, ratio: float = 0.5):
+        """Build the action.
+
+        Args:
+            position: "left", "right", "top", "bottom" or "full".
+            ratio: Fraction of the work area the window covers along the snap
+                axis, between 0.1 and 1.0 (default 0.5 = half the screen).
+                Ignored for "full".
+
+        Raises:
+            ValueError: Unknown position, or a ratio outside [0.1, 1.0] -
+                reported when the configuration loads, not when the key is
+                pressed.
+        """
         if position not in self.POSITIONS:
             raise ValueError(
                 f"SnapWindow position must be one of {self.POSITIONS}, "
@@ -543,24 +740,37 @@ class SnapWindow:
 
 
 class ActivateWindow(ThreadedAction):
-    """Activate a window by application name pattern (portable subset of
-    keyhac-win's ActivateWindowCommand).
+    """Bring an application's window to the front, by name pattern.
 
-    Where the platform provides a WindowProvider (Windows), this matches and
-    raises an actual window, so it can restore a minimized one and pick the
-    front-most match. Otherwise (macOS today) it falls back to activating the
-    matching *application* by pid, which is what it has always done there.
+    Where the platform enumerates windows (Windows), this raises an actual
+    window, so it can restore a minimized one and pick the front-most match.
+    Otherwise (macOS today) it activates the matching *application* by pid.
 
-    Thread contract: all window/AppKit enumeration happens in starting() (main
-    thread), run() is pure matching, and the activation is posted back to the
-    main thread in finished() - Window and AX are both UI-thread only."""
+    ```python
+    ActivateWindow(app="code|Visual Studio Code")
+    ```
+    """
+
+    # A portable subset of keyhac-win's ActivateWindowCommand.
+    #
+    # Thread contract: all window/AppKit enumeration happens in starting()
+    # (main thread), run() is pure matching, and the activation is posted back
+    # to the main thread in finished() - Window and AX are both UI-thread only.
 
     def __init__(self, app: str):
+        """Build the action.
+
+        Args:
+            app: Application name pattern, matched like define_keytable's
+                app= - case-insensitive, fnmatch wildcards, "|" alternation,
+                ".exe" optional.
+        """
         self.app = app
         self.apps = []
         self.windows = []
 
     def starting(self):
+        """lazydocs: ignore"""
         keymap = Keymap.get_instance()
         self.windows = []
         if keymap.window_provider is not None:
@@ -573,6 +783,7 @@ class ActivateWindow(ThreadedAction):
         self.apps = keymap.app_control_running_apps()
 
     def run(self):
+        """lazydocs: ignore"""
         import fnmatch
         pattern = self.app.lower()
 
@@ -592,6 +803,7 @@ class ActivateWindow(ThreadedAction):
         return None
 
     def finished(self, target):
+        """lazydocs: ignore"""
         # finished() is on the event-loop thread, which is where activation
         # (an AX write in the own-process case) has to happen.
         if target is None:

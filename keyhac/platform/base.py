@@ -13,11 +13,13 @@ from typing import Any, Callable, Sequence
 class KeyEvent:
     """A normalized key event delivered by the OS hook.
 
-    kind:
-      "real"   - physical input (or input injected by other apps)
-      "replay" - injected by Keyhac in replay mode; re-evaluated by the keymap
-    Events injected by Keyhac in normal (translated) mode are filtered out by
-    the platform layer and never reach the engine.
+    Attributes:
+        vk: Virtual key code.
+        down: True for key down, False for key up.
+        kind: "real" for physical input (or input injected by other apps),
+            "replay" for input Keyhac injected in replay mode, which the
+            keymap re-evaluates.  Events Keyhac injects in normal (translated)
+            mode are filtered out by the platform layer and never arrive here.
     """
     vk: int
     down: bool
@@ -28,19 +30,28 @@ class KeyEvent:
 class Focus:
     """Portable snapshot of the current keyboard focus.
 
-    - app_name: process/exe base name without extension (Windows),
-      localized application name (macOS)
-    - path: focus path string; on macOS the AX focus path
-      ("/AXApplication(Xcode)/AXWindow(...)..."), on Windows a synthesized
-      "/{app_name}/{class_name}({title})" (provisional format)
-    - class_name: Win32 window class name (Windows only, None on macOS)
-    - native: platform object for power users - UIElement (macOS) /
-      NativeWindow, an HWND wrapper (Windows)
-    - element: the focused *semantic* element - an AX UIElement (macOS) or a
-      UI Automation UIElement (Windows). Same shape on both (named attribute
-      reads, parent walk), but each OS's own attribute vocabulary: "AXRole"
-      vs "ControlType". Portable code uses app_name/window_title/class_name
-      and the focus path instead.
+    Available as ``keymap.focus``, and passed to every
+    ``custom_condition_func``.
+
+    Attributes:
+        app_name: Process/exe base name without extension (Windows), or the
+            localized application name (macOS).
+        pid: Process id of the focused application.
+        window_title: Title of the focused window.
+        class_name: Win32 window class name (Windows only; None on macOS).
+        path: Focus path string - on macOS the AX focus path
+            ("/AXApplication(Xcode)/AXWindow(...)..."), on Windows a
+            synthesized "/{app_name}/{class_name}({title})" (provisional
+            format).
+        element: The focused *semantic* element - an AX UIElement (macOS) or a
+            UI Automation UIElement (Windows).  Same shape on both
+            (get_attribute_names(), get_attribute_value(), get_action_names(),
+            perform_action(), parent()), but each uses its own OS's
+            vocabulary of attribute names, "AXRole" versus "ControlType".
+            Portable code uses app_name / window_title / class_name and the
+            focus path instead.
+        native: The platform power object - a UIElement (macOS) or
+            NativeWindow, an HWND wrapper (Windows).
     """
     app_name: str | None = None
     pid: int | None = None
@@ -215,24 +226,29 @@ class AppControl(ABC):
 
 
 class Window(ABC):
-    """A top-level OS window - the portable half of keyhac-win's pyauto.Window
-    and keyhac-mac's AXWindow element.
+    """A top-level OS window.
 
-    Window *operations* unify cleanly across both OSes (find, activate, move,
-    restore, title, process), unlike element introspection, whose attribute
-    vocabularies do not - see Focus.element.
+    The portable half of keyhac-win's pyauto.Window and keyhac-mac's AXWindow
+    element: window *operations* unify cleanly across both OSes (find,
+    activate, move, restore, title, process), unlike element introspection,
+    whose attribute vocabularies do not - see Focus.element.
 
-    THREAD CONTRACT.  Everything on this class is **UI-thread only**: on macOS
-    these are Accessibility calls, and AX into our own process off the main
-    thread crashes with SIGTRAP (the rule established when MoveWindow was
-    fixed).  A ThreadedAction reads windows in starting(), computes in run(),
-    and writes back in finished().  The thread-safe queries a run() may call
-    are WindowProvider.screen_frames() / window_frames().
+    ``keymap.get_active_window()``, ``list_windows()`` and ``find_window()``
+    hand these out; configurations never construct one.
+
+    Note:
+        Everything on this class is UI-thread only.  On macOS these are
+        Accessibility calls, and AX into our own process off the main thread
+        crashes with SIGTRAP.  A ThreadedAction therefore reads windows in
+        starting(), computes in run(), and writes back in finished(); the
+        thread-safe queries a run() may call are keymap.screen_frames() and
+        keymap.window_frames().
     """
 
     @property
     @abstractmethod
-    def title(self) -> str | None: ...
+    def title(self) -> str | None:
+        """The window's title."""
 
     @property
     @abstractmethod
@@ -242,7 +258,8 @@ class Window(ABC):
 
     @property
     @abstractmethod
-    def pid(self) -> int | None: ...
+    def pid(self) -> int | None:
+        """Process id of the application owning the window."""
 
     @property
     def class_name(self) -> str | None:
@@ -251,25 +268,54 @@ class Window(ABC):
 
     @abstractmethod
     def get_frame(self) -> tuple[float, float, float, float] | None:
-        """(x, y, w, h) in global top-left-origin screen coordinates."""
+        """Get the window's frame.
+
+        Returns:
+            (x, y, w, h) in global top-left-origin screen coordinates, or None
+            when the window has no readable frame.
+        """
 
     @abstractmethod
     def set_frame(self, x: float, y: float,
                   w: float = None, h: float = None) -> bool:
-        """Move (and optionally resize). w/h None keeps the current size."""
+        """Move the window, and optionally resize it.
+
+        Args:
+            x: New left edge.
+            y: New top edge.
+            w: New width; None keeps the current one.
+            h: New height; None keeps the current one.
+
+        Returns:
+            Whether the window accepted the change.
+        """
 
     @abstractmethod
     def activate(self) -> bool:
-        """Bring this window and its application to the front."""
+        """Bring this window and its application to the front.
+
+        Returns:
+            Whether the activation succeeded.
+        """
 
     def is_minimized(self) -> bool:
+        """Whether the window is currently minimized."""
         return False
 
     def restore(self) -> bool:
-        """Un-minimize. Base is a no-op returning False."""
+        """Un-minimize the window.
+
+        Returns:
+            Whether the window was restored.
+        """
         return False
 
     def minimize(self) -> bool:
+        """Minimize the window.
+
+        Returns:
+            Whether the window was minimized.
+        """
         return False
 
     @property

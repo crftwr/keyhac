@@ -17,18 +17,30 @@ logger = log.getLogger("Action")
 class ThreadedAction:
     """Base class for time-consuming key actions.
 
-    Derive and implement starting(), run(), finished().  Three threads, and
-    which one you are on decides what you may touch:
+    Anything slow - network, subprocess, sleeping, heavy computation - must
+    not run inline, because a bound function executes inside the keyboard
+    hook's deadline.  Derive from this and implement starting(), run() and
+    finished() instead.
 
-      starting()  event-loop thread, under the engine lock
-      run()       a worker in the pool - never touch UI, windows or AX here
-      finished()  event-loop thread, under the engine lock
+    Three threads, and which one you are on decides what you may touch.
+    starting() and finished() run on the event-loop thread under the engine
+    lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they
+    should stay light-weight because they hold the lock the keyboard hook
+    needs.  run() executes on a worker, where input contexts are allowed but
+    windows and AX elements are not.
 
-    So starting() and finished() may use main-thread-only APIs directly, and
-    should stay light-weight: they hold the lock the keyboard hook needs.
+    The pool is a single worker shared by every threaded action, so a run()
+    that sleeps or loops delays every other one until it returns.
 
-    The pool is a single shared worker (see thread_pool), so a run() that
-    sleeps or loops delays every other threaded action in the process.
+    ```python
+    class Fetch(ThreadedAction):
+        def starting(self):          # main thread, before run
+            logger.info("fetching...")
+        def run(self):               # worker thread - the slow part
+            return do_network_call()
+        def finished(self, result):  # main thread, after run
+            logger.info(f"got {result}")
+    ```
     """
 
     thread_pool = ThreadPoolExecutor(max_workers=1)
@@ -65,22 +77,44 @@ class ThreadedAction:
             logger.error(f"Threaded action failed:\n{traceback.format_exc()}")
 
     def starting(self) -> None:
-        """Called immediately when the action triggers (under the engine lock)."""
+        """Called on the event-loop thread the moment the action triggers.
+
+        Main-thread-only APIs (UI, windows, AX) are allowed here; it runs
+        under the engine lock, so keep it light.
+        """
 
     def run(self) -> Any:
-        """Called in the thread pool; may block."""
+        """Called in the thread pool; may block.
+
+        Returns:
+            Anything; it is handed to finished().
+        """
 
     def finished(self, result: Any) -> None:
-        """Called after run() (under the engine lock)."""
+        """Called on the event-loop thread once run() has returned.
+
+        Main-thread-only APIs are allowed here too.
+
+        Args:
+            result: Whatever run() returned.
+        """
 
 
 class LaunchApplication(ThreadedAction):
     """Launch (or activate) an application by name."""
 
     def __init__(self, app_name: str):
+        """Build the action.
+
+        Args:
+            app_name: Application to launch, named the way the OS resolves
+                it: "Terminal.app" on macOS, an executable name or path on
+                Windows.
+        """
         self.app_name = app_name
 
     def run(self):
+        """lazydocs: ignore"""
         from keyhac.core.keymap import Keymap
         Keymap.get_instance().app_control.launch(self.app_name)
 
@@ -89,7 +123,10 @@ class LaunchApplication(ThreadedAction):
 
 
 class StartRecordingKeys:
-    """Start recording keystrokes into the replay buffer."""
+    """Start recording keystrokes into the replay buffer.
+
+    Bind it to a key; the recording is played back by PlaybackRecordedKeys.
+    """
 
     def __call__(self):
         from keyhac.core.keymap import Keymap
@@ -113,7 +150,11 @@ class ToggleRecordingKeys:
 
 
 class PlaybackRecordedKeys:
-    """Play back the recorded keystrokes (re-evaluated by the keymap)."""
+    """Play back the recorded keystrokes.
+
+    The replayed keys run back through the keymap, so recorded bindings expand
+    again on playback.
+    """
 
     def __call__(self):
         from keyhac.core.keymap import Keymap
@@ -124,6 +165,12 @@ class InputText:
     """Type a literal string into the focused application."""
 
     def __init__(self, text: str):
+        """Build the action.
+
+        Args:
+            text: The text to type; any characters, not just ones the keyboard
+                can produce.
+        """
         self.text = text
 
     def __call__(self):

@@ -22,9 +22,14 @@ _RESET = "\033[0m"
 
 
 class Console:
-    """Ring buffer of console lines + named text slots ("lastKey", "focusPath").
+    """The console window's backing store: a ring buffer of log lines plus the
+    named text slots it displays ("lastKey", "focusPath").
 
-    The M2 PuiKit console window will pull from this object.
+    A configuration reaches the console through print() and getLogger(), not
+    through this object.
+
+    Attributes:
+        max_lines: How many lines the ring buffer keeps (default 1000).
     """
 
     max_lines = 1000
@@ -33,11 +38,20 @@ class Console:
 
     @classmethod
     def get_instance(cls) -> "Console":
+        """Get the Console singleton.
+
+        Returns:
+            The Console instance, creating it on first use.
+        """
         if cls._instance is None:
             cls._instance = Console()
         return cls._instance
 
     def __init__(self):
+        """Use get_instance() instead.
+
+        lazydocs: ignore
+        """
         self._lock = threading.Lock()
         self._lines: deque[tuple[str, int]] = deque(maxlen=Console.max_lines)
         self._pending: list[tuple[str, int]] = []  # lines the UI has not pulled yet
@@ -50,7 +64,10 @@ class Console:
 
     def write(self, s: str, log_level: int = 100) -> None:
         """Append plain text (no ANSI codes) with a logging level; the stderr
-        mirror colors by level, the console window styles by level."""
+        mirror colors by level, the console window styles by level.
+
+        lazydocs: ignore
+        """
         if log_level < self.log_level:
             return
         with self._lock:
@@ -68,22 +85,38 @@ class Console:
                 pass
 
     def lines(self) -> list[tuple[str, int]]:
+        """Get the buffered console lines.
+
+        Returns:
+            (text, log level) pairs, oldest first, up to max_lines of them.
+        """
         with self._lock:
             return list(self._lines)
 
     def pull_lines(self) -> list[tuple[str, int]]:
         """Return and clear the lines appended since the last pull (single
-        consumer: the console window's refresh tick)."""
+        consumer: the console window's refresh tick).
+
+        lazydocs: ignore
+        """
         with self._lock:
             pending = self._pending
             self._pending = []
         return pending
 
     def set_text(self, name: str, text: str) -> None:
+        """Set one of the console's named text slots.
+
+        lazydocs: ignore
+        """
         with self._lock:
             self._texts[name] = text
 
     def get_text(self, name: str) -> str:
+        """Read one of the console's named text slots.
+
+        lazydocs: ignore
+        """
         with self._lock:
             return self._texts.get(name, "")
 
@@ -137,7 +170,20 @@ _configured = False
 
 
 def getLogger(name: str) -> logging.Logger:
-    """Get a logger wired to the Keyhac console."""
+    """Get a logger wired to the Keyhac console.
+
+    ```python
+    logger = getLogger("Config")
+    logger.info("loaded")
+    ```
+
+    Args:
+        name: Logger name, shown in brackets on each line.
+
+    Returns:
+        A standard logging.Logger whose output lands in the console window
+        (and on stderr).
+    """
     global _configured
     root = logging.getLogger("keyhac")
     if not _configured:

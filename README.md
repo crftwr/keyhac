@@ -96,13 +96,16 @@ def configure(keymap):
     kt_browser["Fn-R"] = "Cmd-R"
 ```
 
-The full reference is [doc/configuration.md](doc/configuration.md); the shipped
-template ([keyhac/_config.py](keyhac/_config.py)) is a working tour of every feature.
+The full guide is [doc/configuration.md](doc/configuration.md), the per-symbol
+reference [doc/api_reference.md](doc/api_reference.md); the shipped template
+([keyhac/_config.py](keyhac/_config.py)) is a working tour of every feature.
 
 ## Documentation
 
 - [Installation](doc/installation.md) — install, permissions, data files, privacy.
-- [Configuration](doc/configuration.md) — the complete config.py reference.
+- [Configuration](doc/configuration.md) — the complete config.py guide.
+- [API reference](doc/api_reference.md) — every class and function a config.py
+  can reach, with its exact arguments.
 - [Migrating from Keyhac for macOS](doc/migration-from-keyhac-mac.md) — mostly drop-in.
 - [Migrating from Keyhac for Windows](doc/migration-from-keyhac-win.md) — API renamed;
   translation table.

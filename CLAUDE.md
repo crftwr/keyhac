@@ -12,7 +12,8 @@ Documentation:
 
 - End-user docs: [README.md](README.md), [doc/](doc/) —
   [installation](doc/installation.md), [configuration](doc/configuration.md),
-  migration guides from [keyhac-mac](doc/migration-from-keyhac-mac.md) /
+  [API reference](doc/api_reference.md) (generated), migration guides from
+  [keyhac-mac](doc/migration-from-keyhac-mac.md) /
   [keyhac-win](doc/migration-from-keyhac-win.md).
 - Developer docs: [doc/dev/](doc/dev/) — [overview](doc/dev/overview.md),
   [architecture](doc/dev/architecture.md),
@@ -81,6 +82,14 @@ tools/         # icon pipeline, release scripts, hook_echo diagnostic
 - Windows ctypes: every prototype (`argtypes`/`restype`) is declared explicitly —
   mandatory on 64-bit, where the default c_int restype truncates handles (this broke
   `SetWindowsHookExW` with error 126 once).
+- Docstrings on the config-facing API are **user documentation**: Google style
+  with `Args:`/`Returns:`, no porting history (that goes in comments).
+  `doc/api_reference.md` is generated from them and committed — run
+  `make api-reference` after changing one, `make api-reference-check` verifies
+  the two have not drifted. Members that are public only in the naming sense
+  (hook callbacks, wiring called by `main()`) carry a `lazydocs: ignore` line;
+  `tools/generate_api_reference.py` explains the rules, including which
+  docstring shapes lazydocs reads structurally.
 - Tests: pytest (`.venv/bin/python -m pytest`). The engine is tested with scripted
   fakes (no OS needed); UI against PuiKit's `MemoryBackend`; live platform tests and
   harness patterns are described in [doc/dev/testing.md](doc/dev/testing.md).
@@ -112,5 +121,5 @@ verification record — including which passes caught which real bugs — is in
 What remains is tracked in the GitHub issues: a short list of genuinely-interactive
 verification passes (JIS layout, Japanese IME in the chooser, bundle re-pass,
 macOS mouse feel, tray "Edit Config" click) and the deferred features (themes/fonts,
-i18n, portable mode, migemo, rich clipboard formats, API reference generation,
-macOS ISO layout, balloon help UI).
+i18n, portable mode, migemo, rich clipboard formats, macOS ISO layout,
+balloon help UI).

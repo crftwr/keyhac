@@ -55,6 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo icons icons-check \
+        api-reference api-reference-check \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -76,6 +77,8 @@ help:
 	@echo "                     consumes keys; use this first on a new machine/OS)"
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
+	@echo "  make api-reference       - regenerate doc/api_reference.md from the docstrings"
+	@echo "  make api-reference-check - verify doc/api_reference.md matches the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
 	@echo "  make clean-venv  - remove the virtualenv"
 	@echo ""
@@ -180,6 +183,21 @@ icons: $(VENV_STAMP)
 
 icons-check: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/make_icons.py --check
+
+# doc/api_reference.md is generated from the docstrings and committed, on the
+# same terms as the icon assets above: `api-reference` regenerates it,
+# `api-reference-check` fails if the committed file and the source have drifted.
+#
+# lazydocs is documentation tooling, not needed to run or develop Keyhac, so it
+# is installed on demand here rather than sitting in the dev extras - the same
+# call the `build` target makes for build/twine.
+api-reference: $(VENV_STAMP)
+	@$(VENV_PIP) install --quiet lazydocs
+	$(VENV_PYTHON) tools/generate_api_reference.py
+
+api-reference-check: $(VENV_STAMP)
+	@$(VENV_PIP) install --quiet lazydocs
+	$(VENV_PYTHON) tools/generate_api_reference.py --check
 
 # `clean` sweeps everything a plain `make` rebuilds from the checkout — the
 # Python build tree plus both app-bundle build dirs. Kept out on purpose

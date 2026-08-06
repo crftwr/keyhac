@@ -5,6 +5,9 @@ created from a fully commented template — the template
 ([keyhac/_config.py](../keyhac/_config.py) in the source tree) is a working example of
 everything on this page, and a good file to keep open while reading.
 
+This page introduces the APIs in the order you meet them. For the exact arguments
+of any one of them, see the [API reference](api_reference.md).
+
 ## The config file
 
 ```python
@@ -195,9 +198,10 @@ For simple cases there are ready-made actions:
 kt["Fn-Semicolon"] = InputText("me@example.com")   # type a literal string
 ```
 
-**Mouse output**: `MouseMove(dx, dy)`, `MouseButtonDown/Up/Click(button)` (`"left"`,
-`"right"`, `"middle"`), `MouseWheel(notches)`, `MouseHorizontalWheel(notches)` —
-plus the matching `ctx.send_mouse_*` methods. Buttons and wheels release held
+**Mouse output**: `MouseMove(dx, dy)`, `MouseButtonDown/Up/Click(button)` (`"left"`
+by default, or `"right"` / `"middle"`), `MouseWheel(notches)`,
+`MouseHorizontalWheel(notches)` (positive is away from you / to the right, 1.0 =
+one notch) — plus the matching `ctx.send_mouse_*` methods. Buttons and wheels release held
 modifiers first (so a `User0-…` binding does not click with a phantom modifier);
 moves keep them. Relative moves are injected acceleration-proof on both OSes, and
 rapid synthetic clicks register as double-clicks.
@@ -254,10 +258,12 @@ kt["Fn-Ctrl-J"] = SnapWindow("left")          # tile: left/right/top/bottom/full
 kt["Fn-F"]      = SnapWindow("full")          # ratio=2/3 etc. picks the split
 ```
 
-`MoveWindow` nudges by `distance` pixels, or with `window_edge=`/`screen_edge=`
-travels until it hits other windows' edges / the screen edge (hopping to the next
-monitor when already there). `SnapWindow` tiles within the screen's *work area* —
-menu bar, Dock and taskbar stay uncovered.
+`MoveWindow` nudges by `distance` pixels (default 10), or with
+`window_edge=`/`screen_edge=` travels until it hits other windows' edges / the
+screen edge (hopping to the next monitor when already there). Only `screen_edge`
+is on by default. `SnapWindow` tiles within the screen's *work area* — menu bar,
+Dock and taskbar stay uncovered — taking half the screen unless `ratio=` says
+otherwise.
 
 For your own logic, `Window` objects are fully portable:
 
@@ -390,3 +396,6 @@ focus path — the two things you need when writing new bindings.
 | `ThreadedAction` | background work |
 | `Start/Stop/Toggle/PlaybackRecordedKeys()` | keyboard macros |
 | `getLogger(name)` | console logging |
+
+Exact signatures, defaults and per-argument notes for all of these are in the
+[API reference](api_reference.md).

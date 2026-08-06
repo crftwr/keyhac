@@ -41,12 +41,30 @@ def _collapse_planes(mod: int) -> int:
 
 
 class Keymap:
-    """Manages key tables and executes key action translations."""
+    """Manages key tables and executes key action translations.
+
+    One Keymap exists per Keyhac process.  The configuration file receives it
+    as ``configure(keymap)``'s argument; code outside ``configure()`` reaches
+    the same object through ``Keymap.get_instance()``.
+
+    Attributes:
+        platform: "windows" or "mac" - branch on this where the two OSes
+            genuinely differ.
+        editor: The editor edit_config() opens the configuration file with:
+            an application name or path the OS can resolve, or a callable
+            receiving the path.  Empty (the default) picks a platform default.
+        replay_buffer: The keystroke buffer behind the keyboard macro actions.
+    """
 
     _instance = None
 
     @staticmethod
     def get_instance() -> "Keymap":
+        """Get the Keymap singleton.
+
+        Returns:
+            The Keymap instance, or None before one has been created.
+        """
         return Keymap._instance
 
     def __init__(self,
@@ -55,6 +73,11 @@ class Keymap:
                  platform: str,
                  config_path: str = None,
                  template_path: str = None):
+        """Constructed by Keyhac's bootstrap.  Configurations receive the
+        instance as configure()'s argument, or call Keymap.get_instance().
+
+        lazydocs: ignore
+        """
 
         self._hook = hook
         self._focus_provider = focus_provider
@@ -97,7 +120,11 @@ class Keymap:
     # Configuration
 
     def configure(self) -> None:
-        """Load (or reload) the configuration file and rebuild the keymap."""
+        """Load (or reload) the configuration file and rebuild the keymap.
+
+        A configuration that fails to load leaves the previous keymap active
+        and reports the traceback to the console.
+        """
 
         with self._lock:
 
@@ -139,8 +166,12 @@ class Keymap:
             self._warn_unreachable_modifiers()
 
     def reload_config(self) -> None:
-        """Reload the configuration file (the keyhac-win name for
-        configure(), kept because configs and docs refer to it)."""
+        """Reload the configuration file.
+
+        The keyhac-win name for configure(), kept because configurations and
+        documentation refer to it.  The tray menu's "Reload Config" item calls
+        this.
+        """
         self.configure()
 
     def edit_config(self) -> None:
@@ -198,7 +229,15 @@ class Keymap:
                 f"with keymap.define_modifier().")
 
     def replace_key(self, src: str | int, dst: str | int) -> None:
-        """Replace a key with a different key (pre-keytable substitution)."""
+        """Replace a key with a different key.
+
+        The substitution runs before everything else, so the rest of the
+        configuration only ever sees ``dst``.
+
+        Args:
+            src: Key to replace, as a key name or a virtual key code.
+            dst: Key it is replaced with.
+        """
         try:
             if isinstance(src, str):
                 src = get_key_names().str_to_vk(src)
@@ -214,8 +253,18 @@ class Keymap:
         self._vk_vk_map[src] = dst
 
     def define_modifier(self, key: str | int, mod: str | int) -> None:
-        """Define a user modifier key (User0..User3, or add keys to standard
-        modifiers)."""
+        """Define a user modifier key.
+
+        While defined, the key loses its original meaning entirely: a
+        User0..User3 modifier is never emitted, so assignments hanging off it
+        cannot collide with anything an application understands.
+
+        Args:
+            key: Key to use as the modifier, as a key name or a virtual key
+                code.
+            mod: Modifier the key produces - "User0".."User3", or a standard
+                modifier such as "LCtrl" to give that modifier a second key.
+        """
         try:
             if isinstance(key, str):
                 key = get_key_names().str_to_vk(key)
@@ -242,9 +291,34 @@ class Keymap:
         """Define a key table.
 
         With any focus condition (focus_path_pattern / app / title /
-        class_name / custom_condition_func) the table activates automatically
-        when the condition is met.  With no condition, the table is detached
-        and can be assigned to a key to form a multi-stroke table.
+        class_name / custom_condition_func) the table is added to the keymap
+        and activates automatically whenever the condition is met.  Every
+        matching table is active at once, merged in definition order, so a
+        table defined later overrides exactly the keys it binds.
+
+        With no condition the table is not added to the keymap: assign it to
+        a key to make that key a multi-stroke prefix.
+
+        Args:
+            name: Name of the key table.  A multi-stroke table shows it in the
+                balloon while armed.
+            focus_path_pattern: Focus path pattern with wildcards, e.g.
+                "*/AXTextArea(*)".  Watch the console's "Focus path" field for
+                the live value.
+            custom_condition_func: A function receiving the current Focus and
+                returning whether the table applies.
+            app: Application name pattern - process/exe base name on Windows
+                (the ".exe" is optional), localized application name on macOS.
+            title: Window title pattern.
+            class_name: Win32 window class name pattern (Windows only).
+
+        Returns:
+            The KeyTable created.
+
+        Note:
+            app, title and class_name patterns are case-insensitive, take
+            fnmatch wildcards (*, ?, []) and "|" alternation, and all the
+            conditions given must match.
         """
         if class_name is not None and self.platform == "mac":
             logger.warning("class_name= is Windows-only; this key table never activates on macOS.")
@@ -260,7 +334,20 @@ class Keymap:
         return keytable
 
     def get_input_context(self, replay: bool = False) -> InputContext:
-        """Get a key input context to send a batch of virtual key events."""
+        """Get a key input context to send a batch of virtual key events.
+
+        ```python
+        with keymap.get_input_context() as ctx:
+            ctx.send_key("Ctrl-C")
+        ```
+
+        Args:
+            replay: Re-evaluate the injected events through the keymap
+                (what the keyboard macro playback uses).
+
+        Returns:
+            An InputContext, to be used as a context manager.
+        """
         return InputContext(self, replay)
 
     # ------------------------------------------------------------------
@@ -269,20 +356,27 @@ class Keymap:
     def set_main_thread_dispatcher(self, dispatcher) -> None:
         """Wired by main() with whichever loop is actually running: PuiKit's
         Backend.call_on_main_thread with the console up, the platform
-        EventLoop's under --no-ui.  *dispatcher* takes a single callable."""
+        EventLoop's under --no-ui.  *dispatcher* takes a single callable.
+
+        lazydocs: ignore
+        """
         self._main_thread_dispatcher = dispatcher
 
     def call_on_main_thread(self, callback) -> None:
-        """Run *callback* on the thread that owns the event loop.
+        """Run a callback on the thread that owns the event loop.
 
-        Thread-safe, and the way a worker thread reaches anything that is
-        main-thread-only: UI, window moves, AX writes.  ThreadedAction.run()
-        is the usual caller; finished() already arrives here, so it needs
-        this only for work it defers further.
+        Thread-safe, and the supported way for a worker thread to reach
+        anything main-thread-only: UI, window moves, AX writes.
+        ThreadedAction.run() is the usual caller; finished() already arrives
+        here, so it needs this only for work it defers further.
 
-        With no loop wired - Keyhac used as a library, or under test - the
-        callback runs inline on the calling thread, which is what the code
-        did everywhere before a dispatcher existed.
+        Args:
+            callback: Called with no arguments.
+
+        Note:
+            With no loop wired - Keyhac used as a library, or under test - the
+            callback runs inline on the calling thread, which is what the code
+            did everywhere before a dispatcher existed.
         """
         dispatcher = self._main_thread_dispatcher
         if dispatcher is None:
@@ -294,7 +388,10 @@ class Keymap:
     # Hook entry points (called synchronously on the event-loop thread)
 
     def on_key_event(self, event: KeyEvent) -> bool:
-        """InputHook on_key callback.  Returns True to consume the event."""
+        """InputHook on_key callback.  Returns True to consume the event.
+
+        lazydocs: ignore
+        """
         with self._lock:
             if event.down:
                 return bool(self._on_key_down(event.vk))
@@ -302,7 +399,10 @@ class Keymap:
                 return bool(self._on_key_up(event.vk))
 
     def on_hook_restored(self) -> None:
-        """InputHook on_restored callback."""
+        """InputHook on_restored callback.
+
+        lazydocs: ignore
+        """
         with self._lock:
             logger.warning("Key hook timed out and has been restored.")
             # Modifier key state is not reliable anymore. Resetting.
@@ -312,7 +412,10 @@ class Keymap:
         """InputHook on_mouse callback: physical mouse button/wheel input
         cancels a pending one-shot modifier (keyhac-win behavior - clicking
         while holding a one-shot key means the hold was a drag/click
-        modifier, not a tap)."""
+        modifier, not a tap).
+
+        lazydocs: ignore
+        """
         with self._lock:
             self._last_keydown = None
 
@@ -522,54 +625,113 @@ class Keymap:
 
     @property
     def focus(self) -> Focus | None:
-        """Portable snapshot of the current keyboard focus."""
+        """Portable snapshot of the current keyboard focus (a Focus), or None
+        before the first key event."""
         return self._focus
 
     # ------------------------------------------------------------------
     # Window access (config-facing; see keyhac.platform.base.Window)
 
     def get_active_window(self):
-        """The frontmost window, or None. UI-thread only (see Window)."""
+        """Get the frontmost window.
+
+        Returns:
+            A Window, or None when there is none (or the platform has no
+            window support).
+
+        Note:
+            UI-thread only, like everything on Window - never call it from a
+            ThreadedAction.run().
+        """
         if self.window_provider is None:
             return None
         return self.window_provider.get_active_window()
 
     def list_windows(self) -> list:
-        """Visible top-level windows, front-most first. UI-thread only."""
+        """List the visible top-level windows.
+
+        Returns:
+            Window objects, front-most first where the OS says so.
+
+        Note:
+            UI-thread only.
+        """
         if self.window_provider is None:
             return []
         return self.window_provider.list_windows()
 
     def find_window(self, app: str = None, title: str = None,
                     class_name: str = None):
-        """First visible window matching the patterns, or None - same matching
-        as define_keytable's app=/title=/class_name=. UI-thread only."""
+        """Find the first visible window matching the given patterns.
+
+        Matching is exactly define_keytable's: case-insensitive, fnmatch
+        wildcards, "|" alternation, ".exe" optional, and all the conditions
+        given must match.
+
+        Args:
+            app: Application name pattern.
+            title: Window title pattern.
+            class_name: Win32 window class name pattern (Windows only).
+
+        Returns:
+            A Window, or None when nothing matches.
+
+        Note:
+            UI-thread only.
+        """
         if self.window_provider is None:
             return None
         return self.window_provider.find_window(
             app=app, title=title, class_name=class_name)
 
     def screen_frames(self) -> list:
-        """(x, y, w, h) per screen, primary first. Thread-safe."""
+        """Get the frame of every screen.
+
+        Returns:
+            One (x, y, w, h) tuple per screen, primary first, in the shared
+            top-left-origin coordinate space.
+
+        Note:
+            Thread-safe - callable from a ThreadedAction.run().
+        """
         if self.window_provider is None:
             return []
         return self.window_provider.screen_frames()
 
     def screen_work_frames(self) -> list:
-        """screen_frames() minus the menu bar / Dock / taskbar. UI-thread
-        only (AppKit-backed on macOS)."""
+        """Get the work area of every screen.
+
+        Returns:
+            screen_frames() minus the menu bar and Dock (macOS) or the taskbar
+            (Windows), in the same order.
+
+        Note:
+            UI-thread only - the macOS implementation is an AppKit query.
+        """
         if self.window_provider is None:
             return []
         return self.window_provider.screen_work_frames()
 
     def window_frames(self) -> list:
-        """Frames of all normal on-screen windows. Thread-safe."""
+        """Get the frames of all normal on-screen windows.
+
+        Returns:
+            One (x, y, w, h) tuple per window, in the same coordinate space as
+            screen_frames().
+
+        Note:
+            Thread-safe - callable from a ThreadedAction.run().  It is the
+            geometry query to use there, since Window itself is not.
+        """
         if self.window_provider is None:
             return []
         return self.window_provider.window_frames()
 
     def app_control_running_apps(self):
-        """[(app_name, pid)] via the platform (empty when unavailable)."""
+        """[(app_name, pid)] via the platform (empty when unavailable).
+
+        lazydocs: ignore
+        """
         if self.platform == "mac":
             from keyhac.platform.mac.uielement import UIElement
             return UIElement.get_running_applications()
@@ -577,5 +739,6 @@ class Keymap:
 
     @property
     def clipboard_history(self):
-        """The ClipboardHistory object (None while running without one)."""
+        """The ClipboardHistory object (None while running without one, e.g.
+        under --no-ui)."""
         return self._clipboard_history
