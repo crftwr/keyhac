@@ -334,6 +334,45 @@ log_success "Resources copied successfully"
 # Step 4: Embed Python
 # ============================================================================
 
+# Stdlib components Keyhac never imports. Called from both embedding paths
+# below (framework copy and standard install), which is why it is a function -
+# every path is guarded, since what a framework ships depends on how it was
+# built.
+#
+# The tkinter set is the expensive one. _tkinter.so is the only binary in the
+# whole bundle that links Tcl and Tk, and dropping it *before* Step 4b means
+# delocate never vendors those two (~9 MB together) into lib-dynload/.dylibs -
+# so there is deliberately nothing here that deletes them directly. idlelib and
+# turtledemo are the only stdlib packages that would import tkinter, and both
+# are developer toys in an app bundle. The lib-dynload _test*.so modules are
+# the C half of the test suite whose Python half ("test/") the callers already
+# remove. ensurepip and pydoc_data serve pip and pydoc, both already removed
+# from bin/ just above.
+#
+# Together: ~21 MB, and 13 fewer binaries to codesign and notarize.
+prune_unused_stdlib() {
+    stdlib="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
+
+    for unused in tkinter idlelib turtledemo turtle.py ensurepip pydoc_data; do
+        if [ -e "${stdlib}/${unused}" ]; then
+            rm -rf "${stdlib}/${unused}"
+            # A package takes its own __pycache__ with it, but a top-level
+            # module leaves bytecode behind in the stdlib's shared one - and
+            # the framework ships that bytecode precompiled, so this runs
+            # before compileall could have written it.
+            rm -f "${stdlib}/__pycache__/${unused%.py}".*.pyc
+            log_info "  Removed lib/python${PYTHON_VERSION}/${unused}"
+        fi
+    done
+
+    for unused in "${stdlib}"/lib-dynload/_tkinter.*.so "${stdlib}"/lib-dynload/_test*.so; do
+        if [ -f "${unused}" ]; then
+            rm -f "${unused}"
+            log_info "  Removed lib-dynload/$(basename "${unused}")"
+        fi
+    done
+}
+
 log_info "Step 4: Embedding Python..."
 
 # Clean up old Python versions from previous builds
@@ -438,6 +477,9 @@ if [ "$USE_FRAMEWORK" = true ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
+
+    # tkinter/Tcl/Tk, IDLE, the C test modules, ensurepip, pydoc_data
+    prune_unused_stdlib
 
     # Remove the static-linking config dir. It holds link-time artifacts only
     # (python.o, Makefile, makesetup) that are never loaded at runtime, and the
@@ -578,6 +620,9 @@ else
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
         log_info "  Removed lib/python${PYTHON_VERSION}/test/"
     fi
+
+    # tkinter/Tcl/Tk, IDLE, the C test modules, ensurepip, pydoc_data
+    prune_unused_stdlib
 
     # Remove the static-linking config dir (link-time artifacts only; its
     # unsigned python.o fails notarization).

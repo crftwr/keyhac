@@ -62,6 +62,15 @@ _SKIP_DISTRIBUTIONS = {
     "pip", "setuptools", "wheel", "distribute", "pkg-resources",
 }
 
+# Test suites a *runtime* distribution owns, and so cannot be dropped at the
+# distribution level. PyObjCTest is pyobjc-core's own test suite: 560 of that
+# distribution's files, and in the macOS bundle 16 MB, 140 .so files and their
+# 140 .dSYM bundles - more than half of every per-binary codesign call, spent
+# on code the app never imports.
+_SKIP_TOP_LEVEL = {
+    "PyObjCTest",
+}
+
 
 def _canonical(name):
     """PEP 503 canonical distribution name (for de-duplication/lookup)."""
@@ -164,13 +173,17 @@ def _should_skip_file(rel_path):
     Skip files that must not be copied into the bundle:
       - anything outside site-packages (scripts under ../../bin, etc.);
       - editable-install shims (a .pth or __editable__ finder points at the
-        developer checkout and is meaningless on the target machine).
+        developer checkout and is meaningless on the target machine);
+      - the _SKIP_TOP_LEVEL test packages that ride along inside a runtime
+        distribution.
     """
     parts = rel_path.parts
     if not parts or parts[0] == ".." or parts[0].startswith(".."):
         return True
     first = parts[0]
     if first.endswith(".pth") or first.startswith("__editable__"):
+        return True
+    if first in _SKIP_TOP_LEVEL:
         return True
     return False
 
