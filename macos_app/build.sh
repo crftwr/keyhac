@@ -850,10 +850,14 @@ fi
 
 # Substitute version number
 log_info "Substituting version: ${VERSION}"
-# BUNDLE_ID default: crftwr.Keyhac2. Open decision (GitHub issue) —
-# building with BUNDLE_ID=crftwr.Keyhac instead carries the Accessibility
-# permission over from keyhac-mac 1.x (same identity), but collides with an
-# installed 1.x.
+# BUNDLE_ID is crftwr.Keyhac2 and stays that way: 2.0.0 shipped notarized
+# under it, and the identifier is what TCC keys the Accessibility grant (and
+# NSUserDefaults the saved window frames) on - renaming it now would silently
+# revoke both for every installed 2.x. Reusing keyhac-mac 1.x's crftwr.Keyhac
+# would have inherited its Accessibility grant, but that window closed with
+# 2.0.0; the two versions could never coexist anyway, sharing
+# ~/.keyhac/config.py and clipboard.json. The override remains for local
+# experiments only - a distributable build uses the default.
 BUNDLE_ID="${BUNDLE_ID:-crftwr.Keyhac2}"
 log_info "Bundle identifier: ${BUNDLE_ID}"
 sed -e "s/{{VERSION}}/${VERSION}/g" -e "s/{{BUNDLE_ID}}/${BUNDLE_ID}/g" \

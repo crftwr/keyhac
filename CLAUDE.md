@@ -112,5 +112,5 @@ verification record — including which passes caught which real bugs — is in
 What remains is tracked in the GitHub issues: a short list of genuinely-interactive
 verification passes (JIS layout, Japanese IME in the chooser, bundle re-pass,
 macOS mouse feel, tray "Edit Config" click) and the deferred features (themes/fonts,
-i18n, portable mode, migemo, cron/`call_later` API, rich clipboard formats, API
-reference generation, bundle-id decision, macOS ISO layout).
+i18n, portable mode, migemo, rich clipboard formats, API reference generation,
+macOS ISO layout, balloon help UI).

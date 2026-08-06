@@ -73,12 +73,12 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
 - `resources/{Info.plist.template,entitlements.plist,sitecustomize.py}`;
   `LSUIElement=YES` (agent app), hardened runtime, no sandbox,
   disable-library-validation.
-- Bundle id defaults to `crftwr.Keyhac2`, overridable with `BUNDLE_ID=crftwr.Keyhac`
-  (reusing the 1.x id carries the Accessibility permission over — decision tracked
-  in the issue tracker).
-- Known fat to trim: `Resources/python_packages` ships all of PyObjC incl.
-  PyObjCTest — pruning would cut bundle size and per-.so signing time noticeably
-  (issue tracker).
+- Bundle id is `crftwr.Keyhac2`, settled: it is the identity TCC keys the
+  Accessibility grant on (and NSUserDefaults the saved window frames), so changing
+  it after 2.0.0 shipped would revoke both for everyone installed. Reusing 1.x's
+  `crftwr.Keyhac` would have inherited its grant instead — that window closed with
+  2.0.0, and the two versions could never coexist anyway (shared `~/.keyhac`).
+  `BUNDLE_ID=` still overrides, for local experiments.
 
 ## Shared tooling
 

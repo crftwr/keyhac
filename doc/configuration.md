@@ -48,6 +48,13 @@ MOD = "Cmd" if mac else "Ctrl"       # the OS's primary shortcut modifier
 kt[f"{LEADER}-C"] = f"{MOD}-C"
 ```
 
+A plain Python constant is the answer here, not a built-in name: there is no `Mod-`
+modifier in the key expression language. Modifier names mean the same thing on both
+OSes, and one that quietly changed meaning per OS would not survive the round trip —
+the console reports what actually fired, `Cmd-C` or `Ctrl-C`. The constant also scales
+to whatever else your config wants to vary by OS, which is why `LEADER` above works the
+same way.
+
 Config diagnostics are cross-platform aware: a key name that exists only on the other
 OS says so in the error, and after loading, Keyhac warns once about bindings whose
 modifiers no key on this OS can produce (for example a `Cmd-` binding running on

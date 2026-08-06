@@ -1,5 +1,19 @@
 # Migrating a keyhac-mac config.py to Keyhac 2
 
+## Installing over 1.x
+
+Keyhac 2 ships under its own application identity (`crftwr.Keyhac2`), so macOS treats it
+as a new app: **grant the Accessibility permission again** on first launch, in System
+Settings → Privacy & Security → Accessibility. The *Keyhac* entry already listed there
+belongs to 1.x and does nothing for Keyhac 2 — remove it once 1.x is gone.
+
+Uninstall 1.x rather than keeping both. They share `~/.keyhac/config.py` and
+`~/.keyhac/clipboard.json`, and each installs its own keyboard hook, so running them
+together puts two hooks on every keystroke. Sharing the config file is deliberate: your
+existing `config.py` is picked up as it stands, subject to the differences below.
+
+## Config differences
+
 Most keyhac-mac configs run with small edits. Known differences:
 
 | keyhac-mac | Keyhac 2 |
