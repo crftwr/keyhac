@@ -40,7 +40,10 @@ imported.
 
 - **`keymap.delayedCall(func, msec)`** and **`CronItem`/`CronTable`** — no direct
   equivalent yet (tracked in the issue tracker). A `ThreadedAction` whose `run()`
-  sleeps covers most cases meanwhile.
+  sleeps covers a one-shot delay meanwhile, but note that the pool is a single
+  shared worker: a short sleep is fine, while a periodic `while True:` loop would
+  hold the worker for the life of the process and stall every other threaded
+  action.
 - **`keymap.setFont` / `keymap.setTheme`** — UI theme/font settings are not
   configurable yet (tracked in the issue tracker).
 - **Migemo matching** in the list window — not available (tracked in the issue

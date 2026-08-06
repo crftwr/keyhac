@@ -115,6 +115,10 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
     console = ConsoleWindow(keymap, hook, settings=settings)
     console.open()
     runtime.backend = console.backend
+    # PuiKit's loop is the one turning in this mode, so it owns the hand-back
+    # to the main thread (ThreadedAction.finished, keymap.call_on_main_thread).
+    if console.backend.capabilities.supports("main_thread_dispatch"):
+        keymap.set_main_thread_dispatcher(console.backend.call_on_main_thread)
     console.attach_clipboard(clipboard_provider, keymap.clipboard_history)
 
     # Tray icon (reopen console / reload / quit) + balloons (multi-stroke help)
@@ -150,6 +154,9 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
 
 
 def _run_headless(keymap, hook, loop, platform_name: str, clipboard_provider) -> int:
+    # No PuiKit backend here; the bare native loop is the main thread.
+    keymap.set_main_thread_dispatcher(loop.call_on_main_thread)
+
     hook.install(keymap.on_key_event, keymap.on_hook_restored,
                  keymap.on_mouse_event)
 

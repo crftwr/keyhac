@@ -1,7 +1,8 @@
 """Threaded actions (ported from keyhac-mac keyhac_action.py).
 
-starting()/finished() run under the engine lock (serialized with the hook);
-run() executes in a shared single-worker thread pool.
+starting()/finished() run on the event-loop thread under the engine lock
+(serialized with the hook); run() executes in a shared single-worker thread
+pool.
 """
 
 import traceback
@@ -16,9 +17,18 @@ logger = log.getLogger("Action")
 class ThreadedAction:
     """Base class for time-consuming key actions.
 
-    Derive and implement starting(), run(), finished().  run() executes in a
-    thread pool; starting()/finished() are for light-weight work and run
-    under exclusive control with the keyboard hook.
+    Derive and implement starting(), run(), finished().  Three threads, and
+    which one you are on decides what you may touch:
+
+      starting()  event-loop thread, under the engine lock
+      run()       a worker in the pool - never touch UI, windows or AX here
+      finished()  event-loop thread, under the engine lock
+
+    So starting() and finished() may use main-thread-only APIs directly, and
+    should stay light-weight: they hold the lock the keyboard hook needs.
+
+    The pool is a single shared worker (see thread_pool), so a run() that
+    sleeps or loops delays every other threaded action in the process.
     """
 
     thread_pool = ThreadPoolExecutor(max_workers=1)
@@ -37,6 +47,14 @@ class ThreadedAction:
         future.add_done_callback(self._done_callback)
 
     def _done_callback(self, future):
+        # add_done_callback fires on the pool thread; hand finished() back to
+        # the event-loop thread so it joins starting() there instead of
+        # landing wherever run() happened to end.  Unwired (library use,
+        # tests) call_on_main_thread runs it inline, as this always did.
+        from keyhac.core.keymap import Keymap
+        Keymap.get_instance().call_on_main_thread(lambda: self._finish(future))
+
+    def _finish(self, future):
         try:
             result = future.result()
             from keyhac.core.keymap import Keymap

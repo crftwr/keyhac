@@ -263,8 +263,10 @@ def configure(keymap):
 
     # Anything slow (network, subprocess, sleeping) must not run inline -
     # it would block the keyboard hook.  ThreadedAction gives you a worker
-    # thread; starting() and finished() run under the engine lock, run()
-    # does not.
+    # thread for run(), while starting() and finished() stay on the main
+    # thread under the engine lock - so UI and window access is fine in those
+    # two and not in run().  The worker is a single one shared by every
+    # threaded action, so a run() that sleeps holds up the others.
     class TypeSlowly(ThreadedAction):
         def __init__(self, text):
             self.text = text

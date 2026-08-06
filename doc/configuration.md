@@ -331,6 +331,11 @@ kt["Fn-G"] = Fetch()
 `run()` runs on a worker (input contexts allowed, windows/elements not — see the
 thread contract above).
 
+The pool is a **single worker shared by every threaded action**, so a `run()` that
+sleeps or loops delays every other one until it returns. Keep long waits short, and
+prefer `keymap.call_on_main_thread(func)` — thread-safe, and the supported way to
+reach the main thread from anywhere — over holding the worker to wait for something.
+
 ## Balloons
 
 ```python

@@ -468,20 +468,11 @@ class MoveWindow(ThreadedAction):
         return (wx, wy)
 
     def finished(self, result):
+        # finished() is on the event-loop thread, which is where the AX write
+        # has to happen (own-process safety).
         if self.wnd is None or result is None:
             return
-        from keyhac.ui import runtime
-
-        def _apply():
-            self.wnd.set_frame(result[0], result[1])
-
-        # The AX write must also run on the main thread (own-process safety);
-        # call_on_main_thread is the one thread-safe puikit entry point.
-        if runtime.backend is None or not runtime.backend.capabilities.supports(
-                "main_thread_dispatch"):
-            _apply()
-        else:
-            runtime.backend.call_on_main_thread(_apply)
+        self.wnd.set_frame(result[0], result[1])
 
     def __repr__(self):
         return f'MoveWindow(direction="{self.direction}")'
@@ -601,22 +592,15 @@ class ActivateWindow(ThreadedAction):
         return None
 
     def finished(self, target):
+        # finished() is on the event-loop thread, which is where activation
+        # (an AX write in the own-process case) has to happen.
         if target is None:
             return
-        from keyhac.ui import runtime
         keymap = Keymap.get_instance()
-
-        def _apply():
-            if isinstance(target, int):
-                keymap.app_control.activate_pid(target)
-            else:
-                target.activate()
-
-        if runtime.backend is None or not runtime.backend.capabilities.supports(
-                "main_thread_dispatch"):
-            _apply()
+        if isinstance(target, int):
+            keymap.app_control.activate_pid(target)
         else:
-            runtime.backend.call_on_main_thread(_apply)
+            target.activate()
 
     def __repr__(self):
         return f'ActivateWindow(app="{self.app}")'

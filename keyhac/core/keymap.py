@@ -86,6 +86,7 @@ class Keymap:
         self._clipboard_history = None      # core ClipboardHistory
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
+        self._main_thread_dispatcher = None  # callable(callback) - see below
 
         from keyhac.core.replay import KeyReplayBuffer
         self.replay_buffer = KeyReplayBuffer()
@@ -261,6 +262,33 @@ class Keymap:
     def get_input_context(self, replay: bool = False) -> InputContext:
         """Get a key input context to send a batch of virtual key events."""
         return InputContext(self, replay)
+
+    # ------------------------------------------------------------------
+    # Main-thread dispatch
+
+    def set_main_thread_dispatcher(self, dispatcher) -> None:
+        """Wired by main() with whichever loop is actually running: PuiKit's
+        Backend.call_on_main_thread with the console up, the platform
+        EventLoop's under --no-ui.  *dispatcher* takes a single callable."""
+        self._main_thread_dispatcher = dispatcher
+
+    def call_on_main_thread(self, callback) -> None:
+        """Run *callback* on the thread that owns the event loop.
+
+        Thread-safe, and the way a worker thread reaches anything that is
+        main-thread-only: UI, window moves, AX writes.  ThreadedAction.run()
+        is the usual caller; finished() already arrives here, so it needs
+        this only for work it defers further.
+
+        With no loop wired - Keyhac used as a library, or under test - the
+        callback runs inline on the calling thread, which is what the code
+        did everywhere before a dispatcher existed.
+        """
+        dispatcher = self._main_thread_dispatcher
+        if dispatcher is None:
+            callback()
+            return
+        dispatcher(callback)
 
     # ------------------------------------------------------------------
     # Hook entry points (called synchronously on the event-loop thread)
