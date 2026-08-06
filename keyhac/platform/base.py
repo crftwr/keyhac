@@ -59,13 +59,17 @@ class Focus:
             try:
                 return getattr(native, name)
             except AttributeError:
-                # Typically an AX call from a macOS config running on Windows.
+                # Typically an AX call from a macOS config running on Windows,
+                # where Focus.native is an HWND wrapper. The accessibility
+                # methods (get_attribute_value, get_attribute_names,
+                # perform_action) do exist on Windows, but on the UI Automation
+                # element in Focus.element, with UIA attribute names.
                 raise AttributeError(
                     f"Focus has no attribute {name!r}, and neither does "
-                    f"{type(native).__name__} (Focus.native). Accessibility "
-                    f"attributes (get_attribute_value, get_attribute_names, "
-                    f"perform_action) exist only on macOS - branch on "
-                    f"keymap.platform.") from None
+                    f"{type(native).__name__} (Focus.native). On Windows, "
+                    f"accessibility calls go through Focus.element (UI "
+                    f"Automation, \"ControlType\"/\"Name\" vocabulary); AX "
+                    f"attribute names exist only on macOS.") from None
         raise AttributeError(
             f"Focus has no attribute {name!r} (and no native element to forward to)")
 
