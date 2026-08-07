@@ -188,6 +188,41 @@ This is the Windows form of "a tab is defined by its parent, not by its role"
 above. The general rule both are instances of: **address a control by what it
 can do and where it sits, not by what it calls itself.**
 
+## Windows: a control's state lives in one of three places
+
+macOS puts it all in `AXValue` - a checkbox, a radio button and a text field
+are all read the same way. Windows splits it across three patterns, and a
+reader that knows about only one silently records a fraction of the screen:
+
+| Control | Where the state is |
+|---|---|
+| Edit, ComboBox | `value` |
+| CheckBox | `ToggleState` (0 off, 1 on, **2 indeterminate**) |
+| RadioButton, ListItem, TabItem, TreeItem | `IsSelected` |
+
+Measured on Internet Properties: reading only `value` and `ToggleState` found
+**1** control on the Security panel; adding `IsSelected` found **5**. So:
+
+```python
+def state_of(node):
+    if node.value is not None:
+        return node.value
+    for attribute in ("ToggleState", "IsSelected"):
+        state = node.element.get_attribute_value(attribute)
+        if state is not None:
+            return state
+    return None
+```
+
+`IsSelected` is also the **only** way to work a tab. A Win32 `TabItem` supports
+no `Invoke`, no `Toggle` and no `Expand` - `get_action_names()` returns `[]`
+for one - and its selected-ness is not a value, so `.value` reads `None`
+however the tab is set. Selecting it is `press()` (which reaches
+`SelectionItem::Select`), and reading which tab is current is `IsSelected`.
+An action that finds the current tab the macOS way, with
+`str(tab.value) == "1"`, matches nothing on Windows and then waits for a tab
+that never reports itself selected.
+
 ## Windows: launching an application gets the operator's session
 
 Windows 11's Notepad is tabbed and single-instance, so starting it merely

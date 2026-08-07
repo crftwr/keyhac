@@ -349,9 +349,16 @@ def _is_checked(element) -> bool:
 
 
 def _press(element) -> None:
-    """Press an element with whichever action name the platform uses."""
+    """Press an element with whichever action name the platform uses.
+
+    "Select" is last and is not interchangeable with the rest: it is the only
+    thing a Windows tab, list item or radio button answers to - such an element
+    supports no Invoke and no Toggle at all - while on macOS the same control
+    is pressed.  Ordering it after Invoke keeps a control that offers both
+    behaving the way it did before.
+    """
     names = element.get_action_names() or []
-    for name in ("AXPress", "Invoke", "Toggle", "AXConfirm"):
+    for name in ("AXPress", "Invoke", "Toggle", "AXConfirm", "Select"):
         if name in names:
             element.perform_action(name)
             return

@@ -120,6 +120,7 @@ class _PatternId:
     Scroll = 10004
     ExpandCollapse = 10005
     Grid = 10006
+    SelectionItem = 10010
     Toggle = 10015
     Text = 10014
     Window = 10009
@@ -143,6 +144,19 @@ class _IUIAutomationValuePattern:
     SetValue = 3
     get_CurrentValue = 4
     get_CurrentIsReadOnly = 5
+
+
+class _IUIAutomationSelectionItemPattern:
+    # How a tab, a list item or a radio button reports and changes which one of
+    # a set is current.  There is no other way to do either: a Win32 TabItem
+    # supports no Invoke, no Toggle and no Expand - get_action_names() on one
+    # returns [] without this pattern - and its selected-ness is not a value,
+    # so reading `.value` gives None however the tab is set.
+    Select = 3
+    AddToSelection = 4
+    RemoveFromSelection = 5
+    get_CurrentIsSelected = 6
+    get_CurrentSelectionContainer = 7
 
 
 class _IUIAutomationTextPattern:
@@ -179,6 +193,7 @@ _ACTIONS = {
     "Toggle": (_PatternId.Toggle, _IUIAutomationTogglePattern.Toggle),
     "Expand": (_PatternId.ExpandCollapse, _IUIAutomationExpandCollapsePattern.Expand),
     "Collapse": (_PatternId.ExpandCollapse, _IUIAutomationExpandCollapsePattern.Collapse),
+    "Select": (_PatternId.SelectionItem, _IUIAutomationSelectionItemPattern.Select),
 }
 
 
@@ -345,6 +360,7 @@ class UIElement:
         "Value": _PatternId.Value,
         "IsReadOnly": _PatternId.Value,
         "ToggleState": _PatternId.Toggle,
+        "IsSelected": _PatternId.SelectionItem,
         "SelectedText": _PatternId.Text,
     }
 
@@ -434,6 +450,11 @@ class UIElement:
                 # 0 off, 1 on, 2 indeterminate
                 return _int_out(ctypes.c_int, pattern,
                                 _IUIAutomationTogglePattern.get_CurrentToggleState)
+            if name == "IsSelected":
+                value = _int_out(
+                    ctypes.c_int, pattern,
+                    _IUIAutomationSelectionItemPattern.get_CurrentIsSelected)
+                return None if value is None else bool(value)
             if name == "SelectedText":
                 return self._selected_text(pattern)
         finally:
