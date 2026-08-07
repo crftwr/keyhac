@@ -831,7 +831,16 @@ Extend `PRIVACY.md` with the above.
    addressed by its text or by the document title; and an accumulator declared
    inside the thing that can fail discards every page already read, which is
    the exact failure this class of action exists to avoid.
-5. **Derive the skill** from what step 4 taught (§8.4).
+5. ~~**Derive the skill** from what step 4 taught (§8.4).~~ **Written**, in
+   `keyhac/skills/action-authoring/`: `SKILL.md` (seven hard rules, each one a
+   failure that actually happened, plus structure and the done-checklist),
+   `references/api.md`, and `references/quirks.md` — the measured platform
+   behaviour that makes correct-looking code wrong. The eval set is
+   `evals/check.py` for the mechanical rules, calibrated in both directions
+   (the four hand-written actions pass; a fixture breaking every rule is
+   caught, and both are pinned by `tests/test_action_authoring_evals.py`), and
+   `evals/cases.md` for the ten judgement-shaped cases. Untested against
+   generation itself — that is step 6.
 6. Try generation.
 
 Mouse input capture and trace recording are not on this list.
