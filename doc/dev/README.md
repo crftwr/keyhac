@@ -16,7 +16,8 @@ people working on Keyhac itself.
 - [testing.md](testing.md) — test layers, harness patterns, live verification
   record.
 - [ai-integration.md](ai-integration.md) — design handover for AI integration:
-  agent at authoring time producing plain-Python actions, observation /
-  state-reading / safety layers, MCP topologies.
+  agent at authoring time producing plain-Python actions, the UI-mediated ETL
+  workload they target, observation / state-reading / safety layers, the output-side
+  primitives, MCP topologies, and trace privacy.
 
 The project guide for coding agents is [CLAUDE.md](../../CLAUDE.md) at the repo root.
