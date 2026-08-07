@@ -186,8 +186,9 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `TCM_GETCURSEL` on a real `SysTabControl32` built in the test
   (`tests/test_win_focus.py`), which is the control's own answer and is not
   reachable through UI Automation — so it cannot agree with a wrong slot by
-  accident. The action then walked Mouse Properties' five tabs live and wrote 15
-  values to JSON, leaving the originally-selected tab selected.
+  accident. `examples/actions/snapshot_settings_win.py` then walked Mouse
+  Properties' five tabs live and wrote 15 values to JSON, leaving the
+  originally-selected tab selected.
 
 **Two things the pass itself got wrong, both worth keeping in mind for any
 Windows UI harness:**

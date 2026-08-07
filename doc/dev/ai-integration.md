@@ -853,16 +853,27 @@ Extend `PRIVACY.md` with the above.
    rungs of §6's ladder). **Print-all-tabs-to-PDF is not written**: it drives
    print dialogs and writes files, so it wants its own session.
 
-   **One of them is now ported; the rest are macOS-only in fact rather than by
-   habit**, addressing elements as `AXTable` / `AXCell` / `AXWebArea`, which
-   match nothing on Windows. `snapshot_settings.py` runs on both, and what the
-   port cost is the useful part: the *shape* survived unchanged — find the
-   window by what it contains, enumerate the tab strip's own children, wait for
-   the selection to be reported, restore the original tab — while every
-   selector and every state read had to be rewritten, and one step could not be
-   expressed at all until the element API grew a `SelectionItem` pattern.
-   **Porting an action is a cheap way to find holes in the platform layer**,
-   which is an argument for doing it early rather than once.
+   **One has been carried to Windows; the rest are macOS-only in fact rather
+   than by habit**, addressing elements as `AXTable` / `AXCell` / `AXWebArea`,
+   which match nothing on Windows. What the port cost is the useful part: the
+   *shape* survived unchanged — find the window by what it contains, enumerate
+   the tab strip's own children, wait for the selection to be reported, restore
+   the original tab — while every selector and every state read had to be
+   rewritten, and one step could not be expressed at all until the element API
+   grew a `SelectionItem` pattern. **Porting an action is a cheap way to find
+   holes in the platform layer**, which is an argument for doing it early
+   rather than once.
+
+   It landed as a second file, `snapshot_settings_win.py`, not as branches in
+   the first. **A generated action does not need to be portable and should not
+   pay for it**: it is written against one screen that was inspected first, and
+   the two accessibility vocabularies do not merge (`uitree.py` unifies role
+   names exactly as far as the `AX` prefix and no further). What must stay
+   portable is the framework and the config — §12's "a single config across
+   Windows and macOS" is about the user's key bindings, not about selectors
+   reaching into another application's tree. This narrows §11's open "how far
+   to unify Windows and macOS" question: at the API, as far as it already goes;
+   at the action, not at all.
 
    The exercise paid for itself in the way §5 predicts — nine findings, four of
    them bugs in the framework the actions are written against, all recorded in

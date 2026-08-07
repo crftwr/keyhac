@@ -5,17 +5,21 @@ the step that says *do not skip*. These are written by hand, against real
 applications, so that the generalisation heuristics in the authoring skill come
 from real failures instead of first principles.
 
-Four of the five are macOS-only, and in fact rather than by habit: they address
-elements as `AXTable`, `AXCell`, `AXWebArea`, and those names match nothing on
-Windows. `snapshot_settings.py` has been ported and runs on both.
+Each action targets one OS, and says so in its docstring. Five are macOS; the
+sixth is `snapshot_settings_win.py`, the same task as `snapshot_settings.py`
+written against Windows. **They are two files rather than one with branches in
+it on purpose** — an action is generated for one screen, and carrying selectors
+for a tree it will never meet buys nothing. The framework underneath is
+portable; the selectors are not, and pretending otherwise would teach the wrong
+thing to anyone reading these as a template.
 
 ```bash
 python examples/actions/extract_records.py ~/Desktop/records.csv   # macOS, Safari
 python examples/actions/handle_queue.py                            # macOS, Safari
 python examples/actions/jump_to_error.py --dry-run                 # macOS, Terminal
 python examples/actions/submit_from_csv.py                         # macOS, Safari
-python examples/actions/snapshot_settings.py                       # macOS: Terminal > Settings
-python examples/actions/snapshot_settings.py                       # Windows: control main.cpl
+python examples/actions/snapshot_settings.py                       # macOS, Terminal > Settings
+python examples/actions/snapshot_settings_win.py                   # Windows, control main.cpl
 ```
 
 `submit_from_csv.py` types, so running it installs a keyboard tap for as long
@@ -31,7 +35,8 @@ from a worker at all.
 | [`handle_queue.py`](handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
 | [`jump_to_error.py`](jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
 | [`submit_from_csv.py`](submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
-| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found — and the only one ported to Windows | 57 values from Terminal's six settings tabs; 15 from Mouse Properties' five, into JSON |
+| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
+| [`snapshot_settings_win.py`](snapshot_settings_win.py) | the same task on Windows: `SelectionItem` for tabs, state read from three patterns | 15 values from Mouse Properties' five tabs, into JSON |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -176,7 +181,15 @@ this action was written.
 
 `snapshot_settings.py` was carried to Windows to find out how much of an action
 is portable in practice. The answer is encouraging about structure and blunt
-about everything else.
+about everything else — and the shape of the answer is why the result is a
+second file, `snapshot_settings_win.py`, rather than branches in the first.
+
+The port was written as one cross-platform file to begin with. That was the
+right *instrument* — running both halves through the same code is how the
+differences got measured — and the wrong artefact to keep: these examples are
+read as templates, and a template full of `if MAC` teaches an author to write
+conditionals for a platform their action will never run on. The two files now
+say the same thing more plainly by sitting next to each other.
 
 **The shape survived unchanged.** Find the window by what it contains rather
 than by its title; enumerate the tab strip's *own children*; select a tab; wait

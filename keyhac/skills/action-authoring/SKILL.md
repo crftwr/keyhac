@@ -37,15 +37,20 @@ the user to open it and look again. That costs one message and records nothing.
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
 
-**Look at the screen on the platform the action will run on.** Role names are
-not a shared vocabulary: an `AXTextField` is a Windows `Edit`, and Windows has
-no `Cell` or `Row` role at all. Write role patterns **without** the `AX` prefix
-- it is stripped from the role, not from your pattern, so `role="Button"`
-matches both platforms while `role="AXButton"` quietly matches only macOS. A
-selector carried over from the other platform's tree finds nothing and reads
-like a page that failed to load. If the target is Windows, read the
-**Windows:** entries in `references/quirks.md` first; three of the four are
-cases where the macOS answer was confidently wrong.
+**Look at the screen on the platform the action will run on, and write for that
+one.** An action targets a screen you inspected; it is not expected to be
+portable and should not pay for it. Do not add branches for the OS you are not
+on — write the second action when there is a second screen, and let the two
+files sit side by side.
+
+Role names are not a shared vocabulary: an `AXTextField` is a Windows `Edit`,
+and Windows has no `Cell` or `Row` role at all. Write role patterns **without**
+the `AX` prefix - it is stripped from the role, not from your pattern, so
+`role="Button"` matches both platforms while `role="AXButton"` quietly matches
+only macOS. A selector carried over from the other platform's tree finds
+nothing and reads like a page that failed to load. If the target is Windows,
+read the **Windows:** entries in `references/quirks.md` first; three of the
+four are cases where the macOS answer was confidently wrong.
 
 ## The seven hard rules
 

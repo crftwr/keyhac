@@ -8,10 +8,13 @@ waiting legal from a worker at all.
 
     python examples/actions/extract_records.py
 
-Both platforms are wired here, but only `snapshot_settings.py` runs on both -
-the other three address elements by `AX*` role names and are macOS-only in
-fact, not merely untested (see the module docstrings and the Windows entries in
-the authoring skill's `references/quirks.md`).
+Both platforms are wired here, because the *framework* is portable and an
+action is not. Each example targets one OS and says which in its docstring:
+four macOS, and `snapshot_settings_win.py` the Windows counterpart of
+`snapshot_settings.py`. Nothing is gained by making a generated action carry
+selectors for a tree it will never meet - role names are not a shared
+vocabulary (see the Windows entries in the authoring skill's
+`references/quirks.md`).
 """
 
 import pathlib
@@ -120,37 +123,24 @@ def front_window(app_name: str):
 
 
 def top_level_windows(title_contains: str = "") -> list:
-    """Every visible top-level window, as UIElements, newest API on both OSes.
+    """Visible top-level windows whose title contains `title_contains`.
 
-    The portable half of "find the window": macOS reaches windows through the
-    application element, Windows enumerates the desktop's children, and an
-    action that wants "the dialog with a tab control in it" should not have to
-    know which. Filtering is by title because that is the only name both
-    platforms agree a window has.
+    Windows only, and the counterpart of `front_window` rather than a portable
+    version of it: the two platforms genuinely disagree about how a window is
+    reached. macOS goes through the application element, so an action there
+    starts from an app name. A control-panel applet has no application of its
+    own to start from - it is hosted in a shared process - so on Windows the
+    desktop's children are enumerated and filtered by title instead.
+
+    Main-thread only, like every other element read.
     """
-    if sys.platform == "win32":
-        from keyhac.platform.win.uielement import UIElement
-        from keyhac.platform.win.window import WinWindowProvider
-        found = []
-        for window in WinWindowProvider().list_windows():
-            if title_contains.lower() in (window.title or "").lower():
-                element = UIElement.from_hwnd(window.hwnd)
-                if element is not None:
-                    found.append(element)
-        return found
+    from keyhac.platform.win.uielement import UIElement
+    from keyhac.platform.win.window import WinWindowProvider
 
-    from AppKit import NSWorkspace                                  # noqa: F401
-    import ApplicationServices as AS
-    from keyhac.platform.mac.uielement import UIElement
     found = []
-    for app in NSWorkspace.sharedWorkspace().runningApplications():
-        element = UIElement(AS.AXUIElementCreateApplication(app.processIdentifier()))
-        try:
-            windows = element.get_attribute_value("AXWindows") or []
-        except Exception:
-            continue
-        for window in windows:
-            title = window.get_attribute_value("AXTitle") or ""
-            if title_contains.lower() in title.lower():
-                found.append(window)
+    for window in WinWindowProvider().list_windows():
+        if title_contains.lower() in (window.title or "").lower():
+            element = UIElement.from_hwnd(window.hwnd)
+            if element is not None:
+                found.append(element)
     return found
