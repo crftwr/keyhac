@@ -205,3 +205,20 @@ def test_format_tree_shows_a_zero_value(form):
 def test_format_tree_marks_truncation():
     deep = FakeElement("A", key="a", children=[FakeElement("B", key="b")])
     assert "(truncated)" in format_tree(get_ui_tree(deep, max_depth=0))
+
+
+def test_all_text_drops_a_child_that_only_echoes_its_parent():
+    """WebKit nests an AXStaticText carrying the same string as its parent's
+    name; a heading does it too, so a dialog title read back doubled."""
+    heading = FakeElement("AXHeading", name="Approve this item?", key="h",
+                          children=[FakeElement("AXStaticText",
+                                                value="Approve this item?",
+                                                key="h2")])
+    assert get_ui_tree(heading).all_text == "Approve this item?"
+
+
+def test_all_text_keeps_non_adjacent_repeats():
+    """Two cells of a row really can both say 37 - that is data."""
+    row = FakeElement("AXRow", key="r", children=[
+        cell("37", "c1"), cell("x", "c2"), cell("37", "c3")])
+    assert get_ui_tree(row).all_text == "37 x 37"

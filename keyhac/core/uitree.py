@@ -101,15 +101,28 @@ class UINode:
         AXStaticText, so the cell's own `text` is empty and reading a results
         table off `.text` silently yields blank columns.
 
-        Consecutive repeats are collapsed, because WebKit nests an identical
-        AXStaticText inside the label's AXStaticText and the naive join gives
-        "Query Query".
+        Two kinds of repetition are dropped, both of them WebKit's doing: a
+        child that merely restates its parent (a label's AXStaticText carrying
+        the label again, a heading's child carrying the heading again), and an
+        immediate repeat of the piece just emitted.  Repeats that are *not*
+        adjacent survive on purpose - two cells of a row legitimately holding
+        "37" are data, not noise.
         """
-        out = []
-        for node in self.walk():
-            piece = node.text
-            if piece and (not out or out[-1] != piece):
+        out: list[str] = []
+
+        def collect(node, parent_pieces):
+            pieces = [str(p) for p in (node.name, node.value)
+                      if p is not None and p != ""]
+            for piece in pieces:
+                if piece in parent_pieces:
+                    continue          # the child only echoes its parent
+                if out and out[-1] == piece:
+                    continue
                 out.append(piece)
+            for child in node.children:
+                collect(child, pieces or parent_pieces)
+
+        collect(self, [])
         return " ".join(out)
 
     def __repr__(self):

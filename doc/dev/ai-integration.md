@@ -794,10 +794,23 @@ Extend `PRIVACY.md` with the above.
    Windows-native target shows the latency.
 3. **Two measurements, minutes each** — does `set_value` work on the target systems
    (§7.3); do the target terminals implement whole-value text reads (§6).
-4. **Hand-write actions** ← do not skip. Recommended set and order: cross-system
-   extraction (exercises pagination, normalisation, partial failure, file output);
-   print-all-tabs-to-PDF (modal traversal, iteration, waiting, resume); a dialog handler
-   (preconditions); an error-line jump (the text layer, in contrast to the tree).
+4. **Hand-write actions** ← do not skip. **Three of four done**, in
+   `examples/actions/`, each runnable and verified against a live application:
+   cross-system extraction (pagination, normalisation, partial failure, CSV,
+   idempotent rerun), a queue handler (per-item branching, the three-beat modal
+   cycle, per-step preconditions — it refuses a look-alike dialog rather than
+   pressing its first button), and an error-line jump (the text layer, three
+   rungs of §6's ladder). **Print-all-tabs-to-PDF is not written**: it drives
+   print dialogs and writes files, so it wants its own session.
+
+   The exercise paid for itself in the way §5 predicts — nine findings, four of
+   them bugs in the framework the actions are written against, all recorded in
+   [`examples/actions/README.md`](../../examples/actions/README.md). The two
+   that change how actions should be written: a DOM id reaches controls, tables
+   and landmarks but **not a plain `<span>`**, so pagination state has to be
+   addressed by its text or by the document title; and an accumulator declared
+   inside the thing that can fail discards every page already read, which is
+   the exact failure this class of action exists to avoid.
 5. **Derive the skill** from what step 4 taught (§8.4).
 6. Try generation.
 
@@ -820,9 +833,12 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   and `AXLineForIndex` → `AXRangeForLine` → `AXStringForRange` returns the caret's
   line with no selection and no pointer — verified against a multi-line field.
   `element_at_point` resolves a form field but returns the wrapper group for a
-  textarea, so the pointer path is coarser than the caret path. Still to test:
-  Terminal.app and iTerm2 (neither had a window open during the measurement),
-  and the whole Windows side.
+  textarea, so the pointer path is coarser than the caret path.
+  **Terminal.app: yes** — its `AXTextArea` returns the whole scrollback through
+  `AXValue`, and `get_line_at_caret()` returns the prompt line, so the
+  one-keystroke path works there too and `examples/actions/jump_to_error.py`
+  uses it. iTerm2 untested (not installed here), and the whole Windows side
+  remains.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows

@@ -222,9 +222,17 @@ class UIElement:
         if isinstance(position, tuple) and isinstance(size, tuple):
             rect = (position[0], position[1], size[0], size[1])
 
+        role = got.get("AXRole")
         value = got.get("AXValue")
         if not isinstance(value, (str, int, float, bool)):
             # AXValue is an element on some containers; not content.
+            value = None
+        elif role == "AXHeading":
+            # A heading's AXValue is its *level* - "2" for an <h2> - not its
+            # text.  Reporting it as content puts a stray number in the middle
+            # of every heading read, which is how this was found: a dialog
+            # title came back as "Approve this item? 2 Approve this item?".
+            # The level is still there for anyone who wants it, on .element.
             value = None
 
         return {

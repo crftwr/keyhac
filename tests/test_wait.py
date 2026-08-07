@@ -16,6 +16,20 @@ from keyhac.core.wait import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_leftover_dispatcher():
+    """Keymap is a singleton, so a dispatcher wired by one test is still wired
+    for the next one - and since the suite runs on the main thread, that turns
+    every later wait into the "on the event-loop thread" refusal.  Caught by a
+    test that started failing because of the test before it.
+    """
+    yield
+    from keyhac.core.keymap import Keymap
+    keymap = Keymap.get_instance()
+    if keymap is not None:
+        keymap.set_main_thread_dispatcher(None)
+
+
 class Fake:
     """An element whose subtree the test can change mid-wait."""
 
@@ -239,3 +253,46 @@ def test_worker_thread_dispatches_to_the_loop(engine):
     thread.join(timeout=5)
     assert result["value"] == "done"
     assert ran_on == ["loop"]
+
+
+def test_element_waits_take_a_caller_supplied_message():
+    """`message` used to collide with **criteria and raise TypeError - found by
+    writing an action that wanted to say what the step was, not what the
+    selector was."""
+    root = Fake("Window", key="w")
+    with pytest.raises(WaitTimeout, match="SystemA to load a result table"):
+        wait_for_element(root, role="AXTable", timeout=0.2,
+                         message="SystemA to load a result table")
+    with pytest.raises(WaitTimeout, match="the sheet to close"):
+        wait_until_gone(root, role="Window", timeout=0.2,
+                        message="the sheet to close")
+
+
+def test_reads_nest_inside_a_condition_already_on_the_loop(engine):
+    """A helper that reads an element is called both from a worker and from
+    inside a condition already running on the loop; dispatching to ourselves
+    there would deadlock, so it runs inline instead of refusing.
+
+    Found by an example action whose page-label helper did exactly this.
+    """
+    fixture = engine(lambda keymap: None)
+
+    def dispatcher(callback):
+        thread = threading.Thread(target=callback, name="loop")
+        thread.start()
+        thread.join()
+
+    fixture.keymap.set_main_thread_dispatcher(dispatcher)
+    seen = []
+
+    def helper():
+        # Nested: already on the "loop" thread when this runs.
+        return evaluate_on_main_thread(lambda: threading.current_thread().name)
+
+    def worker():
+        seen.append(wait_for(helper, timeout=2))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=5)
+    assert seen == ["loop"]

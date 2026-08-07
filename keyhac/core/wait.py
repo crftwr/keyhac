@@ -69,6 +69,20 @@ class WaitTimeout(TimeoutError):
     """
 
 
+def on_loop_thread() -> bool:
+    """Whether this thread is the one turning the event loop.
+
+    False when no loop is wired at all (library use, tests), because then
+    nothing can be blocked by running work inline.
+    """
+    from keyhac.core.keymap import Keymap
+
+    keymap = Keymap.get_instance()
+    return (keymap is not None
+            and keymap._main_thread_dispatcher is not None
+            and threading.current_thread() is threading.main_thread())
+
+
 def evaluate_on_main_thread(func: Callable[[], Any], timeout: float = 5.0) -> Any:
     """Run `func` on the event-loop thread and return what it returned.
 
@@ -76,23 +90,21 @@ def evaluate_on_main_thread(func: Callable[[], Any], timeout: float = 5.0) -> An
     `func` are re-raised here, so a condition that throws is not silently a
     False.
 
-    Runs inline when there is no loop to hand work to - Keyhac used as a
-    library, or under test - which is the same thing keymap.call_on_main_thread
-    does in that case.
+    Runs inline in two cases: when there is no loop to hand work to (Keyhac
+    used as a library, or under test), and when the caller is *already* on the
+    loop thread.  The second matters more than it looks - a helper that reads
+    an element gets called both from a worker and from inside another
+    condition that is already running on the loop, and it must work in both
+    places.  Dispatching to ourselves and then waiting would deadlock, and
+    refusing outright would make such helpers uncomposable.
     """
     from keyhac.core.keymap import Keymap
 
     keymap = Keymap.get_instance()
     if keymap is None or keymap._main_thread_dispatcher is None:
         return func()
-
     if threading.current_thread() is threading.main_thread():
-        # Dispatching to ourselves and then blocking would wait for a loop that
-        # is blocked waiting for us.
-        raise RuntimeError(
-            "wait_for() was called on the event-loop thread, which would block "
-            "the keyboard hook until it returned. Waiting belongs in "
-            "ThreadedAction.run(); see doc/configuration.md.")
+        return func()
 
     box: dict[str, Any] = {}
     done = threading.Event()
@@ -113,6 +125,22 @@ def evaluate_on_main_thread(func: Callable[[], Any], timeout: float = 5.0) -> An
     if "error" in box:
         raise box["error"]
     return box.get("value")
+
+
+def _refuse_to_block_the_loop(name: str) -> None:
+    """Guard the blocking calls - not the reads.
+
+    Reading an element on the loop thread is ordinary and cheap; *waiting*
+    there is what would hold the keyboard hook for the length of the wait
+    (§13).  Putting this check on evaluate_on_main_thread instead made every
+    helper that reads an element unusable from inside a condition, which is
+    where half of them get called from.
+    """
+    if on_loop_thread():
+        raise RuntimeError(
+            f"{name}() was called on the event-loop thread, which would block "
+            f"the keyboard hook until it returned. Waiting belongs in "
+            f"ThreadedAction.run(); see doc/configuration.md.")
 
 
 def wait_for(condition: Callable[[], Any],
@@ -140,7 +168,10 @@ def wait_for(condition: Callable[[], Any],
 
     Raises:
         WaitTimeout: The condition never became true.
+        RuntimeError: Called on the event-loop thread, where blocking would
+            hang the keyboard hook.
     """
+    _refuse_to_block_the_loop("wait_for")
     deadline = time.monotonic() + timeout
     gap = interval if interval is not None else MIN_INTERVAL
 
@@ -163,12 +194,23 @@ def wait_for(condition: Callable[[], Any],
 
 
 def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
-                     wake: threading.Event | None = None, **criteria) -> UINode:
+                     wake: threading.Event | None = None,
+                     message: str | None = None, **criteria) -> UINode:
     """Wait until an element matching `criteria` exists, and return it.
 
     The first beat of the three that every menu and modal needs: wait for it to
     appear, act on it, then wait for it to go away before the next iteration
     starts (§7.2).  Takes the same criteria as `find_element`.
+
+    Args:
+        root: Element or UINode to search below.
+        timeout: Seconds before giving up.
+        wake: Optional event an OS notification can set to cut the wait short.
+        message: What was being waited for, for the timeout error.  Defaults to
+            the criteria, which names the element but not the step - say what
+            the step was when an operator will read it.
+        **criteria: As `find_element` - role, name, value, identifier, text,
+            predicate.
 
     Raises:
         WaitTimeout: Nothing matched in time.
@@ -176,21 +218,24 @@ def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
     return wait_for(lambda: find_element(root, **criteria),
                     timeout=timeout, wake=wake,
-                    message=f"an element matching {described}")
+                    message=message or f"an element matching {described}")
 
 
 def wait_until_gone(root, timeout: float = DEFAULT_TIMEOUT,
-                    wake: threading.Event | None = None, **criteria) -> None:
+                    wake: threading.Event | None = None,
+                    message: str | None = None, **criteria) -> None:
     """Wait until no element matches `criteria`.
 
     The third beat, and the one that actually breaks iteration when it is left
     out: without it the next cycle starts while the previous modal is still on
     screen, and clicks land in it.
+
+    Takes the same arguments as `wait_for_element`.
     """
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
     wait_for(lambda: find_element(root, **criteria) is None,
              timeout=timeout, wake=wake,
-             message=f"no element matching {described}")
+             message=message or f"no element matching {described}")
 
 
 def wait_for_stable(root, quiet: float = DEFAULT_QUIET,
@@ -216,7 +261,9 @@ def wait_for_stable(root, quiet: float = DEFAULT_QUIET,
 
     Raises:
         WaitTimeout: The tree never stopped changing.
+        RuntimeError: Called on the event-loop thread.
     """
+    _refuse_to_block_the_loop("wait_for_stable")
     bounds = {}
     if max_depth is not None:
         bounds["max_depth"] = max_depth
