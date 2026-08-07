@@ -71,6 +71,12 @@ live on each OS.
   against `450x310` and fails for a reason unrelated to what is under test.
   `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` goes before the first
   rect read (`tools/bundle_pass.py`).
+- **A harness must open and identify its own document.** Every modern Windows
+  app worth driving is single-instance and tabbed, so launching one gets you
+  the operator's session, not a clean one — and a class-name lookup cannot tell
+  the difference. Open a scratch file, find the window by its title, identify
+  the element by a sentinel only the harness writes, and refuse to write when
+  that does not line up. See the element-API entry below for what this cost.
 - **The console starts in whatever state it was last left.** `console_visible`
   in `settings.json` means a console last closed to the tray starts hidden, and
   a harness waiting for its window waits forever. Force it and put it back, the
@@ -143,34 +149,69 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   Those two negatives are why `wait_for` polls rather than waiting on
   notifications, and they are recorded in `ai-integration.md` §5 and §7.3.
 
-**Pending Windows verification** (written against `UIAutomationClient.h`, never
-run — and this file's own rule is that a wrong vtable slot silently calls a
-different method):
+- **Windows element API, the text layer and the write side** (2026-08-07,
+  `tools/uia_pass.py` against Notepad on Windows 11 Home 10.0.26200, 26/26 on
+  four consecutive runs). Everything the AI-integration work added to
+  `platform/win/uielement.py` had been written against `UIAutomationClient.h`
+  on a Mac and had never executed; this is the pass that settled it. Every
+  previously-unrun vtable slot answers correctly — `GetFirstChildElement` 4 /
+  `GetNextSiblingElement` 6 (49 nodes with their real roles and AutomationIds),
+  `get_DocumentRange` 7, `ExpandToEnclosingUnit` 6 with `TextUnit_Line` = 3
+  (the caret's line, and *not* the whole document, which is what a wrong unit
+  produces), and `ElementFromPoint` 7. `set_focus()` agrees with
+  `HasKeyboardFocus`, `get_selection()` returns the selection, and the modal
+  three-beat plus an idempotent `set_checked` run end to end against Notepad's
+  Find UI.
+- **The `set_value` measurement `ai-integration.md` §11 asks for**, timed
+  against a real control: `set_value` 15–33 ms, `paste` 48–95 ms, `keys`
+  114–272 ms. All three work; the ordering matches macOS with a wider spread,
+  and none of it changes the **paste, then keys** default — speed is not the
+  axis that matters when the fastest is the one that fails invisibly.
+- **The bug the pass caught is in `fill.py`, not in the Windows layer.**
+  `_paste` holds the clipboard swapped until `confirm()` answers, precisely
+  because restoring as the keystroke goes out races the target's read of the
+  pasteboard. With `verify=False` there is nothing to confirm, so `confirm()`
+  returned immediately and the guard evaporated: the document received the
+  shell command the operator had copied an hour earlier — the documented
+  failure, reproduced through the one door left open. Now an unverified paste
+  holds for `PASTE_SETTLE` and says in the log that it is guessing, with the
+  ordering pinned in `tests/test_fill.py`.
 
-| What | Slots relied on |
-|---|---|
-| `UIElement.children()` | `GetFirstChildElement` 4, `GetNextSiblingElement` 6 (both already declared) |
-| `get_text()` | `get_DocumentRange` 7 |
-| `get_line_at_caret()` | `ExpandToEnclosingUnit` 6, `TextUnit_Line` = 3 |
-| `element_at_point()` | `IUIAutomation::ElementFromPoint` 7, POINT by value |
+**Two things the pass itself got wrong, both worth keeping in mind for any
+Windows UI harness:**
 
-The ordering is cross-checked against the slots already pinned live in the same
-interfaces (`GetEnclosingElement` 11 / `GetText` 12 fix the TextRange vtable;
-`ElementFromHandle` 6 / `GetFocusedElement` 8 bracket `ElementFromPoint`), which
-is evidence, not verification.
+- **It adopted the operator's document.** Windows 11's Notepad is tabbed and
+  single-instance, so launching it merely activates the window already open and
+  `FindWindowW("Notepad", None)` names *that* — on the first run, the real
+  `~/.keyhac/config.py`, whose buffer every write then replaced. Nothing
+  reached the disk, but a harness that can overwrite the file it is testing
+  against is a harness with a bug in it. It now opens a scratch file, locates
+  the window by *its* title, identifies the text element by a sentinel string
+  only this pass writes, requires that element to hold keyboard focus, and
+  refuses to write at all if any of that does not line up.
+- **It looked for a role where it should have looked for a capability.** The
+  three-beat waited for a `CheckBox`; Windows 11's Find panel has none, and its
+  "Match case" is a `MenuItem` one press further in, behind "More options".
+  Searching for *an element with a `ToggleState`* finds it whatever it calls
+  itself — the Windows form of the macOS lesson in the authoring skill, that a
+  control is defined by what it can do rather than the role it reports. The
+  search has to be scoped to the panel as well as by capability: run against
+  the whole window it finds the formatting toolbar's **Bold** button, which
+  also has a `ToggleState` and has nothing to do with Find.
 
-**`tools/uia_pass.py` is that pass**, written to need one sitting: it drives
-Notepad, exercises every unverified slot, times all three write mechanisms
-(which is also the `set_value` measurement `ai-integration.md` §11 asks for),
-and runs the modal three-beat plus `set_checked` against the Find UI. It uses a
-throwaway config rather than the operator's real one, and prints a PASS/FAIL
-table. Run `pytest -q` first — the portable half is covered there, and this is
-only for what a machine has to prove.
-
-A wrong slot usually shows as a plausible wrong *answer* rather than an error,
-so two checks are written to catch that specifically: `get_line_at_caret()`
-must return the caret's line **and must not** return the whole document, which
-is what a wrong `TextUnit` or a mis-numbered `ExpandToEnclosingUnit` produces.
+**Notepad 11 drops and reorders injected input, and this is the target's doing,
+not ours.** `hello-keys` arrived in its text box as `helloke-ys`; a `Ctrl-V`
+came through as a bare `v`; and an injected `Ctrl-V` is silently dropped
+outright often enough that the pass retries it. The same strings down the same
+code path — including with a real hook installed and through `InputContext`,
+which is what `fill.py` uses — land intact in a plain Win32 control 30/30
+(`tests/test_win_send_text.py` and a scratch probe), so the reordering is
+WinUI's, not `SendInput`'s and not the hook's. Two consequences: `keys` is not
+trustworthy against XAML editors, which is an argument for the existing
+paste-first default; and every one of these arrived as a **loud** failure
+because `set_text` reads back what it wrote. That rule is what turned a
+silently corrupted document into a `FillFailed` naming the text it actually
+found.
 - **Instance guard**: cross-process on both OSes — mutex/flock contention, refusal
   reaches stderr before the std-stream redirect, kernel drops the flock on SIGKILL.
 - **Bundles**: `macos_app/` built, signed, notarized and run live end-to-end (tap

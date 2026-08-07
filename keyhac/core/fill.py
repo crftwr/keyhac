@@ -30,6 +30,12 @@ back is a failure rather than a warning.  That single rule is what turns all
 three mechanisms' silent failures into loud ones, and it is why set_text()
 falls back rather than hoping.
 
+Which is also why verify=False is more expensive than it looks: the read-back
+is not only the proof that the write landed, it is the *only* signal that the
+target has finished reading the pasteboard, and the clipboard cannot be put
+back before it has.  Turning it off used to leave paste racing the restore, and
+the race is not close - see PASTE_SETTLE.
+
 THREADS.  Focusing and reading elements is main-thread work; sending keys is
 not.  These are written to be called from ThreadedAction.run(), and dispatch
 the element half themselves.
@@ -38,6 +44,7 @@ the element half themselves.
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import Any, Iterable
 
 from keyhac.core import log
@@ -54,6 +61,17 @@ DEFAULT_METHODS = ("paste", "keys")
 #: zero: a paste is delivered as a keystroke and the application processes it
 #: on its own schedule.
 VERIFY_TIMEOUT = 2.0
+
+#: How long an unverified paste holds the clipboard before restoring it.
+#:
+#: Only reached with verify=False, where there is nothing to wait *for*: the
+#: read-back is what normally tells us the target has taken the pasteboard.
+#: Without it the restore went out in the same breath as Ctrl-V and the field
+#: received the *previous* clipboard contents - observed live on Windows 11
+#: (Notepad, tools/uia_pass.py), where a field ended up holding the shell
+#: command the operator had copied an hour earlier.  A fixed delay is a guess
+#: and says so; it is the price of asking for a write nobody can confirm.
+PASTE_SETTLE = 0.5
 
 
 class FillFailed(RuntimeError):
@@ -161,7 +179,9 @@ def set_text(target, text: str, methods: Iterable[str] = DEFAULT_METHODS,
             than appends.
         verify: Read the value back and require it to match.  Turning this off
             is how silent failures get shipped; it exists only for fields whose
-            value genuinely cannot be read (a password field).
+            value genuinely cannot be read (a password field).  A paste then
+            has to fall back on PASTE_SETTLE, since the read-back is also what
+            tells us the clipboard is safe to restore.
         timeout: How long to wait for the value to appear.
 
     Returns:
@@ -197,7 +217,7 @@ def set_text(target, text: str, methods: Iterable[str] = DEFAULT_METHODS,
                 # read of the pasteboard, and the race is not close: the field
                 # came back holding whatever had been on the clipboard before,
                 # which is a wrong value that looks like a successful paste.
-                if _paste(text, clear, confirm):
+                if _paste(text, clear, confirm, settle=not verify):
                     return method
                 reasons.append(f"paste: wrote nothing readable "
                                f"(field reads {read_value(target)!r})")
@@ -245,12 +265,16 @@ def _select_all(ctx) -> None:
     ctx.send_key("Cmd-A" if keymap and keymap.platform == "mac" else "Ctrl-A")
 
 
-def _paste(text: str, clear: bool, confirm) -> bool:
+def _paste(text: str, clear: bool, confirm, settle: bool = False) -> bool:
     """Paste `text`, and hold the clipboard swapped until `confirm()` answers.
 
     The clipboard cannot go back until the target application has actually
     read it, and the only signal that it has is the value arriving in the
     field - so the verification runs inside this context, not after it.
+
+    `settle` is that signal's absence: with verify=False there is no read-back
+    to wait on, so the hold becomes a fixed PASTE_SETTLE rather than nothing at
+    all.  It is a weaker guarantee than confirm() and the caller is told so.
     """
     keymap = _keymap()
     clipboard = keymap.clipboard if keymap else None
@@ -262,6 +286,13 @@ def _paste(text: str, clear: bool, confirm) -> bool:
             if clear:
                 _select_all(ctx)
             ctx.send_key("Cmd-V" if keymap.platform == "mac" else "Ctrl-V")
+        if settle:
+            logger.warning(
+                f"pasting without verification: holding the clipboard "
+                f"{PASTE_SETTLE}s and hoping, since nothing can confirm the "
+                f"target read it. Prefer methods=(\"keys\",) for a field whose "
+                f"value cannot be read back.")
+            time.sleep(PASTE_SETTLE)
         return bool(confirm())
 
 

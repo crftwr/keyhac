@@ -119,7 +119,7 @@ def test_falls_back_to_the_next_mechanism(wired, monkeypatch):
     field = FakeField(accepts_set_value=False)
     calls = []
 
-    def fake_paste(text, clear, confirm):
+    def fake_paste(text, clear, confirm, settle=False):
         calls.append("paste")
         field.value = text
         return confirm()
@@ -136,7 +136,7 @@ def test_failure_says_why_each_mechanism_failed(wired, monkeypatch):
     which sent a live investigation in the wrong direction for an hour."""
     field = FakeField(accepts_set_value=False)
 
-    def exploding_paste(text, clear, confirm):
+    def exploding_paste(text, clear, confirm, settle=False):
         raise RuntimeError("init_key_names() has not been called yet")
 
     monkeypatch.setattr(fill, "_paste", exploding_paste)
@@ -153,6 +153,43 @@ def test_verify_off_accepts_whatever_happened(wired):
     field = FakeField(accepts_set_value=False)
     assert set_text(field, "REC-001", methods=("set_value",), verify=False) \
         == "set_value"
+
+
+def test_unverified_paste_holds_the_clipboard_before_restoring(wired, monkeypatch):
+    """The read-back is also what says the target has taken the pasteboard.
+
+    With verify=False there is none, and the restore used to go out in the same
+    breath as Ctrl-V: the field then received whatever had been on the
+    clipboard *before*, which reads as a successful paste of the wrong text.
+    Seen live on Windows 11 (Notepad, tools/uia_pass.py) - the document ended
+    up holding a shell command copied an hour earlier.
+    """
+    _keymap, clipboard = wired
+    field = FakeField(accepts_set_value=False)
+    events = []
+
+    real_set_text = clipboard.set_text
+
+    def record(text):
+        events.append(("clipboard", text))
+        real_set_text(text)
+
+    monkeypatch.setattr(clipboard, "set_text", record)
+    monkeypatch.setattr(fill.time, "sleep",
+                        lambda seconds: events.append(("sleep", seconds)))
+
+    assert set_text(field, "REC-001", methods=("paste",), verify=False) == "paste"
+    assert events == [("clipboard", "REC-001"),
+                      ("sleep", fill.PASTE_SETTLE),
+                      ("clipboard", "what the user had copied")]
+
+
+def test_verified_paste_does_not_pay_the_settle(wired, monkeypatch):
+    """confirm() is the better signal, so the fixed delay is not also spent."""
+    slept = []
+    monkeypatch.setattr(fill.time, "sleep", lambda seconds: slept.append(seconds))
+    assert fill._paste("REC-001", clear=True, confirm=lambda: True) is True
+    assert slept == []
 
 
 def test_read_value(wired):

@@ -618,9 +618,33 @@ Two things that fall out of it, both now enforced in `keyhac/core/fill.py`:
   wrong value that looks exactly like a successful paste. Verification runs
   inside the clipboard swap.
 
-The rule that survives unchanged is the one already stated: **read the value
-back after writing**, and treat a mismatch as a failed step rather than a
-warning.
+*Measured on Windows* (2026-08-07, Notepad on Windows 11 Home 10.0.26200,
+`tools/uia_pass.py`). All three work here too, in the same order with a wider
+spread — `set_value` 15–33 ms, `paste` 48–95 ms, `keys` 114–272 ms — so the
+§11 question about `set_value` is answered on both platforms and none of it
+disturbs the paste-first default.
+
+What Windows adds is a reason to distrust `keys` that macOS did not show.
+**WinUI text controls drop and reorder injected input.** In Notepad's editor
+`hello-keys` arrived as `helloke-ys`, a `Ctrl-V` came through as a bare `v`,
+and an injected `Ctrl-V` is dropped outright often enough to need retrying.
+The same strings down the same code path land intact 30/30 in a plain Win32
+control, so this is XAML's input handling rather than `SendInput` ordering or
+the hook. Two consequences: paste-first is right on Windows for a second,
+independent reason, and no write mechanism on this platform can be trusted
+without its read-back.
+
+The rule that survives unchanged — and that turned every one of those
+corruptions from a silently wrong document into a `FillFailed` naming the text
+it actually found — is the one already stated: **read the value back after
+writing**, and treat a mismatch as a failed step rather than a warning.
+
+The corollary learned the hard way: `verify=False` does not merely skip that
+check, it removes the only signal that the target has finished reading the
+pasteboard. The clipboard-restore race above is guarded *by* the verification,
+so turning verification off re-opened it — and it was re-opened long enough to
+put a stale clipboard into a real document. An unverified paste now holds the
+clipboard for a fixed settle and logs that it is guessing.
 
 **Always read the value back after writing.** Skill rule.
 
@@ -853,9 +877,14 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
 
 ## 11. Open questions — measure, do not deliberate
 
-- **Does `set_value` work on the specific internal systems being targeted?** (§7.3) One
-  form, five minutes, and the answer settles whether the clipboard-preservation path is on
-  the critical path.
+- ~~**Does `set_value` work on the specific internal systems being targeted?**~~ (§7.3)
+  *Answered on both platforms* — macOS 2026-08-06 (~5 ms, Safari), Windows
+  2026-08-07 (15–33 ms, Notepad). It works, focus being the precondition. It
+  stays opt-in regardless, for the framework-blindness reason in §7.3, so the
+  clipboard-preservation path remains on the critical path after all. Still
+  worth re-running against a *specific* internal system before betting an
+  action on it: what is measured here is that the mechanism functions, not that
+  any given web app observes it.
 - **Do the target terminals and editors implement the UIA Text pattern and `AXValue`?**
   (§6) *Half answered.* On macOS the one-keystroke path works: whole-value reads
   succeed on web content and text areas provided you descend to leaves (§6.1),
@@ -866,8 +895,13 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   **Terminal.app: yes** — its `AXTextArea` returns the whole scrollback through
   `AXValue`, and `get_line_at_caret()` returns the prompt line, so the
   one-keystroke path works there too and `examples/actions/jump_to_error.py`
-  uses it. iTerm2 untested (not installed here), and the whole Windows side
-  remains.
+  uses it. iTerm2 untested (not installed here).
+  **Windows: yes, for the Text pattern itself** — Notepad's editor answers
+  `get_text()`, `get_line_at_caret()` (the caret's line, not the document) and
+  `get_selection()` through the UIA Text pattern, with every vtable slot the
+  Windows implementation guesses at now pinned live (2026-08-07,
+  `tools/uia_pass.py`). Windows Terminal and the editors people actually run
+  are still unmeasured, and Notepad is a weak proxy for them.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows
