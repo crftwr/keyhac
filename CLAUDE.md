@@ -118,8 +118,9 @@ and the macOS bundle is signed/notarized and verified end-to-end. The live
 verification record — including which passes caught which real bugs — is in
 [doc/dev/testing.md](doc/dev/testing.md).
 
-What remains is tracked in the GitHub issues: a short list of genuinely-interactive
-verification passes (JIS layout, Japanese IME in the chooser, bundle re-pass,
-macOS mouse feel, tray "Edit Config" click) and the deferred features (themes/fonts,
-i18n, portable mode, migemo, rich clipboard formats, macOS ISO layout,
-balloon help UI).
+What remains is tracked in the GitHub issues: the deferred features (themes/fonts,
+i18n, migemo, rich clipboard formats, macOS ISO layout, balloon help UI). The
+genuinely-interactive verification passes are through (issue #10, closed), but
+they are a **standing pre-release routine**, not a finished backlog — what to
+repeat, and what each check is looking for, is in
+[doc/dev/testing.md](doc/dev/testing.md).

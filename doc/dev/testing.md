@@ -65,6 +65,17 @@ live on each OS.
   Re-registering the class in a second fixture instance leaves `lpfnWndProc`
   pointing at the first instance's freed thunk — the next message faults the
   interpreter.
+- **Anything reading the app's window rects must be DPI-aware.** The app writes
+  its frame in physical pixels; a DPI-unaware reader gets those rects
+  virtualized, so on a 200% monitor a frame round-trip compares `900x620`
+  against `450x310` and fails for a reason unrelated to what is under test.
+  `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` goes before the first
+  rect read (`tools/bundle_pass.py`).
+- **The console starts in whatever state it was last left.** `console_visible`
+  in `settings.json` means a console last closed to the tray starts hidden, and
+  a harness waiting for its window waits forever. Force it and put it back, the
+  way the frame in the registry already is — this is what kept the bundle pass
+  from ever running.
 
 ## macOS testing lessons (encoded in `tests/test_mac_window.py` etc.)
 
@@ -112,7 +123,12 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   reaches stderr before the std-stream redirect, kernel drops the flock on SIGKILL.
 - **Bundles**: `macos_app/` built, signed, notarized and run live end-to-end (tap
   installs under the bundle identity, template config created, SIGINT quits
-  cleanly); `windows_app/` built and import-smoke-tested, tray ran live.
+  cleanly); `windows_app/` passed end-to-end, 11/11 in `tools/bundle_pass.py`
+  (tool-window styles, the saved frame restored and the moved one written back,
+  a poisoned off-screen frame rejected onto a monitor, clean quit on the tray's
+  teardown path, cross-process instance guard, no `keyhac-error.log`), with the
+  tray icon + menu and the console's log pane / hook checkbox / log-level
+  dropdown passed by hand alongside it.
 - **Typing latency** (`tests/test_win_typing_load.py`, Windows 11 in a VM): at a
   sustained 60 keys/s the hook callback runs p50 ≈ 1.0 ms / p95 ≈ 2.1 ms; a
   200-event unpaced burst is p50 ≈ 0.8 ms with every keystroke translated and in
@@ -140,24 +156,29 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   raising (`ShellExecute` code 2), the full `Keymap.edit_config()` chain, and the
   deleted-config-recreated-from-template path.
 
-## Remaining genuinely-interactive / hardware checks
+## The interactive pass before a release
 
-Tracked in issue #10. What is genuinely left on Windows:
+The genuinely-interactive checks were tracked in issue #10 and are all through
+as of 2026-08-06, but they are a **standing pass, not a burnt-down backlog**:
+they describe what to repeat before a release, since nothing here is covered by
+the automated harnesses.
 
+- **The `Keyhac.exe` bundle** — `tools/bundle_pass.py` does the mechanizable
+  half; run it with no Keyhac running, or the instance guard makes every check
+  fail for the wrong reason. By hand alongside it: the tray icon and its menu
+  clicks, and the console's log pane, hook checkbox and log-level dropdown.
+- **The chooser filter box under a Japanese IME** — that 「か」 composes inline
+  rather than typing `ka`, that Enter is consumed by the IME to commit instead
+  of choosing the highlighted item, and that the committed text filters the
+  list. Needs puikit's per-window input contexts (keyhac #20, puikit `6906146`).
 - **JIS layout detection on real JIS hardware** — `GetKeyboardType(0) == 7`, one
   line. The tables it selects are already pinned against `kbd106.dll`, so this is
   the only part a JIS keyboard is needed for. It cannot be faked on this machine:
   the VM presents a generic HID keyboard reporting type 4.
-- **The chooser filter box under a Japanese IME** — blocked upstream on #20.
-  PuiKit routes secondary-window messages through `_handle_secondary_message`,
-  which has no `WM_IME_*` cases, and all `Imm*` association targets the main HWND.
-- **The Keyhac.exe bundle's tray icon and console widgets by hand** — the tray
-  menu rendering and click response, and the log pane / hook checkbox / log-level
-  dropdown. Everything else about the bundle is mechanized in
-  `tools/bundle_pass.py` (tool-window styles, frame-autosave round trip,
-  off-screen-frame rejection, clean quit, single-instance guard). Run it with no
-  Keyhac running — it refuses otherwise, because the instance guard would
-  otherwise make every check fail for the wrong reason.
+- **On macOS**: the tray "Edit Config" menu click and mouse output feel in real
+  apps (wheel direction, drag, double-click registration). Neither is drivable
+  from the sandbox — the agent shell holds Accessibility but never window-server
+  key focus — so both are hand checks by construction.
 
 On macOS: nothing outstanding — the tray "Edit Config" click and mouse feel were
 both verified live.

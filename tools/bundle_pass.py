@@ -14,6 +14,11 @@ It refuses to start otherwise, because the single-instance guard would make
 every check fail for the wrong reason. Build the bundle first
 (`make windows-app`). Only stdlib and ctypes, so it needs no PYTHONPATH.
 
+Two pieces of the user's state are borrowed and put back: the console frame
+in the registry, and `console_visible` in ~/.keyhac/settings.json (a console
+last closed to the tray starts hidden, and every check would then wait for a
+window that is deliberately not shown).
+
 Quit is PostThreadMessage(WM_QUIT) to the app's UI thread - the same teardown
 the tray's "Quit Keyhac" reaches: run_event_loop breaks, then main.py's
 finally does hook.uninstall() + console.close(), and close() is what writes
@@ -26,6 +31,7 @@ checkbox and log-level dropdown behave when driven by hand.
 
 import argparse
 import ctypes
+import json
 import os
 import subprocess
 import sys
@@ -42,6 +48,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_EXE = os.path.join(REPO_ROOT, "windows_app", "build", "Keyhac",
                            "Keyhac.exe")
 ERROR_LOG = os.path.expanduser(r"~\.keyhac\keyhac-error.log")
+SETTINGS_PATH = os.path.expanduser(r"~\.keyhac\settings.json")
 AUTOSAVE_KEY = r"Software\PuiKit\FrameAutosave\KeyhacConsole"
 MUTEX_NAME = "crftwr.Keyhac2.SingleInstance"
 
@@ -73,6 +80,14 @@ kernel32.OpenMutexW.restype = wintypes.HANDLE
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 ENUMWINDOWSPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 user32.EnumWindows.argtypes = [ENUMWINDOWSPROC, wintypes.LPARAM]
+user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+
+# Per-monitor DPI awareness, before anything reads a window rect. The app is
+# DPI-aware and writes its frame in physical pixels; a DPI-unaware reader gets
+# those rects virtualized (half the numbers on a 200% monitor), so the
+# frame round-trip check would compare 900x620 against 450x310 and fail on a
+# scaled display for a reason that has nothing to do with the bundle.
+user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))  # PER_MONITOR_AWARE_V2
 
 results = []
 
@@ -101,6 +116,38 @@ def read_autosave():
 def write_autosave(value):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, AUTOSAVE_KEY) as key:
         winreg.SetValueEx(key, "Frame", 0, winreg.REG_SZ, value)
+
+
+def show_console_on_launch():
+    """Make the console start visible, saving what the user had.
+
+    The console restores the shown/hidden state it was last left in
+    (settings.json "console_visible"), so on a machine where it was last
+    closed to the tray every check below would sit waiting for a window that
+    is deliberately not being shown. Returns the original file text for
+    restore_settings()."""
+    original = (open(SETTINGS_PATH, encoding="utf-8").read()
+                if os.path.exists(SETTINGS_PATH) else None)
+    try:
+        settings = json.loads(original) if original else {}
+    except ValueError:
+        settings = {}
+    settings["console_visible"] = True
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+    return original
+
+
+def restore_settings(original):
+    if original is None:
+        try:
+            os.remove(SETTINGS_PATH)
+        except FileNotFoundError:
+            pass
+    else:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            f.write(original)
 
 
 def console_window(pid):
@@ -174,6 +221,7 @@ def main():
         return 2
 
     original = read_autosave()
+    original_settings = show_console_on_launch()
     print(f"exe: {args.exe}")
     print(f"saved the existing autosave frame: {original!r}\n")
     log_before = os.path.getmtime(ERROR_LOG) if os.path.exists(ERROR_LOG) else None
@@ -258,6 +306,7 @@ def main():
         if original is not None:
             write_autosave(original)
             print(f"\nrestored the original autosave frame: {original!r}")
+        restore_settings(original_settings)
 
     passed = sum(1 for _, ok, _ in results if ok)
     print(f"\n==== {passed}/{len(results)} bundle checks passed ====")
