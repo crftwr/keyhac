@@ -11,7 +11,11 @@ They run on macOS today. Each is self-contained:
 python examples/actions/extract_records.py ~/Desktop/records.csv   # Safari
 python examples/actions/handle_queue.py                            # Safari
 python examples/actions/jump_to_error.py --dry-run                 # Terminal
+python examples/actions/submit_from_csv.py                         # Safari
 ```
+
+`submit_from_csv.py` types, so running it installs a keyboard tap for as long
+as it runs — that is what puts the modifier flags on injected keystrokes.
 
 `_runner.py` starts an event loop on the main thread and runs the action on a
 worker — the real thread architecture, because that is what makes waiting legal
@@ -22,6 +26,7 @@ from a worker at all.
 | [`extract_records.py`](extract_records.py) | pagination, cross-system normalisation, partial failure, CSV output, idempotent re-run | 17 rows from 5 pages across 2 systems; re-running leaves 17 |
 | [`handle_queue.py`](handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
 | [`jump_to_error.py`](jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
+| [`submit_from_csv.py`](submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -31,8 +36,9 @@ session rather than being squeezed in beside the others.
 
 ## What writing them changed
 
-Nine findings. Four were bugs in the framework these actions are written
-against, which is the argument for hand-writing them before writing the skill.
+Thirteen findings. Several were bugs in the framework these actions are written
+against, and one was a bug in the measurement itself - which is the argument for
+hand-writing them before writing the skill.
 
 ### In the API
 
@@ -92,8 +98,11 @@ Candidates for the authoring skill, each earned above rather than assumed:
   for a value that must differ — a page label, a document title — not for the
   tree to look busy.
 - **Read the value back** after writing it, and treat a mismatch as a failed
-  step. Writing `AXValue` to a plain text field on macOS did nothing at all,
-  silently ([design doc §7.3](../../doc/dev/ai-integration.md)).
+  step. Every write mechanism has a silent-failure mode, and reading back is
+  what turns all of them into loud ones
+  ([design doc §7.3](../../doc/dev/ai-integration.md)).
+- **Focus before writing, and check that it landed.** An unfocused write fails
+  silently; unfocused keystrokes go to whatever does have focus.
 - **Key your output rows** so a rerun after a partial failure merges instead of
   duplicating. `(system, id)` here.
 - **Report what to redo**, not that something failed. Both actions log the
@@ -104,11 +113,25 @@ Candidates for the authoring skill, each earned above rather than assumed:
   exception types: the first means regenerate the action, the second means
   retry it.
 
-## Still missing
+## The write side, and what it cost to get right
 
-**There is no supported way to type into a field.** `AXValue` writes fail
-silently, and `InputContext.send_text` types into whatever has focus rather
-than into a named element. So of §2's cases, *bulk form submission from CSV*
-cannot be written today — the read side is complete and the write side is one
-mechanism short. §7.3's paste-by-default with `preserve_clipboard()` is the
-design; none of it exists yet. That is the next gap worth closing.
+`keyhac.core.fill` closed the gap this file used to end on. Four findings, in
+descending order of how much time they wasted:
+
+10. **A broken harness looks exactly like a broken platform.** `send_key("Cmd-V")`
+    emitted the V with no Cmd at all, in WebKit *and* in a native text view, so
+    convincingly that the shipped clipboard chooser looked broken and a "fix"
+    went into the macOS hook. It was neither: `keymap.configure()` is what fills
+    the modifier map, the example runner never called it, and with an empty map
+    `send_modifier_keys` emits nothing. The hook change was reverted. **Before
+    concluding that an OS behaves badly, check that the harness is the same one
+    the application uses.**
+11. **`set_value` works — if the element is focused first.** An earlier session
+    recorded it as doing nothing silently; that run had not focused the field.
+    Focused, all three mechanisms work on macOS, at ~5 ms / ~70 ms / ~105 ms.
+12. **The clipboard cannot be restored until the target has read it.** Restoring
+    right after posting the keystroke races the application and loses: the field
+    ends up holding the *previous* clipboard content, which looks exactly like a
+    successful paste of the wrong value. Verification now runs inside the swap.
+13. **Report why each mechanism failed, not that it did.** Swallowing the
+    exceptions is what let finding 10 masquerade as "paste does not work here".

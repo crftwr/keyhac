@@ -594,13 +594,33 @@ over modals — the next cycle starts before the previous one finished.
 internal state never updates, and submission sends empty. **Default to paste, fall back
 to keys.** For Japanese input, paste is effectively mandatory.
 
-*Measured, and worse than described* (macOS, Safari, 2026-08-06): writing
-`AXValue` to a plain `<input type=text>` — no framework involved — did not even
-put the value on screen. The write returned without error and the field stayed
-empty. So on macOS the failure is not "the framework missed it", it is "the
-write did nothing", and it is silent either way. Whatever the mechanism, the
-rule that survives is the one already stated: **read the value back after
-writing**, and treat a mismatch as a failed step rather than a warning.
+*Measured* (macOS, Safari, 2026-08-07), correcting a note recorded here a day
+earlier. An earlier run concluded that writing `AXValue` to a plain
+`<input type=text>` "did nothing, silently". It does work — **provided the
+element is focused first**, which that run had not done. Focused, all three
+mechanisms succeed on macOS, and the interesting part is what they cost:
+
+| | Latency | Notes |
+|---|---|---|
+| `set_value` | ~5 ms | Instant, but this is the one frameworks miss |
+| `keys` | ~70 ms | Faithful event stream; IME-dependent |
+| `paste` | ~105 ms | Costs the clipboard; the default |
+
+Two things that fall out of it, both now enforced in `keyhac/core/fill.py`:
+
+- **Focus is a precondition, not a courtesy.** Unfocused writes fail silently,
+  and unfocused *keystrokes* are worse - they go to whatever does have focus,
+  which is the user's editor. `focus()` therefore verifies against the
+  system-wide focused element and refuses to write when it did not land.
+- **The clipboard cannot be restored until the target has read it.** Restoring
+  as soon as the paste keystroke is posted races the application, and loses:
+  the field ends up holding whatever was on the clipboard *before*, which is a
+  wrong value that looks exactly like a successful paste. Verification runs
+  inside the clipboard swap.
+
+The rule that survives unchanged is the one already stated: **read the value
+back after writing**, and treat a mismatch as a failed step rather than a
+warning.
 
 **Always read the value back after writing.** Skill rule.
 

@@ -102,6 +102,40 @@ class UIElement:
     def set_attribute_value(self, name: str, type_name: str, value) -> None:
         AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
 
+    def set_focus(self) -> bool:
+        """Give this element keyboard focus (the macOS half of the Windows
+        UIElement.set_focus()).
+
+        Returns whether focus actually landed, rather than whether the write
+        was accepted - AX takes AXFocused writes that do nothing.
+
+        Checked against the *system-wide* focused element, not this element's
+        own AXFocused: an element in a background application can hold its
+        application's focus while the keyboard goes somewhere else entirely.
+        Anything about to send keystrokes needs to know which of those it has,
+        because the failure is not "nothing happens", it is text typed into
+        whatever the user was actually looking at.
+        """
+        self.set_attribute_value("AXFocused", "bool", True)
+        err, focused = AS.AXUIElementCopyAttributeValue(
+            AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
+        if err == 0 and focused is not None:
+            return bool(AS.CFEqual(focused, self._ref))
+        return bool(self.get_attribute_value("AXFocused"))
+
+    def set_value(self, value: str) -> bool:
+        """Write AXValue (the macOS counterpart of the Windows Value pattern).
+
+        **Frequently does nothing, silently.** Measured against a plain
+        `<input type=text>` in Safari - no framework in the way - the write
+        returned without error and the field stayed empty.  It is here for
+        completeness and for the applications where it does work; use
+        `keyhac.core.fill.set_text()`, which pastes, falls back to typing, and
+        reads the value back either way.
+        """
+        self.set_attribute_value("AXValue", "string", value)
+        return self.get_attribute_value("AXValue") == value
+
     def get_parameterized_attribute_value(self, name: str, type_name: str, value):
         """Read an attribute that takes an argument (AXStringForRange, ...).
 

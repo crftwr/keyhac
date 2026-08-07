@@ -750,3 +750,14 @@ class Keymap:
         """The ClipboardHistory object (None while running without one, e.g.
         under --no-ui)."""
         return self._clipboard_history
+
+    @property
+    def clipboard(self):
+        """The OS clipboard - get_text() / set_text(), or None if unwired.
+
+        The history's provider, exposed directly because actions that paste
+        need to read and restore the clipboard around what they do, which is
+        not a history operation.
+        """
+        history = self._clipboard_history
+        return getattr(history, "_provider", None) if history else None

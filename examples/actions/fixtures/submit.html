@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Submit a record</title></head>
+<body>
+  <h1>New record</h1>
+  <form id="entry">
+    <label for="ref">Reference</label>
+    <input id="ref" type="text">
+    <label for="title">Title</label>
+    <input id="title" type="text">
+    <label for="amount">Amount</label>
+    <input id="amount" type="text">
+    <label for="urgent">Urgent</label>
+    <input id="urgent" type="checkbox">
+    <button type="button" id="submit">Submit</button>
+  </form>
+  <p id="result"></p>
+  <ul id="accepted"></ul>
+  <script>
+    const $ = id => document.getElementById(id);
+    const seen = new Set();
+    $('submit').onclick = () => {
+      const ref = $('ref').value.trim();
+      const amount = $('amount').value.trim();
+      // Server-side validation, the kind an action has to read back.
+      if (!ref) { $('result').textContent = "error: Reference is required"; return; }
+      if (!/^\d+$/.test(amount)) {
+        $('result').textContent = "error: Amount must be a number"; return; }
+      if (seen.has(ref)) {
+        $('result').textContent = "error: " + ref + " already submitted"; return; }
+      seen.add(ref);
+      const li = document.createElement('li');
+      li.textContent = ref + " | " + $('title').value + " | " + amount +
+                       ($('urgent').checked ? " | URGENT" : "");
+      $('accepted').appendChild(li);
+      $('result').textContent = "accepted " + ref;
+      ['ref','title','amount'].forEach(i => $(i).value = "");
+      $('urgent').checked = false;
+    };
+  </script>
+</body></html>

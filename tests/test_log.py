@@ -51,10 +51,14 @@ class TestRedirectStdStreams:
             redirect_std_streams()
             console = Console.get_instance()
             console.pull_lines()  # drop anything logged before this test
-            before = len(console.lines())
             print("via stdout")
-            lines = [text for text, _ in console.lines()]
-            assert lines[before:] == ["via stdout"]
+            # The last line, not a slice from a pre-count: Console._lines is a
+            # deque(maxlen=max_lines) and pull_lines() drains _pending rather
+            # than it, so once a long enough suite run has filled the ring the
+            # length stops growing and any "everything after `before`" slice is
+            # empty.  That made this test fail depending on how many other
+            # tests had logged first.
+            assert [text for text, _ in console.lines()][-1] == "via stdout"
             # The mirror must not write back into the redirected stderr
             assert console._mirror_stream is not sys.stderr
         finally:

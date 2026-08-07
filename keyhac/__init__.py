@@ -22,6 +22,9 @@ from keyhac.core.uitree import (
 from keyhac.core.wait import (
     WaitTimeout, wait_for, wait_for_element, wait_for_stable, wait_until_gone,
 )
+from keyhac.core.fill import (
+    FillFailed, focus, preserve_clipboard, press, set_checked, set_text,
+)
 from keyhac.actions import (
     ActivateWindow,
     MouseButtonClick,
@@ -66,6 +69,12 @@ __all__ = [
     "wait_until_gone",
     "wait_for_stable",
     "WaitTimeout",
+    "set_text",
+    "set_checked",
+    "press",
+    "focus",
+    "preserve_clipboard",
+    "FillFailed",
     "ChooserAction",
     "MouseButtonClick",
     "MouseButtonDown",

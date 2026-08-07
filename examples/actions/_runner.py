@@ -23,17 +23,32 @@ def run_action(action) -> int:
         print("These examples have only been run on macOS so far.")
         return 1
 
+    from keyhac.core.clipboard_history import ClipboardHistory
     from keyhac.core.keymap import Keymap
-    from keyhac.platform.fake import FakeInputHook, FakeFocusProvider
+    from keyhac.core.vk import init_key_names
+    from keyhac.platform.fake import FakeFocusProvider
+    from keyhac.platform.mac.clipboard import MacClipboardProvider
+    from keyhac.platform.mac.hook import MacInputHook
     from keyhac.platform.mac.loop import MacEventLoop
 
     config = pathlib.Path(__file__).with_name("_runner_config.py")
     config.write_text("def configure(keymap):\n    pass\n")
 
+    init_key_names("mac", "ansi")
     loop = MacEventLoop()
-    keymap = Keymap(FakeInputHook("ansi"), FakeFocusProvider(), "mac",
+    hook = MacInputHook()
+    keymap = Keymap(hook, FakeFocusProvider(), "mac",
                     config_path=str(config), template_path=str(config))
+    # configure() is what fills in the modifier map, and without it send_key()
+    # emits the key without its modifiers - "Cmd-V" arrives as a bare "v".
+    # Silent, and it cost an afternoon of blaming the OS.
+    keymap.configure()
     keymap.set_main_thread_dispatcher(loop.call_on_main_thread)
+
+    clipboard = MacClipboardProvider()
+    history = ClipboardHistory(clipboard, str(config.with_name("_runner_clip.json")))
+    history.persist = False
+    keymap._clipboard_history = history
 
     status = {"code": 0}
 
@@ -47,10 +62,19 @@ def run_action(action) -> int:
         finally:
             loop.stop()
 
-    action.starting()
-    threading.Thread(target=worker, daemon=True).start()
-    loop.run()
-    config.unlink(missing_ok=True)
+    # Typing needs the hook: send() posts plain key events and the tap's
+    # callback is what puts the modifier flags on them.  It is uninstalled in
+    # the finally below, and dies with the process in any case, but an example
+    # that types really is holding a keyboard tap while it runs.
+    hook.install(keymap.on_key_event, keymap.on_hook_restored)
+    try:
+        action.starting()
+        threading.Thread(target=worker, daemon=True).start()
+        loop.run()
+    finally:
+        hook.uninstall()
+        config.unlink(missing_ok=True)
+        config.with_name("_runner_clip.json").unlink(missing_ok=True)
     return status["code"]
 
 

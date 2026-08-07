@@ -423,6 +423,43 @@ hanging your keyboard. The condition itself is dispatched back to the event-loop
 thread automatically, which is what makes it legal to read elements from a
 worker here; `keymap.call_on_main_thread` is the general form of that.
 
+### Writing into the UI
+
+Three mechanisms, and they are not interchangeable — choosing wrong fails in
+ways that look like success:
+
+| | How | Cost |
+|---|---|---|
+| `paste` | clipboard + Cmd/Ctrl-V | ~105 ms; bypasses the IME; costs the clipboard |
+| `keys` | key injection | ~70 ms; works everywhere; IME-dependent |
+| `set_value` | `AXValue` / UIA Value pattern | ~5 ms; **React and Vue commonly do not observe it** |
+
+`set_text()` tries paste, then keys, and **reads the value back either way** —
+a write that cannot be read back raises `FillFailed` rather than being logged
+and forgotten:
+
+```python
+from keyhac import set_text, set_checked, press, preserve_clipboard
+
+set_text(field, "REC-001")                    # returns the method that worked
+set_checked(urgent_box, True)                 # reads before pressing
+press(submit_button)                          # AXPress / Invoke / Toggle
+```
+
+Three rules the API enforces so your action does not have to:
+
+- **Focus is verified, not assumed.** `set_text` refuses to write when focus
+  did not land — an unfocused write fails silently, and unfocused *keystrokes*
+  go to whatever does have focus, which is usually the window behind.
+- **A checkbox is read before it is pressed.** Pressing toggles, so
+  `set_checked(box, True)` twice would untick it and a resumed run would undo
+  its own work.
+- **The clipboard goes back afterwards** — `set_text` restores it around a
+  paste, and `preserve_clipboard()` is available for anything else. Note the
+  restore waits until the value has actually arrived: putting it back as soon
+  as the keystroke is posted races the application, and the field ends up
+  holding whatever was on the clipboard *before*.
+
 Waits poll, starting at 20 ms and backing off to 250 ms. On macOS an
 `AXObserver` can cut the latency for native applications:
 
