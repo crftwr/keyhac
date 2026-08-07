@@ -44,10 +44,8 @@ backend.open()
 from AppKit import NSApplication
 NSApplication.sharedApplication().finishLaunching()
 print("ready", flush=True)
-class NullHandler:
-    def __getattr__(self, name):
-        return lambda *a, **k: None
-handler = NullHandler()
+def handler(event):  # puikit's EventHandler is a plain callable
+    pass
 while True:
     backend.run_event_loop_iteration(handler, timeout_ms=100)
 """
