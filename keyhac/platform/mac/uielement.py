@@ -29,6 +29,13 @@ def _from_ax(value):
         if ax_type == AS.kAXValueCGRectType:
             return (out.origin.x, out.origin.y, out.size.width, out.size.height)
         if ax_type == AS.kAXValueCFRangeType:
+            # PyObjC hands a CFRange back as a plain (location, length) tuple,
+            # not as a struct - unlike CGPoint/CGSize/CGRect just above, which
+            # do arrive with named fields. Reading .location therefore raised
+            # AttributeError on every range attribute (AXSelectedTextRange,
+            # AXVisibleCharacterRange), which is most of the caret vocabulary.
+            if isinstance(out, (tuple, list)):
+                return (out[0], out[1])
             return (out.location, out.length)
         return None
     # AX collections arrive as NSArray/NSDictionary proxies, which are NOT
