@@ -823,21 +823,27 @@ Extend `PRIVACY.md` with the above.
 
 ## 10. Sequence
 
-1. ~~**Layer 2 exposure**~~ — **done on macOS, unverified on Windows.**
+1. ~~**Layer 2 exposure**~~ — **done, and now verified on both platforms.**
    `keyhac/core/uitree.py` plus `children()` / `describe()` / the text accessors
    on both platform elements; the shape was settled by walking real trees, and
-   §6.1 records what that changed. What remains is a Windows pass: the child
-   walk, the three text accessors and `element_at_point` are written against
-   header slot numbers and have never been run, and this file's own rule is
-   that a wrong vtable slot silently calls a different method.
+   §6.1 records what that changed. The Windows half was written against header
+   slot numbers and had never been run — this file's own rule being that a wrong
+   vtable slot silently calls a different method rather than raising. It has now
+   been run (`tools/uia_pass.py`, 2026-08-07): the child walk, all three text
+   accessors and `element_at_point` answer correctly, and the bug the pass found
+   was in `core/fill.py` rather than in any slot.
 2. ~~**`wait_for` and event subscription**~~ — **done on macOS.**
    `keyhac/core/wait.py` is portable and polling-first, so Windows has working
    waits today; `keyhac/platform/mac/observer.py` accelerates native apps and,
    as measured, does nothing for web content (§5, Layer 1). A Windows
    WinEvent/UIA observer is therefore optional, and worth doing only if a
    Windows-native target shows the latency.
-3. **Two measurements, minutes each** — does `set_value` work on the target systems
-   (§7.3); do the target terminals implement whole-value text reads (§6).
+3. **Two measurements, minutes each** — **the first is answered on both
+   platforms** (§7.3: `set_value` works, focus being the precondition; ~5 ms on
+   macOS, 15–33 ms on Windows), and it stays opt-in regardless for the
+   framework-blindness reason. The second is **half answered**: Terminal.app
+   yes, Notepad yes, but Windows Terminal, VS Code and iTerm2 are unmeasured and
+   Notepad is a weak proxy for any of them (§6).
 4. **Hand-write actions** ← do not skip. **Three of four done**, in
    `examples/actions/`, each runnable and verified against a live application:
    cross-system extraction (pagination, normalisation, partial failure, CSV,
@@ -846,6 +852,14 @@ Extend `PRIVACY.md` with the above.
    pressing its first button), and an error-line jump (the text layer, three
    rungs of §6's ladder). **Print-all-tabs-to-PDF is not written**: it drives
    print dialogs and writes files, so it wants its own session.
+
+   **All four are macOS-only, and not merely untested there**: they address
+   elements as `AXTable` / `AXCell` / `AXWebArea`, and `_runner.py` refuses to
+   start anywhere else. Role names are not a shared vocabulary (see the Windows
+   entries in the skill's `quirks.md`), so porting one is a rewrite of its
+   selectors, not a flag. Worth doing for exactly that reason — it is the
+   cheapest way to find out how much of an action survives a change of platform
+   — but it is a task, not a formality.
 
    The exercise paid for itself in the way §5 predicts — nine findings, four of
    them bugs in the framework the actions are written against, all recorded in

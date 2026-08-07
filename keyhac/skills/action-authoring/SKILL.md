@@ -37,6 +37,16 @@ the user to open it and look again. That costs one message and records nothing.
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
 
+**Look at the screen on the platform the action will run on.** Role names are
+not a shared vocabulary: an `AXTextField` is a Windows `Edit`, and Windows has
+no `Cell` or `Row` role at all. Write role patterns **without** the `AX` prefix
+- it is stripped from the role, not from your pattern, so `role="Button"`
+matches both platforms while `role="AXButton"` quietly matches only macOS. A
+selector carried over from the other platform's tree finds nothing and reads
+like a page that failed to load. If the target is Windows, read the
+**Windows:** entries in `references/quirks.md` first; three of the four are
+cases where the macOS answer was confidently wrong.
+
 ## The seven hard rules
 
 Each of these was a real failure, not a preference. Breaking one produces code
@@ -53,10 +63,16 @@ that looks correct and is not.
    parent ("the tab group's children", not "the radio buttons near the top").
    Code containing pixel positions is a failed generation - though using a
    rect to *associate* a label with an unnamed field is fine, and on native
-   macOS panes it is the only thing that works.
+   macOS panes it is the only thing that works. When the role itself is the
+   wrong question, address by **capability**: the thing you can tick is the one
+   with a `ToggleState`, whatever it calls itself - and scope that search to the
+   panel, or you will find a toolbar button that also toggles.
 3. **Read back after writing.** `set_text()` does this for you and raises
    `FillFailed`. Every write mechanism has a silent-failure mode; the read-back
-   is what turns all of them into loud ones.
+   is what turns all of them into loud ones. `verify=False` is not a speed
+   option: it removes the only signal that the write landed *and* the only
+   signal that the clipboard is safe to restore. Use it for a password field or
+   not at all.
 4. **Read before toggling.** A checkbox press *toggles*. `set_checked(box,
    True)` twice would untick it, and a resumed run would undo its own work.
 5. **Preconditions per step, before every press.** Not once at the top. The
@@ -140,4 +156,6 @@ the user to say `get_ui_tree` or `set_value`, this skill has failed - fix the
 skill instead.
 
 Working examples of every pattern above: `examples/actions/` in the Keyhac
-repository, with `README.md` recording what each one taught.
+repository, with `README.md` recording what each one taught. All four were
+written and run on macOS and address elements by `AX*` role names - read them
+for their shape, not for selectors to copy onto Windows.

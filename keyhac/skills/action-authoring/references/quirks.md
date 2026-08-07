@@ -3,7 +3,14 @@
 Every entry here was found by running against a real application, and each one
 produces code that looks correct and silently is not. Read this before
 debugging something that "should work". Measured on macOS 15 / Safari 18 /
-Chrome, 2026-08-06 and 07.
+Chrome, 2026-08-06 and 07, and on Windows 11 Home 10.0.26200 / Notepad,
+2026-08-07.
+
+Entries prefixed **Windows:** or **Native macOS:** apply to that platform only.
+The rest were measured on macOS against web content, which is where most of
+them will also be true on Windows - but that is an expectation, not a
+measurement, and the Windows entries below are there because three of the four
+were expectations that turned out wrong.
 
 ## The tree is a DAG, not a tree
 
@@ -125,6 +132,81 @@ window was left on a different tab.
 Terminal's is "Profiles", then "Window", then "Keyboard" as the walk proceeds.
 Find such a window by shape - `AXDialog` containing an `AXTabGroup` - and never
 by a fixed title.
+
+## Windows: the role vocabulary is not the macOS one
+
+Two separate things bite here.
+
+**The `AX` prefix is stripped from the role, not from your pattern.** So
+`role="Button"` matches a macOS `AXButton` and a Windows `Button` alike, while
+`role="AXButton"` matches **only** macOS - `AXTable` will not find a Windows
+`Table` even though that role exists. Write patterns *without* the prefix and
+they work on both. Every example in `examples/actions/` breaks this, because
+they were all written on macOS.
+
+**And where the names have no pair, no rule saves you.** Windows has
+`Table`, `DataGrid`, `DataItem`, `Header` and `HeaderItem` - and no `Cell` or
+`Row` at all, so an `AXRow` / `AXCell` walk has no direct translation and the
+extraction has to be rewritten around what the platform does expose. macOS
+`AXTextField` and `AXTextArea` are Windows `Edit` and `Document`.
+
+Measured on Notepad: the editor is a `Document`, the Find field an `Edit`,
+"Match case" a `MenuItem`, toolbar controls `Button`. Use alternation when an
+action is meant to be portable (`role="Document|Edit|TextArea"`), and look at
+the tree on both platforms rather than trusting the mapping.
+
+## Windows: WinUI text controls drop and reorder injected input
+
+In Windows 11's Notepad - a XAML editor - `"hello-keys"` typed with the `keys`
+mechanism arrived as `"helloke-ys"`; a `Ctrl-V` came through as a bare `v`; and
+an injected `Ctrl-V` is dropped outright often enough to need retrying. The
+same strings down the same code path land intact **30/30** in a plain Win32
+control, so this is XAML's input handling, not `SendInput` ordering.
+
+Two consequences. Prefer `paste` over `keys` on Windows - which is already the
+default, now for a second and independent reason. And **this is what the
+read-back is for**: every one of those corruptions arrived as a loud
+`FillFailed` naming the text actually found, rather than as a document that was
+quietly wrong. An action that writes with `verify=False` on this platform is
+choosing not to be told.
+
+## Windows: a toggle is found by its ToggleState, not by its role
+
+Waiting for a `CheckBox` in Notepad's Find panel waits forever: it has none.
+"Match case" is a `MenuItem`, and it is one press deeper than the panel, behind
+a button called "More options" - so both the role and the depth were wrong
+guesses. An element with a **`ToggleState`** is one `set_checked` can drive
+whatever it calls itself; find it with
+`find_element(panel, predicate=lambda n: n.element.get_attribute_value("ToggleState") is not None)`.
+
+Scope that search to the panel, not the window. Run against the whole Notepad
+window it returns the formatting toolbar's **Bold** button - which also has a
+`ToggleState`, and has nothing to do with Find. Capability answers "can I drive
+this"; only the subtree answers "is this part of what just opened".
+
+This is the Windows form of "a tab is defined by its parent, not by its role"
+above. The general rule both are instances of: **address a control by what it
+can do and where it sits, not by what it calls itself.**
+
+## Windows: launching an application gets the operator's session
+
+Windows 11's Notepad is tabbed and single-instance, so starting it merely
+activates the window that is already open, on whatever document the user was
+editing - and `FindWindowW("Notepad", None)` then names *that* window. An
+action that "opens Notepad and types" will type into their work.
+
+Open a named file of your own, find the window by *its* title, confirm the
+element you are about to write to by content only you would have written, and
+require it to hold keyboard focus first. Assume this of every modern Windows
+application, not only Notepad.
+
+## Windows: the UIA Text pattern answers, at least here
+
+Notepad's editor returns `get_text()` over the whole buffer,
+`get_line_at_caret()` for the caret's line (not the document), and
+`get_selection()` - the same three-rung ladder that works on macOS. **Windows
+Terminal, VS Code and the editors people actually run are unmeasured**, and
+Notepad is a weak proxy for them: check before an action depends on it.
 
 ## And one that was not a platform quirk at all
 
