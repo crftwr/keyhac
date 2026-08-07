@@ -5,14 +5,17 @@ the step that says *do not skip*. These are written by hand, against real
 applications, so that the generalisation heuristics in the authoring skill come
 from real failures instead of first principles.
 
-They run on macOS today. Each is self-contained:
+Four of the five are macOS-only, and in fact rather than by habit: they address
+elements as `AXTable`, `AXCell`, `AXWebArea`, and those names match nothing on
+Windows. `snapshot_settings.py` has been ported and runs on both.
 
 ```bash
-python examples/actions/extract_records.py ~/Desktop/records.csv   # Safari
-python examples/actions/handle_queue.py                            # Safari
-python examples/actions/jump_to_error.py --dry-run                 # Terminal
-python examples/actions/submit_from_csv.py                         # Safari
-python examples/actions/snapshot_settings.py                       # Terminal
+python examples/actions/extract_records.py ~/Desktop/records.csv   # macOS, Safari
+python examples/actions/handle_queue.py                            # macOS, Safari
+python examples/actions/jump_to_error.py --dry-run                 # macOS, Terminal
+python examples/actions/submit_from_csv.py                         # macOS, Safari
+python examples/actions/snapshot_settings.py                       # macOS: Terminal > Settings
+python examples/actions/snapshot_settings.py                       # Windows: control main.cpl
 ```
 
 `submit_from_csv.py` types, so running it installs a keyboard tap for as long
@@ -28,7 +31,7 @@ from a worker at all.
 | [`handle_queue.py`](handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
 | [`jump_to_error.py`](jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
 | [`submit_from_csv.py`](submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
-| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
+| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found — and the only one ported to Windows | 57 values from Terminal's six settings tabs; 15 from Mouse Properties' five, into JSON |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -166,3 +169,51 @@ Findings 15 and 16 mean the skill's addressing rule now reads "identifier
 *when it is a real name*, then name, then text, then position in a known
 parent" - which is a genuinely different instruction from what it said before
 this action was written.
+
+---
+
+## The port: what survived crossing to Windows
+
+`snapshot_settings.py` was carried to Windows to find out how much of an action
+is portable in practice. The answer is encouraging about structure and blunt
+about everything else.
+
+**The shape survived unchanged.** Find the window by what it contains rather
+than by its title; enumerate the tab strip's *own children*; select a tab; wait
+for the selection to be reported rather than sleeping; read the panel; put the
+original tab back. Every one of those decisions was right on both platforms,
+including the two that came out of live failures on macOS — a tab is defined by
+its parent, and the navigation must be excluded from what you record. The second
+matters *more* on Windows: a `TabItem` has no value, but it does have
+`IsSelected`, so the tab strip reappears in the output the moment the reader
+learns where Windows keeps state.
+
+**Every selector and every state read was rewritten.** Role names are not a
+shared vocabulary, and the prefix-stripping in `match_role` works on the role
+rather than on your pattern, so `role="AXTabGroup"` matches nothing on Windows
+rather than falling back to something sensible.
+
+**One thing could not be written at all.** A Win32 `TabItem` supports no press
+action — `get_action_names()` returned `[]` — and has no value, so neither
+selecting a tab nor asking which tab was current was expressible. That is a
+platform gap rather than an action's problem, and it was fixed by adding the
+`SelectionItem` pattern to `keyhac/platform/win/uielement.py`, pinned against
+`TCM_GETCURSEL` in `tests/test_win_focus.py`. **Porting an action is a good way
+to find holes in the element API**, which is an argument for doing it early
+rather than once.
+
+18. **Windows splits control state three ways.** macOS puts everything in
+    `AXValue`. Windows uses `value` for an Edit or ComboBox, `ToggleState` for
+    a CheckBox and `IsSelected` for a RadioButton, ListItem or TabItem — and no
+    control implements more than one. Reading only the first two found 1 control
+    on a panel that had 5.
+19. **Geometric label association ported for free.** The rect-pairing written
+    for macOS's unnamed `AXTextField`s is what recovers Manufacturer, Location
+    and Device status from the Hardware tab, where the Edits are equally
+    nameless. It is the one macOS-specific *technique* that turned out not to be
+    macOS-specific at all.
+
+Known imperfection, recorded rather than hidden: the Wheel tab reports three
+values where four are on screen. The unnamed lines-per-notch Edit has no static
+text within the pairing window, so it is dropped — the same failure mode finding
+16 describes, at a distance the heuristic does not cover.

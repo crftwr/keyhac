@@ -7,6 +7,11 @@ arrangement `keyhac.core.wait` is written against, and the one that makes
 waiting legal from a worker at all.
 
     python examples/actions/extract_records.py
+
+Both platforms are wired here, but only `snapshot_settings.py` runs on both -
+the other three address elements by `AX*` role names and are macOS-only in
+fact, not merely untested (see the module docstrings and the Windows entries in
+the authoring skill's `references/quirks.md`).
 """
 
 import pathlib
@@ -17,27 +22,41 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 
+def _platform_parts():
+    """(name, EventLoop, InputHook, Clipboard) for this OS, or None."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.clipboard import MacClipboardProvider
+        from keyhac.platform.mac.hook import MacInputHook
+        from keyhac.platform.mac.loop import MacEventLoop
+        return "mac", MacEventLoop, MacInputHook, MacClipboardProvider
+    if sys.platform == "win32":
+        from keyhac.platform.win.clipboard import WinClipboardProvider
+        from keyhac.platform.win.hook import WinInputHook
+        from keyhac.platform.win.loop import WinEventLoop
+        return "windows", WinEventLoop, WinInputHook, WinClipboardProvider
+    return None
+
+
 def run_action(action) -> int:
     """Drive one ThreadedAction to completion, then stop the loop."""
-    if sys.platform != "darwin":
-        print("These examples have only been run on macOS so far.")
+    parts = _platform_parts()
+    if parts is None:
+        print(f"These examples run on macOS and Windows; this is {sys.platform}.")
         return 1
+    platform, EventLoop, InputHook, Clipboard = parts
 
     from keyhac.core.clipboard_history import ClipboardHistory
     from keyhac.core.keymap import Keymap
     from keyhac.core.vk import init_key_names
     from keyhac.platform.fake import FakeFocusProvider
-    from keyhac.platform.mac.clipboard import MacClipboardProvider
-    from keyhac.platform.mac.hook import MacInputHook
-    from keyhac.platform.mac.loop import MacEventLoop
 
     config = pathlib.Path(__file__).with_name("_runner_config.py")
     config.write_text("def configure(keymap):\n    pass\n")
 
-    init_key_names("mac", "ansi")
-    loop = MacEventLoop()
-    hook = MacInputHook()
-    keymap = Keymap(hook, FakeFocusProvider(), "mac",
+    init_key_names(platform, "ansi")
+    loop = EventLoop()
+    hook = InputHook()
+    keymap = Keymap(hook, FakeFocusProvider(), platform,
                     config_path=str(config), template_path=str(config))
     # configure() is what fills in the modifier map, and without it send_key()
     # emits the key without its modifiers - "Cmd-V" arrives as a bare "v".
@@ -45,7 +64,7 @@ def run_action(action) -> int:
     keymap.configure()
     keymap.set_main_thread_dispatcher(loop.call_on_main_thread)
 
-    clipboard = MacClipboardProvider()
+    clipboard = Clipboard()
     history = ClipboardHistory(clipboard, str(config.with_name("_runner_clip.json")))
     history.persist = False
     keymap._clipboard_history = history
@@ -81,7 +100,10 @@ def run_action(action) -> int:
 def front_window(app_name: str):
     """The frontmost window of a running application, as a UIElement.
 
-    Main-thread only, like every other element read.
+    macOS only, and the second return value is the *application* element -
+    there is no such thing on Windows, where a process is reached through its
+    windows rather than the other way round.  Main-thread only, like every
+    other element read.
     """
     import ApplicationServices as AS
     from AppKit import NSWorkspace
@@ -95,3 +117,40 @@ def front_window(app_name: str):
             windows = element.get_attribute_value("AXWindows") or []
             return (windows[0] if windows else None), element
     return None, None
+
+
+def top_level_windows(title_contains: str = "") -> list:
+    """Every visible top-level window, as UIElements, newest API on both OSes.
+
+    The portable half of "find the window": macOS reaches windows through the
+    application element, Windows enumerates the desktop's children, and an
+    action that wants "the dialog with a tab control in it" should not have to
+    know which. Filtering is by title because that is the only name both
+    platforms agree a window has.
+    """
+    if sys.platform == "win32":
+        from keyhac.platform.win.uielement import UIElement
+        from keyhac.platform.win.window import WinWindowProvider
+        found = []
+        for window in WinWindowProvider().list_windows():
+            if title_contains.lower() in (window.title or "").lower():
+                element = UIElement.from_hwnd(window.hwnd)
+                if element is not None:
+                    found.append(element)
+        return found
+
+    from AppKit import NSWorkspace                                  # noqa: F401
+    import ApplicationServices as AS
+    from keyhac.platform.mac.uielement import UIElement
+    found = []
+    for app in NSWorkspace.sharedWorkspace().runningApplications():
+        element = UIElement(AS.AXUIElementCreateApplication(app.processIdentifier()))
+        try:
+            windows = element.get_attribute_value("AXWindows") or []
+        except Exception:
+            continue
+        for window in windows:
+            title = window.get_attribute_value("AXTitle") or ""
+            if title_contains.lower() in title.lower():
+                found.append(window)
+    return found

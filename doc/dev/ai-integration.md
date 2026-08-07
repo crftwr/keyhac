@@ -853,13 +853,16 @@ Extend `PRIVACY.md` with the above.
    rungs of §6's ladder). **Print-all-tabs-to-PDF is not written**: it drives
    print dialogs and writes files, so it wants its own session.
 
-   **All four are macOS-only, and not merely untested there**: they address
-   elements as `AXTable` / `AXCell` / `AXWebArea`, and `_runner.py` refuses to
-   start anywhere else. Role names are not a shared vocabulary (see the Windows
-   entries in the skill's `quirks.md`), so porting one is a rewrite of its
-   selectors, not a flag. Worth doing for exactly that reason — it is the
-   cheapest way to find out how much of an action survives a change of platform
-   — but it is a task, not a formality.
+   **One of them is now ported; the rest are macOS-only in fact rather than by
+   habit**, addressing elements as `AXTable` / `AXCell` / `AXWebArea`, which
+   match nothing on Windows. `snapshot_settings.py` runs on both, and what the
+   port cost is the useful part: the *shape* survived unchanged — find the
+   window by what it contains, enumerate the tab strip's own children, wait for
+   the selection to be reported, restore the original tab — while every
+   selector and every state read had to be rewritten, and one step could not be
+   expressed at all until the element API grew a `SelectionItem` pattern.
+   **Porting an action is a cheap way to find holes in the platform layer**,
+   which is an argument for doing it early rather than once.
 
    The exercise paid for itself in the way §5 predicts — nine findings, four of
    them bugs in the framework the actions are written against, all recorded in
