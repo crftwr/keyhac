@@ -313,6 +313,74 @@ gentle: an unsupported attribute reads `None`, an unknown action logs and return
 `False`. `focus.native` is the platform power object — the same AX element on
 macOS, an HWND wrapper on Windows.
 
+### Searching the element tree
+
+Attribute *names* differ per OS, but the tree itself has the same shape on both,
+so traversal and search are portable and need no `keymap.platform` branch:
+
+```python
+from keyhac import find_element, find_elements, get_ui_tree, format_tree
+
+field = find_element(keymap.focus.element, name="Query")
+field.element.set_value("REC-001")            # .element is the platform element
+
+for row in find_elements(window, role="AXRow|DataItem"):
+    print([c.all_text for c in row.children])
+```
+
+`get_ui_tree(root, max_depth=…, max_nodes=…, roles=…, prune=…)` returns a
+`UINode` tree; `find_element` / `find_elements` search it by `role`, `name`,
+`value`, `identifier`, `text` or a `predicate`. Patterns are the same
+case-insensitive fnmatch with `|` alternation used by `define_keytable`, and
+role patterns accept the macOS names with or without their `AX` prefix
+(`role="Button"` matches `AXButton`).
+
+Each `UINode` carries `role`, `name` (the label), `value` (the content),
+`identifier` (DOM id / `AXIdentifier` / `AutomationId` — the most stable thing
+to address an element by), `rect`, `children`, and `element`, the platform
+element for anything outside that projection. Two conveniences matter more than
+they look:
+
+- `node.text` is label and content together, and keeps falsy values — an
+  unchecked checkbox really is `0`.
+- `node.all_text` reaches into descendants. Web content puts a table cell's
+  string in a child node, so `cell.text` is empty and `cell.all_text` is what
+  you want.
+
+`format_tree(node)` renders the tree as indented text, which is what to paste
+into a conversation when asking Claude to write an action against a screen.
+
+**Budgets**: the walk stops at `max_depth` (14) or `max_nodes` (1000) and marks
+the node where it stopped `truncated` — check it rather than assume a short tree
+means a small screen.
+
+**Chromium and Electron apps expose nothing until asked** (macOS). Chrome, Edge,
+VS Code, Slack and friends build their accessibility tree only for an assistive
+client: until then a loaded page is browser chrome with no document in it. Turn
+it on for that application element, and off when done:
+
+```python
+app = keymap.focus.element         # or an application element
+app.set_manual_accessibility(True)
+```
+
+### Reading text
+
+The tree does not reach into text: a terminal or an editor is one element
+holding an undifferentiated blob, so "the error line" cannot be found by
+traversal. Four accessors cover it, on both platforms:
+
+| | What |
+|---|---|
+| `element.get_text()` | The whole content, descending into child text nodes when the container's own value is empty (which is the web case) |
+| `element.get_line_at_caret()` | The line the caret is on — no selection, no pointer |
+| `element.get_selection()` | The selected text (`""` is a real answer) |
+| `UIElement.element_at_point(x, y)` | The element under a screen point, in whichever app owns it |
+
+Once the text is in hand the work is a regex, not guesswork — that is more
+accurate than inference for paths, line numbers, URLs and request IDs, not
+merely cheaper.
+
 ## Keyboard macros
 
 ```python

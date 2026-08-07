@@ -31,6 +31,9 @@ from keyhac.core import log
 
 logger = log.getLogger("WinUIElement")
 
+#: Sibling bound on UIElement.children() - see its docstring.
+MAX_CHILDREN = 2000
+
 if sys.platform == "win32":
     from ctypes import wintypes
 
@@ -75,6 +78,7 @@ if sys.platform == "win32":
 
 class _IUIAutomation:
     ElementFromHandle = 6
+    ElementFromPoint = 7
     GetFocusedElement = 8
     get_ControlViewWalker = 14
     get_RawViewWalker = 16
@@ -143,6 +147,7 @@ class _IUIAutomationValuePattern:
 
 class _IUIAutomationTextPattern:
     GetSelection = 5
+    get_DocumentRange = 7
 
 
 class _IUIAutomationTextRangeArray:
@@ -154,7 +159,16 @@ class _IUIAutomationTextRange:
     # 11 is GetEnclosingElement, whose out-param is an element pointer - calling
     # it as GetText(int, BSTR*) wrote through a bogus address and access-
     # violated. Verified live, not read off a header.
+    ExpandToEnclosingUnit = 6    # UNVERIFIED on hardware - see below
     GetText = 12
+
+
+#: TextUnit, for ExpandToEnclosingUnit.
+class _TextUnit:
+    Character = 0
+    Word = 2
+    Line = 3
+    Document = 6
 
 
 #: Action name -> (pattern id, vtable slot).  Named after the UIA patterns
@@ -228,6 +242,25 @@ def _element_out(ptr, index, *args):
     if hr != S_OK or not out.value:
         return None
     return out
+
+
+def _range_text(text_range, max_length: int = -1) -> str | None:
+    """The text of one IUIAutomationTextRange (-1 meaning no limit)."""
+    out = ctypes.c_void_p()
+    hr = _com_call(text_range, _IUIAutomationTextRange.GetText, ctypes.c_long,
+                   [ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
+                   ctypes.c_int(max_length), ctypes.byref(out))
+    if hr != S_OK or not out.value:
+        return None
+    try:
+        return ctypes.wstring_at(out.value)
+    finally:
+        oleaut32.SysFreeString(out)
+
+
+class _POINT(ctypes.Structure):
+    """The POINT ElementFromPoint takes *by value*."""
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 
 class _RECT(ctypes.Structure):
@@ -432,16 +465,9 @@ class UIElement:
                 if text_range is None:
                     continue
                 try:
-                    out = ctypes.c_void_p()
-                    hr = _com_call(text_range, _IUIAutomationTextRange.GetText,
-                                   ctypes.c_long,
-                                   [ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
-                                   ctypes.c_int(-1), ctypes.byref(out))
-                    if hr == S_OK and out.value:
-                        try:
-                            parts.append(ctypes.wstring_at(out.value))
-                        finally:
-                            oleaut32.SysFreeString(out)
+                    text = _range_text(text_range)
+                    if text is not None:
+                        parts.append(text)
                 finally:
                     _release(text_range)
             return "".join(parts)
@@ -457,6 +483,50 @@ class UIElement:
         ptr = _element_out(walker, _IUIAutomationTreeWalker.GetParentElement,
                            ctypes.c_void_p(self._ptr.value))
         return UIElement(ptr) if ptr else None
+
+    def children(self) -> list["UIElement"]:
+        """The control-view child elements.
+
+        The other half of the walk parent() has always done, and the piece the
+        element API was missing: with only parent(), an action could act on the
+        focused element and its ancestors but could never reach an element that
+        was not focused.
+
+        Bounded by MAX_CHILDREN because this returns a list before
+        keyhac.core.uitree gets to apply its node budget, and a data grid can
+        have tens of thousands of siblings.
+        """
+        walker = _control_view_walker()
+        if walker is None or not self._ptr:
+            return []
+        out = []
+        ptr = _element_out(walker, _IUIAutomationTreeWalker.GetFirstChildElement,
+                           ctypes.c_void_p(self._ptr.value))
+        while ptr and len(out) < MAX_CHILDREN:
+            child = UIElement(ptr)
+            out.append(child)
+            ptr = _element_out(walker, _IUIAutomationTreeWalker.GetNextSiblingElement,
+                               ctypes.c_void_p(ptr.value))
+        return out
+
+    def identity_key(self):
+        """None - UI Automation's control view is a real tree.
+
+        macOS returns a key here because its AX graph lists a table cell under
+        both its row and its column; UIA has no such double-listing, so paying
+        GetRuntimeId per node would buy nothing.
+        """
+        return None
+
+    def describe(self) -> dict:
+        """The portable projection consumed by keyhac.core.uitree.UINode."""
+        return {
+            "role": self.get_attribute_value("ControlType"),
+            "name": self.get_attribute_value("Name"),
+            "value": self.get_attribute_value("Value"),
+            "identifier": self.get_attribute_value("AutomationId"),
+            "rect": self.get_attribute_value("BoundingRectangle"),
+        }
 
     # -- actions ------------------------------------------------------------
 
@@ -499,6 +569,87 @@ class UIElement:
         finally:
             _release(pattern)
 
+    # -- text layer ---------------------------------------------------------
+    #
+    # The counterpart of the macOS accessors, for the same reason: the control
+    # tree does not reach into text.  A terminal or an editor is one element
+    # holding an undifferentiated blob, so "the error line" is unreachable by
+    # traversal and has to be asked for as text (doc/dev/ai-integration.md §6).
+    #
+    # STATUS: written against UIAutomationClient.h and cross-checked for
+    # internal consistency with the slots already verified live in this file
+    # (GetEnclosingElement=11, GetText=12 pin the IUIAutomationTextRange
+    # ordering that puts ExpandToEnclosingUnit at 6).  Not yet run on Windows -
+    # a wrong slot calls a different method silently, so treat these three as
+    # unverified until doc/dev/testing.md records otherwise.
+
+    def get_selection(self) -> str | None:
+        """The selected text inside this element, or None."""
+        return self.get_attribute_value("SelectedText")
+
+    def get_text(self) -> str | None:
+        """This element's whole text content.
+
+        Value pattern first, which covers fields and combo boxes, then the
+        Text pattern's document range, which is what a terminal, a document
+        view or an editor buffer offers instead.
+        """
+        value = self.get_attribute_value("Value")
+        if isinstance(value, str) and value:
+            return value
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return value
+        try:
+            text_range = _element_out(pattern,
+                                      _IUIAutomationTextPattern.get_DocumentRange)
+            if text_range is None:
+                return value
+            try:
+                return _range_text(text_range)
+            finally:
+                _release(text_range)
+        finally:
+            _release(pattern)
+
+    def get_line_at_caret(self) -> str | None:
+        """The line the caret is on.
+
+        UIA has no "line at caret" call: take the selection (a degenerate
+        range when nothing is selected, which is the caret) and widen it to
+        its enclosing line.
+        """
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return None
+        try:
+            ranges = ctypes.c_void_p()
+            hr = _com_call(pattern, _IUIAutomationTextPattern.GetSelection,
+                           ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                           ctypes.byref(ranges))
+            if hr != S_OK or not ranges.value:
+                return None
+            try:
+                text_range = _element_out(ranges,
+                                          _IUIAutomationTextRangeArray.GetElement,
+                                          ctypes.c_int(0))
+                if text_range is None:
+                    return None
+                try:
+                    hr = _com_call(text_range,
+                                   _IUIAutomationTextRange.ExpandToEnclosingUnit,
+                                   ctypes.c_long, [ctypes.c_int],
+                                   ctypes.c_int(_TextUnit.Line))
+                    if hr != S_OK:
+                        return None
+                    return _range_text(text_range)
+                finally:
+                    _release(text_range)
+            finally:
+                _release(ranges)
+        finally:
+            _release(pattern)
+
     def set_focus(self) -> bool:
         if not self._ptr:
             return False
@@ -515,6 +666,25 @@ class UIElement:
             return None
         ptr = _element_out(automation, _IUIAutomation.GetFocusedElement)
         return UIElement(ptr) if ptr else None
+
+    @staticmethod
+    def element_at_point(x: float, y: float) -> "UIElement | None":
+        """The element under a screen point, whichever application owns it.
+
+        STATUS: unverified on hardware, like the text accessors above -
+        ElementFromPoint's slot (7) comes from the same header ordering that
+        ElementFromHandle (6) and GetFocusedElement (8), both verified, sit in.
+        """
+        automation = get_automation()
+        if automation is None:
+            return None
+        out = ctypes.c_void_p()
+        hr = _com_call(automation, _IUIAutomation.ElementFromPoint, ctypes.c_long,
+                       [_POINT, ctypes.POINTER(ctypes.c_void_p)],
+                       _POINT(int(x), int(y)), ctypes.byref(out))
+        if hr != S_OK or not out.value:
+            return None
+        return UIElement(out)
 
     @staticmethod
     def from_hwnd(hwnd) -> "UIElement | None":

@@ -16,6 +16,9 @@ from keyhac.core.action import (
     PlaybackRecordedKeys,
 )
 from keyhac.core.clipboard_history import ClipboardHistory
+from keyhac.core.uitree import (
+    UINode, find_element, find_elements, format_tree, get_ui_tree,
+)
 from keyhac.actions import (
     ActivateWindow,
     MouseButtonClick,
@@ -50,6 +53,11 @@ __all__ = [
     "ToggleRecordingKeys",
     "PlaybackRecordedKeys",
     "ClipboardHistory",
+    "UINode",
+    "get_ui_tree",
+    "find_element",
+    "find_elements",
+    "format_tree",
     "ChooserAction",
     "MouseButtonClick",
     "MouseButtonDown",

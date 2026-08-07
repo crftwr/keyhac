@@ -119,6 +119,34 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
 - **macOS AX window tests**: 15 live tests (identity, enumeration, find_window,
   frame writes, minimize/restore, activate, worker-thread geometry), mirroring the
   Windows set.
+- **macOS element tree and text layer** (2026-08-06, Safari 18 / Chrome on a page
+  built to the shape in `doc/dev/ai-integration.md` §2): `children()`,
+  `describe()`, `get_ui_tree`, `find_element` by DOM id / label / role / text,
+  table extraction row by row, `get_text()` on a container whose own value is
+  empty, `get_line_at_caret()` at three caret positions, `get_selection()`,
+  `element_at_point()`, and `set_manual_accessibility()` both on and off. Two
+  bugs came out of it: `_from_ax` raised on every range attribute (CFRange
+  arrives as a tuple, not a struct), and the first cut of `format_tree` hid an
+  unchecked checkbox's `0` behind a truthiness test.
+  **Not covered**: Terminal.app and iTerm2 whole-value reads — neither had a
+  window open — so the terminal half of §6 is still unmeasured.
+
+**Pending Windows verification** (written against `UIAutomationClient.h`, never
+run — and this file's own rule is that a wrong vtable slot silently calls a
+different method):
+
+| What | Slots relied on |
+|---|---|
+| `UIElement.children()` | `GetFirstChildElement` 4, `GetNextSiblingElement` 6 (both already declared) |
+| `get_text()` | `get_DocumentRange` 7 |
+| `get_line_at_caret()` | `ExpandToEnclosingUnit` 6, `TextUnit_Line` = 3 |
+| `element_at_point()` | `IUIAutomation::ElementFromPoint` 7, POINT by value |
+
+The ordering is cross-checked against the slots already pinned live in the same
+interfaces (`GetEnclosingElement` 11 / `GetText` 12 fix the TextRange vtable;
+`ElementFromHandle` 6 / `GetFocusedElement` 8 bracket `ElementFromPoint`), which
+is evidence, not verification. Pair this pass with the `set_value` measurement
+`ai-integration.md` §11 asks for — same session, same window.
 - **Instance guard**: cross-process on both OSes — mutex/flock contention, refusal
   reaches stderr before the std-stream redirect, kernel drops the flock on SIGKILL.
 - **Bundles**: `macos_app/` built, signed, notarized and run live end-to-end (tap

@@ -360,15 +360,20 @@ access is generic, so descendants are already reachable via
 can act on the focused element and its ancestors, but cannot reach an element that
 is not focused** (except on macOS, awkwardly, through raw AX attributes).
 
-What is actually missing — unification and exposure, not green-field:
+What was missing — unification and exposure, not green-field — **is now in**
+(`keyhac/core/uitree.py`, plus `children()` / `describe()` / `identity_key()` on
+both platform elements):
 
-- **Windows child traversal** — the wrapper is parent-only; the
-  `GetFirstChildElement` walker slot is declared in `win/uielement.py` but never
-  wrapped
-- `get_ui_tree(root, depth, filter)` — portable; depth limiting and role filtering
-  are mandatory, Electron apps emit thousands of nodes
-- `find_element(pattern)` — portable search by name / role / hierarchy
-- text-layer accessors — a distinct concern from tree traversal; see §6
+- **Windows child traversal** — `children()` walks `GetFirstChildElement` /
+  `GetNextSiblingElement`, the slots that were declared in `win/uielement.py`
+  and never wrapped. Written; **not yet run on Windows**.
+- `get_ui_tree(root, max_depth, max_nodes, roles, prune)` — portable. The
+  budgets are as mandatory as expected, but for a different reason than
+  Electron's node count: see §6.
+- `find_element` / `find_elements` — portable search by role / name / value /
+  identifier / text / predicate, using the same fnmatch-with-`|` matching
+  `define_keytable` uses, with the `AX` prefix optional in role patterns.
+- text-layer accessors — a distinct concern from tree traversal; see §6.
 
 **This layer still determines the ceiling on action expressiveness — and it is the
 precondition for eliminating runtime LLM calls.**
@@ -458,14 +463,49 @@ keystrokes the user spends:
 Once the text is in hand the work is a regex, not inference. Regex beats an LLM on paths,
 line numbers, URLs, ARNs, and request IDs — it is more accurate, not merely cheaper.
 
-**API additions this implies** (Layer 2):
+**API additions this implies** (Layer 2) — all four now exist as element
+methods, verified live on macOS:
 
 ```
-get_selection(window_id)
-get_text(element_id)              # AXValue / UIA Text pattern
-get_line_at_caret(element_id)
-element_at_point(x, y)
+element.get_selection()
+element.get_text()                # AXValue / UIA Text pattern
+element.get_line_at_caret()
+UIElement.element_at_point(x, y)
 ```
+
+### 6.1 What walking real trees changed
+
+Measured 2026-08-06 on macOS 15, against a page carrying the §2 shape (search
+form, three-row result table, modal, log block). Four findings, each of which
+moved the API:
+
+- **The accessibility graph is a DAG, not a tree.** A table cell is a child of
+  its row *and* of its column — the same element, CFEqual-identical, reached
+  twice. A naive recursion reports every cell twice and doubles every extracted
+  table. `get_ui_tree` dedupes on element identity, which is why the budgets
+  are load-bearing on any page with a table and not merely on Electron.
+- **Chromium and Electron expose no content at all until asked.** A loaded
+  Chrome page was 59 nodes — browser chrome, no document. After setting
+  `AXEnhancedUserInterface`, 119 nodes with every field addressable. The
+  targeted `AXManualAccessibility` that Chromium documents did **nothing** on
+  Chrome; only the blunt "an assistive client is present" flag moved it, and
+  that one has side effects (VS Code switches to screen-reader rendering). So
+  it is an explicit `set_manual_accessibility()` call, never implicit in a
+  walk. Both directions verified: turning it back off restored 59 nodes.
+- **Web content puts text one level below where you ask for it.** A `<pre>`'s
+  own `AXValue` is empty and the string lives in a child `AXStaticText`, so a
+  container read reports nothing for exactly the elements a log or an error
+  line lives in. Hence `get_text()` descends to leaves, and `UINode.all_text`
+  exists beside `node.text`.
+- **`AXDOMIdentifier` carries the DOM `id`** in web content. That is a far more
+  stable address than a label — it survives relabelling and localisation — and
+  it is what generated actions should prefer where a page offers one.
+
+Two smaller ones worth keeping: batching a node's attributes through
+`AXUIElementCopyMultipleAttributeValues` is 2.1× faster than reading them one
+at a time and answered identically on all 123 nodes of the probe page; and
+falsy values are a live trap — an unchecked checkbox is `0`, so `if value:`
+hides precisely the state "read before toggling" exists to check.
 
 **On OCR:** not needed. The gap it would fill is the pixel layer, which is not where this
 work happens, and it conflicts with three standing principles at once — it is
@@ -695,10 +735,13 @@ Extend `PRIVACY.md` with the above.
 
 ## 10. Sequence
 
-1. **Layer 2 exposure** — Windows child traversal (`GetFirstChildElement`, already
-   declared and unwrapped in `win/uielement.py`), `get_ui_tree`, `find_element`, plus the
-   text-layer accessors from §6. Settle the tree API shape first (§11) — but settle it by
-   walking a real page by hand, not on paper.
+1. ~~**Layer 2 exposure**~~ — **done on macOS, unverified on Windows.**
+   `keyhac/core/uitree.py` plus `children()` / `describe()` / the text accessors
+   on both platform elements; the shape was settled by walking real trees, and
+   §6.1 records what that changed. What remains is a Windows pass: the child
+   walk, the three text accessors and `element_at_point` are written against
+   header slot numbers and have never been run, and this file's own rule is
+   that a wrong vtable slot silently calls a different method.
 2. **`wait_for` and event subscription** — the required half of Layer 1 (§7.1).
    Everything on the output side depends on it.
 3. **Two measurements, minutes each** — does `set_value` work on the target systems
@@ -724,9 +767,14 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   form, five minutes, and the answer settles whether the clipboard-preservation path is on
   the critical path.
 - **Do the target terminals and editors implement the UIA Text pattern and `AXValue`?**
-  (§6) Test Terminal.app, iTerm2, Windows Terminal, VSCode, Chrome. If whole-value reads
-  work, selection becomes optional and the one-keystroke path is available. If they all
-  fail, selection is mandatory and the ergonomics change.
+  (§6) *Half answered.* On macOS the one-keystroke path works: whole-value reads
+  succeed on web content and text areas provided you descend to leaves (§6.1),
+  and `AXLineForIndex` → `AXRangeForLine` → `AXStringForRange` returns the caret's
+  line with no selection and no pointer — verified against a multi-line field.
+  `element_at_point` resolves a form field but returns the wrapper group for a
+  textarea, so the pointer path is coarser than the caret path. Still to test:
+  Terminal.app and iTerm2 (neither had a window open during the measurement),
+  and the whole Windows side.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows
