@@ -1,6 +1,8 @@
 # Configuration
 
-Keyhac is configured with one Python file: `~/.keyhac/config.py`. On first run it is
+Keyhac is configured with one Python file: `~/.keyhac/config.py` (or, in Windows
+[portable mode](installation.md#portable-mode-windows), the `config.py` sitting next
+to `Keyhac.exe`). On first run it is
 created from a fully commented template — the template
 ([keyhac/_config.py](../keyhac/_config.py) in the source tree) is a working example of
 everything on this page, and a good file to keep open while reading.

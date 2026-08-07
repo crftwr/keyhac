@@ -153,7 +153,15 @@ class Keymap:
 
             logger.info("Loading configuration script.")
 
-            os.makedirs(os.path.join(os.path.dirname(self._config_path), "extensions"), exist_ok=True)
+            extensions_dir = os.path.join(os.path.dirname(self._config_path), "extensions")
+            try:
+                os.makedirs(extensions_dir, exist_ok=True)
+            except OSError as e:
+                # A read-only data directory - a portable install on a
+                # write-protected stick, or one whose config.py an admin put
+                # beside Keyhac.exe under Program Files - costs the extensions
+                # directory, not the config load.
+                logger.warning(f"Could not create {extensions_dir}: {e}")
 
             try:
                 self.config = Config(self._config_path, self._template_path)
