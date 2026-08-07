@@ -157,8 +157,20 @@ different method):
 The ordering is cross-checked against the slots already pinned live in the same
 interfaces (`GetEnclosingElement` 11 / `GetText` 12 fix the TextRange vtable;
 `ElementFromHandle` 6 / `GetFocusedElement` 8 bracket `ElementFromPoint`), which
-is evidence, not verification. Pair this pass with the `set_value` measurement
-`ai-integration.md` §11 asks for — same session, same window.
+is evidence, not verification.
+
+**`tools/uia_pass.py` is that pass**, written to need one sitting: it drives
+Notepad, exercises every unverified slot, times all three write mechanisms
+(which is also the `set_value` measurement `ai-integration.md` §11 asks for),
+and runs the modal three-beat plus `set_checked` against the Find UI. It uses a
+throwaway config rather than the operator's real one, and prints a PASS/FAIL
+table. Run `pytest -q` first — the portable half is covered there, and this is
+only for what a machine has to prove.
+
+A wrong slot usually shows as a plausible wrong *answer* rather than an error,
+so two checks are written to catch that specifically: `get_line_at_caret()`
+must return the caret's line **and must not** return the whole document, which
+is what a wrong `TextUnit` or a mis-numbered `ExpandToEnclosingUnit` produces.
 - **Instance guard**: cross-process on both OSes — mutex/flock contention, refusal
   reaches stderr before the std-stream redirect, kernel drops the flock on SIGKILL.
 - **Bundles**: `macos_app/` built, signed, notarized and run live end-to-end (tap
