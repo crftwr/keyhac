@@ -46,9 +46,14 @@ that looks correct and is not.
    value changing, a page label differing from the one you captured before
    clicking. `sleep` passes on your machine and fails on a slower one - and on
    a faster one it fails *silently*, acting on a screen that has not arrived.
-2. **Never coordinates.** Address by `identifier` first (DOM id / AutomationId
-   - stable across relabelling and localisation), then by name or label, then
-   by visible text. Code containing pixel positions is a failed generation.
+2. **Never coordinates, and address by structure when names run out.**
+   `identifier` first *when it is a real name* - a DOM id or an AutomationId.
+   macOS `AXIdentifier` values like `_NS:746` are nib serial numbers: ignore
+   them. Then name or label, then visible text, then position in a known
+   parent ("the tab group's children", not "the radio buttons near the top").
+   Code containing pixel positions is a failed generation - though using a
+   rect to *associate* a label with an unnamed field is fine, and on native
+   macOS panes it is the only thing that works.
 3. **Read back after writing.** `set_text()` does this for you and raises
    `FillFailed`. Every write mechanism has a silent-failure mode; the read-back
    is what turns all of them into loud ones.

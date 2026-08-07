@@ -88,6 +88,44 @@ and `get_line_at_caret()` returns the prompt line. So the cheap path - read
 everything, take the last match - works, and neither a selection nor the
 pointer is needed. iTerm2 untested.
 
+## Native macOS: identifiers are serial numbers
+
+`AXDOMIdentifier` in web content is a real name. AppKit's `AXIdentifier` is
+usually `_NS:746` - a nib ordinal that changes when the window is edited and
+means nothing to a reader. **"Prefer identifier" holds for DOM ids and
+AutomationIds, and is actively wrong for `_NS:*`.** Address native controls by
+name, and fall back to structure.
+
+## Native macOS: a field's label is its sibling
+
+A text field on a settings pane has **no name at all** - the Columns field is
+`AXTextField = "120"`, and the string "Columns:" is a separate `AXStaticText`
+beside it, with nothing in the tree linking them. A snapshot keyed on names
+silently drops every text field on the screen.
+
+Pair them by geometry: the label is the static text immediately to the left
+whose vertical centre matches. That is *association*, not addressing - the
+field is still found by role - and it is the one legitimate use of `rect`.
+
+## A tab is defined by its parent, not by its role
+
+macOS tabs are `AXRadioButton`s inside an `AXTabGroup`, and so are ordinary
+radio groups inside the panels. "Every AXRadioButton near the top of the
+window" therefore collects real tabs *plus* whatever radio group the current
+panel happens to show - a walk that then tries to "select" the scrollback
+option as if it were a tab. Enumerate the tab group's own children.
+
+While walking panels, exclude that navigation from what you record: the tab
+buttons have values too, so a naive snapshot writes the whole tab bar's
+selection state into every panel and a config diff lights up whenever the
+window was left on a different tab.
+
+## A settings window's title is its selected tab
+
+Terminal's is "Profiles", then "Window", then "Keyboard" as the walk proceeds.
+Find such a window by shape - `AXDialog` containing an `AXTabGroup` - and never
+by a fixed title.
+
 ## And one that was not a platform quirk at all
 
 `send_key("Cmd-V")` once emitted the V with no Cmd, consistently, in WebKit and

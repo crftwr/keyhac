@@ -12,6 +12,7 @@ python examples/actions/extract_records.py ~/Desktop/records.csv   # Safari
 python examples/actions/handle_queue.py                            # Safari
 python examples/actions/jump_to_error.py --dry-run                 # Terminal
 python examples/actions/submit_from_csv.py                         # Safari
+python examples/actions/snapshot_settings.py                       # Terminal
 ```
 
 `submit_from_csv.py` types, so running it installs a keyboard tap for as long
@@ -27,6 +28,7 @@ from a worker at all.
 | [`handle_queue.py`](handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
 | [`jump_to_error.py`](jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
 | [`submit_from_csv.py`](submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
+| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -135,3 +137,32 @@ descending order of how much time they wasted:
     successful paste of the wrong value. Verification now runs inside the swap.
 13. **Report why each mechanism failed, not that it did.** Swallowing the
     exceptions is what let finding 10 masquerade as "paste does not work here".
+
+
+## Step 6: what the skill did not warn about
+
+`snapshot_settings.py` was written as eval case 8 against a screen nobody had
+inspected first - Terminal's settings window - specifically to find the skill's
+gaps. It found four, now in `references/quirks.md`:
+
+14. **A tab is defined by its parent, not by its role.** macOS tabs are
+    `AXRadioButton`s in an `AXTabGroup`, and so are ordinary radio groups
+    inside the panels. "Every radio button near the top" collected the
+    scrollback option as a seventh tab, and the action failed trying to select
+    it. This one was a live failure, not a review catch.
+15. **AppKit identifiers are serial numbers.** `_NS:746` is a nib ordinal. The
+    skill's "prefer identifier" is right for DOM ids and AutomationIds and
+    actively wrong here.
+16. **A native field's label is its sibling.** The Columns field has no name at
+    all; "Columns:" is a separate `AXStaticText` next to it. Keying on names
+    drops every text field on the pane. Geometry pairs them - association, not
+    addressing.
+17. **Exclude the navigation from what you record.** Tab buttons have values,
+    so the first snapshot wrote the whole tab bar's selection state into all
+    six panels, and a config diff would light up whenever the window was left
+    on a different tab.
+
+Findings 15 and 16 mean the skill's addressing rule now reads "identifier
+*when it is a real name*, then name, then text, then position in a known
+parent" - which is a genuinely different instruction from what it said before
+this action was written.
