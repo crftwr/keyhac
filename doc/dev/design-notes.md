@@ -4,7 +4,7 @@ Per-feature design decisions and the subtle behaviors deliberately carried over 
 the predecessors (keyhac-win 1.83 / keyhac-mac 1.68 — the frozen feature references).
 Keyhac2 targets the **union** of both feature sets; the few remaining gaps are
 tracked as GitHub issues (migemo matching, cron/periodic API, themes/fonts, i18n,
-portable mode, rich clipboard formats).
+rich clipboard formats).
 
 ## Deliberate ports of subtle behaviors — do not "simplify" these
 
@@ -108,3 +108,51 @@ portable mode, rich clipboard formats).
   scrollWheel types join the tap mask on macOS (motion deliberately untapped —
   Python must not sit in the path of every pointer move). Own output is recognized
   via `dwExtraInfo` / event source and ignored.
+
+## Data directory and Windows portable mode
+
+`keyhac/core/paths.py` is the single place that decides where `config.py` and the
+state files beside it (`extensions/`, `clipboard.json`, `settings.json`) live.
+Three ways, first match winning — `main()` resolves once and hands explicit paths
+to `Keymap`, `ClipboardHistory` and `Settings`, so nothing downstream re-derives a
+default:
+
+1. `--config PATH` — state beside the named config. Existed before this module; a
+   sandboxed run must not touch the real `~/.keyhac`.
+2. **Portable mode (Windows)** — a `config.py` next to `Keyhac.exe` makes the
+   bundle directory the data directory. Straight port of keyhac-win 1.x
+   (`keyhac_main.py`: *"exeと同じ位置にある設定ファイルを優先する"*), including
+   the opt-in: the file's presence is the whole switch, deleting it reverts to
+   `~/.keyhac`. No macOS counterpart — an `.app` is signed and Gatekeeper
+   re-validates it, so writing state inside the bundle is not an option.
+3. `~/.keyhac` — the default.
+
+- **Bundle detection is by layout, not by name.** `bundle_dir()` calls it a bundle
+  when `<dir-of-sys.executable>\app\keyhac\` exists (what `windows_app/build.ps1`
+  step 4 assembles). Matching on `Keyhac.exe` instead would break a renamed
+  launcher, and — worse — matching on nothing at all would let a stray `config.py`
+  beside a venv's `python.exe` switch a source run (`python -m keyhac`) into
+  portable mode.
+- **A portable data directory can be read-only** (a write-protected stick, or an
+  install under Program Files whose `config.py` an admin placed). `Settings` and
+  `ClipboardHistory` already log-and-continue on `OSError`; `configure()`'s
+  `extensions/` creation now does too, so a read-only directory costs that
+  directory and not the config load.
+- **Not portable yet:** PuiKit stores the console window's frame under
+  `HKCU\Software\PuiKit\FrameAutosave` (`frame_autosave_name="KeyhacConsole"`), and
+  the Windows launcher writes `keyhac-error.log` to `~/.keyhac` on a bootstrap
+  crash — deliberately, since the bundle directory may be read-only. Both leave a
+  trace outside a portable install.
+
+### First-run migration from keyhac-win 1.x
+
+`keyhac/platform/win/migrate.py`. On Windows, on a first run only (no
+`~/.keyhac/config.py`, a `%APPDATA%\Keyhac\config.py` present), a `MessageBoxW`
+offers to copy the 1.x config across — the move
+[migration-from-keyhac-win.md](../migration-from-keyhac-win.md) already prescribes
+before translating. It is a prompt rather than a silent copy because the two APIs
+are not interchangeable: the copied file will not load until it is translated, and
+declining leaves the working stock template. Skipped in `--no-ui` runs (no message
+box) and in portable mode (which has a `config.py` by definition). A message box
+rather than a PuiKit dialog because this runs before the console window exists —
+the same fallback `instance.py`'s already-running notice uses.

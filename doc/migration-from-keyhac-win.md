@@ -8,9 +8,18 @@ one-to-one, and key expressions are unchanged (the short modifier forms `C-`, `A
 
 The entry point is the same (`def configure(keymap):`), but the file's location moved:
 Keyhac 2 reads `~/.keyhac/config.py`, not `%APPDATA%\Keyhac\config.py`. Copy your
-config there before translating. Clipboard history and settings move with it
+config there before translating — on its first run Keyhac 2 finds the 1.x file and
+offers to do that copy for you. Clipboard history and settings move with it
 (`~/.keyhac/clipboard.json` / `settings.json`); the 1.x ini and its history are not
 imported.
+
+Until the translation pass is done the copied config will fail to load; the console
+window shows the error and every key passes through untouched, so nothing is stuck —
+delete the file to fall back to the stock template at any point.
+
+Portable mode came across too: a `config.py` next to `Keyhac.exe` still wins over the
+per-user directory, exactly as in 1.x. See
+[installation.md](installation.md#portable-mode-windows).
 
 ## Translation table
 

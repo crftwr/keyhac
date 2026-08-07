@@ -13,7 +13,7 @@ import argparse
 import signal
 import sys
 
-from keyhac.core import log
+from keyhac.core import log, paths
 from keyhac.core.keymap import Keymap
 
 logger = log.getLogger("Main")
@@ -24,8 +24,9 @@ def main() -> int:
     parser.add_argument("-d", "--debug", action="store_true",
                         help="enable debug logging (key events, dispatch)")
     parser.add_argument("-c", "--config", metavar="PATH", default=None,
-                        help="config file path (default: ~/.keyhac/config.py; "
-                             "created from the template if missing)")
+                        help="config file path (default: ~/.keyhac/config.py, "
+                             "or the Keyhac.exe directory in Windows portable "
+                             "mode; created from the template if missing)")
     parser.add_argument("--no-ui", action="store_true",
                         help="run without the console window (headless, logs to stderr)")
     args = parser.parse_args()
@@ -67,9 +68,23 @@ def main() -> int:
                 "System Settings > Privacy & Security > Accessibility, then restart Keyhac.")
             return 1
 
+    # Where config.py and the state files beside it live: --config, else
+    # Windows portable mode (a config.py next to Keyhac.exe), else ~/.keyhac.
+    app_paths = paths.resolve(args.config)
+    if app_paths.portable:
+        logger.info(f"Portable mode: using {app_paths.data_dir}")
+    elif platform_name == "windows" and not args.no_ui and not args.config:
+        # First run on a machine upgrading from Keyhac 1.x: offer to bring the
+        # old %APPDATA%\Keyhac config across before anything reads (or
+        # template-creates) the new one.  Needs a message box, so not in
+        # --no-ui runs; and an explicit --config asked for a specific setup,
+        # which a sandbox expects to start from the template.
+        platform_module.offer_config_migration(app_paths.config_path)
+
     hook, focus_provider, native_loop = platform_module.create_platform()
 
-    keymap = Keymap(hook, focus_provider, platform_name, config_path=args.config)
+    keymap = Keymap(hook, focus_provider, platform_name,
+                    config_path=app_paths.config_path)
 
     # Clipboard history + app control (platform services above the hook)
     from keyhac.core.clipboard_history import ClipboardHistory
@@ -87,13 +102,11 @@ def main() -> int:
         clipboard_provider = WinClipboardProvider()
         keymap.app_control = WinAppControl()
         keymap.window_provider = WinWindowProvider()
-    # With an explicit --config, keep the app-state files beside it (sandbox
-    # testing must not touch the real ~/.keyhac/clipboard.json etc.).
-    import os
-    state_dir = (os.path.dirname(os.path.abspath(args.config))
-                 if args.config else None)
-    history_path = os.path.join(state_dir, "clipboard.json") if state_dir else None
-    keymap._clipboard_history = ClipboardHistory(clipboard_provider, history_path)
+    # The state files always sit beside the config, however it resolved: a
+    # --config sandbox must not touch the real ~/.keyhac/clipboard.json, and a
+    # portable install keeps its history on the stick with its config.
+    keymap._clipboard_history = ClipboardHistory(
+        clipboard_provider, app_paths.state_file("clipboard.json"))
 
     keymap.configure()
 
@@ -102,9 +115,8 @@ def main() -> int:
                              clipboard_provider)
 
     from keyhac.core.settings import Settings
-    settings_path = os.path.join(state_dir, "settings.json") if state_dir else None
     return _run_with_console(keymap, hook, platform_name, clipboard_provider,
-                             Settings(settings_path))
+                             Settings(app_paths.state_file("settings.json")))
 
 
 def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,

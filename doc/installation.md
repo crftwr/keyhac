@@ -91,9 +91,31 @@ Everything lives under `~/.keyhac/` on both OSes:
 Running with `--config PATH` keeps `clipboard.json` and `settings.json` beside that
 config file instead — handy for a sandboxed or experimental setup.
 
+### Portable mode (Windows)
+
+Put a `config.py` next to `Keyhac.exe` and that directory becomes the data
+directory — config, clipboard history and settings all live beside the executable
+and nothing is written to your user profile. This is the same portable mode
+Keyhac 1.x had, and the same opt-in: the file's presence is the whole switch, so
+deleting it goes back to `~/.keyhac`.
+
+Use it for Keyhac on a USB stick, or to keep several independent setups side by
+side. Start from a copy of your existing `~/.keyhac/config.py`, or of
+[the template](../keyhac/_config.py).
+
+Two things still live outside a portable install: the console window's remembered
+position (`HKCU\Software\PuiKit\FrameAutosave`) and `keyhac-error.log`, written to
+`~/.keyhac` if Keyhac fails before its window opens. Neither affects your
+configuration.
+
+Portable mode is Windows-only — a macOS `.app` is a signed bundle that Gatekeeper
+re-validates, so Keyhac cannot write into it. Use `--config PATH` there.
+
 **Note for Keyhac-for-Windows (1.x) users**: the data directory moved from
-`%APPDATA%\Keyhac` to `~/.keyhac`. Your old `config.py` needs API migration anyway —
-see [migration-from-keyhac-win.md](migration-from-keyhac-win.md).
+`%APPDATA%\Keyhac` to `~/.keyhac`. On its first run Keyhac 2 spots a 1.x
+`config.py` there and offers to copy it across; it still needs an API migration
+pass afterwards — see
+[migration-from-keyhac-win.md](migration-from-keyhac-win.md).
 
 ## Privacy notes
 

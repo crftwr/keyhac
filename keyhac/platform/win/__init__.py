@@ -22,3 +22,8 @@ def acquire_instance_lock():
 def notify_already_running():
     from keyhac.platform.win.instance import notify_already_running
     notify_already_running()
+
+
+def offer_config_migration(target_config_path):
+    from keyhac.platform.win.migrate import offer_config_migration
+    return offer_config_migration(target_config_path)
