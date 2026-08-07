@@ -130,6 +130,18 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   unchecked checkbox's `0` behind a truthiness test.
   **Not covered**: Terminal.app and iTerm2 whole-value reads — neither had a
   window open — so the terminal half of §6 is still unmeasured.
+- **macOS waiting and AX notifications** (2026-08-06): the three-beat modal
+  cycle end to end in the real thread architecture — `CFRunLoop` on the main
+  thread, the action on a worker, every UI read dispatched back — press,
+  `wait_for_element` (modal seen in 10–25 ms), read, press, `wait_until_gone`
+  (22 ms), `wait_for_stable`, a timeout that raised at 1.03 s, and the guard
+  that refuses to wait on the loop thread. `UIObserver` delivered
+  `AXWindowCreated` / `AXCreated` / `AXValueChanged` / `AXUIElementDestroyed`
+  for a Finder window opening, and **nothing at all** for a Safari `<dialog>`
+  opening — registered on the application element and on the `AXWebArea`
+  alike. Writing `AXValue` to a plain text input also did nothing, silently.
+  Those two negatives are why `wait_for` polls rather than waiting on
+  notifications, and they are recorded in `ai-integration.md` §5 and §7.3.
 
 **Pending Windows verification** (written against `UIAutomationClient.h`, never
 run — and this file's own rule is that a wrong vtable slot silently calls a

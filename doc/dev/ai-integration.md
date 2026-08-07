@@ -323,11 +323,31 @@ Ordered by dependency. Layers 1–4 are the implementation target.
 Keyhac can record *input* but not *what happened*. Macro recording captures keys only.
 **This layer splits in two, and the halves have very different priority.**
 
-**Required — event subscription.** Subscribe to AX notifications (`kAXWindowCreated`,
-`kAXUIElementDestroyed`, `kAXValueChanged`) and the UIA event handlers. Genuinely new
-work: nothing in the tree subscribes to AX notifications or UIA events today (no
-`AXObserver`, no `SetWinEventHook`, no UIA event handler). This is what `wait_for` is
-built on, and **everything on the output side depends on it** (§7.1).
+**Required — event subscription.** ~~This is what `wait_for` is built on.~~ **It
+is not, and measuring said so.** `keyhac/platform/mac/observer.py` now
+subscribes to AX notifications (`AXObserver`, 14 of them), and what it is worth
+turned out to be conditional:
+
+- **Native Cocoa applications post generously.** Opening a Finder window
+  delivered `AXWindowCreated`, `AXCreated`, `AXFocusedWindowChanged`,
+  `AXUIElementDestroyed` and a stream of `AXValueChanged`.
+- **Web content posts essentially nothing.** Opening a `<dialog>` in Safari
+  delivered *zero* notifications — registered on the application element and
+  registered on the `AXWebArea` alike. Nor did writing `AXValue` to a field
+  produce an `AXValueChanged`.
+
+There is a structural reason, not just an implementation gap: AX notifications
+do not bubble, so "wait for an element to appear" would have to be registered
+on an element that does not exist yet, and the containing element is not
+obliged to announce it.
+
+So `wait_for` is **polling-first** (`keyhac/core/wait.py`), 20 ms backing off to
+250 ms, and subscription is an accelerator passed in as `wake=`. That inverts
+the dependency this section used to assert: the output side depends on
+`wait_for`, `wait_for` does not depend on subscription, and Windows therefore
+has working waits before its WinEvent/UIA counterpart exists at all. Against a
+browser — most of §2 — polling is what finds the change, and it is fast enough:
+a modal was seen 10–25 ms after the click.
 
 **Demoted — mouse input capture and trace recording.** Two independent findings push
 these down. First, of the concrete use cases catalogued in §2, almost none are authored
@@ -529,15 +549,31 @@ pagination, application ready after launch. **`sleep` produces environment-depen
 breakage** — it passes on the developer's machine and fails on a slower or faster one.
 
 ```
-wait_for(condition, timeout)        # appearance, disappearance, value change
-wait_for_stable(element, timeout)   # re-render settled
+wait_for(condition, timeout, message=…, wake=…)   # returns the condition's value
+wait_for_element(root, timeout, **criteria)       # beat 1
+wait_until_gone(root, timeout, **criteria)        # beat 3
+wait_for_stable(root, quiet, timeout)             # re-render settled
 ```
 
-Make "a generated action containing `sleep` is a failure" a hard skill rule, at the same
-level as the rule about coordinates.
+All four are in `keyhac/core/wait.py`, verified live against the three-beat
+modal cycle in §7.2. Make "a generated action containing `sleep` is a failure" a
+hard skill rule, at the same level as the rule about coordinates.
 
-This is what makes AX notification / UIA event subscription load bearing even though the
-rest of Layer 1 is demoted (§5).
+Two constraints shaped the implementation, and both are worth knowing before
+changing it:
+
+- **The condition cannot run on the calling thread.** Waiting happens in
+  `ThreadedAction.run()`, because a key press must return control immediately
+  (§13), but reading elements is main-thread work. So each poll hands the
+  condition to `keymap.call_on_main_thread` and blocks for the answer, and
+  calling `wait_for` *on* the loop thread raises rather than deadlocking the
+  keyboard.
+- **A timeout is an error, not a `False`.** `WaitTimeout` subclasses
+  `TimeoutError`. An action whose precondition never arrived stops (§3.7).
+
+Still open, and inherited rather than introduced: a long wait holds
+`ThreadedAction`'s single pool worker for its whole duration, so a ten-minute
+wait stalls every other threaded action. That is the executor problem in §2.1.
 
 ### 7.2 Menus and modals are transient
 
@@ -557,6 +593,14 @@ over modals — the next cycle starts before the previous one finished.
 `set_value` has the worst failure mode: the value appears in the field, the framework's
 internal state never updates, and submission sends empty. **Default to paste, fall back
 to keys.** For Japanese input, paste is effectively mandatory.
+
+*Measured, and worse than described* (macOS, Safari, 2026-08-06): writing
+`AXValue` to a plain `<input type=text>` — no framework involved — did not even
+put the value on screen. The write returned without error and the field stayed
+empty. So on macOS the failure is not "the framework missed it", it is "the
+write did nothing", and it is silent either way. Whatever the mechanism, the
+rule that survives is the one already stated: **read the value back after
+writing**, and treat a mismatch as a failed step rather than a warning.
 
 **Always read the value back after writing.** Skill rule.
 
@@ -742,8 +786,12 @@ Extend `PRIVACY.md` with the above.
    walk, the three text accessors and `element_at_point` are written against
    header slot numbers and have never been run, and this file's own rule is
    that a wrong vtable slot silently calls a different method.
-2. **`wait_for` and event subscription** — the required half of Layer 1 (§7.1).
-   Everything on the output side depends on it.
+2. ~~**`wait_for` and event subscription**~~ — **done on macOS.**
+   `keyhac/core/wait.py` is portable and polling-first, so Windows has working
+   waits today; `keyhac/platform/mac/observer.py` accelerates native apps and,
+   as measured, does nothing for web content (§5, Layer 1). A Windows
+   WinEvent/UIA observer is therefore optional, and worth doing only if a
+   Windows-native target shows the latency.
 3. **Two measurements, minutes each** — does `set_value` work on the target systems
    (§7.3); do the target terminals implement whole-value text reads (§6).
 4. **Hand-write actions** ← do not skip. Recommended set and order: cross-system

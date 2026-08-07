@@ -19,6 +19,9 @@ from keyhac.core.clipboard_history import ClipboardHistory
 from keyhac.core.uitree import (
     UINode, find_element, find_elements, format_tree, get_ui_tree,
 )
+from keyhac.core.wait import (
+    WaitTimeout, wait_for, wait_for_element, wait_for_stable, wait_until_gone,
+)
 from keyhac.actions import (
     ActivateWindow,
     MouseButtonClick,
@@ -58,6 +61,11 @@ __all__ = [
     "find_element",
     "find_elements",
     "format_tree",
+    "wait_for",
+    "wait_for_element",
+    "wait_until_gone",
+    "wait_for_stable",
+    "WaitTimeout",
     "ChooserAction",
     "MouseButtonClick",
     "MouseButtonDown",

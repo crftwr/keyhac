@@ -381,6 +381,64 @@ Once the text is in hand the work is a regex, not guesswork — that is more
 accurate than inference for paths, line numbers, URLs and request IDs, not
 merely cheaper.
 
+### Waiting for the UI
+
+Anything that acts on the UI spends most of its time waiting: a modal opens, a
+page loads, a dependent field re-renders. `sleep` is the wrong tool — it passes
+on the machine it was written on and fails on a slower one, and on a faster one
+it fails *silently*, acting on a screen that has not arrived.
+
+```python
+from keyhac import wait_for, wait_for_element, wait_until_gone, wait_for_stable
+
+class OpenDetails(ThreadedAction):
+    def run(self):                                   # worker thread
+        button.element.perform_action("AXPress")
+        modal = wait_for_element(window, identifier="modal-text", timeout=5)
+        text = modal.all_text
+        close.element.perform_action("AXPress")
+        wait_until_gone(window, identifier="modal-text")   # the third beat
+        return text
+```
+
+That third wait is the one that breaks iteration when it is left out: without
+it the next cycle starts while the previous modal is still up, and clicks land
+in it.
+
+- `wait_for(condition, timeout, message=…)` returns whatever the condition
+  returned, so `element = wait_for(lambda: find_element(...))` is one step.
+- `wait_for_element(root, timeout, **criteria)` / `wait_until_gone(...)` take
+  the same criteria as `find_element`.
+- `wait_for_stable(root, quiet=0.3)` waits for a subtree to stop changing —
+  the fallback when there is no specific thing to wait for. It re-reads the
+  tree on each check, so bound it with `max_depth` / `max_nodes` on anything
+  large.
+- A timeout raises `WaitTimeout` (a `TimeoutError`). It is an error and not a
+  `False` on purpose: an action whose precondition never arrived should stop,
+  not carry on against a screen that is not there.
+
+**Waiting belongs in `ThreadedAction.run()`.** Called on the event-loop thread
+it would block the keyboard hook, so it raises `RuntimeError` instead of
+hanging your keyboard. The condition itself is dispatched back to the event-loop
+thread automatically, which is what makes it legal to read elements from a
+worker here; `keymap.call_on_main_thread` is the general form of that.
+
+Waits poll, starting at 20 ms and backing off to 250 ms. On macOS an
+`AXObserver` can cut the latency for native applications:
+
+```python
+from keyhac.platform.mac.observer import UIObserver
+
+with UIObserver(keymap.focus.pid) as observer:
+    wait_for_element(window, name="Save", wake=observer.event)
+```
+
+It is an accelerator, never a requirement — and one with a measured limit: a
+native Cocoa app posts notifications generously, while **web content posts
+essentially nothing** for changes inside a page. Against a browser the polling
+is what finds the change, and that is fast enough (a modal was seen 10–25 ms
+after the click).
+
 ## Keyboard macros
 
 ```python
