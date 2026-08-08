@@ -218,12 +218,33 @@ class Harness:
                 time.sleep(interval)
             done.set()
 
+        # Focus is checked when the harness is built, but a burst takes long
+        # enough for something to steal it in the middle - a window opening
+        # mid-run is exactly what happens on a machine being used for anything
+        # else - and the keystrokes sent during that window land in *it*. The
+        # count assertions then fail as though the engine had dropped them.
+        #
+        # Sampled throughout rather than checked at the end, because the steal
+        # is usually transient: a Notepad opening and closing takes focus and
+        # gives it back, so an end-of-burst check sees nothing wrong and the
+        # test still fails, one keystroke short. This cannot hide a real
+        # defect - if focus held for the whole burst, every assertion runs.
+        held = [True]
+
+        def pump_watching(seconds):
+            self.probe.pump(seconds)
+            if user32.GetFocus() != self.probe.hwnd:
+                held[0] = False
+
         thread = threading.Thread(target=sender, daemon=True)
         thread.start()
         while not done.is_set():
-            self.probe.pump(0.02)
-        self.probe.pump(settle)
+            pump_watching(0.02)
+        pump_watching(settle)
         thread.join(timeout=5.0)
+
+        if not held[0]:
+            pytest.skip("lost keyboard focus mid-burst; the keys went elsewhere")
 
     def stats(self):
         samples = self.callback_ms

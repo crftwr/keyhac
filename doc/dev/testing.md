@@ -50,6 +50,26 @@ live on each OS.
 - **Re-assert keyboard focus per test, not once per module.** A heavy run can cost
   the probe its focus, and every later test then silently injects into somebody
   else's window. Skip rather than fail when focus is refused.
+- **And sample it *during* a burst, not only at the end.** The steal is usually
+  transient — a window opens, takes focus and gives it back — so an
+  end-of-burst check sees nothing wrong while the test still fails one
+  keystroke short. `type_keys` now watches focus on every pump and skips if it
+  ever left the probe. This is what turned an intermittent red into an honest
+  skip: the live input tests were failing roughly one run in four, and the
+  cause was the desktop being busy with *other work of ours* — Notepad, a
+  terminal and VS Code being opened and closed by the UIA probes running
+  alongside. On a quiet desktop the same tests passed 4/4 full runs before the
+  change and 353/353 after, with no skips, so the guards are inert until
+  something really is interfering.
+- **A guard must not be able to hide the defect the test exists to catch.**
+  These skip only on *detected interference* — focus observed to leave the
+  probe, or the pointer observed moving while nothing is injecting — never on
+  "the assertion failed". Under deliberately manufactured hostility (a Notepad
+  spawned every 1.5 s plus the cursor jogged continuously) the integrity tests
+  correctly skip, while a burst that genuinely loses keystrokes still fails,
+  and the latency characterization still reports a 342 ms callback overrun.
+  That last one is a true result about a machine under that much load, not
+  noise to be suppressed.
 - **Keyboard-type DLLs pin the layout tables** (`tests/test_win_layout.py`).
   `kbdus.dll` / `kbd106.dll` export `KbdLayerDescriptor()` → `KBDTABLES`, whose
   `pusVSCtoVK` is the scancode→vk truth for that keyboard *regardless of what is

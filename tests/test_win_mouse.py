@@ -123,6 +123,29 @@ def probe(_probe_window):
     return _probe_window
 
 
+def pointer_is_quiet(hook, samples: int = 3, gap: float = 0.03) -> bool:
+    """Whether anything *else* is driving the pointer right now.
+
+    These tests inject a move and then assert where the cursor ended up, which
+    is only meaningful when nobody else is moving it. A window opening and
+    taking foreground, or a session where a human or another harness is using
+    the mouse, perturbs it - and the observed failures all happened during a
+    run where other windows were being opened and closed throughout.
+
+    The distinction this buys is worth the three samples: a wrong answer while
+    the pointer is quiet is a defect, and the same answer while something else
+    is moving it is noise. Without the check both look identical, and the
+    module's own docstring already promises to skip on a hostile environment
+    rather than fail.
+    """
+    first = hook.cursor_pos()
+    for _ in range(samples):
+        time.sleep(gap)
+        if hook.cursor_pos() != first:
+            return False
+    return True
+
+
 @pytest.fixture()
 def restore_cursor(hook):
     saved = hook.cursor_pos()
@@ -136,14 +159,22 @@ def restore_cursor(hook):
 def test_cursor_pos_and_relative_move(hook, restore_cursor):
     # Retried: a human moving the physical mouse mid-test perturbs the
     # cursor; any single clean attempt proves the injection.
+    landed = None
+    attempted = 0
     for _attempt in range(3):
+        if not pointer_is_quiet(hook):
+            continue                    # something else owns the pointer
+        attempted += 1
         x0, y0 = hook.cursor_pos()
         hook.send_mouse([("move", 17, 11)])
         time.sleep(0.05)
         x1, y1 = hook.cursor_pos()
         if abs(x1 - (x0 + 17)) <= 1 and abs(y1 - (y0 + 11)) <= 1:
             return
-    pytest.fail(f"cursor went to {(x1, y1)}, expected {(x0 + 17, y0 + 11)}")
+        landed = ((x1, y1), (x0 + 17, y0 + 11))
+    if not attempted:
+        pytest.skip("something else is moving the pointer")
+    pytest.fail(f"cursor went to {landed[0]}, expected {landed[1]}")
 
 
 def test_click_lands_in_probe_window(hook, probe, restore_cursor):
@@ -198,9 +229,25 @@ def test_mouse_hook_classifies_own_vs_real(hook, probe):
         inp = INPUT()
         inp.type = 0
         inp.mi = MOUSEINPUT(0, 0, 120, 0x0800, 0, 0)  # wheel, no sentinel
+        # A control pump before injecting anything. A physical wheel or a
+        # window opening under the pointer also arrives as an untagged event,
+        # and would be indistinguishable from the one this test is about to
+        # send - so establish that the machine is quiet first, and skip rather
+        # than measure noise.
+        probe.pump(0.3)
+        if seen:
+            pytest.skip("the physical mouse is in use")
+
         user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
         probe.pump(0.3)
         assert seen == [1]
+
+        # Same again before the second half: any event arriving during a quiet
+        # window here is the environment's, and one arriving after the tagged
+        # send would otherwise be blamed on the classifier.
+        probe.pump(0.3)
+        if seen != [1]:
+            pytest.skip("a physical mouse event arrived mid-test")
 
         hook.send_mouse([("wheel", -1.0)])  # own output: must NOT count
         probe.pump(0.3)
