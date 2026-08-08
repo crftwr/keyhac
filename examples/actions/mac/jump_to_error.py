@@ -13,7 +13,7 @@ what regexes beat language models at.
 
 Run it (macOS, with a Terminal window open that has printed an error):
 
-    python examples/actions/jump_to_error.py
+    python tools/run_action_file.py examples/actions/mac/jump_to_error.py
 
 THE LADDER (§6).  Three ways into the text layer, cheapest first, and this
 action tries them in that order:
@@ -28,17 +28,10 @@ action tries them in that order:
 import pathlib
 import re
 import subprocess
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import ThreadedAction, UINode, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
-
-logger = log.getLogger("JumpToError")
+logger = getLogger("JumpToError")
 
 #: Where errors say they are.  Two shapes, because the first version of this
 #: action knew only the first one and found nothing in a terminal showing a
@@ -136,7 +129,3 @@ class JumpToError(ThreadedAction):
     def _resolve(match, how):
         path = pathlib.Path(match.group("path")).expanduser()
         return str(path), int(match.group("line")), how
-
-
-if __name__ == "__main__":
-    sys.exit(run_action(JumpToError(dry_run="--dry-run" in sys.argv)))

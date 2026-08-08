@@ -18,7 +18,7 @@ So the rules this demonstrates are the ones §2.1 asks for:
 
 Run it (macOS, Safari):
 
-    python examples/actions/submit_from_csv.py
+    python tools/run_action_file.py examples/actions/mac/submit_from_csv.py
 
 The fixture rejects the third row on purpose (its amount is not a number), so
 a clean run ends with three accepted, one failed, and a CSV that says which.
@@ -28,20 +28,12 @@ import csv
 import pathlib
 import shutil
 import subprocess
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import FillFailed, ThreadedAction, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac import FillFailed                                     # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
+logger = getLogger("SubmitFromCsv")
 
-logger = log.getLogger("SubmitFromCsv")
-
-FIXTURES = _ACTIONS / "fixtures"
+FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures"
 PAGE = (FIXTURES / "submit.html").as_uri()
 
 #: CSV column -> the field on the form.  The mapping is the part a recorded
@@ -152,8 +144,3 @@ class SubmitFromCsv(ThreadedAction):
         # Replace atomically: the operator's record of what has been submitted
         # must never be a half-written file.
         shutil.move(str(temporary), str(self.source))
-
-
-if __name__ == "__main__":
-    source = sys.argv[1] if len(sys.argv) > 1 else None
-    sys.exit(run_action(SubmitFromCsv(source)))

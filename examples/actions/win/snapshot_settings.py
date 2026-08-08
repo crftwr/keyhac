@@ -31,22 +31,16 @@ Read-only: it switches tabs and puts the original one back, and never presses
 OK or Apply. Close the dialog yourself when it is done.
 
     # open Mouse Properties first:  control main.cpl
-    python examples/actions/snapshot_settings_win.py [output.json]
+    python tools/run_action_file.py examples/actions/win/snapshot_settings.py
+        [output_path=settings.json]
 """
 
 import json
 import pathlib
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import ThreadedAction, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
-
-logger = log.getLogger("SnapshotWinSettings")
+logger = getLogger("SnapshotWinSettings")
 
 #: Controls whose value is worth recording.  ListItem and TreeItem are left out
 #: on purpose: a list's items are its contents, not its setting - the ComboBox
@@ -238,8 +232,3 @@ class SnapshotWinSettings(ThreadedAction):
                 continue
             best, best_gap = label, gap
         return (best.all_text.strip().rstrip(":") if best else None)
-
-
-if __name__ == "__main__":
-    output = sys.argv[1] if len(sys.argv) > 1 else "settings.json"
-    sys.exit(run_action(SnapshotWinSettings(output_path=output)))

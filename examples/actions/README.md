@@ -13,21 +13,37 @@ for a tree it will never meet buys nothing. The framework underneath is
 portable; the selectors are not, and pretending otherwise would teach the wrong
 thing to anyone reading these as a template.
 
+These files are actions and nothing else — no `__main__` block, no `sys.path`
+preamble — because that is what a registered action is, and an example that
+carried launcher scaffolding would be teaching it. [`tools/run_action_file.py`](../../tools/run_action_file.py)
+supplies the launching, from the repository root:
+
 ```bash
-python examples/actions/mac/extract_records.py ~/Desktop/records.csv   # Safari
-python examples/actions/mac/handle_queue.py                            # Safari
-python examples/actions/mac/jump_to_error.py --dry-run                 # Terminal
-python examples/actions/mac/submit_from_csv.py                         # Safari
-python examples/actions/mac/snapshot_settings.py                       # Terminal > Settings
-python examples/actions/win/snapshot_settings.py                       # control main.cpl
+RUN="python tools/run_action_file.py"
+
+$RUN examples/actions/mac/extract_records.py output_path=~/records.csv  # Safari
+$RUN examples/actions/mac/handle_queue.py                               # Safari
+$RUN examples/actions/mac/jump_to_error.py dry_run=true                 # Terminal
+$RUN examples/actions/mac/submit_from_csv.py                            # Safari
+$RUN examples/actions/mac/snapshot_settings.py             # Terminal > Settings
+$RUN examples/actions/win/snapshot_settings.py             # control main.cpl
 ```
+
+Arguments are `key=value` and become constructor keyword arguments, because that
+is where a real action takes them: `keymap.register_action("snapshot",
+SnapshotSettings(output_path=…))` in `configure()` is the call site being stood
+in for.
+
+The runner starts an event loop on the main thread and runs the action on a
+worker — the real thread architecture, because that is what makes waiting legal
+from a worker at all. It is a development tool and deliberately not a shipped
+entry point: running under a bare interpreter cannot use the Accessibility
+permission granted to Keyhac.app, so it borrows the one held by your terminal
+instead. That file's docstring has the full reasoning; an agent should be
+reaching the daemon over MCP, where the permission already lives.
 
 `mac/submit_from_csv.py` types, so running it installs a keyboard tap for as long
 as it runs — that is what puts the modifier flags on injected keystrokes.
-
-`_runner.py` starts an event loop on the main thread and runs the action on a
-worker — the real thread architecture, because that is what makes waiting legal
-from a worker at all.
 
 | Action | Exercises | Verified |
 |---|---|---|

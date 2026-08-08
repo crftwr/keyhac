@@ -17,25 +17,18 @@ what it is looking at before every press, and stops.
 
 Run it (macOS, Safari):
 
-    python examples/actions/handle_queue.py
+    python tools/run_action_file.py examples/actions/mac/handle_queue.py
 """
 
 import pathlib
 import subprocess
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import ThreadedAction, WaitTimeout, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac import WaitTimeout                                    # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
+logger = getLogger("HandleQueue")
 
-logger = log.getLogger("HandleQueue")
-
-FIXTURE = (_ACTIONS / "fixtures" / "dialog.html").as_uri()
+FIXTURE = (pathlib.Path(__file__).resolve().parents[1]
+           / "fixtures" / "dialog.html").as_uri()
 
 
 class PreconditionFailed(RuntimeError):
@@ -146,7 +139,3 @@ class HandleQueue(ThreadedAction):
         window = self.ui.window(app=self.app_name)
         node = window.find(identifier="log") if window else None
         return node.all_text.strip() if node else None
-
-
-if __name__ == "__main__":
-    sys.exit(run_action(HandleQueue()))

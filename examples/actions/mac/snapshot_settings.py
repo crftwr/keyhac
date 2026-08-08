@@ -24,22 +24,16 @@ line for line, and not one selector survives. `examples/actions/README.md`
 records what that measured.
 
     # open Terminal > Settings first
-    python examples/actions/snapshot_settings.py [output.json]
+    python tools/run_action_file.py examples/actions/mac/snapshot_settings.py
+        [output_path=~/Desktop/settings.json]
 """
 
 import json
 import pathlib
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import ThreadedAction, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
-
-logger = log.getLogger("SnapshotSettings")
+logger = getLogger("SnapshotSettings")
 
 #: Controls whose value is worth recording.
 VALUE_ROLES = "AXCheckBox|AXRadioButton|AXTextField|AXPopUpButton|AXSlider"
@@ -197,8 +191,3 @@ class SnapshotSettings(ThreadedAction):
                 continue
             best, best_gap = label, gap
         return (best.all_text.strip().rstrip(":") if best else None)
-
-
-if __name__ == "__main__":
-    output = sys.argv[1] if len(sys.argv) > 1 else "~/Desktop/settings.json"
-    sys.exit(run_action(SnapshotSettings(output_path=output)))

@@ -13,7 +13,7 @@ point being demonstrated, not a coincidence.
 
 Run it (macOS, Safari, no configuration needed):
 
-    python examples/actions/extract_records.py
+    python tools/run_action_file.py examples/actions/mac/extract_records.py
 
 WHAT IT IS BUILT TO SURVIVE
   - A page that has not arrived yet.  Every navigation is followed by a wait
@@ -26,22 +26,13 @@ WHAT IT IS BUILT TO SURVIVE
 
 import csv
 import pathlib
-import re
 import subprocess
-import sys
 
-_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
-sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
-sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
+from keyhac import ThreadedAction, WaitTimeout, getLogger
 
-from _runner import run_action                                    # noqa: E402
-from keyhac import UINode, WaitTimeout                            # noqa: E402
-from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core import log                                       # noqa: E402
+logger = getLogger("ExtractRecords")
 
-logger = log.getLogger("ExtractRecords")
-
-FIXTURES = _ACTIONS / "fixtures"
+FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures"
 
 #: The systems to read, and what each calls the three columns we want.  This
 #: mapping is the whole of "normalisation" - the part a demonstration could
@@ -225,8 +216,3 @@ class ExtractRecords(ThreadedAction):
                 writer.writerow({field: existing[key].get(field, "")
                                  for field in FIELDS})
         return len(existing)
-
-
-if __name__ == "__main__":
-    output = sys.argv[1] if len(sys.argv) > 1 else "~/Desktop/records.csv"
-    sys.exit(run_action(ExtractRecords(output_path=output)))
