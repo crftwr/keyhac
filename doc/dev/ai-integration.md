@@ -1033,6 +1033,18 @@ Latency budget:
 
 ## 14. What is built (2026-08-07)
 
+**Shipped as experimental**, from the release that merged this work. The
+plumbing is done and the experience is not: what argues for shipping is that
+it is off by default and additive, so it costs nothing to anyone who leaves it
+alone, and that §11's remaining question — `UINode`'s element identity and
+handle lifetime — will be settled by people writing real actions rather than
+by more design. What argues against calling it finished is on this page: layer
+3 is partial in exactly the places §2's workload needs (no cancellation, no
+`preconditions()`, the `max_workers=1` pool), layer 5 does not exist so a hand
+edit of `config.py` is still the transport, and the whole generation record is
+two sessions on one macOS machine with no Windows generation at all. The
+marker comes off when that shape stops moving, not when the backlog empties.
+
 Against the layers in §5 and the sequence in §10:
 
 | | State |
