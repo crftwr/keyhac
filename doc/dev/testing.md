@@ -135,7 +135,8 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   arrives as a tuple, not a struct), and the first cut of `format_tree` hid an
   unchecked checkbox's `0` behind a truthiness test.
   **Not covered**: Terminal.app and iTerm2 whole-value reads — neither had a
-  window open — so the terminal half of §6 is still unmeasured.
+  window open — so the terminal half of §6 is still unmeasured *on macOS*. The
+  Windows half is measured; see the Text-pattern survey below.
 - **macOS waiting and AX notifications** (2026-08-06): the three-beat modal
   cycle end to end in the real thread architecture — `CFRunLoop` on the main
   thread, the action on a worker, every UI read dispatched back — press,
@@ -211,6 +212,35 @@ Windows UI harness:**
   search has to be scoped to the panel as well as by capability: run against
   the whole window it finds the formatting toolbar's **Bold** button, which
   also has a `ToggleState` and has nothing to do with Find.
+
+- **The Text pattern in the applications people actually run** (2026-08-07,
+  `tools/text_pattern_survey.py`). Notepad had been the only Windows evidence
+  for §6's cheap rung, and it is a weak proxy — one document surface, no
+  renderer. **Windows Terminal** returns 366 characters of scrollback from a
+  `Text` element with `get_line_at_caret()` giving one line of it; **VS Code**
+  exposes the editor as an `Edit` named for the open file. Both answer, so the
+  read-everything-and-match path holds on Windows as it does on macOS.
+  Notepad runs alongside as a **control**, because a survey that finds nothing
+  in VS Code cannot otherwise tell "VS Code exposes no text" from "the probe is
+  broken" — and on the first two runs the probe *was* broken, so this earned
+  itself immediately.
+- **An Electron window's text is absent from the first read.** VS Code offered
+  12 Text-pattern elements and no buffer on one probe and 26 with the buffer
+  minutes later, from identical code: Chromium enables renderer accessibility
+  when a UIA client attaches, and has not finished by the time that client's
+  first read returns. Windows needs no equivalent of macOS's
+  `set_manual_accessibility()`; it needs a retry. The mechanism was not
+  isolated — the process was the operator's own VS Code and could not be
+  restarted cold — but the observation repeated and the consequence is the same
+  either way.
+- **Two ways to launch a terminal wrongly**, both of which cost a run.
+  `wt.exe` treats `;` as its *own* subcommand separator, so a PowerShell
+  `-Command` containing one is split into extra tabs and never arrives intact;
+  use `-File`. And `wt --title` holds only until the hosted program names the
+  window, which PowerShell does immediately, using its own command line — which
+  contained the survey's sentinel, so the terminal's window matched the *next*
+  target's title search and got measured and reported as VS Code. Set the title
+  from inside the shell, and give every target its own token.
 
 **Notepad 11 drops and reorders injected input, and this is the target's doing,
 not ours.** `hello-keys` arrived in its text box as `helloke-ys`; a `Ctrl-V`

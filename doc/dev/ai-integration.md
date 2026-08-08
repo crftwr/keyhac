@@ -925,12 +925,24 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   `AXValue`, and `get_line_at_caret()` returns the prompt line, so the
   one-keystroke path works there too and `examples/actions/mac/jump_to_error.py`
   uses it. iTerm2 untested (not installed here).
-  **Windows: yes, for the Text pattern itself** — Notepad's editor answers
+  **Windows: yes, and now measured where it matters.** Notepad's editor answers
   `get_text()`, `get_line_at_caret()` (the caret's line, not the document) and
-  `get_selection()` through the UIA Text pattern, with every vtable slot the
-  Windows implementation guesses at now pinned live (2026-08-07,
-  `tools/uia_pass.py`). Windows Terminal and the editors people actually run
-  are still unmeasured, and Notepad is a weak proxy for them.
+  `get_selection()`, with every vtable slot the Windows implementation guesses
+  at pinned live (`tools/uia_pass.py`). **Windows Terminal** returns its
+  scrollback as a `Text` element and one line at the caret; **VS Code** exposes
+  the editor as an `Edit` named for the open file
+  (`tools/text_pattern_survey.py`, 2026-08-07, with Notepad run alongside as a
+  control so a null result could be attributed). So the cheap rung of §6's
+  ladder holds on both platforms, and this question is closed — bar iTerm2,
+  which is not installed here.
+
+  One caveat that belongs with it: **the first read of an Electron window
+  returns nothing.** VS Code offered 12 Text-pattern elements and no buffer on
+  one probe, and 26 with the buffer minutes later, same code. Chromium enables
+  renderer accessibility when a UIA client attaches and is not finished by the
+  time that client's first read returns. Windows therefore needs no equivalent
+  of macOS's `set_manual_accessibility()` — it needs a retry, which `wait_for`
+  already is.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows

@@ -88,12 +88,40 @@ This is why `wait_for` polls (20 ms backing off to 250 ms) and an observer is
 only an accelerator. Against a browser, polling is what finds the change, and
 it is fast enough - a modal was seen 10-25 ms after the click.
 
-## Terminals do answer whole-value reads
+## Terminals and editors do answer whole-value reads
 
 Terminal.app's `AXTextArea` returns the entire scrollback through `AXValue`,
 and `get_line_at_caret()` returns the prompt line. So the cheap path - read
 everything, take the last match - works, and neither a selection nor the
 pointer is needed. iTerm2 untested.
+
+Measured on Windows too (`tools/text_pattern_survey.py`, 2026-08-07): **Windows
+Terminal** exposes the buffer as a `Text` element - 366 characters of
+scrollback, with `get_line_at_caret()` returning one line of it - and **VS
+Code** exposes the editor as an `Edit` named for the open file. Both answer the
+cheap path, so §6's ladder holds on both platforms. Find them by capability
+(`"SelectedText" in get_attribute_names()` is true only where TextPattern is
+supported) rather than by role: the terminal's buffer is a `Text`, Notepad's is
+a `Document` and VS Code's is an `Edit`.
+
+## Windows: an Electron app's text is not there on the first read
+
+VS Code's window was probed twice, minutes apart, by the same code. The first
+time it offered 12 Text-pattern elements and **none of them held the buffer** -
+the `Document #RootWebArea` was present and empty of content. The second time
+it offered 26, two of which held it.
+
+Chromium turns renderer accessibility on in response to a UIA client attaching,
+and it does not finish doing so before that client's first read returns. (The
+exact mechanism was not isolated - the process was the operator's own running
+VS Code and could not be restarted to test cold - but the observation was
+repeatable and the consequence does not depend on the cause.)
+
+So on Windows an Electron app needs **no** equivalent of macOS's
+`set_manual_accessibility()`; it needs a *retry*. Never conclude "this window
+has no text" from one read - `wait_for` the element you expect, which is what
+rule 1 already tells you to do, and is one more reason not to write the read as
+a single shot.
 
 ## Native macOS: identifiers are serial numbers
 
