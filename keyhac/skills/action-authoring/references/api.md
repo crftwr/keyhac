@@ -1,9 +1,20 @@
 # API reference for actions
 
 Everything an action needs hangs off `self.ui` inside a `ThreadedAction`
-(`keymap.ui` elsewhere) and off the nodes it hands back. Only three names are
-importable: `UINode`, `WaitTimeout`, `FillFailed`. The generated reference is
-`doc/action_api.md`; this is the working subset.
+(`keymap.ui` elsewhere) and off the nodes it hands back. The generated
+reference is `doc/action_api.md`; this is the working subset.
+
+The whole import list, and there is nothing else to reach for:
+
+```python
+from keyhac import ThreadedAction, WaitTimeout, FillFailed, UINode, getLogger
+
+logger = getLogger("MyAction")     # `logger` is NOT importable - make one
+```
+
+**`keymap` is not importable either.** It is the argument to `configure()`; a
+module-scope `keymap.register_action(...)` raises `NameError` at import. See
+"Where the file goes" in `SKILL.md`.
 
 ## Getting a root
 

@@ -110,6 +110,37 @@ that looks correct and is not.
 7. **Bound every loop that follows a link.** A "Next" that links to itself
    otherwise runs until the operator gives up.
 
+## Where the file goes
+
+An action is a module in `~/.keyhac/extensions/`, which is on `sys.path`. The
+header is fixed, and the two names that look like they should exist do not:
+
+```python
+"""One line: what this drives, on which platform, tree inspected when."""
+
+from keyhac import ThreadedAction, WaitTimeout, FillFailed, UINode, getLogger
+
+logger = getLogger("OpenIssues")     # there is no importable `logger`
+```
+
+Emit **no registration at module scope.** `keymap` is not a global - it is the
+argument to `configure()` - so `keymap.register_action(...)` beside the class
+raises `NameError` the moment the module is imported. Hand the user this to
+paste into `~/.keyhac/config.py` instead:
+
+```python
+def configure(keymap):
+    import open_issues                              # from extensions/
+    action = open_issues.OpenIssues()
+    keymap.register_action("open-issues", action)   # list_actions / run_action
+    kt["Fn-I"] = action                             # optional: bind a key
+```
+
+`register_action` is what makes the action visible to `list_actions` and
+runnable by `run_action`; **a key binding alone leaves it invisible to both**,
+which costs you the run-read-fix loop. Reloading re-imports the module, so an
+edit is picked up without restarting Keyhac.
+
 ## Structure
 
 Waiting belongs on a worker; reading elements belongs on the loop thread. That

@@ -104,6 +104,53 @@ def _accumulator_escapes(tree: ast.AST) -> list[str]:
     return problems
 
 
+def _phantom_names(tree: ast.AST) -> list[str]:
+    """`logger` and `keymap` look importable and are not.
+
+    Both were invented by the first real generation session against this skill,
+    whose header read:
+
+        from keyhac import *  # ThreadedAction, WaitTimeout, logger, keymap
+
+    Two of those four names the package does not export.  The failures land far
+    apart - `keymap` at import time, `logger` on the first line that logs, which
+    may be inside the branch nobody exercised - so neither is reliably caught by
+    running the action once.
+    """
+    problems = []
+
+    defines_logger = any(
+        isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "logger"
+                for target in node.targets)
+        for node in ast.walk(tree))
+
+    if not defines_logger:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id == "logger":
+                problems.append(
+                    f'line {node.lineno}: `logger` is not importable - add '
+                    f'logger = getLogger("YourAction")')
+                break
+
+    # Module scope only: `keymap` is legitimate inside a def that takes it.
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef)):
+            continue
+        for node in ast.walk(statement):
+            if (isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id == "keymap"):
+                problems.append(
+                    f"line {node.lineno}: `keymap` at module scope raises "
+                    f"NameError at import - it is configure()'s argument, so "
+                    f"register from config.py instead")
+                break
+
+    return problems
+
+
 #: Calls that mean this action *changes* the UI rather than only reading it.
 ACTS_ON_UI = re.compile(r"\b(press|set_text|set_checked|perform_action)\s*\(")
 
@@ -145,6 +192,7 @@ def check(path: pathlib.Path) -> list[str]:
         return problems + [f"does not parse: {error}"]
     problems += _check_ast(tree)
     problems += _accumulator_escapes(tree)
+    problems += _phantom_names(tree)
     return problems
 
 
