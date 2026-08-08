@@ -111,6 +111,11 @@ this" and "Claude can run anything the config defines".
 
 Step 4 is manual for now: no tool writes Python to your disk, deliberately.
 
+**Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
+not Keyhac's own modules — a new version of the tools is only picked up by a
+restart. (Found the hard way: two live checks of a change to the tools were
+really testing the build the daemon started with.)
+
 ## Working from a recorded demonstration
 
 Claude Desktop can record a task — screen, clicks, typing, and **voice** — and

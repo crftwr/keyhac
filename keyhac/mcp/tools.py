@@ -34,7 +34,23 @@ logger = log.getLogger("MCP")
 
 #: Node budget for a screen dump.  Smaller than the library default: this text
 #: goes into a model's context, and a 1000-node tree is mostly furniture.
+#: Measured against real windows, 400 nodes of Finder costs ~1,700 tokens - a
+#: whole window for the price of a short file, which is the budget this is set
+#: to keep.
 DEFAULT_MAX_NODES = 400
+
+#: Below this many elements under a web area, the page is not exposed - the
+#: shell is there and the document is not.
+#:
+#: Set from measurement rather than instinct, after two guesses missed. With
+#: content access off on this machine, VS Code's largest web area holds 30
+#: elements and Claude's 14; with it on, Chrome went from 59 elements to 119
+#: for a trivial page, and a real application's page runs to hundreds. So the
+#: gap this sits in is wide, and 40 sits in it with room on both sides.
+EMPTY_WEB_AREA = 40
+
+#: A window with fewer elements than this has nothing in it at all.
+EMPTY_WINDOW = 5
 
 
 class Tool:
@@ -229,8 +245,32 @@ class ToolRegistry:
         window = self._window(app, title)
         tree = window.reread(max_depth=int(max_depth), max_nodes=int(max_nodes),
                              roles=roles)
+        nodes = list(tree.walk())
         text = tree.dump()
-        if any(node.truncated for node in tree.walk()):
+
+        # Order matters, and the first case is the one that would otherwise
+        # send a model down a dead end. A Chromium or Electron window with its
+        # content switched off still reports its *web area* - the shell is
+        # there, the document is not - and marks nodes truncated. A model
+        # reading only the truncation note raises max_nodes, gets the identical
+        # tree back, and concludes the application has no accessible UI. The
+        # discriminator is not how small the window is (measured: 43 elements
+        # for all of VS Code) but how little hangs off the web area.
+        hollow = [area for area in nodes
+                  if (area.role or "").endswith("WebArea")
+                  and len(list(area.walk())) < EMPTY_WEB_AREA]
+        if hollow:
+            text += (f"\n\n[this window has a web area with almost nothing in "
+                     f"it, which is what a Chromium or Electron application "
+                     f"(Chrome, Edge, VS Code, Slack, Claude) looks like before "
+                     f"it is asked to expose its content: call "
+                     f"enable_content_access and read it again. Raising "
+                     f"max_nodes will not help.]")
+        elif len(nodes) < EMPTY_WINDOW:
+            text += (f"\n\n[only {len(nodes)} element(s) - this window exposes "
+                     f"essentially nothing. Check list_windows for a better "
+                     f"target.]")
+        elif any(node.truncated for node in nodes):
             text += ("\n\n[truncated: raise max_nodes/max_depth, or narrow "
                      "with roles=, before concluding this is the whole screen]")
         return text

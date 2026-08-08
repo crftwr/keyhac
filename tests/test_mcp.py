@@ -157,11 +157,6 @@ def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 
 
-def test_describe_screen_says_when_it_truncated(registry):
-    registry.keymap.node.truncated = True
-    assert "truncated" in registry.call("describe_screen", {})
-
-
 def test_a_missing_window_says_what_to_do_next(registry):
     with pytest.raises(RuntimeError, match="list_windows"):
         registry.call("describe_screen", {"app": "Nope"})
@@ -285,3 +280,42 @@ def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
     bridge.main([])
     reply = json.loads(capsys.readouterr().out)
     assert "enable_mcp_server" in reply["error"]["message"]
+
+
+def test_a_hollow_web_area_points_at_content_access(registry):
+    """The shape a Chromium/Electron window really has with content off: the
+    web area is present, nearly empty, and its nodes are marked truncated. A
+    model reading only the truncation note raises max_nodes, gets the same tree
+    back, and concludes the application has no accessible UI."""
+    web = FakeNode("page")
+    web.role = "AXWebArea"
+    root = registry.keymap.node
+    root.children = [web]
+    root.truncated = True
+    text = registry.call("describe_screen", {})
+    assert "enable_content_access" in text
+    assert "Raising max_nodes will not help" in text
+    assert "raise max_nodes/max_depth" not in text, "the misleading advice won"
+
+
+def test_a_populated_web_area_does_not(registry):
+    """A loaded page must not be told to enable what is already enabled."""
+    from keyhac.mcp.tools import EMPTY_WEB_AREA
+
+    web = FakeNode("page", children=[FakeNode(f"n{i}")
+                                     for i in range(EMPTY_WEB_AREA + 1)])
+    web.role = "AXWebArea"
+    registry.keymap.node.children = [web]
+    assert "enable_content_access" not in registry.call("describe_screen", {})
+
+
+def test_a_native_window_keeps_the_truncation_note(registry):
+    """Finder: 235 elements, no web area - the budget note is the right one."""
+    from keyhac.mcp.tools import EMPTY_WINDOW
+
+    root = registry.keymap.node
+    root.children = [FakeNode(f"child{i}") for i in range(EMPTY_WINDOW + 5)]
+    root.truncated = True
+    text = registry.call("describe_screen", {})
+    assert "raise max_nodes/max_depth" in text
+    assert "enable_content_access" not in text
