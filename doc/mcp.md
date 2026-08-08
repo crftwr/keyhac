@@ -77,6 +77,13 @@ The skill documents *this version's* API, so re-upload it after upgrading
 Keyhac — `make skill-bundle` stamps the version into the bundle so a mismatch
 is visible.
 
+**The skill is not the connection, and neither step implies the other.** The
+skill is knowledge — writing rules and an API reference, with no way to reach
+your machine; the tools come from the bridge registered above. Upload only the
+skill and Claude will correctly tell you it cannot see your windows. Register
+only the bridge and it will see them, then write actions that use `sleep` and
+screen coordinates.
+
 ## What Claude can do
 
 | Tool | |
