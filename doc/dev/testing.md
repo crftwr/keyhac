@@ -169,6 +169,17 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   alike. Writing `AXValue` to a plain text input also did nothing, silently.
   Those two negatives are why `wait_for` polls rather than waiting on
   notifications, and they are recorded in `ai-integration.md` §5 and §7.3.
+  **Not covered: notifications from an Electron application.** The Safari
+  result is about WebKit web content, and the separate Chromium/Electron
+  measurement the same day was about *tree exposure* — 59 nodes until
+  `set_manual_accessibility()`, 119 after — which is a different question.
+  Expecting the Safari answer to carry over to Electron is reasonable and is
+  inference, not measurement. `tools/ax_notification_pass.py` is the pass that
+  would settle it: Finder as an automated control, `set_manual_accessibility()`
+  on the target first so "no notifications" cannot be confounded with "no tree
+  to post about", and an operator-supplied in-page change, since driving VS
+  Code from the agent shell is not reliable. **Written on 2026-08-07 and never
+  run — it needs a macOS machine, and this one is Windows.**
 
 - **Windows element API, the text layer and the write side** (2026-08-07,
   `tools/uia_pass.py` against Notepad on Windows 11 Home 10.0.26200, 26/26 on

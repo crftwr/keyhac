@@ -834,7 +834,11 @@ Extend `PRIVACY.md` with the above.
    was in `core/fill.py` rather than in any slot.
 2. ~~**`wait_for` and event subscription**~~ — **done on macOS.**
    `keyhac/core/wait.py` is portable and polling-first, so Windows has working
-   waits today; `keyhac/platform/mac/observer.py` accelerates native apps and,
+   waits today; and one cell of the matrix is still empty — an Electron app's
+   *notifications* on macOS have never been measured (the Safari result is
+   WebKit web content, the Chromium/Electron result was tree exposure), which
+   `tools/ax_notification_pass.py` would settle. `keyhac/platform/mac/observer.py`
+   accelerates native apps and,
    as measured, does nothing for web content (§5, Layer 1). A Windows
    WinEvent/UIA observer is therefore optional, and worth doing only if a
    Windows-native target shows the latency.
