@@ -17,7 +17,7 @@ Two independent implementations preceded Keyhac 2:
 |---|---|---|
 | Host / UI | Thin C++ launcher; UI in Python on **ckit** (author's Win32 C++ toolkit) | **Swift/SwiftUI** menu-bar app; C++ `PythonBridge` embeds CPython |
 | Input layer | **pyauto** (author's C++ extension): `WH_KEYBOARD_LL`, `SendInput`, Win32 window API | Swift: `CGEventTap`, `CGEventPost`, AXUIElement |
-| Python | 3.13 embedded (PEP 587, isolated) | 3.13 embedded (PEP 587, isolated) |
+| Python | 3.14 embedded (PEP 587, isolated) | 3.14 embedded (PEP 587, isolated) |
 | Config API | camelCase (`defineWindowKeymap`, `InputKeyCommand`, …) | snake_case (`define_keytable`, `ThreadedAction`, …) — newer, cleaner |
 | Feature set | Larger (mouse, macro, balloons, themes, migemo, tray menu…) | Smaller but modernized (UIElement/AX automation, focus paths, chooser) |
 
@@ -64,7 +64,7 @@ Short answers; each links to the full analysis.
 
 ### Q1. What languages do we use other than Python?
 
-**Almost none at runtime.** Python 3.13 everywhere; Windows OS access via **ctypes**
+**Almost none at runtime.** Python 3.14 everywhere; Windows OS access via **ctypes**
 (as PuiKit's Windows backend already proves viable, including COM), macOS via **PyObjC**
 (Quartz/ApplicationServices provide `CGEventTap` and `AXUIElement`). The only non-Python
 code is a **tiny embedding launcher per OS** (~150 lines of C/C++ using the PEP 587

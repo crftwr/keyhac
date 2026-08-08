@@ -36,7 +36,7 @@ reviewed one-off.
 
 ## Key decisions (rationale in doc/dev/)
 
-1. **Languages**: Python 3.13 for everything at runtime. Platform bindings via
+1. **Languages**: Python 3.14 for everything at runtime. Platform bindings via
    **ctypes** (Windows) and **PyObjC** (macOS) — no custom compiled extension modules.
    The only non-Python code is a tiny PEP 587 embedding **launcher** per OS, needed
    for packaging and a stable app identity (macOS Accessibility permission is granted
@@ -101,7 +101,7 @@ tools/         # icon pipeline, release scripts, hook_echo diagnostic
 - PuiKit changes are developed in `../puikit` and must respect its additive API
   policy (new capability flags default off; new `Backend` methods get base
   no-op/raise). **Always on a feature branch with a pull request — never commit
-  directly to its main.** Keyhac2 depends on `puikit>=1.0.8` from PyPI; an editable
+  directly to its main.** Keyhac2 depends on `puikit>=1.0.10` from PyPI; an editable
   checkout is for puikit development only (set `PUIKIT_DIR` in gitignored
   `Makefile.local`; `make install-puikit` switches an existing venv).
 - `../keyhac-win` and `../keyhac-mac` are **read-only** references. Never modify them.
