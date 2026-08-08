@@ -42,7 +42,12 @@ def main() -> int:
         for path in sorted(SKILL.rglob("*")):
             if path.is_dir() or any(part in EXCLUDE for part in path.parts):
                 continue
-            name = os.path.join(SKILL.name, str(path.relative_to(SKILL)))
+            # SKILL.md at the zip root, not nested under a folder: the
+            # uploader's stated requirement is that the archive "must contain a
+            # SKILL.md file", and a nested one is a coin flip on how strictly
+            # that is read. references/ keeps its relative position either way,
+            # which is all SKILL.md's links need.
+            name = str(path.relative_to(SKILL))
             if path.name == "SKILL.md":
                 bundle.writestr(name, path.read_text(encoding="utf-8") + STAMP)
             else:

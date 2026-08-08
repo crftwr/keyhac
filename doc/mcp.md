@@ -31,10 +31,22 @@ Config, or `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. If `keyhac-mcp-bridge` is not on the PATH Claude
-Desktop sees (a common one — GUI apps do not inherit a shell PATH), give the
-absolute path instead: `which keyhac-mcp-bridge` in a terminal, and paste the
-result.
+Restart Claude Desktop. **An absolute path is usually required**: GUI apps do
+not inherit a shell PATH, and the console script only exists in whichever
+environment Keyhac was pip-installed into — running the daemon straight from a
+source checkout (`python -m keyhac`) does not create one at all. Find it with
+`which keyhac-mcp-bridge`, or point at a virtualenv's copy:
+
+```json
+{
+  "mcpServers": {
+    "keyhac": { "command": "/path/to/.venv/bin/keyhac-mcp-bridge" }
+  }
+}
+```
+
+The bridge does not have to come from the same install as the daemon — it reads
+the endpoint file and forwards, and holds no tool definitions of its own.
 
 **Why a bridge at all**: Claude Desktop starts a local MCP server as a child
 process, and Keyhac cannot be that child — it is a resident daemon holding the
@@ -54,6 +66,12 @@ skill**, and give it the bundle:
 ```
 make skill-bundle        # writes dist/keyhac-action-authoring-skill.zip
 ```
+
+The uploader states two requirements, and the bundle is built to meet both:
+the archive must contain a `SKILL.md` **at its root** (not nested in a folder),
+and that file must carry its name and description as YAML frontmatter. Uploads
+go through a security scan that takes a minute or two before the skill becomes
+usable.
 
 The skill documents *this version's* API, so re-upload it after upgrading
 Keyhac — `make skill-bundle` stamps the version into the bundle so a mismatch
