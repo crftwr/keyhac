@@ -12,7 +12,7 @@ Documentation:
 
 - End-user docs: [README.md](README.md), [doc/](doc/) —
   [installation](doc/installation.md), [configuration](doc/configuration.md),
-  [API reference](doc/api_reference.md) (generated), migration guides from
+  [API reference](doc/api-reference.md) (generated), migration guides from
   [keyhac-mac](doc/migration-from-keyhac-mac.md) /
   [keyhac-win](doc/migration-from-keyhac-win.md).
 - Developer docs: [doc/dev/](doc/dev/) — [overview](doc/dev/overview.md),
@@ -84,7 +84,7 @@ tools/         # icon pipeline, release scripts, hook_echo diagnostic
   `SetWindowsHookExW` with error 126 once).
 - Docstrings on the config-facing API are **user documentation**: Google style
   with `Args:`/`Returns:`, no porting history (that goes in comments).
-  `doc/api_reference.md` is generated from them and committed — run
+  `doc/api-reference.md` is generated from them and committed — run
   `make api-reference` after changing one, `make api-reference-check` verifies
   the two have not drifted. Members that are public only in the naming sense
   (hook callbacks, wiring called by `main()`) carry a `lazydocs: ignore` line;

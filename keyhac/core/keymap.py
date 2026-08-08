@@ -890,7 +890,7 @@ class Keymap:
 
     @property
     def ui(self):
-        """The action-facing UI API - see doc/action_api.md.
+        """The action-facing UI API - see doc/action-api.md.
 
         Reading and driving another application's elements: finding windows,
         searching trees, waiting for the screen to change, filling fields.

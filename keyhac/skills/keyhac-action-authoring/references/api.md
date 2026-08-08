@@ -2,7 +2,7 @@
 
 Everything an action needs hangs off `self.ui` inside a `ThreadedAction`
 (`keymap.ui` elsewhere) and off the nodes it hands back. The generated
-reference is `doc/action_api.md`; this is the working subset.
+reference is `doc/action-api.md`; this is the working subset.
 
 The whole import list, and there is nothing else to reach for:
 

@@ -60,7 +60,7 @@ The actions registered by name, for the MCP tools to list and run.
 
 #### <kbd>property</kbd> Keymap.ui
 
-The action-facing UI API - see doc/action_api.md. 
+The action-facing UI API - see doc/action-api.md. 
 
 Reading and driving another application's elements: finding windows, searching trees, waiting for the screen to change, filling fields. Deliberately a separate namespace from the configuration API, and deliberately method-style, so `from keyhac import *` does not acquire a dozen generic verbs that only mean something inside an action. 
 
@@ -920,7 +920,7 @@ The running Keymap, so an action need not import and look it up.
 
 #### <kbd>property</kbd> ThreadedAction.ui
 
-The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 
@@ -1047,7 +1047,7 @@ The running Keymap, so an action need not import and look it up.
 
 #### <kbd>property</kbd> LaunchApplication.ui
 
-The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 
@@ -1088,7 +1088,7 @@ The running Keymap, so an action need not import and look it up.
 
 #### <kbd>property</kbd> ActivateWindow.ui
 
-The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 
@@ -1142,7 +1142,7 @@ The running Keymap, so an action need not import and look it up.
 
 #### <kbd>property</kbd> MoveWindow.ui
 
-The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 

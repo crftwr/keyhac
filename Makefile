@@ -78,8 +78,8 @@ help:
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
-	@echo "  make api-reference       - regenerate doc/api_reference.md from the docstrings"
-	@echo "  make api-reference-check - verify doc/api_reference.md matches the docstrings"
+	@echo "  make api-reference       - regenerate doc/api-reference.md from the docstrings"
+	@echo "  make api-reference-check - verify doc/api-reference.md matches the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
 	@echo "  make clean-venv  - remove the virtualenv"
 	@echo ""
@@ -186,7 +186,7 @@ icons: $(VENV_STAMP)
 icons-check: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/make_icons.py --check
 
-# doc/api_reference.md is generated from the docstrings and committed, on the
+# doc/api-reference.md is generated from the docstrings and committed, on the
 # same terms as the icon assets above: `api-reference` regenerates it,
 # `api-reference-check` fails if the committed file and the source have drifted.
 #

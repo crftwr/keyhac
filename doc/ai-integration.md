@@ -28,7 +28,7 @@ open and can run the actions you register. See [Security](#security).
 
 > ### Experimental
 >
-> This feature — the MCP endpoint, the [action API](action_api.md), the
+> This feature — the MCP endpoint, the [action API](action-api.md), the
 > authoring skill — is **experimental**, and the rest of Keyhac is not. Key
 > tables, clipboard history, macros and window control keep the stability you
 > expect from a 2.x release; this does not.

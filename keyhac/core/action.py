@@ -165,7 +165,7 @@ class ThreadedAction:
 
     @property
     def ui(self):
-        """The action-facing UI API (`keymap.ui`) - see doc/action_api.md.
+        """The action-facing UI API (`keymap.ui`) - see doc/action-api.md.
 
         An action's most-used object, so it is one attribute away rather than
         two lines of lookup at the top of every run().
