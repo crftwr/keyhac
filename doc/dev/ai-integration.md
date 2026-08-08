@@ -1,10 +1,12 @@
 # Keyhac AI Integration — Design Handover
 
-**Status:** design settled for layers 1–4; implementation not started.
-Codebase claims were verified against source on 2026-08-05; file references
-point at that snapshot. A follow-up design session on 2026-08-06 narrowed the
-target class of work, split layer 1, and retracted several earlier decisions;
-its conclusions are merged in below and are the ones that stand.
+**Status:** layers 2 and 4 built, layer 3 partial, layer 5 not started — the
+table in §14 is authoritative, and the authoring loop has now run end to end
+against Claude Desktop. §15 holds what that surfaced and has not been designed
+yet. Codebase claims were verified against source on 2026-08-05; file
+references point at that snapshot. A follow-up design session on 2026-08-06
+narrowed the target class of work, split layer 1, and retracted several earlier
+decisions; its conclusions are merged in below and are the ones that stand.
 **Audience:** coding agent (Claude Code) working in `crftwr/keyhac`
 **Related:** `CLAUDE.md`, `doc/configuration.md`, `doc/dev/`
 
@@ -1044,6 +1046,146 @@ Against the layers in §5 and the sequence in §10:
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
 
-The one thing the sequence has never done is **step 6 against a real client**:
-generation has only been exercised by the same model that wrote the skill, in
-this repository. Everything above is scaffolding for that test.
+**Step 6 has now run against a real client** (2026-08-08, Claude Desktop, two
+actions), which is what §15 is drawn from. Both were authored by a model that
+had not written the skill, against the operator's own screen:
+
+1. *Open the Keyhac issue list in Chrome* — from a typed, intent-only prompt.
+   Every hard rule satisfied; it could not be imported, because the skill
+   documented no import header and `references/api.md` gave an exhaustive list
+   of importable names that was missing two of them. Fixed in the skill.
+2. *Save a set of pages as PDFs through Chrome's print dialog* — derived from a
+   Claude Desktop **screen recording**, and the densest case in §2. The
+   recording/selector split in `doc/mcp.md` held: no pixel addressing survived
+   into the action, and its selectors are real AppKit identifiers read from the
+   live tree.
+
+The failure modes moved up a level between the two. The first produced names
+that do not exist; the second produced an action that **states a correct
+principle in its own docstring and then does not hold itself to it** — bounded
+tree reads, resume-safety, wait-until-settled, each declared and each violated
+somewhere. Mechanical checks catch the first class and cannot reach the second,
+so `evals/cases.md` gains "does the code obey its own docstring?" as a scoreable
+question.
+
+---
+
+## 15. Ideas to revisit (2026-08-08)
+
+Captured from the first real generation sessions (§14). Evidence, not designs —
+each names what was actually observed and the question that has to be answered
+before building anything.
+
+### 15.1 Installation should be executable, not readable
+
+Getting a working setup took: enable the server in `config.py`, reload, find
+the bridge's absolute path, write `mcpServers` into
+`claude_desktop_config.json`, fully quit and reopen Claude Desktop, run
+`make skill-bundle`, delete the previous skill, upload, wait for the security
+scan. Nine steps across three applications, and `doc/mcp.md` describes all of
+them correctly.
+
+It still went wrong, because **the skill and the bridge are independent
+installs and doing only one produces a confusing result rather than a broken
+one.** With the skill uploaded and no bridge registered, Claude correctly
+reports that it is knowledge with no execution environment and cannot see your
+windows — which reads exactly like the feature not working. The reverse is
+quieter and worse: tools without the skill work, and return actions full of
+`sleep` and screen coordinates. `doc/mcp.md` now says so explicitly, which
+helps a reader and does nothing for the several remaining ways to get this
+half-done.
+
+The idea: an instruction document an agent **executes** rather than one a human
+follows — locate the bridge, patch the client config, verify by driving
+`tools/list` end to end, report what it could not do itself. Most of it is
+mechanical and was in fact done that way in the session that found the problem.
+
+Open questions. Which client — the config path, the schema and the
+restart requirement are all Claude Desktop's, and an "install for any MCP
+client" document is a different and much larger claim. What the agent must
+refuse to do unattended: editing another application's config file is
+reasonable with a backup; quitting that application is not. And whether this
+belongs in the repository or **in the skill itself** — a skill that installs
+its own transport is circular, since a user with no bridge is a user whose
+agent cannot verify its own work.
+
+### 15.2 Editing `config.py` is a step the skill still hand-waves
+
+f6cf4e0 gave the skill the file header, the `extensions/` placement and the
+`configure()` registration block, so a generated action now says where it goes.
+What it does not address: **no tool writes Python to disk, deliberately** (§4.4
+and `doc/mcp.md`), so the operator is the transport. They paste a class into
+`~/.keyhac/extensions/`, then paste three more lines into the middle of a
+config file that is theirs, several hundred lines long, and already working.
+
+Observed: an instruction of mine to delete a line range removed the `import`
+the registration depended on, and the config stopped loading. The failure was
+loud and the previous keymap stayed active — the containment in
+`Keymap.configure()` did its job — but it is the second time a human hand-edit
+between two machines has been the thing that broke.
+
+Two directions, and they are not the same size:
+
+- **Cheap**: the skill emits an exact, self-contained block with an anchor
+  comment, so the paste is unambiguous and re-running it is idempotent.
+- **Real**: Layer 5. `~/.keyhac/actions/*.py` discovered and registered by
+  filename, and `config.py` never needs editing to add an action at all. The
+  reason to hesitate is not effort — it is that auto-registration makes
+  `run_action`'s surface "every file in a directory" rather than "what the
+  operator named", which is the line §4.4 draws on purpose.
+
+Answer the second before investing in the first: they solve the same problem
+and only one of them survives.
+
+### 15.3 `run_action` returns logs, not output
+
+Verified in `keyhac/mcp/tools.py`: `_captured_log` installs a
+`logging.Handler` on the `keyhac` logger for the duration of the run. So an
+action using the documented `getLogger("MyAction")` is captured — and three
+things are not:
+
+- **`print()`**, which the shipped `config.py` template teaches on the same
+  line as the logger ("print() and the logger both reach the console window").
+  It reaches the console window; it does not reach the model.
+- **Anything logged to a logger outside the `keyhac` tree**, which is what
+  `logging.getLogger(__name__)` produces in a module under `extensions/`.
+- **Subprocess `stderr`.** These actions shell out — `open`, `osascript` — and
+  a `CalledProcessError` carries stderr only if the action captured it.
+
+Each of those is a debugging line the operator can see and the agent cannot,
+and the whole point of `run_action` is that the model reads its own failure.
+The fix looks small (`redirect_stdout` / `redirect_stderr` around the same
+block, root logger rather than `keyhac`), and the questions are about what that
+sweeps in: a root-logger handler catches every library the action imports, and
+capturing stdout for the duration of a run on the loop thread captures whatever
+else logs on that thread in the same window. Bound the output, and say in the
+result when it was truncated.
+
+### 15.4 A failing action should be able to hand the agent its own trace
+
+Today the loop is: the action fails, the operator notices something did not
+happen, opens the Keyhac console, finds the traceback, copies it, pastes it
+into a conversation — assuming the conversation that authored it still exists.
+Every one of those steps is a place where the report does not get made, and an
+action nobody reports is an action that stays broken.
+
+The idea is a returning channel: Keyhac keeps the last failure per registered
+action — traceback, the log around it, which step, what was on screen — and an
+MCP tool serves it, so "the PDF one failed this morning" is enough for the
+agent to fetch the trace itself and propose a fix. The operator's side of that
+becomes one sentence rather than a copy-paste.
+
+This is mostly a **convention** question, not a plumbing one. `run_action`
+already returns everything an action logged; what is missing is the same
+richness on the path where the action runs from a *key press*, and a norm about
+what actions log. §7 asks for "report what to redo, not that something failed";
+this extends it to "report enough that the agent can act without the screen" —
+which selector was being looked for, what was found instead, which item of how
+many. The generated actions already do some of this well.
+
+Open questions. Where the record lives, and for how long — a failure record
+holds window titles and element names, which is exactly the material §9's trace
+privacy rules cover, and the retention answer there was deliberately
+conservative. Whether the operator is prompted at all, or the record simply
+exists for an agent that asks. And whether a repeated failure should surface a
+notification, given that Keyhac's whole posture is to stay out of the way.
