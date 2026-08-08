@@ -29,7 +29,13 @@ the tray / menu-bar menu). Errors are contained:
   broken.
 
 `~/.keyhac/extensions/` is on `sys.path`, so you can split a large config into modules
-and `import` them.
+and `import` them. Reloading re-imports them too, so an edit to an extension is picked
+up without restarting Keyhac.
+
+The directory is **appended** to `sys.path`, not prepended: an extension is named after
+what it does, and a `queue.py` next to a queue-handling action would otherwise shadow
+the standard library for the whole process. If you name a module after one Python
+already provides, Python's copy wins and yours is unreachable — rename it.
 
 "Edit Config" in the tray menu opens the file in an editor. Pick yours with:
 
@@ -312,6 +318,26 @@ Element-level code therefore branches on `keymap.platform`. The failure modes ar
 gentle: an unsupported attribute reads `None`, an unknown action logs and returns
 `False`. `focus.native` is the platform power object — the same AX element on
 macOS, an HWND wrapper on Windows.
+
+### Driving another application: the action API
+
+Reading and writing another application's UI — searching element trees, waiting
+for a screen to change, filling fields — is a separate surface reached through
+`keymap.ui` (or `self.ui` inside a `ThreadedAction`):
+
+```python
+class Extract(ThreadedAction):
+    def run(self):
+        window = self.ui.window(app="Safari")
+        window.wait_for(role="AXTable", message="the results to load")
+        for row in window.find_all(role="AXRow"):
+            print([cell.all_text for cell in row.children])
+```
+
+It is deliberately its own namespace and method-style: a config binds keys, an
+action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
+`FillFailed` are importable. **See [Action API](action_api.md)** for the full
+surface, and `keyhac/skills/action-authoring/` for how to write one.
 
 ## Keyboard macros
 

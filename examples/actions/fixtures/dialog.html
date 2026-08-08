@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Queue — confirm each item</title></head>
+<body>
+  <h1>Approval queue</h1>
+  <p id="status">3 items pending</p>
+  <button type="button" id="next-item">Review next item</button>
+
+  <dialog id="confirm">
+    <h2 id="confirm-title">Approve this item?</h2>
+    <p id="confirm-detail">REC-001 — item 1 — 37</p>
+    <button type="button" id="approve">Approve</button>
+    <button type="button" id="reject">Reject</button>
+  </dialog>
+
+  <!-- The dialog an action must refuse to touch: same shape, different
+       meaning. A handler that presses "the first button" deletes things. -->
+  <dialog id="danger">
+    <h2 id="danger-title">Delete all records?</h2>
+    <button type="button" id="delete-all">Delete</button>
+    <button type="button" id="cancel">Cancel</button>
+  </dialog>
+
+  <p id="log"></p>
+
+  <script>
+    const items = ["REC-001 — item 1 — 37", "REC-002 — item 2 — 74",
+                   "REC-003 — item 3 — 111"];
+    let index = 0, approved = 0;
+    const $ = id => document.getElementById(id);
+
+    $('next-item').onclick = () => {
+      if (index >= items.length) {
+        // Every third run, show the *other* dialog, so a handler that does
+        // not check its preconditions is caught doing the wrong thing.
+        $('danger').showModal();
+        return;
+      }
+      $('confirm-detail').textContent = items[index];
+      $('confirm').showModal();
+    };
+    $('approve').onclick = () => {
+      approved += 1; index += 1;
+      $('confirm').close();
+      $('status').textContent = (items.length - index) + " items pending";
+      $('log').textContent = "approved " + approved;
+    };
+    $('reject').onclick = () => { index += 1; $('confirm').close(); };
+    $('cancel').onclick = () => $('danger').close();
+    $('delete-all').onclick = () => {
+      $('log').textContent = "DESTROYED - a handler pressed the wrong button";
+      $('danger').close();
+    };
+  </script>
+</body>
+</html>

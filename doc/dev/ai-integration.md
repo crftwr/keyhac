@@ -1,10 +1,12 @@
 # Keyhac AI Integration — Design Handover
 
-**Status:** design settled for layers 1–4; implementation not started.
-Codebase claims were verified against source on 2026-08-05; file references
-point at that snapshot. A follow-up design session on 2026-08-06 narrowed the
-target class of work, split layer 1, and retracted several earlier decisions;
-its conclusions are merged in below and are the ones that stand.
+**Status:** layers 2 and 4 built, layer 3 partial, layer 5 not started — the
+table in §14 is authoritative, and the authoring loop has now run end to end
+against Claude Desktop. §15 holds what that surfaced and has not been designed
+yet. Codebase claims were verified against source on 2026-08-05; file
+references point at that snapshot. A follow-up design session on 2026-08-06
+narrowed the target class of work, split layer 1, and retracted several earlier
+decisions; its conclusions are merged in below and are the ones that stand.
 **Audience:** coding agent (Claude Code) working in `crftwr/keyhac`
 **Related:** `CLAUDE.md`, `doc/configuration.md`, `doc/dev/`
 
@@ -323,31 +325,68 @@ Ordered by dependency. Layers 1–4 are the implementation target.
 Keyhac can record *input* but not *what happened*. Macro recording captures keys only.
 **This layer splits in two, and the halves have very different priority.**
 
-**Required — event subscription.** Subscribe to AX notifications (`kAXWindowCreated`,
-`kAXUIElementDestroyed`, `kAXValueChanged`) and the UIA event handlers. Genuinely new
-work: nothing in the tree subscribes to AX notifications or UIA events today (no
-`AXObserver`, no `SetWinEventHook`, no UIA event handler). This is what `wait_for` is
-built on, and **everything on the output side depends on it** (§7.1).
+**Dropped — event subscription.** ~~This is what `wait_for` is built on.~~ It
+was neither. An `AXObserver` wrapper was written, measured, and then **removed**
+(along with `wake=` and `tools/ax_notification_pass.py`); the code is in git
+history if the conclusion is ever revisited. What the measurements said:
 
-**Demoted — mouse input capture and trace recording.** Two independent findings push
-these down. First, of the concrete use cases catalogued in §2, almost none are authored
-from a recorded demonstration. Second, most cases that appeared to need a demonstration
-are served by having the user *open* a UI state and letting Claude read it, which records
-nothing (§8.1). Build them last, if at all:
+- **Native Cocoa applications post generously.** Opening a Finder window
+  delivered `AXWindowCreated`, `AXCreated`, `AXFocusedWindowChanged`,
+  `AXUIElementDestroyed` and a stream of `AXValueChanged`.
+- **Web content posts nothing.** A `<dialog>` opening delivered *zero*, in
+  Safari and in Chrome alike, registered on the application element and on the
+  `AXWebArea` alike — Chrome measured with its tree exposed, a driven page
+  change, and a passing Finder control in the same run. Not a WebKit quirk:
+  Chromium too, which is what Electron is.
+- **There is a structural reason.** AX notifications do not bubble, so "wait
+  for an element to appear" would have to be registered on an element that does
+  not exist yet, and its container is not obliged to announce it.
 
-- **Mouse input events** — output exists; input exists only as an observation-only
-  cancellation channel: `WH_MOUSE_LL` is already installed on Windows
-  (`keyhac/platform/win/hook.py`) and the macOS tap already masks button-down /
-  scroll types when `on_mouse` is wired (`keyhac/platform/mac/hook.py`), but the
-  callback carries no event data. The work is widening that channel to deliver full
-  events (button, position, wheel), not adding a hook — filtering out Keyhac's own
-  injected output (sentinel `dwExtraInfo` / private `CGEventSource`) is already
-  solved there.
-- **Structured trace (JSONL)** — timestamped unified stream of key / mouse / focus
-  change / UI event / clipboard change. Separate layer from the human-readable console
-  log. **Design the schema after capturing real traces, not before.** Recording is
-  explicit start/stop only, and the privacy requirements in §9 are part of the feature,
-  not a later hardening pass.
+The remaining case — a native target — did not justify the surface either, and
+in an instructive way: polling's *first* interval is 20 ms, so a fast
+transition is already caught fast, and a wait long enough to have backed off to
+250 ms is a wait where 250 ms is noise. The accelerator helped least where
+polling was cheap and mattered least where polling was slow. Five hand-written
+actions across two platforms never used it.
+
+So `wait_for` is polling, full stop (`keyhac/core/wait.py`), and the output
+side depends on `wait_for` rather than on any subscription. Windows never
+needed a WinEvent/UIA counterpart, which is the same conclusion reached from
+the other direction.
+
+**Demoted — mouse input capture and trace recording.** Two independent findings
+pushed these down. First, of the concrete use cases catalogued in §2, almost
+none are authored from a recorded demonstration. Second, most cases that
+appeared to need a demonstration are served by having the user *open* a UI
+state and letting Claude read it, which records nothing (§8.1).
+
+**And now: not ours to build at all.** Claude Desktop records a task itself —
+screen, clicks, typing and **voice** — and turns it into a skill. That answers
+rung 4 from outside, and it answers the two objections that demoted it:
+
+- **The intent objection.** §8 says traces capture form, not intent: "the
+  transformation happened in their head and never reaches the keyboard." It
+  reaches the *microphone*. A narrated demonstration carries the reasoning a
+  keystroke log structurally cannot, which is a different artefact from the
+  JSONL trace this section was contemplating.
+- **The privacy objection.** All of §9 — redaction, a pause key, review before
+  egress, never to disk — was specified for a recorder **Keyhac** would ship,
+  because building one means an application whose main trust problem is proving
+  it is not a keylogger shipping a keylogger. If the recorder belongs to the
+  client the user already trusts with their screen, Keyhac never takes that on.
+
+What the recording cannot supply is selectors: it has pixels, and §8.4's rule 2
+makes pixel addressing a failed generation. So the division is intent from the
+recording, selectors from the live tree via the MCP tools — which is §8.2's
+"demonstration → clarifying questions → generation" with the demonstration
+arriving pre-summarised. Recorded in the authoring skill; no Keyhac code.
+
+Two things this does **not** settle. The recording's privacy properties are the
+recorder's, and they are weaker than §9 asked of ours: the consent dialog warns
+against typing secrets, but there is no secure-field redaction and no
+review-before-egress step — the recording goes to Claude. And its output format
+has not been examined here; the first real one should be, before the skill's
+guidance hardens.
 
 ### Layer 2 — State reading
 
@@ -360,15 +399,20 @@ access is generic, so descendants are already reachable via
 can act on the focused element and its ancestors, but cannot reach an element that
 is not focused** (except on macOS, awkwardly, through raw AX attributes).
 
-What is actually missing — unification and exposure, not green-field:
+What was missing — unification and exposure, not green-field — **is now in**
+(`keyhac/core/uitree.py`, plus `children()` / `describe()` / `identity_key()` on
+both platform elements):
 
-- **Windows child traversal** — the wrapper is parent-only; the
-  `GetFirstChildElement` walker slot is declared in `win/uielement.py` but never
-  wrapped
-- `get_ui_tree(root, depth, filter)` — portable; depth limiting and role filtering
-  are mandatory, Electron apps emit thousands of nodes
-- `find_element(pattern)` — portable search by name / role / hierarchy
-- text-layer accessors — a distinct concern from tree traversal; see §6
+- **Windows child traversal** — `children()` walks `GetFirstChildElement` /
+  `GetNextSiblingElement`, the slots that were declared in `win/uielement.py`
+  and never wrapped. Written; **not yet run on Windows**.
+- `get_ui_tree(root, max_depth, max_nodes, roles, prune)` — portable. The
+  budgets are as mandatory as expected, but for a different reason than
+  Electron's node count: see §6.
+- `find_element` / `find_elements` — portable search by role / name / value /
+  identifier / text / predicate, using the same fnmatch-with-`|` matching
+  `define_keytable` uses, with the `AX` prefix optional in role patterns.
+- text-layer accessors — a distinct concern from tree traversal; see §6.
 
 **This layer still determines the ceiling on action expressiveness — and it is the
 precondition for eliminating runtime LLM calls.**
@@ -458,14 +502,49 @@ keystrokes the user spends:
 Once the text is in hand the work is a regex, not inference. Regex beats an LLM on paths,
 line numbers, URLs, ARNs, and request IDs — it is more accurate, not merely cheaper.
 
-**API additions this implies** (Layer 2):
+**API additions this implies** (Layer 2) — all four now exist as element
+methods, verified live on macOS:
 
 ```
-get_selection(window_id)
-get_text(element_id)              # AXValue / UIA Text pattern
-get_line_at_caret(element_id)
-element_at_point(x, y)
+element.get_selection()
+element.get_text()                # AXValue / UIA Text pattern
+element.get_line_at_caret()
+UIElement.element_at_point(x, y)
 ```
+
+### 6.1 What walking real trees changed
+
+Measured 2026-08-06 on macOS 15, against a page carrying the §2 shape (search
+form, three-row result table, modal, log block). Four findings, each of which
+moved the API:
+
+- **The accessibility graph is a DAG, not a tree.** A table cell is a child of
+  its row *and* of its column — the same element, CFEqual-identical, reached
+  twice. A naive recursion reports every cell twice and doubles every extracted
+  table. `get_ui_tree` dedupes on element identity, which is why the budgets
+  are load-bearing on any page with a table and not merely on Electron.
+- **Chromium and Electron expose no content at all until asked.** A loaded
+  Chrome page was 59 nodes — browser chrome, no document. After setting
+  `AXEnhancedUserInterface`, 119 nodes with every field addressable. The
+  targeted `AXManualAccessibility` that Chromium documents did **nothing** on
+  Chrome; only the blunt "an assistive client is present" flag moved it, and
+  that one has side effects (VS Code switches to screen-reader rendering). So
+  it is an explicit `set_manual_accessibility()` call, never implicit in a
+  walk. Both directions verified: turning it back off restored 59 nodes.
+- **Web content puts text one level below where you ask for it.** A `<pre>`'s
+  own `AXValue` is empty and the string lives in a child `AXStaticText`, so a
+  container read reports nothing for exactly the elements a log or an error
+  line lives in. Hence `get_text()` descends to leaves, and `UINode.all_text`
+  exists beside `node.text`.
+- **`AXDOMIdentifier` carries the DOM `id`** in web content. That is a far more
+  stable address than a label — it survives relabelling and localisation — and
+  it is what generated actions should prefer where a page offers one.
+
+Two smaller ones worth keeping: batching a node's attributes through
+`AXUIElementCopyMultipleAttributeValues` is 2.1× faster than reading them one
+at a time and answered identically on all 123 nodes of the probe page; and
+falsy values are a live trap — an unchecked checkbox is `0`, so `if value:`
+hides precisely the state "read before toggling" exists to check.
 
 **On OCR:** not needed. The gap it would fill is the pixel layer, which is not where this
 work happens, and it conflicts with three standing principles at once — it is
@@ -489,15 +568,31 @@ pagination, application ready after launch. **`sleep` produces environment-depen
 breakage** — it passes on the developer's machine and fails on a slower or faster one.
 
 ```
-wait_for(condition, timeout)        # appearance, disappearance, value change
-wait_for_stable(element, timeout)   # re-render settled
+wait_for(condition, timeout, message=…, wake=…)   # returns the condition's value
+wait_for_element(root, timeout, **criteria)       # beat 1
+wait_until_gone(root, timeout, **criteria)        # beat 3
+wait_for_stable(root, quiet, timeout)             # re-render settled
 ```
 
-Make "a generated action containing `sleep` is a failure" a hard skill rule, at the same
-level as the rule about coordinates.
+All four are in `keyhac/core/wait.py`, verified live against the three-beat
+modal cycle in §7.2. Make "a generated action containing `sleep` is a failure" a
+hard skill rule, at the same level as the rule about coordinates.
 
-This is what makes AX notification / UIA event subscription load bearing even though the
-rest of Layer 1 is demoted (§5).
+Two constraints shaped the implementation, and both are worth knowing before
+changing it:
+
+- **The condition cannot run on the calling thread.** Waiting happens in
+  `ThreadedAction.run()`, because a key press must return control immediately
+  (§13), but reading elements is main-thread work. So each poll hands the
+  condition to `keymap.call_on_main_thread` and blocks for the answer, and
+  calling `wait_for` *on* the loop thread raises rather than deadlocking the
+  keyboard.
+- **A timeout is an error, not a `False`.** `WaitTimeout` subclasses
+  `TimeoutError`. An action whose precondition never arrived stops (§3.7).
+
+Still open, and inherited rather than introduced: a long wait holds
+`ThreadedAction`'s single pool worker for its whole duration, so a ten-minute
+wait stalls every other threaded action. That is the executor problem in §2.1.
 
 ### 7.2 Menus and modals are transient
 
@@ -517,6 +612,58 @@ over modals — the next cycle starts before the previous one finished.
 `set_value` has the worst failure mode: the value appears in the field, the framework's
 internal state never updates, and submission sends empty. **Default to paste, fall back
 to keys.** For Japanese input, paste is effectively mandatory.
+
+*Measured* (macOS, Safari, 2026-08-07), correcting a note recorded here a day
+earlier. An earlier run concluded that writing `AXValue` to a plain
+`<input type=text>` "did nothing, silently". It does work — **provided the
+element is focused first**, which that run had not done. Focused, all three
+mechanisms succeed on macOS, and the interesting part is what they cost:
+
+| | Latency | Notes |
+|---|---|---|
+| `set_value` | ~5 ms | Instant, but this is the one frameworks miss |
+| `keys` | ~70 ms | Faithful event stream; IME-dependent |
+| `paste` | ~105 ms | Costs the clipboard; the default |
+
+Two things that fall out of it, both now enforced in `keyhac/core/fill.py`:
+
+- **Focus is a precondition, not a courtesy.** Unfocused writes fail silently,
+  and unfocused *keystrokes* are worse - they go to whatever does have focus,
+  which is the user's editor. `focus()` therefore verifies against the
+  system-wide focused element and refuses to write when it did not land.
+- **The clipboard cannot be restored until the target has read it.** Restoring
+  as soon as the paste keystroke is posted races the application, and loses:
+  the field ends up holding whatever was on the clipboard *before*, which is a
+  wrong value that looks exactly like a successful paste. Verification runs
+  inside the clipboard swap.
+
+*Measured on Windows* (2026-08-07, Notepad on Windows 11 Home 10.0.26200,
+`tools/uia_pass.py`). All three work here too, in the same order with a wider
+spread — `set_value` 15–33 ms, `paste` 48–95 ms, `keys` 114–272 ms — so the
+§11 question about `set_value` is answered on both platforms and none of it
+disturbs the paste-first default.
+
+What Windows adds is a reason to distrust `keys` that macOS did not show.
+**WinUI text controls drop and reorder injected input.** In Notepad's editor
+`hello-keys` arrived as `helloke-ys`, a `Ctrl-V` came through as a bare `v`,
+and an injected `Ctrl-V` is dropped outright often enough to need retrying.
+The same strings down the same code path land intact 30/30 in a plain Win32
+control, so this is XAML's input handling rather than `SendInput` ordering or
+the hook. Two consequences: paste-first is right on Windows for a second,
+independent reason, and no write mechanism on this platform can be trusted
+without its read-back.
+
+The rule that survives unchanged — and that turned every one of those
+corruptions from a silently wrong document into a `FillFailed` naming the text
+it actually found — is the one already stated: **read the value back after
+writing**, and treat a mismatch as a failed step rather than a warning.
+
+The corollary learned the hard way: `verify=False` does not merely skip that
+check, it removes the only signal that the target has finished reading the
+pasteboard. The clipboard-restore race above is guarded *by* the verification,
+so turning verification off re-opened it — and it was re-opened long enough to
+put a stale clipboard into a real document. An unverified paste now holds the
+clipboard for a fixed settle and logs that it is guessing.
 
 **Always read the value back after writing.** Skill rule.
 
@@ -695,19 +842,80 @@ Extend `PRIVACY.md` with the above.
 
 ## 10. Sequence
 
-1. **Layer 2 exposure** — Windows child traversal (`GetFirstChildElement`, already
-   declared and unwrapped in `win/uielement.py`), `get_ui_tree`, `find_element`, plus the
-   text-layer accessors from §6. Settle the tree API shape first (§11) — but settle it by
-   walking a real page by hand, not on paper.
-2. **`wait_for` and event subscription** — the required half of Layer 1 (§7.1).
-   Everything on the output side depends on it.
-3. **Two measurements, minutes each** — does `set_value` work on the target systems
-   (§7.3); do the target terminals implement whole-value text reads (§6).
-4. **Hand-write actions** ← do not skip. Recommended set and order: cross-system
-   extraction (exercises pagination, normalisation, partial failure, file output);
-   print-all-tabs-to-PDF (modal traversal, iteration, waiting, resume); a dialog handler
-   (preconditions); an error-line jump (the text layer, in contrast to the tree).
-5. **Derive the skill** from what step 4 taught (§8.4).
+1. ~~**Layer 2 exposure**~~ — **done, and now verified on both platforms.**
+   `keyhac/core/uitree.py` plus `children()` / `describe()` / the text accessors
+   on both platform elements; the shape was settled by walking real trees, and
+   §6.1 records what that changed. The Windows half was written against header
+   slot numbers and had never been run — this file's own rule being that a wrong
+   vtable slot silently calls a different method rather than raising. It has now
+   been run (`tools/uia_pass.py`, 2026-08-07): the child walk, all three text
+   accessors and `element_at_point` answer correctly, and the bug the pass found
+   was in `core/fill.py` rather than in any slot.
+2. ~~**`wait_for` and event subscription**~~ — **done, and half of it deleted.**
+   `keyhac/core/wait.py` is portable and polls. The empty matrix cell was
+   filled first — Chrome, tree exposed, driven page change, Finder control
+   passing in the same run: **nothing posted**, three times — and the observer,
+   `wake=` and the pass were then removed on the strength of it (§5, Layer 1).
+   Notifications never arrive for the content this workload targets, and the
+   native-only win did not pay for the surface. No Windows counterpart is
+   wanted. Still unmeasured, and now academic: a true Electron *application*
+   rather than Chromium the browser.
+3. **Two measurements, minutes each** — **the first is answered on both
+   platforms** (§7.3: `set_value` works, focus being the precondition; ~5 ms on
+   macOS, 15–33 ms on Windows), and it stays opt-in regardless for the
+   framework-blindness reason. The second is **half answered**: Terminal.app
+   yes, Notepad yes, but Windows Terminal, VS Code and iTerm2 are unmeasured and
+   Notepad is a weak proxy for any of them (§6).
+4. **Hand-write actions** ← do not skip. **Three of four done**, in
+   `examples/actions/`, each runnable and verified against a live application:
+   cross-system extraction (pagination, normalisation, partial failure, CSV,
+   idempotent rerun), a queue handler (per-item branching, the three-beat modal
+   cycle, per-step preconditions — it refuses a look-alike dialog rather than
+   pressing its first button), and an error-line jump (the text layer, three
+   rungs of §6's ladder). **Print-all-tabs-to-PDF is not written**: it drives
+   print dialogs and writes files, so it wants its own session.
+
+   **One has been carried to Windows; the rest are macOS-only in fact rather
+   than by habit**, addressing elements as `AXTable` / `AXCell` / `AXWebArea`,
+   which match nothing on Windows. What the port cost is the useful part: the
+   *shape* survived unchanged — find the window by what it contains, enumerate
+   the tab strip's own children, wait for the selection to be reported, restore
+   the original tab — while every selector and every state read had to be
+   rewritten, and one step could not be expressed at all until the element API
+   grew a `SelectionItem` pattern. **Porting an action is a cheap way to find
+   holes in the platform layer**, which is an argument for doing it early
+   rather than once.
+
+   It landed as a second file, `examples/actions/win/snapshot_settings.py`,
+   not as branches in
+   the first. **A generated action does not need to be portable and should not
+   pay for it**: it is written against one screen that was inspected first, and
+   the two accessibility vocabularies do not merge (`uitree.py` unifies role
+   names exactly as far as the `AX` prefix and no further). What must stay
+   portable is the framework and the config — §12's "a single config across
+   Windows and macOS" is about the user's key bindings, not about selectors
+   reaching into another application's tree. This narrows §11's open "how far
+   to unify Windows and macOS" question: at the API, as far as it already goes;
+   at the action, not at all.
+
+   The exercise paid for itself in the way §5 predicts — nine findings, four of
+   them bugs in the framework the actions are written against, all recorded in
+   [`examples/actions/README.md`](../../examples/actions/README.md). The two
+   that change how actions should be written: a DOM id reaches controls, tables
+   and landmarks but **not a plain `<span>`**, so pagination state has to be
+   addressed by its text or by the document title; and an accumulator declared
+   inside the thing that can fail discards every page already read, which is
+   the exact failure this class of action exists to avoid.
+5. ~~**Derive the skill** from what step 4 taught (§8.4).~~ **Written**, in
+   `keyhac/skills/action-authoring/`: `SKILL.md` (seven hard rules, each one a
+   failure that actually happened, plus structure and the done-checklist),
+   `references/api.md`, and `references/quirks.md` — the measured platform
+   behaviour that makes correct-looking code wrong. The eval set is
+   `evals/check.py` for the mechanical rules, calibrated in both directions
+   (the four hand-written actions pass; a fixture breaking every rule is
+   caught, and both are pinned by `tests/test_action_authoring_evals.py`), and
+   `evals/cases.md` for the ten judgement-shaped cases. Untested against
+   generation itself — that is step 6.
 6. Try generation.
 
 Mouse input capture and trace recording are not on this list.
@@ -720,13 +928,43 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
 
 ## 11. Open questions — measure, do not deliberate
 
-- **Does `set_value` work on the specific internal systems being targeted?** (§7.3) One
-  form, five minutes, and the answer settles whether the clipboard-preservation path is on
-  the critical path.
+- ~~**Does `set_value` work on the specific internal systems being targeted?**~~ (§7.3)
+  *Answered on both platforms* — macOS 2026-08-06 (~5 ms, Safari), Windows
+  2026-08-07 (15–33 ms, Notepad). It works, focus being the precondition. It
+  stays opt-in regardless, for the framework-blindness reason in §7.3, so the
+  clipboard-preservation path remains on the critical path after all. Still
+  worth re-running against a *specific* internal system before betting an
+  action on it: what is measured here is that the mechanism functions, not that
+  any given web app observes it.
 - **Do the target terminals and editors implement the UIA Text pattern and `AXValue`?**
-  (§6) Test Terminal.app, iTerm2, Windows Terminal, VSCode, Chrome. If whole-value reads
-  work, selection becomes optional and the one-keystroke path is available. If they all
-  fail, selection is mandatory and the ergonomics change.
+  (§6) *Half answered.* On macOS the one-keystroke path works: whole-value reads
+  succeed on web content and text areas provided you descend to leaves (§6.1),
+  and `AXLineForIndex` → `AXRangeForLine` → `AXStringForRange` returns the caret's
+  line with no selection and no pointer — verified against a multi-line field.
+  `element_at_point` resolves a form field but returns the wrapper group for a
+  textarea, so the pointer path is coarser than the caret path.
+  **Terminal.app: yes** — its `AXTextArea` returns the whole scrollback through
+  `AXValue`, and `get_line_at_caret()` returns the prompt line, so the
+  one-keystroke path works there too and `examples/actions/mac/jump_to_error.py`
+  uses it. iTerm2 untested (not installed here).
+  **Windows: yes, and now measured where it matters.** Notepad's editor answers
+  `get_text()`, `get_line_at_caret()` (the caret's line, not the document) and
+  `get_selection()`, with every vtable slot the Windows implementation guesses
+  at pinned live (`tools/uia_pass.py`). **Windows Terminal** returns its
+  scrollback as a `Text` element and one line at the caret; **VS Code** exposes
+  the editor as an `Edit` named for the open file
+  (`tools/text_pattern_survey.py`, 2026-08-07, with Notepad run alongside as a
+  control so a null result could be attributed). So the cheap rung of §6's
+  ladder holds on both platforms, and this question is closed — bar iTerm2,
+  which is not installed here.
+
+  One caveat that belongs with it: **the first read of an Electron window
+  returns nothing.** VS Code offered 12 Text-pattern elements and no buffer on
+  one probe, and 26 with the buffer minutes later, same code. Chromium enables
+  renderer accessibility when a UIA client attaches and is not finished by the
+  time that client's first read returns. Windows therefore needs no equivalent
+  of macOS's `set_manual_accessibility()` — it needs a retry, which `wait_for`
+  already is.
 - **UI tree API shape** — worth settling before implementation, since it is the ceiling
   on action expressiveness and changing it later breaks every action. Element identity
   (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows
@@ -790,3 +1028,205 @@ Latency budget:
 | Candidate suggestion, intent parsing | Haiku class | 1 s |
 | Multi-step operation | Sonnet class | seconds+ |
 | UI-mediated ETL (§2) | none — pure Python | minutes; background, resumable |
+
+---
+
+## 14. What is built (2026-08-07)
+
+Against the layers in §5 and the sequence in §10:
+
+| | State |
+|---|---|
+| Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
+| Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
+| Layer 3 — execution safety | **Partial.** Waiting and read-back are in; per-step preconditions, checkpointing and idempotency are *patterns the actions follow*, not framework. `Action.preconditions()`, dry-run/preview, `Esc` cancellation and the long-action executor are **not built** — the `max_workers=1` pool is still the latent bug §2.1 names. |
+| Layer 4 — action metadata | **Minimal.** `keymap.register_action(name, action)` and the MCP tool schemas; no argument schema, no description surface. |
+| Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
+| Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/mcp.md`. |
+| Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
+| `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
+
+**Step 6 has now run against a real client** (2026-08-08, Claude Desktop, two
+actions), which is what §15 is drawn from. Both were authored by a model that
+had not written the skill, against the operator's own screen:
+
+1. *Open the Keyhac issue list in Chrome* — from a typed, intent-only prompt.
+   Every hard rule satisfied; it could not be imported, because the skill
+   documented no import header and `references/api.md` gave an exhaustive list
+   of importable names that was missing two of them. Fixed in the skill.
+2. *Save a set of pages as PDFs through Chrome's print dialog* — derived from a
+   Claude Desktop **screen recording**, and the densest case in §2. The
+   recording/selector split in `doc/mcp.md` held: no pixel addressing survived
+   into the action, and its selectors are real AppKit identifiers read from the
+   live tree.
+
+The failure modes moved up a level between the two. The first produced names
+that do not exist; the second produced an action that **states a correct
+principle in its own docstring and then does not hold itself to it** — bounded
+tree reads, resume-safety, wait-until-settled, each declared and each violated
+somewhere. Mechanical checks catch the first class and cannot reach the second,
+so `evals/cases.md` gains "does the code obey its own docstring?" as a scoreable
+question.
+
+---
+
+## 15. Ideas to revisit (2026-08-08)
+
+Captured from the first real generation sessions (§14). Evidence, not designs —
+each names what was actually observed and the question that has to be answered
+before building anything.
+
+### 15.1 Installation should be executable, not readable
+
+Getting a working setup took: enable the server in `config.py`, reload, find
+the bridge's absolute path, write `mcpServers` into
+`claude_desktop_config.json`, fully quit and reopen Claude Desktop, run
+`make skill-bundle`, delete the previous skill, upload, wait for the security
+scan. Nine steps across three applications, and `doc/mcp.md` describes all of
+them correctly.
+
+It still went wrong, because **the skill and the bridge are independent
+installs and doing only one produces a confusing result rather than a broken
+one.** With the skill uploaded and no bridge registered, Claude correctly
+reports that it is knowledge with no execution environment and cannot see your
+windows — which reads exactly like the feature not working. The reverse is
+quieter and worse: tools without the skill work, and return actions full of
+`sleep` and screen coordinates. `doc/mcp.md` now says so explicitly, which
+helps a reader and does nothing for the several remaining ways to get this
+half-done.
+
+The idea: an instruction document an agent **executes** rather than one a human
+follows — locate the bridge, patch the client config, verify by driving
+`tools/list` end to end, report what it could not do itself. Most of it is
+mechanical and was in fact done that way in the session that found the problem.
+
+Open questions. Which client — the config path, the schema and the
+restart requirement are all Claude Desktop's, and an "install for any MCP
+client" document is a different and much larger claim. What the agent must
+refuse to do unattended: editing another application's config file is
+reasonable with a backup; quitting that application is not. And whether this
+belongs in the repository or **in the skill itself** — a skill that installs
+its own transport is circular, since a user with no bridge is a user whose
+agent cannot verify its own work.
+
+### 15.2 Editing `config.py` is a step the skill still hand-waves
+
+f6cf4e0 gave the skill the file header, the `extensions/` placement and the
+`configure()` registration block, so a generated action now says where it goes.
+What it does not address: **no tool writes Python to disk, deliberately** (§4.4
+and `doc/mcp.md`), so the operator is the transport. They paste a class into
+`~/.keyhac/extensions/`, then paste three more lines into the middle of a
+config file that is theirs, several hundred lines long, and already working.
+
+Observed: an instruction of mine to delete a line range removed the `import`
+the registration depended on, and the config stopped loading. The failure was
+loud and the previous keymap stayed active — the containment in
+`Keymap.configure()` did its job — but it is the second time a human hand-edit
+between two machines has been the thing that broke.
+
+Two directions, and they are not the same size:
+
+- **Cheap**: the skill emits an exact, self-contained block with an anchor
+  comment, so the paste is unambiguous and re-running it is idempotent.
+- **Real**: Layer 5. `~/.keyhac/actions/*.py` discovered and registered by
+  filename, and `config.py` never needs editing to add an action at all. The
+  reason to hesitate is not effort — it is that auto-registration makes
+  `run_action`'s surface "every file in a directory" rather than "what the
+  operator named", which is the line §4.4 draws on purpose.
+
+Answer the second before investing in the first: they solve the same problem
+and only one of them survives.
+
+### 15.3 `run_action` returns logs, not output
+
+Verified in `keyhac/mcp/tools.py`: `_captured_log` installs a
+`logging.Handler` on the `keyhac` logger for the duration of the run. So an
+action using the documented `getLogger("MyAction")` is captured — and three
+things are not:
+
+- **`print()`**, which the shipped `config.py` template teaches on the same
+  line as the logger ("print() and the logger both reach the console window").
+  It reaches the console window; it does not reach the model.
+- **Anything logged to a logger outside the `keyhac` tree**, which is what
+  `logging.getLogger(__name__)` produces in a module under `extensions/`.
+- **Subprocess `stderr`.** These actions shell out — `open`, `osascript` — and
+  a `CalledProcessError` carries stderr only if the action captured it.
+
+Each of those is a debugging line the operator can see and the agent cannot,
+and the whole point of `run_action` is that the model reads its own failure.
+The fix looks small (`redirect_stdout` / `redirect_stderr` around the same
+block, root logger rather than `keyhac`), and the questions are about what that
+sweeps in: a root-logger handler catches every library the action imports, and
+capturing stdout for the duration of a run on the loop thread captures whatever
+else logs on that thread in the same window. Bound the output, and say in the
+result when it was truncated.
+
+### 15.4 A failing action should be able to hand the agent its own trace
+
+Today the loop is: the action fails, the operator notices something did not
+happen, opens the Keyhac console, finds the traceback, copies it, pastes it
+into a conversation — assuming the conversation that authored it still exists.
+Every one of those steps is a place where the report does not get made, and an
+action nobody reports is an action that stays broken.
+
+The idea is a returning channel: Keyhac keeps the last failure per registered
+action — traceback, the log around it, which step, what was on screen — and an
+MCP tool serves it, so "the PDF one failed this morning" is enough for the
+agent to fetch the trace itself and propose a fix. The operator's side of that
+becomes one sentence rather than a copy-paste.
+
+This is mostly a **convention** question, not a plumbing one. `run_action`
+already returns everything an action logged; what is missing is the same
+richness on the path where the action runs from a *key press*, and a norm about
+what actions log. §7 asks for "report what to redo, not that something failed";
+this extends it to "report enough that the agent can act without the screen" —
+which selector was being looked for, what was found instead, which item of how
+many. The generated actions already do some of this well.
+
+Open questions. Where the record lives, and for how long — a failure record
+holds window titles and element names, which is exactly the material §9's trace
+privacy rules cover, and the retention answer there was deliberately
+conservative. Whether the operator is prompted at all, or the record simply
+exists for an agent that asks. And whether a repeated failure should surface a
+notification, given that Keyhac's whole posture is to stay out of the way.
+
+### 15.5 A command line onto the daemon, over the transport that already exists
+
+Running an action has three entry points and they are not equally available.
+A key press needs the action bound. MCP `run_action` needs a chat client with
+the bridge registered — §15.1's nine steps. The third, `tools/run_action_file.py`,
+needs neither and is the one that cannot ship, because a bare interpreter cannot
+use the Accessibility permission granted to `Keyhac.app`: `doc/dev/packaging.md`
+is explicit that it "would grant the permission to that interpreter, not to
+Keyhac". What it borrows instead is the grant held by whatever is responsible
+for the shell — Terminal, the IDE, the agent's host — which is a far wider
+authorisation, since it covers every process that shell will ever spawn, and it
+reaches the UI and the keyboard without passing any of §4.4's gates.
+
+The idea is the fourth: a small command-line client that speaks the **same
+loopback HTTP and per-start token as the MCP server** and asks the running
+daemon to run a registered action. Both objections above dissolve at once, and
+not by argument — by construction. The work happens inside the process that
+already holds the permission (§4.3's first bullet), so nothing new is
+authorised; and because it is the same endpoint, "off unless the config asks",
+the loopback bind and the token apply unchanged rather than being reasoned about
+again.
+
+What it buys that MCP does not: an operator, a shell script, or an agent with
+`Bash` and no bridge gets the run-read-fix loop without a chat client — which is
+exactly the half-installed state §15.1 describes, and the alternative it
+currently pushes people toward is granting their terminal Accessibility. It also
+gives §15.3 a second consumer, which raises the value of fixing the capture
+rather than changing it.
+
+Constraint inherited from §4.3: like the bridge, it must be a thin client — no
+tool definitions, no logic — or the two diverge and are maintained twice.
+
+Open questions. It reaches only *registered* actions, so §15.2's "the operator is
+the transport" is untouched, and the two interact if Layer 5 ever lands. The
+token is already readable by any local process that can read the bridge's copy,
+so a CLI adds a consumer rather than surface — but it makes that file's
+permissions load-bearing in a way worth stating rather than inheriting silently.
+And whether it ships in the bundle or stays in `tools/`: shipping is what makes
+it useful to an operator, and unlike the file runner there is no permission
+argument against it.

@@ -47,6 +47,11 @@ class MacWindow(Window):
     # -- identity -----------------------------------------------------------
 
     @property
+    def element(self):
+        """lazydocs: ignore"""
+        return self._element
+
+    @property
     def title(self) -> str | None:
         return self._element.get_attribute_value("AXTitle")
 

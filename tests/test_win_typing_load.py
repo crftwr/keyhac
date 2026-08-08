@@ -177,10 +177,17 @@ class Harness:
         self.keymap.configure()
 
         self.callback_ms: list[float] = []
+        #: Every vk the hook was handed, so a test can tell "the engine dropped
+        #: it" from "the burst never arrived". Injected input is occasionally
+        #: lost before any hook sees it - measured on the mouse side, where
+        #: SendInput returns success, the handle is still valid, and no
+        #: callback comes - and without this the two are indistinguishable.
+        self.input_keys: list[int] = []
         self.restored = 0
 
     def _on_key(self, event):
         t0 = time.perf_counter()
+        self.input_keys.append(event.vk)
         try:
             return self.keymap.on_key_event(event)
         finally:
@@ -198,6 +205,7 @@ class Harness:
         self.hook.install(self._on_key, self._on_restored)
         self.probe.pump(0.1)
         self.callback_ms.clear()
+        self.input_keys.clear()
         self.probe.keys.clear()
         return self
 
@@ -218,12 +226,33 @@ class Harness:
                 time.sleep(interval)
             done.set()
 
+        # Focus is checked when the harness is built, but a burst takes long
+        # enough for something to steal it in the middle - a window opening
+        # mid-run is exactly what happens on a machine being used for anything
+        # else - and the keystrokes sent during that window land in *it*. The
+        # count assertions then fail as though the engine had dropped them.
+        #
+        # Sampled throughout rather than checked at the end, because the steal
+        # is usually transient: a Notepad opening and closing takes focus and
+        # gives it back, so an end-of-burst check sees nothing wrong and the
+        # test still fails, one keystroke short. This cannot hide a real
+        # defect - if focus held for the whole burst, every assertion runs.
+        held = [True]
+
+        def pump_watching(seconds):
+            self.probe.pump(seconds)
+            if user32.GetFocus() != self.probe.hwnd:
+                held[0] = False
+
         thread = threading.Thread(target=sender, daemon=True)
         thread.start()
         while not done.is_set():
-            self.probe.pump(0.02)
-        self.probe.pump(settle)
+            pump_watching(0.02)
+        pump_watching(settle)
         thread.join(timeout=5.0)
+
+        if not held[0]:
+            pytest.skip("lost keyboard focus mid-burst; the keys went elsewhere")
 
     def stats(self):
         samples = self.callback_ms
@@ -370,6 +399,15 @@ class TestIntegrity:
         harness.type_keys(taps(VK_F13, 100), interval=0.0)
         seen = harness.probe.keys
         assert VK_F13 not in seen, "an untranslated F13 leaked through"
+        # 100 taps is 200 events, and the engine can only translate what it was
+        # handed. Fewer than that means the OS dropped injected input before any
+        # hook saw it - which happens, rarely, at this speed - and the count
+        # below would then be blaming the engine for the delivery. Attributed
+        # rather than tolerated: if all 200 arrived, the assertion still runs.
+        delivered = harness.input_keys.count(VK_F13)
+        if delivered < 200:
+            pytest.skip(f"only {delivered} of 200 injected events reached the "
+                        f"hook; the burst never arrived to be translated")
         assert seen.count(VK_F14) == 100, (
             f"expected 100 F14, saw {seen.count(VK_F14)}")
 

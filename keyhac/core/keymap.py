@@ -9,6 +9,7 @@ import functools
 import operator
 import os
 import shutil
+import sys
 import threading
 import traceback
 from typing import Callable
@@ -107,6 +108,8 @@ class Keymap:
         self.app_control = None             # platform AppControl
         self.window_provider = None         # platform WindowProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
+        self._registered_actions = {}       # name -> action, for MCP
+        self._mcp_server = None             # MCPServer while enabled
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self._main_thread_dispatcher = None  # callable(callback) - see below
@@ -163,6 +166,8 @@ class Keymap:
                 # directory, not the config load.
                 logger.warning(f"Could not create {extensions_dir}: {e}")
 
+            self._prepare_extensions(extensions_dir)
+
             try:
                 self.config = Config(self._config_path, self._template_path)
                 self.config.call("configure", self)
@@ -172,6 +177,39 @@ class Keymap:
                 return
 
             self._warn_unreachable_modifiers()
+
+    @staticmethod
+    def _prepare_extensions(extensions_dir: str) -> None:
+        """Make ``~/.keyhac/extensions`` importable, and re-importable.
+
+        Two things, and the second is the one that bites.
+
+        **On sys.path**, so a config can be split into modules -- which is what
+        the directory is created for, and what doc/configuration.md has always
+        promised.  *Appended*, not prepended: an extension is named after what
+        it does, and ``queue.py`` beside a queue-handling action or ``copy.py``
+        beside a copy one is not a far-fetched name.  Prepending would let one
+        shadow the standard library for the whole process, and the traceback
+        would surface somewhere with no visible connection to this directory.
+
+        **Dropped from the module cache**, so a reload actually reloads.
+        Without this, editing an extension and reloading runs the *previous*
+        version: ``sys.modules`` answers the import, the edited file is never
+        read, and the run reports success against stale code.  That failure is
+        silent by construction, and it lands squarely on the edit-reload-run
+        loop this directory exists to serve.
+        """
+        resolved = os.path.realpath(extensions_dir)
+
+        if resolved not in (os.path.realpath(entry)
+                            for entry in sys.path if entry):
+            sys.path.append(resolved)
+
+        prefix = resolved + os.sep
+        for name, module in list(sys.modules.items()):
+            path = getattr(module, "__file__", None)
+            if path and os.path.realpath(path).startswith(prefix):
+                del sys.modules[name]
 
     def reload_config(self) -> None:
         """Reload the configuration file.
@@ -745,8 +783,93 @@ class Keymap:
             return UIElement.get_running_applications()
         return []
 
+    # ------------------------------------------------------------------
+    # Named actions and the MCP endpoint
+
+    def register_action(self, name: str, action) -> None:
+        """Make an action runnable by name over MCP.
+
+        Registering is opt-in and per-action, which is the point: it is the
+        line between "Keyhac can be driven by a model" and "everything a
+        configuration defines can be". Bind it to a key as usual too - this
+        only adds the name.
+
+        ```python
+        keymap.register_action("extract_records", ExtractRecords())
+        ```
+
+        Args:
+            name: The name run_action takes.
+            action: Any callable, usually a ThreadedAction.
+        """
+        self._registered_actions[name] = action
+
+    @property
+    def registered_actions(self) -> dict:
+        """The actions registered by name, for the MCP tools to list and run."""
+        return dict(self._registered_actions)
+
+    def enable_mcp_server(self, port: int = 0) -> None:
+        """Serve the action-authoring tools on localhost, for Claude to use.
+
+        **Off unless a configuration calls this.** The endpoint reads the UI
+        tree and can run registered actions, so it binds to 127.0.0.1 only and
+        every request carries a token published - readable by this user alone -
+        beside the configuration. `keyhac-mcp-bridge` reads that file; nothing
+        else needs to know the port.
+
+        Args:
+            port: TCP port, or 0 to let the OS choose (the default - the bridge
+                reads whichever port was chosen, so a fixed one buys nothing
+                but a collision).
+        """
+        if self._mcp_server is not None:
+            return
+        from keyhac.mcp.server import ENDPOINT_FILE, MCPServer
+        from keyhac.mcp.tools import ToolRegistry
+
+        endpoint = os.path.join(
+            os.path.dirname(self._config_path or ""), ENDPOINT_FILE)
+        self._mcp_server = MCPServer(ToolRegistry(self), endpoint, port=port)
+        self._mcp_server.start()
+
+    def stop_mcp_server(self) -> None:
+        """Stop the endpoint and remove its published token.
+
+        lazydocs: ignore
+        """
+        server, self._mcp_server = self._mcp_server, None
+        if server is not None:
+            server.stop()
+
+    @property
+    def ui(self):
+        """The action-facing UI API - see doc/action_api.md.
+
+        Reading and driving another application's elements: finding windows,
+        searching trees, waiting for the screen to change, filling fields.
+        Deliberately a separate namespace from the configuration API, and
+        deliberately method-style, so `from keyhac import *` does not acquire a
+        dozen generic verbs that only mean something inside an action.
+        """
+        if getattr(self, "_ui", None) is None:
+            from keyhac.core.ui import UI
+            self._ui = UI(self)
+        return self._ui
+
     @property
     def clipboard_history(self):
         """The ClipboardHistory object (None while running without one, e.g.
         under --no-ui)."""
         return self._clipboard_history
+
+    @property
+    def clipboard(self):
+        """The OS clipboard - get_text() / set_text(), or None if unwired.
+
+        The history's provider, exposed directly because actions that paste
+        need to read and restore the clipboard around what they do, which is
+        not a history operation.
+        """
+        history = self._clipboard_history
+        return getattr(history, "_provider", None) if history else None

@@ -1,0 +1,5 @@
+ref,title,amount,urgent,status
+REF-201,first item,120,yes,
+REF-202,second item,340,no,
+REF-203,bad amount,not-a-number,no,
+REF-204,fourth item,75,yes,

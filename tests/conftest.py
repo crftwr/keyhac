@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from keyhac.core.vk import init_key_names, get_key_names
@@ -45,6 +47,17 @@ class EngineFixture:
         names = get_key_names()
         return [("D-" if down else "U-") + names.vk_to_str(vk)
                 for vk, down, _replay in self.hook.sent]
+
+
+@pytest.fixture(autouse=True)
+def restore_sys_path():
+    """configure() puts <config dir>/extensions on sys.path, and every test
+    gets a fresh tmp_path - so without this the suite finishes carrying one
+    dead entry per test, and every import in between pays to scan them all.
+    """
+    before = list(sys.path)
+    yield
+    sys.path[:] = before
 
 
 @pytest.fixture
