@@ -238,8 +238,21 @@ def test_mouse_hook_classifies_own_vs_real(hook, probe):
         if seen:
             pytest.skip("the physical mouse is in use")
 
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-        probe.pump(0.3)
+        # Retried, because the event can be dropped before any hook sees it.
+        # Measured: SendInput returns 1 with no error, the WH_MOUSE_LL handle
+        # is still valid, and no callback arrives - occasionally, and more
+        # often when other injection preceded it. A second wheel is then seen
+        # normally, so the hook is alive and the *event* went missing.
+        #
+        # This cannot hide the thing the test is for. If an untagged wheel were
+        # misclassified as our own output, no attempt would ever be counted and
+        # the assertion below still fails; the retry only removes the
+        # dependency on one particular injected event surviving.
+        for _attempt in range(5):
+            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+            probe.pump(0.3)
+            if seen:
+                break
         assert seen == [1]
 
         # Same again before the second half: any event arriving during a quiet

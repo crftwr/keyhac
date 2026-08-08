@@ -61,6 +61,18 @@ live on each OS.
   alongside. On a quiet desktop the same tests passed 4/4 full runs before the
   change and 353/353 after, with no skips, so the guards are inert until
   something really is interfering.
+- **Injected input is occasionally lost before any hook sees it, and that is
+  not the engine's doing.** Measured on the mouse side, which is where it is
+  cleanly attributable: `SendInput` returns 1 with no error, the `WH_MOUSE_LL`
+  handle is still valid, and no callback ever arrives — while a second wheel
+  sent immediately after is seen normally, so the hook is alive and the *event*
+  went missing. Rare, timing-sensitive, and more likely when other injection
+  preceded it. Two consequences for tests that inject: retry the stimulus
+  rather than asserting on one particular event surviving, and where the count
+  is the assertion, measure what actually reached the engine first. The typing
+  harness records every vk the hook was handed for exactly that reason — 100
+  taps is 200 events, and fewer means the burst never arrived to be translated,
+  which is a skip rather than a translation failure.
 - **A guard must not be able to hide the defect the test exists to catch.**
   These skip only on *detected interference* — focus observed to leave the
   probe, or the pointer observed moving while nothing is injecting — never on
