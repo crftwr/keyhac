@@ -1,9 +1,15 @@
-# Authoring actions with Claude
+# Authoring actions with an AI agent
 
-Keyhac can expose its element tools to Claude over MCP, so you can ask for an
-action in a chat window and have Claude inspect the actual screen, write it,
-run it, read the error, and fix it — instead of guessing at selectors and
-handing you code to debug.
+Keyhac can expose its element tools over MCP, so you can ask for an action in a
+chat window and have the agent inspect the actual screen, write it, run it,
+read the error, and fix it — instead of guessing at selectors and handing you
+code to debug.
+
+MCP is an open protocol and nothing here is specific to one vendor: Keyhac
+serves ordinary JSON-RPC over loopback HTTP with a bearer token, which is a
+plain Streamable HTTP endpoint. Any client that can reach one should work.
+[Connecting an agent](#connecting-an-agent) lists which have actually been
+tried, which is a shorter list.
 
 **This is off unless you turn it on**, and it is worth understanding why before
 you do: the endpoint reads the accessibility tree of every application you have
@@ -33,17 +39,47 @@ open and can run the actions you register. See [Security](#security).
 
 ## Turning it on
 
-In `~/.keyhac/config.py`:
+Tick **MCP server** under **AI Integration** in the console window, or
+**AI Integration → MCP Server** in the tray / menu bar menu. The console logs
+the port it chose, and the choice is remembered across restarts.
 
-```python
-def configure(keymap):
-    keymap.enable_mcp_server()
-```
+There is deliberately no configuration API for this. An endpoint that reads
+every window and can run your actions should be visibly on or visibly off; a
+line in the middle of a several-hundred-line `config.py` tells you what was
+asked for once, and nothing about what is true now. The same reasoning already
+governs the keyboard hook, which has always been a checkbox rather than a
+setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
+delete the line from your `config.py` and use the switch.)*
 
-Reload (tray → Reload Config). The console logs the port it chose.
+## Connecting an agent
 
-Then register the bridge with Claude Desktop — Settings → Developer → Edit
-Config, or `~/Library/Application Support/Claude/claude_desktop_config.json`:
+| Client | Transport | Status |
+|---|---|---|
+| Claude Desktop | stdio → the bridge below | **Verified** — the actions in `examples/actions/` were authored through it |
+| Claude Code | HTTP directly (`claude mcp add --transport http`) | Should work, **untried** |
+| Anything else with MCP support | HTTP directly | Should work, **untried** |
+
+"Untried" is not scepticism about those clients — nobody has run them against
+this endpoint yet. If you do, whether it worked or not is the useful report.
+
+**Connecting over HTTP directly**, for a client that can: the port and token
+are published in `mcp.json` beside your `config.py`, the endpoint is
+`http://127.0.0.1:<port>/`, and every request must carry
+`Authorization: Bearer <token>`. The port is chosen at each start, so read the
+file rather than pinning a number.
+
+### The bridge, for stdio-only clients
+
+Claude Desktop starts a local MCP server as a child process and talks JSON-RPC
+over its stdin/stdout. Keyhac cannot be that child — it is a resident daemon
+holding the keyboard hook and your focus history, and a second copy per
+conversation would be a second hook and a second accessibility prompt. So
+`keyhac-mcp-bridge` runs as the child instead and forwards to the daemon
+already running. It holds no tool definitions and no logic, so the two cannot
+drift apart.
+
+Register it — Settings → Developer → Edit Config, or
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -68,19 +104,19 @@ source checkout (`python -m keyhac`) does not create one at all. Find it with
 ```
 
 The bridge does not have to come from the same install as the daemon — it reads
-the endpoint file and forwards, and holds no tool definitions of its own.
-
-**Why a bridge at all**: Claude Desktop starts a local MCP server as a child
-process, and Keyhac cannot be that child — it is a resident daemon holding the
-keyboard hook and your focus history. The bridge is a shim that forwards to the
-Keyhac already running; it holds no logic of its own.
+the endpoint file and forwards.
 
 ## Add the authoring skill
 
-The tools tell Claude what your screen contains. The skill tells it how to
+The tools tell the agent what your screen contains. The skill tells it how to
 write an action — the rules that stop it emitting `sleep`, coordinates, and
 unverified writes. Without it you will get plausible code that breaks on a
 slower machine.
+
+Skills are a Claude feature, so the packaged bundle is for Claude Desktop.
+The content is not: `keyhac/skills/action-authoring/` is Markdown, and any
+agent that can be given documents can be given these. What it cannot be given
+is the *habit* of consulting them unprompted, which is the part a skill buys.
 
 Claude Desktop → Settings → カスタマイズ / Customize → Skills → Add → **Upload
 skill**, and give it the bundle:
@@ -102,11 +138,11 @@ is visible.
 **The skill is not the connection, and neither step implies the other.** The
 skill is knowledge — writing rules and an API reference, with no way to reach
 your machine; the tools come from the bridge registered above. Upload only the
-skill and Claude will correctly tell you it cannot see your windows. Register
-only the bridge and it will see them, then write actions that use `sleep` and
+skill and the agent will correctly tell you it cannot see your windows. Connect
+only the tools and it will see them, then write actions that use `sleep` and
 screen coordinates.
 
-## What Claude can do
+## What the agent can do
 
 | Tool | |
 |---|---|
@@ -124,8 +160,8 @@ screen coordinates.
 keymap.register_action("extract_records", ExtractRecords())
 ```
 
-Registering is per-action and opt-in — it is the line between "Claude can run
-this" and "Claude can run anything the config defines".
+Registering is per-action and opt-in — it is the line between "the agent can
+run this" and "the agent can run anything the config defines".
 
 ## The loop
 
@@ -133,9 +169,9 @@ this" and "Claude can run anything the config defines".
 2. Ask for what you want, in your own words. Naming the application and the
    output is useful; naming an API is not — if you find yourself typing
    `find_element`, tell us, because that means the skill is failing.
-3. Claude reads the screen and writes the action.
-4. Paste it into `config.py` (or an imported module), register it, and ask
-   Claude to reload and run it.
+3. The agent reads the screen and writes the action.
+4. Paste it into `config.py` (or an imported module), register it, and ask it
+   to reload and run it.
 5. It reads the failure itself and fixes it.
 
 Step 4 is manual for now: no tool writes Python to your disk, deliberately.
@@ -171,7 +207,9 @@ don't type passwords or show private material while recording.
 
 ## Security
 
-- **Off by default.** Nothing listens until `enable_mcp_server()` is called.
+- **Off by default**, and the switch is visible. Nothing listens until you tick
+  **AI Integration → MCP server**, and while it is on the checkbox and the menu
+  item both say so — which a line in a config file cannot.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
   another process on the machine cannot use the endpoint without it.
@@ -179,5 +217,5 @@ don't type passwords or show private material while recording.
   an app you are looking at is one thing; letting a remote model put Python on
   your disk is another decision, and it has not been made.
 - **`run_action` is limited to registered actions**, by name.
-- Turn it off by removing the call and reloading; the token file is deleted
-  when Keyhac stops.
+- Turn it off with the same switch; the token file is deleted then, and when
+  Keyhac stops.

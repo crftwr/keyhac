@@ -131,7 +131,7 @@ skill in `keyhac/skills/action-authoring/` is the procedural half, and
 > unsettled part is `UINode` itself — how an element is identified, and how
 > long a node you are holding stays valid — which is the shape everything
 > below is built on. The rest of Keyhac's API is not affected; see
-> [Authoring actions with Claude](mcp.md) for what this covers and what it
+> [Authoring actions with an AI agent](mcp.md) for what this covers and what it
 > would take to settle it.
 
 **Cross-platform by shape, not by data.** Every method here exists and behaves

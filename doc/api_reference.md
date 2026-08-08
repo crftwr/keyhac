@@ -44,6 +44,14 @@ Portable snapshot of the current keyboard focus (a Focus), or None before the fi
 
 ---
 
+#### <kbd>property</kbd> Keymap.mcp_server_running
+
+Whether the endpoint is currently listening. 
+
+lazydocs: ignore 
+
+---
+
 #### <kbd>property</kbd> Keymap.registered_actions
 
 The actions registered by name, for the MCP tools to list and run. 
@@ -167,24 +175,6 @@ edit_config() → None
 Open the configuration file in a text editor. 
 
 ``keymap.editor`` chooses the editor: an application name or path the OS can resolve, or a callable receiving the config path.  Left empty, a platform default is used (Visual Studio Code / Xcode / TextEdit on macOS, Notepad on Windows).  The tray menu's "Edit Config" item calls this. 
-
----
-
-### <kbd>method</kbd> `Keymap.enable_mcp_server`
-
-```python
-enable_mcp_server(port: int = 0) → None
-```
-
-Serve the action-authoring tools on localhost, for Claude to use. 
-
-**Off unless a configuration calls this.** The endpoint reads the UI tree and can run registered actions, so it binds to 127.0.0.1 only and every request carries a token published - readable by this user alone - beside the configuration. `keyhac-mcp-bridge` reads that file; nothing else needs to know the port. 
-
-
-
-**Args:**
- 
- - <b>`port`</b>:  TCP port, or 0 to let the OS choose (the default - the bridge  reads whichever port was chosen, so a fixed one buys nothing  but a collision). 
 
 ---
 

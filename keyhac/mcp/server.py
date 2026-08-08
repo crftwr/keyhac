@@ -92,6 +92,29 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._send(200, response)
 
+    def do_GET(self):                                    # noqa: N802 - stdlib
+        self._decline()
+
+    def do_DELETE(self):                                 # noqa: N802 - stdlib
+        self._decline()
+
+    def _decline(self) -> None:
+        """405, not the stdlib's 501, for the verbs this transport declines.
+
+        Streamable HTTP lets a server offer no server-to-client SSE stream and
+        no sessions - but it has to decline in the spec's words: GET without a
+        stream "MUST return HTTP 405", and DELETE is how a client ends a
+        session it was never given. The stdlib's default 501 says something
+        else entirely - *this server does not implement HTTP* - and a client
+        that opens the optional stream before its first tool call can read that
+        as fatal rather than as "no stream here". The distinction only matters
+        for clients other than the bridge, which is exactly who this is for.
+        """
+        self.send_response(405)
+        self.send_header("Allow", "POST")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _authorised(self) -> bool:
         header = self.headers.get("Authorization", "")
         prefix = "Bearer "

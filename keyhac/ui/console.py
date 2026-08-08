@@ -120,6 +120,20 @@ class ConsoleWindow:
 
         self._hook_checkbox = Checkbox(
             "Keyboard hook", checked=hook.installed, on_change=self._on_hook_toggle)
+        # Beside the hook checkbox on purpose: both switch a capability the
+        # user is entitled to see the state of, and the endpoint being visibly
+        # off is most of the answer to "is this thing watching me".
+        #
+        # The category is folded into the label rather than standing beside it
+        # as its own text. A checkbox draws its box on the left and its label
+        # on the right, so a separate "AI Integration:" landed between the two
+        # checkboxes and read as a third peer in the row - it appeared to label
+        # the box that followed it only if you already knew that was the
+        # intent. A menu gets hierarchy from nesting; a flat row has to spell
+        # it, and this spells the same path the menu shows.
+        self._mcp_checkbox = Checkbox(
+            "AI Integration: MCP server", checked=keymap.mcp_server_running,
+            on_change=self._on_mcp_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
             selected=initial_level_index,
@@ -138,10 +152,16 @@ class ConsoleWindow:
         # breathing room between the rows, inspector labels on a shared fixed
         # width so the values line up, and the toolbar/label rows centered on
         # their cross axis.
-        # The flexible spacer absorbs the middle, so the only visible gap in
-        # this row is label <-> dropdown; keep it tight.
+        # The flexible spacer absorbs the middle, so the only visible gaps in
+        # this row are label <-> control; keep those tight.
+        # The fixed spacer is not decoration: at the shared 0.3 gap "Keyboard
+        # hook" and the next group read as one run of text, and the checkbox
+        # that belongs to which label becomes a guess. It buys the separation
+        # the grouping is claiming.
         toolbar = HSplit(
             Item(self._hook_checkbox, size="content", align="center"),
+            Item(Label(""), size=3),
+            Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             Item(Label("Log level:"), size="content", align="center"),
             Item(self._level_dropdown, size="content", align="center"),
@@ -288,6 +308,27 @@ class ConsoleWindow:
                     self._hook_checkbox.checked = False
         else:
             self._hook.uninstall()
+
+    def _on_mcp_toggle(self, checked: bool) -> None:
+        # Persisted before it is acted on, so a start that throws still leaves
+        # the setting matching what the user asked for - and reverted with it
+        # if the start fails, because a checkbox that says "on" over a socket
+        # that never bound is the one state this switch must not reach.
+        if self._settings is not None:
+            self._settings.set("mcp_server", checked)
+        try:
+            if checked:
+                self._keymap.start_mcp_server()
+                logger.info("MCP server enabled.")
+            else:
+                self._keymap.stop_mcp_server()
+                logger.info("MCP server disabled.")
+        except Exception as e:
+            logger.error(f"Could not {'start' if checked else 'stop'} "
+                         f"the MCP server: {e}")
+            if self._settings is not None:
+                self._settings.set("mcp_server", not checked)
+            self._mcp_checkbox.checked = self._keymap.mcp_server_running
 
     def _on_level_change(self, index: int, name: str) -> None:
         self._console.log_level = _LEVELS[index][1]

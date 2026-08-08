@@ -110,13 +110,21 @@ def main() -> int:
 
     keymap.configure()
 
+    # Settings in both modes, because the MCP endpoint's on/off lives here now
+    # and headless has no menu to set it from. --no-ui cannot *change* the
+    # switch; it honours what the UI last set, which keeps one source of truth
+    # rather than growing a second one for a mode that has no UI.
+    from keyhac.core.settings import Settings
+    settings = Settings(app_paths.state_file("settings.json"))
+    if settings.get("mcp_server", False):
+        keymap.start_mcp_server()
+
     if args.no_ui:
         return _run_headless(keymap, hook, native_loop, platform_name,
                              clipboard_provider)
 
-    from keyhac.core.settings import Settings
     return _run_with_console(keymap, hook, platform_name, clipboard_provider,
-                             Settings(app_paths.state_file("settings.json")))
+                             settings)
 
 
 def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,

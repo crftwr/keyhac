@@ -809,19 +809,36 @@ class Keymap:
         """The actions registered by name, for the MCP tools to list and run."""
         return dict(self._registered_actions)
 
-    def enable_mcp_server(self, port: int = 0) -> None:
-        """Serve the action-authoring tools on localhost, for Claude to use.
+    @property
+    def mcp_server_running(self) -> bool:
+        """Whether the endpoint is currently listening.
 
-        **Off unless a configuration calls this.** The endpoint reads the UI
-        tree and can run registered actions, so it binds to 127.0.0.1 only and
+        lazydocs: ignore
+        """
+        return self._mcp_server is not None
+
+    def start_mcp_server(self, port: int = 0) -> None:
+        """Start the action-authoring endpoint on localhost.
+
+        The switch is the console's **AI Integration** checkbox, or the tray
+        menu's *AI Integration > MCP Server*; this is the mechanism behind it.
+        There is deliberately no configuration API: an endpoint that reads every
+        window
+        and can run registered actions should be visibly on or visibly off,
+        and a line in the middle of a config file tells you what was asked for
+        once, never what is true now.
+
+        Off until something asks. The endpoint binds to 127.0.0.1 only and
         every request carries a token published - readable by this user alone -
         beside the configuration. `keyhac-mcp-bridge` reads that file; nothing
         else needs to know the port.
 
         Args:
-            port: TCP port, or 0 to let the OS choose (the default - the bridge
-                reads whichever port was chosen, so a fixed one buys nothing
+            port: TCP port, or 0 to let the OS choose (the default - clients
+                read whichever port was chosen, so a fixed one buys nothing
                 but a collision).
+
+        lazydocs: ignore
         """
         if self._mcp_server is not None:
             return

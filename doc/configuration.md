@@ -343,7 +343,7 @@ surface, and `keyhac/skills/action-authoring/` for how to write one.
 change in ways a minor release normally would not, and an upgrade may require
 editing actions you have written. Everything else here — key tables, clipboard
 history, macros, window control — keeps the stability you expect from a 2.x
-release. [Authoring actions with Claude](mcp.md) says what is unsettled and
+release. [Authoring actions with an AI agent](mcp.md) says what is unsettled and
 what would settle it.
 
 ## Keyboard macros
