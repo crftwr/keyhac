@@ -29,7 +29,13 @@ the tray / menu-bar menu). Errors are contained:
   broken.
 
 `~/.keyhac/extensions/` is on `sys.path`, so you can split a large config into modules
-and `import` them.
+and `import` them. Reloading re-imports them too, so an edit to an extension is picked
+up without restarting Keyhac.
+
+The directory is **appended** to `sys.path`, not prepended: an extension is named after
+what it does, and a `queue.py` next to a queue-handling action would otherwise shadow
+the standard library for the whole process. If you name a module after one Python
+already provides, Python's copy wins and yours is unreachable — rename it.
 
 "Edit Config" in the tray menu opens the file in an editor. Pick yours with:
 

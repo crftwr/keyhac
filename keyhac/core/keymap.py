@@ -9,6 +9,7 @@ import functools
 import operator
 import os
 import shutil
+import sys
 import threading
 import traceback
 from typing import Callable
@@ -165,6 +166,8 @@ class Keymap:
                 # directory, not the config load.
                 logger.warning(f"Could not create {extensions_dir}: {e}")
 
+            self._prepare_extensions(extensions_dir)
+
             try:
                 self.config = Config(self._config_path, self._template_path)
                 self.config.call("configure", self)
@@ -174,6 +177,39 @@ class Keymap:
                 return
 
             self._warn_unreachable_modifiers()
+
+    @staticmethod
+    def _prepare_extensions(extensions_dir: str) -> None:
+        """Make ``~/.keyhac/extensions`` importable, and re-importable.
+
+        Two things, and the second is the one that bites.
+
+        **On sys.path**, so a config can be split into modules -- which is what
+        the directory is created for, and what doc/configuration.md has always
+        promised.  *Appended*, not prepended: an extension is named after what
+        it does, and ``queue.py`` beside a queue-handling action or ``copy.py``
+        beside a copy one is not a far-fetched name.  Prepending would let one
+        shadow the standard library for the whole process, and the traceback
+        would surface somewhere with no visible connection to this directory.
+
+        **Dropped from the module cache**, so a reload actually reloads.
+        Without this, editing an extension and reloading runs the *previous*
+        version: ``sys.modules`` answers the import, the edited file is never
+        read, and the run reports success against stale code.  That failure is
+        silent by construction, and it lands squarely on the edit-reload-run
+        loop this directory exists to serve.
+        """
+        resolved = os.path.realpath(extensions_dir)
+
+        if resolved not in (os.path.realpath(entry)
+                            for entry in sys.path if entry):
+            sys.path.append(resolved)
+
+        prefix = resolved + os.sep
+        for name, module in list(sys.modules.items()):
+            path = getattr(module, "__file__", None)
+            if path and os.path.realpath(path).startswith(prefix):
+                del sys.modules[name]
 
     def reload_config(self) -> None:
         """Reload the configuration file.
