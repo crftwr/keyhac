@@ -62,6 +62,53 @@ delete the line from your `config.py` and use the switch.)*
 "Untried" is not scepticism about those clients — nobody has run them against
 this endpoint yet. If you do, whether it worked or not is the useful report.
 
+### Let the agent connect itself
+
+Every client installs MCP servers differently, and the agent running inside
+yours knows how its own host does it — far better than this page can, and for
+clients that did not exist when this page was written. So rather than a
+procedure per client, here is the half only Keyhac knows. Turn the switch on
+first, then paste this:
+
+> Set up Keyhac's MCP server for yourself, using whatever mechanism this client
+> uses to install MCP servers — you know that part, and the notes below
+> deliberately do not cover it.
+>
+> What you cannot guess, so please don't:
+>
+> - Keyhac is running with its MCP switch on. It publishes the connection
+>   details as `mcp.json` beside my `config.py` — `~/.keyhac/mcp.json` unless
+>   Keyhac's console reported a different config directory at startup.
+> - That file holds a `port` and a `token`. The endpoint is
+>   `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every
+>   request needs an `Authorization: Bearer <token>` header.
+> - **The port changes every time Keyhac restarts.** Point the client at the
+>   file if it can read one. If it can only take a fixed value, tell me that
+>   rather than pinning today's port — it is a real limitation, not something
+>   to work around.
+> - If this client can only launch an MCP server as a subprocess over stdio,
+>   use the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes
+>   no arguments and finds that file itself. A GUI client usually needs its
+>   absolute path, since it does not inherit a shell `PATH`.
+>
+> How I would like you to go about it:
+>
+> - Back up any other application's config file before editing it, and show me
+>   the change.
+> - Do not quit or restart another application yourself. Tell me to, and tell
+>   me what I should see afterwards.
+> - Once I have restarted it, verify by calling `list_windows` — if my open
+>   windows come back, it worked. If the tool is not there, say so plainly
+>   instead of guessing at the cause.
+> - Finally, check whether the authoring skill is installed as well. It is a
+>   separate install, and having the tools without it is the quiet failure:
+>   you will be able to see my screen and will write actions containing
+>   `sleep` and screen coordinates.
+
+The last point is the one worth keeping even if you install by hand. Neither
+half implies the other, and the two ways of getting it half-done fail very
+differently — see [the skill is not the connection](#add-the-authoring-skill).
+
 **Connecting over HTTP directly**, for a client that can: the port and token
 are published in `mcp.json` beside your `config.py`, the endpoint is
 `http://127.0.0.1:<port>/`, and every request must carry
@@ -114,7 +161,7 @@ unverified writes. Without it you will get plausible code that breaks on a
 slower machine.
 
 Skills are a Claude feature, so the packaged bundle is for Claude Desktop.
-The content is not: `keyhac/skills/action-authoring/` is Markdown, and any
+The content is not: `keyhac/skills/keyhac-action-authoring/` is Markdown, and any
 agent that can be given documents can be given these. What it cannot be given
 is the *habit* of consulting them unprompted, which is the part a skill buys.
 

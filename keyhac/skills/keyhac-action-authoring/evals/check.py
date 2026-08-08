@@ -5,7 +5,7 @@ skill shows up as a failing file rather than as a subtly worse action three
 weeks later.  Judgement-shaped rules (are the preconditions the *right* ones?)
 are in cases.md for a human or a model to score; everything here is decidable.
 
-    python keyhac/skills/action-authoring/evals/check.py path/to/action.py [...]
+    python keyhac/skills/keyhac-action-authoring/evals/check.py path/to/action.py [...]
 
 Exit status is the number of files with violations.  Calibrated against
 examples/actions/*/*.py, which must pass.

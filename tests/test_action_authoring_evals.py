@@ -1,4 +1,4 @@
-"""The authoring skill's mechanical rules (keyhac/skills/action-authoring).
+"""The authoring skill's mechanical rules (keyhac/skills/keyhac-action-authoring).
 
 Two directions, because a checker that only ever says "ok" is a rubber stamp:
 the hand-written examples must pass, and a fixture that breaks every rule must
@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-SKILL = pathlib.Path(__file__).resolve().parents[1] / "keyhac/skills/action-authoring"
+SKILL = pathlib.Path(__file__).resolve().parents[1] / "keyhac/skills/keyhac-action-authoring"
 EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "examples/actions"
 
 

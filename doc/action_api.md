@@ -7,7 +7,7 @@ methods on the nodes it hands back — the three names below are the only ones a
 config imports.
 
 Generated from the docstrings. For how to *write* an action, the authoring
-skill in `keyhac/skills/action-authoring/` is the procedural half, and
+skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 `examples/actions/` holds working ones.
 
 > **Experimental.** This surface may change in ways a minor release normally

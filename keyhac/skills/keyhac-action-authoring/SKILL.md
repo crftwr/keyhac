@@ -1,5 +1,5 @@
 ---
-name: action-authoring
+name: keyhac-action-authoring
 description: Write a Keyhac Action that drives another application's UI - reading tables, filling forms, walking pagination, handling dialogs. Use when the user asks for automation of a system that has no API, or says "make an action that…", "automate this screen", "extract these records", "fill this form from a CSV".
 license: MIT. Complete terms in LICENSE.txt
 ---

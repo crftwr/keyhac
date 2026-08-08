@@ -69,7 +69,7 @@ packages = [
 # Without this the wheel ships bare .py files and a pip-installed Keyhac has no
 # tray icon files to load.
 "keyhac.ui" = ["assets/*"]
-# The authoring skill (keyhac/skills/action-authoring). It ships with the
+# The authoring skill (keyhac/skills/keyhac-action-authoring). It ships with the
 # package deliberately: it documents this exact version's API, and a skill that
 # has drifted from the API it describes is worse than no skill. Not an
 # importable package - the directory name is hyphenated and it holds Markdown -

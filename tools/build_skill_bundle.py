@@ -21,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import keyhac  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SKILL = ROOT / "keyhac" / "skills" / "action-authoring"
+SKILL = ROOT / "keyhac" / "skills" / "keyhac-action-authoring"
 OUTPUT = ROOT / "dist" / "keyhac-action-authoring-skill.zip"
 
 #: An uploaded skill leaves the repository that carries its licence, so the
