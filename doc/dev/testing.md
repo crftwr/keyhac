@@ -82,6 +82,18 @@ live on each OS.
   and the latency characterization still reports a 342 ms callback overrun.
   That last one is a true result about a machine under that much load, not
   noise to be suppressed.
+- **A claim one layer makes about another needs a test that spans both.**
+  `tests/test_cancel.py` checks the engine's Esc rule by handing
+  `on_key_event` a `KeyEvent`, and its docstring states the rest as fact:
+  Keyhac's own translated output "never reaches on_key_event at all (the
+  platform layer drops it on its own tag)". That is a claim about
+  `platform/win/hook.py`, and nothing was checking it — so an action pressing
+  Escape to dismiss a dialog was only *believed* not to kill itself.
+  `tests/test_win_cancel.py` settles it by varying nothing but `dwExtraInfo`
+  across real `SendInput` at a real `WH_KEYBOARD_LL` hook: untagged cancels
+  and is swallowed, `EXTRA_INFO_OWN` never reaches the engine, and
+  `EXTRA_INFO_REPLAY` arrives but does not cancel — each also checked for what
+  the focused window did or did not receive.
 - **Keyboard-type DLLs pin the layout tables** (`tests/test_win_layout.py`).
   `kbdus.dll` / `kbd106.dll` export `KbdLayerDescriptor()` → `KBDTABLES`, whose
   `pusVSCtoVK` is the scancode→vk truth for that keyboard *regardless of what is
@@ -365,25 +377,50 @@ struck off.
 
 - **The `Keyhac.exe` bundle** — `tools/bundle_pass.py` does the mechanizable
   half; run it with no Keyhac running, or the instance guard makes every check
-  fail for the wrong reason. By hand alongside it: the tray icon and its menu
-  clicks, and the console's log pane, hook checkbox and log-level dropdown.
-- **The chooser filter box under a Japanese IME** *(passed 2026-08-07)* — that
-  「か」 composes inline rather than typing `ka`, that Enter is consumed by the
-  IME to commit instead of choosing the highlighted item, and that the committed
-  text filters the list. Needs puikit's per-window input contexts (keyhac #20,
-  puikit `6906146`). Repeat it whenever that input-context code moves.
-- **JIS layout detection on real JIS hardware** *(passed 2026-08-07)* —
-  `GetKeyboardType(0) == 7`, one line. The tables it selects are pinned against
-  `kbd106.dll` independently, so the keyboard is needed only for the detection.
-  It still cannot be faked on the development VM, which presents a generic HID
-  keyboard reporting type 4 — so this one needs the hardware present, or it
-  needs skipping honestly rather than assuming.
+  fail for the wrong reason. 11/11 for 2.2.1, on a bundle rebuilt against the
+  PyPI PuiKit wheel — which exercises two paths an editable checkout never
+  does: the bundled fonts coming from the wheel instead of `scripts/
+  fetch_fonts.py`, and PuiKit's LICENSE being read out of `puikit-*.dist-info`
+  instead of a checkout root. By hand alongside it *(passed 2026-08-08)*: the
+  tray icon and its menu clicks, and the console's log pane, hook checkbox and
+  log-level dropdown.
+- **`is_stale()` against a really-destroyed element** — `tools/uia_pass.py`'s
+  staleness section, which owns its own window precisely because it has to
+  destroy it. It is not a formality: matching UIA_E_ELEMENTNOTAVAILABLE alone
+  was wrong, because a control destroyed underneath us answers **E_UNEXPECTED
+  for its first ~90 ms** and only then settles on the named constant — so
+  `is_stale()` said False during the one moment it is asked, and `_press`
+  blamed the operator's selector for a dialog that had closed. A destroyed
+  *top-level window* is a separate matter and deliberately only reported, not
+  checked: UIA sometimes keeps answering S_OK for one with its ControlType
+  degraded Window→Pane, and sometimes fails, so an assertion either way is a
+  coin flip.
+- **The chooser filter box under a Japanese IME** *(passed 2026-08-07,
+  re-passed 2026-08-08)* — that 「か」 composes inline rather than typing `ka`,
+  that Enter is consumed by the IME to commit instead of choosing the
+  highlighted item, and that the committed text filters the list. Needs
+  puikit's per-window input contexts (keyhac #20, puikit `6906146`). Repeat it
+  whenever that input-context code moves — which is exactly why 2.2.1 repeated
+  it: that commit is what `puikit>=1.0.10` pins, and 2.2.1 is the first release
+  taking it from the published wheel rather than a local checkout.
+- **JIS layout detection on real JIS hardware** *(passed 2026-08-07; **skipped
+  for 2.2.1** — no JIS keyboard available)* — `GetKeyboardType(0) == 7`, one
+  line. The tables it selects are pinned against `kbd106.dll` independently, so
+  the keyboard is needed only for the detection. It still cannot be faked on the
+  development VM, which presents a generic HID keyboard reporting type 4 — so
+  this one needs the hardware present, or it needs skipping honestly rather than
+  assuming. 2.2.1 took the second option: nothing in this release touches
+  layout detection, and recording the skip is the point of the sentence above.
 - **On macOS**: the tray "Edit Config" menu click and mouse output feel in real
   apps (wheel direction, drag, double-click registration). Neither is drivable
   from the sandbox — the agent shell holds Accessibility but never window-server
   key focus — so both are hand checks by construction.
 
-Nothing outstanding on either platform: on macOS the tray "Edit Config" click
-and mouse feel were both verified live, and on Windows the JIS keyboard and the
-Japanese IME — the last two checks that needed hardware rather than a harness —
-were passed by hand on 2026-08-07.
+Where 2.2.1 left it, since "nothing outstanding" is a claim that goes stale one
+release at a time: on macOS the tray "Edit Config" click and mouse feel were
+both verified live (2026-08-07). On Windows, 2.2.1 re-passed the Japanese IME,
+the tray icon and menu, and the console's log pane, hook checkbox and log-level
+dropdown by hand (2026-08-08), and ran the bundle pass 11/11 against a bundle
+built from the PyPI PuiKit wheel. **The one check not repeated for 2.2.1 is JIS
+layout detection**, for want of the keyboard — skipped and recorded, not
+assumed.
