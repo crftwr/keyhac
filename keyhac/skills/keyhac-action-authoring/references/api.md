@@ -8,7 +8,7 @@ The whole import list, and there is nothing else to reach for:
 
 ```python
 from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
-                    UINode, getLogger)
+                    StaleElement, UINode, getLogger)
 
 logger = getLogger("MyAction")     # `logger` is NOT importable - make one
 ```
@@ -124,6 +124,31 @@ is for making several reads atomic against a moving UI, or for calling a
 platform element method this API does not wrap. `starting()` and `finished()`
 already run there; `run()` does not, and must not block it — waiting there
 raises rather than freezing the keyboard.
+
+## A node is a snapshot
+
+`ui.window(...)`, `find`, `find_all` and a walked tree all hand back nodes that
+record what an element **was**. The screen moves on; the node does not notice.
+It is deliberate — a node that quietly re-read itself would hide the very
+change your preconditions exist to catch.
+
+So do not keep nodes across a state change. Re-find after anything that could
+have redrawn:
+
+```python
+row = window.find(identifier="row-3")
+next_page.press()
+row.press()                        # WRONG - that row belonged to page 2
+```
+
+`node.reread()` refreshes a subtree when you genuinely want the same place
+again. Acting on a node whose element has gone raises `StaleElement`, and the
+distinction is the one that decides what to do next:
+
+| | means | what to do |
+|---|---|---|
+| `StaleElement` | the screen moved | re-find it, or stop and report — your action is not wrong |
+| `FillFailed`, an empty `find` | the selector is wrong | the action was written against a different screen; regenerating is the fix |
 
 ## Cancellation
 

@@ -984,10 +984,45 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   time that client's first read returns. Windows therefore needs no equivalent
   of macOS's `set_manual_accessibility()` — it needs a retry, which `wait_for`
   already is.
-- **UI tree API shape** — worth settling before implementation, since it is the ceiling
-  on action expressiveness and changing it later breaks every action. Element identity
-  (path? ID? name?), handle lifetime (persistent or single-use), how far to unify Windows
-  and macOS.
+- ~~**UI tree API shape**~~ — **settled, in three separate ways.** This was the
+  question the experimental marker was really about: it is the ceiling on action
+  expressiveness, and changing it later breaks every action.
+
+  *How far to unify Windows and macOS* was closed by §10 step 4 — at the API, as
+  far as it already goes; at the action, not at all.
+
+  *Element identity* was closed by practice rather than by decision, and only
+  the writing-down was missing. Address by `identifier` (DOM id / AXIdentifier /
+  AutomationId) where there is one, since it survives relabelling and
+  localisation (§6.1), then by role plus name or text — with the limit §10 step
+  4 found, that a DOM id reaches controls, tables and landmarks but not a plain
+  `<span>`. The framework's own `identity_key()` is a different thing entirely:
+  the raw platform ref, used by exactly one caller for the DAG dedupe in
+  `get_ui_tree`, and not public shape.
+
+  *Handle lifetime* is **snapshot**, now stated as a contract rather than only
+  in a docstring. A `UINode` records what an element was; the screen moves on
+  and the node does not notice; `reread()` refreshes one deliberately. The
+  alternative — nodes that quietly re-read themselves — was rejected because it
+  hides exactly the change §3.7's preconditions exist to catch, and because the
+  three-beat pattern in §7.2 already re-finds rather than re-uses.
+
+  Blessing it needed one gap filled first, and it turned out to be a bug rather
+  than a design hole. A dead element reports no actions, so `press()` on a
+  closed dialog's button raised `FillFailed("element supports no press
+  action")` — true, and the least useful true thing to say, since it points the
+  operator at their selector when the screen had simply moved. Worse on macOS,
+  where `perform_action` discarded the AXError entirely. So: `StaleElement`
+  beside `WaitTimeout` / `FillFailed` / `ActionCancelled`, `is_stale()` on both
+  platform elements (a fact; the policy stays in core), and `perform_action`
+  returning a bool on macOS as it already did on Windows. The distinction the
+  type buys is §3.7's: *the screen moved* is re-findable, *the selector is
+  wrong* is regenerate-the-action.
+
+  What is **not** closed, and is a smaller question: the Windows `is_stale()`
+  was written on macOS against the header and has not been run. `tools/uia_pass.py`
+  is where that gets settled; the vtable slot it uses is already pinned live,
+  so what is unverified is the HRESULT comparison rather than the call.
 - **Real AX/UIA tree size and retrieval cost** — measure on Electron apps, VSCode,
   browsers. Sets the default depth and filter.
 - **MCP sampling is a bonus, not a dependency.** Topology A as described — a chat

@@ -113,6 +113,7 @@ ACTION_API_NAMES = [
     "WaitTimeout",
     "FillFailed",
     "ActionCancelled",
+    "StaleElement",
 ]
 
 ACTION_HEADER = """# Action API reference

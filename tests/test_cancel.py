@@ -235,3 +235,63 @@ def test_preserve_clipboard_serializes_across_threads():
         t.join(10)
 
     assert max(overlaps) == 1, f"two threads were inside at once: {overlaps}"
+
+
+# -- staleness ---------------------------------------------------------------
+#
+# A UINode is a snapshot (uitree.StaleElement documents why). These pin the
+# distinction that the contract is worth having for: "the screen moved" and
+# "your selector is wrong" used to arrive as the same message.
+
+class DeadElement:
+    """An element that has gone away, the way a closed dialog's button has."""
+    def is_stale(self):
+        return True
+    def get_action_names(self):
+        return []                       # what a dead element reports
+
+
+class LiveButNotPressable:
+    """A real element that simply offers no press action."""
+    def is_stale(self):
+        return False
+    def get_action_names(self):
+        return ["AXShowMenu"]
+
+
+class Ancient:
+    """A duck-typed element from before is_stale existed."""
+    def get_action_names(self):
+        return []
+
+
+def test_a_vanished_element_says_so_rather_than_blaming_the_selector():
+    from keyhac.core.fill import _press
+    from keyhac.core.uitree import StaleElement
+
+    with pytest.raises(StaleElement) as caught:
+        _press(DeadElement())
+    assert "no longer on screen" in str(caught.value)
+
+
+def test_a_live_element_with_no_press_action_still_reports_that():
+    from keyhac.core.fill import FillFailed, _press
+
+    with pytest.raises(FillFailed) as caught:
+        _press(LiveButNotPressable())
+    assert "supports no press action" in str(caught.value)
+
+
+def test_staleness_is_an_ordinary_exception():
+    """Unlike ActionCancelled: an action that wants to re-find the element and
+    carry on should be able to catch this in the handler it already has."""
+    from keyhac.core.uitree import StaleElement
+    assert issubclass(StaleElement, Exception)
+
+
+def test_an_element_without_is_stale_is_unaffected():
+    """register_action and the tests both accept duck-typed elements."""
+    from keyhac.core.fill import FillFailed, _press
+
+    with pytest.raises(FillFailed):
+        _press(Ancient())

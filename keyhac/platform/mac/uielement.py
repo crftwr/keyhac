@@ -317,8 +317,29 @@ class UIElement:
         err, names = AS.AXUIElementCopyActionNames(self._ref, None)
         return [str(n) for n in names] if err == 0 and names else []
 
-    def perform_action(self, name: str) -> None:
-        AS.AXUIElementPerformAction(self._ref, name)
+    def perform_action(self, name: str) -> bool:
+        """Run an action, and report whether the OS accepted it.
+
+        The result used to be discarded, which made a press on an element that
+        had gone away indistinguishable from one that worked - the silent
+        wrong thing §3.7 exists to refuse. Windows already returned a bool
+        here; now both do.
+        """
+        return AS.AXUIElementPerformAction(self._ref, name) == 0
+
+    def is_stale(self) -> bool:
+        """True when the element this reference points at no longer exists.
+
+        Asked with the cheapest possible read: AX answers
+        kAXErrorInvalidUIElement for a reference whose element is gone, and
+        that is a different error from "this element has no AXRole", so a
+        control that simply lacks the attribute is not mistaken for a dead one.
+
+        A fact, not a policy - `keyhac.core.uitree.StaleElement` is raised by
+        the layer that decides what to do about it.
+        """
+        err, _ = AS.AXUIElementCopyAttributeValue(self._ref, "AXRole", None)
+        return err == AS.kAXErrorInvalidUIElement
 
     @staticmethod
     def get_focused_application() -> "UIElement | None":

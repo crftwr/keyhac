@@ -19,7 +19,7 @@ from keyhac.core.clipboard_history import ClipboardHistory
 # The action API is reached through keymap.ui and UINode's own methods (see
 # doc/action_api.md); only the node type and the two exceptions an action has
 # to be able to catch are named here.
-from keyhac.core.uitree import UINode
+from keyhac.core.uitree import StaleElement, UINode
 from keyhac.core.wait import WaitTimeout
 from keyhac.core.fill import FillFailed
 from keyhac.core.action import ActionCancelled
@@ -61,6 +61,7 @@ __all__ = [
     "WaitTimeout",
     "FillFailed",
     "ActionCancelled",
+    "StaleElement",
     "ChooserAction",
     "MouseButtonClick",
     "MouseButtonDown",

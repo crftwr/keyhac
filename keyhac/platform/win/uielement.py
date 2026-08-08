@@ -66,6 +66,11 @@ if sys.platform == "win32":
     COINIT_APARTMENTTHREADED = 0x2
     CLSCTX_INPROC_SERVER = 0x1
     S_OK = 0
+    # The element has been destroyed since we got a pointer to it.  Distinct
+    # from a property simply not being supported, which is what lets
+    # is_stale() tell "the screen moved" from "this control does not answer
+    # that".
+    UIA_E_ELEMENTNOTAVAILABLE = 0x80040201
     S_FALSE = 1
     RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
 
@@ -573,6 +578,29 @@ class UIElement:
             return _com_call(pattern, slot, ctypes.c_long, []) == S_OK
         finally:
             _release(pattern)
+
+    def is_stale(self) -> bool:
+        """True when the element this pointer refers to no longer exists.
+
+        The cheapest read there is - a scalar property off the element itself,
+        no pattern to acquire - checked against the one HRESULT that means the
+        element is gone rather than the property being unavailable. Without the
+        distinction, a control that answers nothing would be reported dead.
+
+        A fact, not a policy - `keyhac.core.uitree.StaleElement` is raised by
+        the layer that decides what to do about it.
+
+        STATUS: written on macOS against UIAutomationClient.h and not yet run
+        on Windows. `tools/uia_pass.py` is where that gets settled; the slot it
+        uses (get_CurrentControlType, 21) is already pinned live by the
+        attribute reader above, so what is unverified here is the HRESULT
+        comparison rather than the call.
+        """
+        control_type = ctypes.c_int()
+        hr = _com_call(self._ptr, _IUIAutomationElement.get_CurrentControlType,
+                       ctypes.c_long, [ctypes.POINTER(ctypes.c_int)],
+                       ctypes.byref(control_type))
+        return (hr & 0xFFFFFFFF) == UIA_E_ELEMENTNOTAVAILABLE
 
     def set_value(self, value: str) -> bool:
         """Write through the Value pattern (the editable-control setter)."""
