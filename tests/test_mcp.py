@@ -11,6 +11,7 @@ import json
 import sys
 import os
 import stat
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -242,9 +243,40 @@ def test_with_the_token_it_serves(server):
     assert reply["result"]["tools"]
 
 
+def _no_other_user_can_read(path):
+    """Windows' answer to the 0600 question, asked of the mechanism it uses.
+
+    `os.open(..., 0o600)` is not a lie on Windows so much as a no-op: only the
+    read-only bit is honoured, so `S_IMODE` reads 0o666 for a file no other
+    user can open. What actually protects the token is the ACL, so that is
+    what gets asserted - no ACE for Everyone or for BUILTIN\\Users. icacls
+    ships with Windows, which pywin32 does not, and keyhac does not depend on
+    it.
+    """
+    out = subprocess.run(["icacls", path], capture_output=True, text=True,
+                         check=True).stdout
+    # icacls prints the *first* ACE on the same line as the path, and the path
+    # has a colon of its own ("C:\..."), so neither "skip line one" nor "split
+    # on :" survives contact. Drop the path, then read one "PRINCIPAL:(FLAGS)"
+    # per line. Getting this wrong is how the first version of this helper
+    # passed a file it had just granted Everyone:(R) to.
+    grantees = []
+    for line in out.replace(path, "", 1).splitlines():
+        line = line.strip()
+        if not line:
+            break                       # the summary line follows the ACEs
+        grantees.append(line.split(":(")[0].strip())
+    broad = ("everyone", "authenticated users", "users")
+    return [g for g in grantees if g.split("\\")[-1].lower() in broad]
+
+
 def test_the_endpoint_file_is_private_and_complete(server):
     path = server.endpoint_path
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600, "token is world-readable"
+    if sys.platform == "win32":
+        # Same property, different mechanism - see _no_other_user_can_read.
+        assert not _no_other_user_can_read(path), "token is readable by other users"
+    else:
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600, "token is world-readable"
     published = json.loads(open(path).read())
     assert published["port"] == server.port
     assert published["token"] == server.token
