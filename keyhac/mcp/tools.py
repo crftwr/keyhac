@@ -25,11 +25,12 @@ directly, or through the node methods, which dispatch themselves.
 from __future__ import annotations
 
 import contextlib
-import io
 import logging
+import sys
+import threading
 import traceback
 
-from keyhac.core import log
+from keyhac.core import capture, log
 from keyhac.core.action import ActionCancelled
 
 logger = log.getLogger("MCP")
@@ -171,20 +172,47 @@ class ToolRegistry:
                                 "False to turn it back off when done."}}},
                  self.enable_content_access),
             Tool("list_actions",
-                 "The actions this configuration has registered by name, and "
-                 "which of them run_action can run.",
+                 "The actions this configuration has registered by name, "
+                 "which are running now, and how the last run of each ended.",
                  {"type": "object", "properties": {}},
                  self.list_actions),
-            Tool("run_action",
-                 "Run a registered action and return everything it logged, "
-                 "including the traceback if it raised. This is how you check "
-                 "your own work: write the action, have the operator save and "
-                 "reload it, run it, read what happened, fix it.",
+            Tool("start_action",
+                 "Start a registered action and return immediately. **It is "
+                 "not finished when this returns** - call get_action_result "
+                 "for what it did. Actions here drive real applications and "
+                 "can take minutes, which is why starting and collecting are "
+                 "separate steps.",
                  {"type": "object", "properties": {
                      "name": {**string, "description":
                               "Name from list_actions."}},
                   "required": ["name"]},
-                 self.run_action),
+                 self.start_action),
+            Tool("get_action_result",
+                 "Wait for an action to finish and return everything it "
+                 "logged or printed, with the traceback if it raised. Blocks "
+                 "up to `wait` seconds; if it is still running when that is "
+                 "up, that is the answer - call again. This is how you check "
+                 "your own work: write the action, have the operator save and "
+                 "reload it, start it, read what happened, fix it. It also "
+                 "holds the last run of an action the operator triggered with "
+                 "a key, so \"the PDF one failed this morning\" is answerable.",
+                 {"type": "object", "properties": {
+                     "name": {**string, "description":
+                              "Name from list_actions."},
+                     "wait": {**integer, "description":
+                              "Seconds to wait for it to finish (default 30, "
+                              "0 to look without waiting)."}},
+                  "required": ["name"]},
+                 self.get_action_result),
+            Tool("cancel_action",
+                 "Stop a running action - the same thing the operator's Esc "
+                 "does. It unwinds rather than being killed, so progress it "
+                 "has already recorded stays recorded.",
+                 {"type": "object", "properties": {
+                     "name": {**string, "description":
+                              "Name from list_actions."}},
+                  "required": ["name"]},
+                 self.cancel_action),
             Tool("reload_config",
                  "Reload ~/.keyhac/config.py, so an edited or newly added "
                  "action is picked up without restarting Keyhac. Reports the "
@@ -321,46 +349,98 @@ class ToolRegistry:
         if not actions:
             return ("no actions registered. A configuration registers one "
                     "with keymap.register_action(\"name\", TheAction()).")
-        return "\n".join(f"{name}: {action!r}" for name, action in
-                         sorted(actions.items()))
+        running = capture.running_names()
+        lines = []
+        for name, action in sorted(actions.items()):
+            run = capture.get_run(name)
+            if name in running:
+                state = f"RUNNING for {run.seconds:.0f}s"
+            elif run is not None:
+                state = f"last run: {run.status}"
+            else:
+                state = "not run yet"
+            lines.append(f"{name}: {action!r} - {state}")
+        return "\n".join(lines)
 
-    def run_action(self, name: str) -> str:
+    def _action(self, name: str):
         action = self.keymap.registered_actions.get(name)
         if action is None:
             raise KeyError(f"no action named {name!r}; call list_actions")
+        return action
 
-        # Still not through ThreadedAction.__call__, but for one reason now
-        # rather than two. The pool no longer serializes everything behind a
-        # single worker, so queueing is no longer the problem; what remains is
-        # that __call__ returns as soon as it has submitted, and this tool has
-        # to hand back what the action logged. Registering with _running is
-        # what matters, and is done explicitly below, so Esc reaches an action
-        # started from here exactly as it reaches one started from a key.
-        with _captured_log() as captured:
-            try:
+    def start_action(self, name: str) -> str:
+        """Start it and get out of the way.
+
+        Asynchronous by design rather than because the transport forced it.
+        The endpoint answers one JSON message per request with no stream to
+        push progress over, and §2's actions run for minutes - so a call that
+        waited for the end would be a call that times out for exactly the
+        class of work this exists to serve. Two shapes of reply depending on
+        how fast the action happened to be would be worse still: the branch
+        would hinge on the least predictable thing there is.
+        """
+        action = self._action(name)
+        if capture.get_run(name) is not None and capture.get_run(name).running:
+            return (f"{name} is already running - get_action_result to watch "
+                    f"it, or cancel_action to stop it.")
+
+        def drive():
+            with action.cancellable(name) if hasattr(action, "cancellable") \
+                    else contextlib.nullcontext():
                 if hasattr(action, "run"):
                     self.ui.on_main_thread(action.starting)
-                    # register_action is duck-typed - anything with run() is
-                    # accepted - so an action that is not a ThreadedAction
-                    # still runs here, just without being cancellable.
-                    track = getattr(action, "cancellable", contextlib.nullcontext)
-                    with track():
-                        result = action.run()
+                    result = action.run()
                     self.ui.on_main_thread(lambda: action.finished(result))
                 else:
                     self.ui.on_main_thread(action)
+
+        # A duck-typed action - register_action accepts anything with run() -
+        # has no cancellable() to record itself, so the record is opened here
+        # for it and closed by whichever arm finishes.
+        plain = not hasattr(action, "cancellable")
+        record = capture.start_run(name) if plain else None
+
+        def body():
+            try:
+                if plain:
+                    with capture.capture(record.output):
+                        drive()
+                    record.finish("finished")
+                else:
+                    drive()
             except ActionCancelled:
-                # Its own arm because it is a BaseException: the handler below
-                # would not see it, and it would leave through the HTTP layer
-                # as a server error rather than as the answer it is.
-                return (captured.getvalue()
-                        + f"\n{name} was cancelled with Esc. Whatever it "
-                          f"logged above is how far it got.")
-            except Exception:                             # noqa: BLE001
-                return (captured.getvalue()
-                        + "\nthe action raised:\n" + traceback.format_exc())
-        output = captured.getvalue().strip()
-        return output or f"{name} finished and logged nothing"
+                if plain:
+                    record.finish("cancelled", "stopped with Esc")
+            except BaseException as error:                # noqa: BLE001
+                if plain:
+                    record.finish(
+                        "failed",
+                        "the action raised:\n" + traceback.format_exc()
+                        + capture.subprocess_detail(error))
+
+        threading.Thread(target=body, name=f"mcp-{name}", daemon=True).start()
+        return (f"{name} started. Call get_action_result to see what it did.")
+
+    def get_action_result(self, name: str, wait: int = 30) -> str:
+        self._action(name)
+        run = capture.wait_for_run(name, float(wait))
+        if run is None:
+            return (f"{name} has not been run since Keyhac started. "
+                    f"start_action runs it.")
+        return run.report()
+
+    def cancel_action(self, name: str) -> str:
+        action = self._action(name)
+        run = capture.get_run(name)
+        if run is None or not run.running:
+            return f"{name} is not running."
+        flag = getattr(action, "_cancel_flag", None)
+        if flag is None:
+            return (f"{name} is running but cannot be cancelled - only a "
+                    f"ThreadedAction can be, and this is not one.")
+        flag.set()
+        return (f"asked {name} to stop. It unwinds at its next wait, so "
+                f"get_action_result for how far it got.")
 
     def reload_config(self) -> str:
         def reload():
@@ -373,31 +453,172 @@ class ToolRegistry:
         return output or "config reloaded"
 
 
+def _subprocess_detail(error: BaseException) -> str:
+    """What a failed subprocess said, which the stream capture cannot see.
+
+    A child process writes to the real file descriptor, not to Python's
+    `sys.stderr`, so no wrapper installed here observes it. The only place it
+    survives is on the exception - and only when the action asked for it, which
+    is why the skill says to shell out with `capture_output=True`. Saying so
+    when it did not is worth more than silence: "returned 1" with no reason is
+    where the loop stalls.
+    """
+    output = getattr(error, "stderr", None) or getattr(error, "output", None)
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", "replace")
+    if output:
+        return f"\nthe subprocess wrote to stderr:\n{output.strip()}\n"
+    if getattr(error, "returncode", None) is not None:
+        return ("\n(the subprocess left no stderr here - it was run without "
+                "capture_output=True, so what it said went to the terminal "
+                "Keyhac was started from and nowhere this can reach)\n")
+    return ""
+
+
+#: Ceiling on what one run hands back. A run that logs a line per row over
+#: hundreds of rows would otherwise fill a context window with the middle of
+#: its own progress bar; the tail is where the failure is, so that is the end
+#: that is kept.
+MAX_CAPTURE = 20_000
+
+#: Captures currently collecting, and the lock around installing the stream
+#: tee. Global rather than per-thread on purpose: an action's `starting()` and
+#: `finished()` run on the loop thread while `run()` runs on this one, so a
+#: thread filter would drop exactly the two halves that report what happened.
+#: The cost is that two runs overlapping - possible now that the action pool
+#: has more than one worker - each see the other's lines. Interleaved context
+#: beats the previous behaviour, which was the model seeing none of it.
+_captures: list = []
+
+#: Guards the stream swap only. The list itself needs no lock - append and
+#: remove are atomic - but two runs starting together could both believe they
+#: were the first and install a tee over a tee.
+_captures_lock = threading.Lock()
+
+
+class _Bounded:
+    """A buffer that keeps the last MAX_CAPTURE characters and says so."""
+
+    def __init__(self):
+        self._parts: list[str] = []
+        self._size = 0
+        self.dropped = 0
+
+    def write(self, text: str) -> int:
+        self._parts.append(text)
+        self._size += len(text)
+        while self._size > MAX_CAPTURE and len(self._parts) > 1:
+            gone = self._parts.pop(0)
+            self._size -= len(gone)
+            self.dropped += len(gone)
+        return len(text)
+
+    def getvalue(self) -> str:
+        body = "".join(self._parts)
+        if self.dropped:
+            return (f"[{self.dropped} earlier characters dropped - this is the "
+                    f"tail of the run]\n{body}")
+        return body
+
+
 class _Capture(logging.Handler):
-    def __init__(self, stream):
+    def __init__(self, buffer):
         super().__init__()
-        self.stream = stream
+        self.buffer = buffer
 
     def emit(self, record):
-        self.stream.write(self.format(record) + "\n")
+        self.buffer.write(self.format(record) + "\n")
+
+
+class _Tee:
+    """`sys.stdout`, plus every active capture.
+
+    Wraps rather than replaces, because print() must keep reaching the console
+    window - the operator watching it is not who this change is for.
+    """
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def write(self, text) -> int:
+        for buffer in tuple(_captures):
+            buffer.write(str(text))
+        return self._wrapped.write(text)
+
+    def flush(self) -> None:
+        self._wrapped.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
 
 
 class _captured_log:
-    """Collect everything logged while an action runs, to hand back.
+    """Collect what an action produced, to hand back to the model.
 
-    The point of run_action is that the model reads the failure itself; a tool
-    that returned "ok"/"failed" would leave the operator copying tracebacks,
-    which is the manual step it exists to remove.
+    The point of run_action is that the model reads its own failure; a tool
+    returning "ok"/"failed" leaves the operator copying tracebacks, which is
+    the manual step it exists to remove. Three things used to reach the
+    console window and not the model, and the first two now do:
+
+    - **print()**, which the shipped config.py template teaches on the same
+      line as the logger. Collected by teeing sys.stdout/sys.stderr rather
+      than redirecting them, so it still reaches the console as well.
+    - **Loggers outside the `keyhac` tree** - what `getLogger(__name__)` in a
+      module under `extensions/` produces. The handler sits on the root logger
+      now. That does sweep in every library the action imports, which is the
+      intended trade: a urllib retry storm is part of what went wrong.
+    - **Subprocess stderr** is the one this cannot reach. A child process
+      writes to the real file descriptor, not to Python's `sys.stderr`, so no
+      stream wrapper sees it. `run_action` surfaces it from
+      CalledProcessError instead, and the skill tells actions to shell out
+      with capture_output=True so there is something to surface.
     """
 
-    def __enter__(self) -> io.StringIO:
-        self.stream = io.StringIO()
-        self.handler = _Capture(self.stream)
+    def __enter__(self) -> "_Bounded":
+        self.buffer = _Bounded()
+        self.handler = _Capture(self.buffer)
         self.handler.setFormatter(
             logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
-        self.root = logging.getLogger("keyhac")
-        self.root.addHandler(self.handler)
-        return self.stream
+        # Both, and it is not belt-and-braces. `keyhac` is configured with
+        # propagate=False (core/log.py), so a record from the documented
+        # getLogger() never reaches root - attaching only there captured
+        # nothing, which is what the tests caught. Because it does not
+        # propagate, nothing is emitted twice either: keyhac records stop at
+        # the keyhac handler, everything else - an extensions/ module's
+        # getLogger(__name__), a library - arrives at root.
+        self.loggers = (logging.getLogger(), logging.getLogger("keyhac"))
+        for target in self.loggers:
+            target.addHandler(self.handler)
+
+        # A root handler only sees what root's level admits, and the default is
+        # WARNING - which would have dropped every logger.info() an action
+        # writes. INFO rather than DEBUG on purpose: DEBUG here would pull in
+        # the debug chatter of every library the action imports, and the model
+        # is reading this.
+        self._level = self.loggers[0].level
+        if self._level == logging.NOTSET or self._level > logging.INFO:
+            self.loggers[0].setLevel(logging.INFO)
+
+        with _captures_lock:
+            _captures.append(self.buffer)
+            if len(_captures) == 1 and not isinstance(sys.stdout, _Tee):
+                self._streams = (sys.stdout, sys.stderr)
+                sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)
+            else:
+                self._streams = None
+        return self.buffer
 
     def __exit__(self, *exc) -> None:
-        self.root.removeHandler(self.handler)
+        for target in self.loggers:
+            target.removeHandler(self.handler)
+        self.loggers[0].setLevel(self._level)
+        with _captures_lock:
+            try:
+                _captures.remove(self.buffer)
+            except ValueError:
+                pass
+            if self._streams is not None and not _captures:
+                sys.stdout, sys.stderr = self._streams

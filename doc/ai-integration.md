@@ -228,10 +228,11 @@ screen coordinates.
 | `find_elements` | targeted search by role / name / identifier / text |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
-| `list_actions`, `run_action` | run a registered action and return what it logged |
+| `list_actions` | what is registered, what is running, how each last ended |
+| `start_action`, `get_action_result`, `cancel_action` | start a registered action, collect what it logged, stop it |
 | `reload_config` | pick up an edited action without restarting |
 
-`run_action` only runs actions you have registered by name:
+`start_action` only runs actions you have registered by name:
 
 ```python
 keymap.register_action("extract_records", ExtractRecords())
@@ -293,6 +294,7 @@ don't type passwords or show private material while recording.
 - **No tool writes files or types text.** Reading trees and pressing buttons in
   an app you are looking at is one thing; letting a remote model put Python on
   your disk is another decision, and it has not been made.
-- **`run_action` is limited to registered actions**, by name.
+- **`start_action` is limited to registered actions**, by name, and
+  `cancel_action` can only stop what it started.
 - Turn it off with the same switch; the token file is deleted then, and when
   Keyhac stops.
