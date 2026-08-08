@@ -125,6 +125,29 @@ platform element method this API does not wrap. `starting()` and `finished()`
 already run there; `run()` does not, and must not block it — waiting there
 raises rather than freezing the keyboard.
 
+## Saying what happened
+
+Whatever the action logs or prints comes back to you from `run_action`, which
+is how you read your own failure instead of asking the operator to copy it out
+of a console window. `logger.info(...)`, `print(...)` and a logger made with
+the standard library all arrive.
+
+**Shell out with `capture_output=True`.** It is the one thing that does *not*
+arrive on its own — a child process writes to a real file descriptor, so
+nothing here can see it, and the only place its stderr survives is on the
+exception:
+
+```python
+subprocess.run(cmd, check=True, capture_output=True, text=True)
+```
+
+Without it a failure reads "returned 1" with no reason, and the run-read-fix
+loop stops there. `run_action` says so explicitly when it happens, so if you
+see that note, add the argument.
+
+Log what a rerun would need, not that something broke: which selector, what was
+found instead, which item of how many.
+
 ## A node is a snapshot
 
 `ui.window(...)`, `find`, `find_all` and a walked tree all hand back nodes that

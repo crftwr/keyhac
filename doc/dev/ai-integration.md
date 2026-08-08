@@ -1228,7 +1228,43 @@ Two directions, and they are not the same size:
 Answer the second before investing in the first: they solve the same problem
 and only one of them survives.
 
-### 15.3 `run_action` returns logs, not output
+### 15.3 `run_action` returns logs, not output — **done**
+
+**Two of the three are fixed and the third could not be, which turned out to be
+the useful finding.** `print()` and non-`keyhac` loggers now come back;
+subprocess stderr cannot, because a child process writes to a real file
+descriptor rather than to Python's `sys.stderr`, so no wrapper installed in
+this process ever sees it. It survives only on the exception, and only when the
+action asked for it — so `run_action` surfaces `CalledProcessError.stderr` when
+it is there, **and says so when it is not**, which is what turns "returned 1"
+into a fixable line rather than a mystery. The skill now tells actions to shell
+out with `capture_output=True`.
+
+Two things the implementation ran into that the note below did not anticipate:
+
+- **The handler has to sit on both root and `keyhac`.** `core/log.py`
+  configures the `keyhac` logger with `propagate=False`, so moving the handler
+  to root — the obvious reading of "root logger rather than `keyhac`" — captured
+  *nothing at all* from the documented `getLogger()`. Because it does not
+  propagate, attaching to both duplicates nothing either.
+- **Streams are teed, not redirected.** `redirect_stdout` would have taken
+  `print()` away from the console window, and the operator watching it is not
+  who this change was for.
+
+The "what does that sweep in" question resolved as: root at INFO rather than
+DEBUG, so a library's debug chatter stays out while its warnings arrive; and
+capture is global while active rather than thread-filtered, because an action's
+`starting()` and `finished()` run on the loop thread while `run()` does not — a
+thread filter would have dropped exactly the two halves that report what
+happened. Two overlapping runs therefore see each other's lines, which is worth
+saying out loud and is still better than the model seeing none of its own.
+
+Output is capped at 20k characters, keeping the **tail** — where the failure is
+— and saying how much was dropped.
+
+The original note follows.
+
+---
 
 Verified in `keyhac/mcp/tools.py`: `_captured_log` installs a
 `logging.Handler` on the `keyhac` logger for the duration of the run. So an

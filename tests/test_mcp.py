@@ -8,6 +8,7 @@ the result so the model can read it.
 """
 
 import json
+import sys
 import os
 import stat
 import urllib.error
@@ -364,3 +365,115 @@ def test_a_native_window_keeps_the_truncation_note(registry):
     text = registry.call("describe_screen", {})
     assert "raise max_nodes/max_depth" in text
     assert "enable_content_access" not in text
+
+
+# -- what run_action hands back (§15.3) --------------------------------------
+#
+# Three things reached the console window and not the model. Each of these
+# fails silently if it regresses: the tool still returns *something*, just
+# without the line that says what went wrong.
+
+def _register(registry, run):
+    class Action:
+        def starting(self): pass
+        def finished(self, result): pass
+    Action.run = staticmethod(run)
+    registry.keymap.registered_actions["probe"] = Action()
+    return registry.call("run_action", {"name": "probe"})
+
+
+def test_print_reaches_the_model(registry):
+    """The shipped config.py template teaches print() on the same line as the
+    logger. It reached the console window and stopped there."""
+    assert "printed this" in _register(registry, lambda: print("printed this"))
+
+
+def test_print_still_reaches_the_console(registry):
+    """Teed, not redirected: the operator watching the console window is not
+    who this change was for, and must not lose anything."""
+    import sys
+    seen = []
+
+    class Console:
+        def write(self, text): seen.append(text); return len(text)
+        def flush(self): pass
+
+    original = sys.stdout
+    sys.stdout = Console()
+    try:
+        _register(registry, lambda: print("both places"))
+    finally:
+        sys.stdout = original
+    assert any("both places" in text for text in seen)
+
+
+def test_a_logger_outside_the_keyhac_tree_is_captured(registry):
+    """What getLogger(__name__) produces in a module under extensions/."""
+    import logging as stdlib_logging
+
+    def run():
+        stdlib_logging.getLogger("my_extension").info("from an extension")
+
+    assert "from an extension" in _register(registry, run)
+
+
+def test_the_documented_logger_is_still_captured(registry):
+    """`keyhac` is configured with propagate=False, so a root-only handler sees
+    none of it - the regression this pins."""
+    from keyhac.core import log
+
+    def run():
+        log.getLogger("Probe").info("through keyhac's own logger")
+
+    assert "through keyhac's own logger" in _register(registry, run)
+
+
+def test_nothing_is_captured_twice(registry):
+    from keyhac.core import log
+
+    def run():
+        log.getLogger("Probe").info("once please")
+
+    assert _register(registry, run).count("once please") == 1
+
+
+def test_a_failed_subprocess_hands_over_its_stderr(registry):
+    """No stream wrapper can see this: the child writes to the real file
+    descriptor, not to Python's sys.stderr. It survives only on the exception,
+    and only when the action asked for it."""
+    import subprocess
+
+    def run():
+        subprocess.run([sys.executable, "-c", "import sys; sys.stderr.write('the child complained'); sys.exit(3)"],
+                       check=True, capture_output=True, text=True)
+
+    output = _register(registry, run)
+    assert "the child complained" in output
+
+
+def test_a_subprocess_run_without_capture_says_so(registry):
+    """Better than silence: "returned 1" with no reason is where the loop
+    stalls, and the fix is a line in the action rather than a mystery."""
+    import subprocess
+
+    def run():
+        subprocess.run([sys.executable, "-c", "import sys; sys.exit(4)"], check=True)
+
+    output = _register(registry, run)
+    assert "capture_output=True" in output
+
+
+def test_a_long_run_is_bounded_and_says_it_was_truncated(registry):
+    """A run logging a line per row over hundreds of rows would otherwise fill
+    a context window with the middle of its own progress."""
+    from keyhac.mcp.tools import MAX_CAPTURE
+
+    def run():
+        for index in range(2000):        # ~100k characters, fixed
+            print(f"row {index} " + "x" * 40)
+        print("THE LAST LINE")
+
+    output = _register(registry, run)
+    assert len(output) < MAX_CAPTURE * 1.5
+    assert "characters dropped" in output
+    assert "THE LAST LINE" in output, "the tail is where the failure is"
