@@ -90,9 +90,10 @@ Measured against Safari; an Electron app's notifications are untested, and
 Windows has no observer at all. Neither changes what you should write — the
 answer everywhere is to poll, which `wait_for` already does.
 
-This is why `wait_for` polls (20 ms backing off to 250 ms) and an observer is
-only an accelerator. Against a browser, polling is what finds the change, and
-it is fast enough - a modal was seen 10-25 ms after the click.
+This is why `wait_for` polls (20 ms backing off to 250 ms) and why there is no
+subscription API to reach for: one existed and was removed once measured.
+Polling is what finds the change, and it is fast enough - a modal was seen
+10-25 ms after the click.
 
 ## Terminals and editors do answer whole-value reads
 

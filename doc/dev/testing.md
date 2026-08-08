@@ -174,7 +174,8 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   thread, the action on a worker, every UI read dispatched back — press,
   `wait_for_element` (modal seen in 10–25 ms), read, press, `wait_until_gone`
   (22 ms), `wait_for_stable`, a timeout that raised at 1.03 s, and the guard
-  that refuses to wait on the loop thread. `UIObserver` delivered
+  that refuses to wait on the loop thread. `UIObserver` (since removed —
+  see below) delivered
   `AXWindowCreated` / `AXCreated` / `AXValueChanged` / `AXUIElementDestroyed`
   for a Finder window opening, and **nothing at all** for a Safari `<dialog>`
   opening — registered on the application element and on the `AXWebArea`
@@ -186,31 +187,27 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   measurement the same day was about *tree exposure* — 59 nodes until
   `set_manual_accessibility()`, 119 after — which is a different question.
   Expecting the Safari answer to carry over to Electron is reasonable and is
-  inference, not measurement. `tools/ax_notification_pass.py` is the pass that
-  would settle it: Finder as an automated control, `set_manual_accessibility()`
-  on the target first so "no notifications" cannot be confounded with "no tree
-  to post about", and an operator-supplied in-page change, since driving VS
-  Code from the agent shell is not reliable. **Run on 2026-08-07**, on macOS:
-  the Finder control passed (`AXFocusedUIElementChanged`, `AXCreated`,
-  `AXValueChanged`, `AXUIElementDestroyed`), Chrome's tree was exposed at 522
-  nodes, and **Chrome posted nothing at all** across three runs while a driven
-  in-page change verifiably occurred inside the listening window each time —
-  a `<dialog>` opened and closed and the page's own status text went
-  "3 items pending" → "0 items pending". So Chromium content matches WebKit
-  content: measured now, not inferred.
+  inference, not measurement. `tools/ax_notification_pass.py` settled it on
+  macOS: the Finder control passed in the same run (`AXFocusedUIElementChanged`,
+  `AXCreated`, `AXValueChanged`, `AXUIElementDestroyed`), Chrome's tree was
+  exposed at 522 nodes, and **Chrome posted nothing at all** across three runs
+  while a driven in-page change verifiably happened inside the listening window
+  — a `<dialog>` opened and closed and the page's status went "3 items pending"
+  → "0 items pending". Chromium content behaves like WebKit content.
 
-  Two bugs in the pass itself, both found only by running it, both fixed:
-  `open -a Finder ~` is a no-op when a Finder window is already open — which is
-  the state the pass's *own previous run* leaves behind, so the second run of
-  the day reported a dead control and thereby invalidated its own Electron row
-  — and `ELECTRON_CANDIDATES` said "Visual Studio Code" where NSWorkspace says
-  "Code", so the pass could never auto-find the one Electron application most
-  likely to be running.
+  Two bugs in the pass, both found only by running it: `open -a Finder ~` is a
+  no-op when a Finder window is already open — the state the pass's *own*
+  previous run leaves behind, so the second run reported a dead control and
+  thereby invalidated its own Electron row — and `ELECTRON_CANDIDATES` said
+  "Visual Studio Code" where NSWorkspace says "Code".
 
-  **Still unmeasured: a true Electron *application*.** This measured Chromium
-  the browser. VS Code and Slack need a run when the operator is not working in
-  them, since `set_manual_accessibility()` flips VS Code to its
-  screen-reader rendering while the pass holds it on.
+  **The observer, `wake=` and this pass were then removed** on the strength of
+  that result: notifications never arrive for the content this workload
+  targets, and the native-only win did not justify the surface. All three are
+  in git history (`a60fa81` and its parents) should the question be reopened —
+  which is also where to start if a future macOS or Electron version is worth
+  re-measuring. A true Electron *application* was never measured; this was
+  Chromium the browser.
 
 - **Windows element API, the text layer and the write side** (2026-08-07,
   `tools/uia_pass.py` against Notepad on Windows 11 Home 10.0.26200, 26/26 on

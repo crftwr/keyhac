@@ -323,31 +323,34 @@ Ordered by dependency. Layers 1–4 are the implementation target.
 Keyhac can record *input* but not *what happened*. Macro recording captures keys only.
 **This layer splits in two, and the halves have very different priority.**
 
-**Required — event subscription.** ~~This is what `wait_for` is built on.~~ **It
-is not, and measuring said so.** `keyhac/platform/mac/observer.py` now
-subscribes to AX notifications (`AXObserver`, 14 of them), and what it is worth
-turned out to be conditional:
+**Dropped — event subscription.** ~~This is what `wait_for` is built on.~~ It
+was neither. An `AXObserver` wrapper was written, measured, and then **removed**
+(along with `wake=` and `tools/ax_notification_pass.py`); the code is in git
+history if the conclusion is ever revisited. What the measurements said:
 
 - **Native Cocoa applications post generously.** Opening a Finder window
   delivered `AXWindowCreated`, `AXCreated`, `AXFocusedWindowChanged`,
   `AXUIElementDestroyed` and a stream of `AXValueChanged`.
-- **Web content posts essentially nothing.** Opening a `<dialog>` in Safari
-  delivered *zero* notifications — registered on the application element and
-  registered on the `AXWebArea` alike. Nor did writing `AXValue` to a field
-  produce an `AXValueChanged`.
+- **Web content posts nothing.** A `<dialog>` opening delivered *zero*, in
+  Safari and in Chrome alike, registered on the application element and on the
+  `AXWebArea` alike — Chrome measured with its tree exposed, a driven page
+  change, and a passing Finder control in the same run. Not a WebKit quirk:
+  Chromium too, which is what Electron is.
+- **There is a structural reason.** AX notifications do not bubble, so "wait
+  for an element to appear" would have to be registered on an element that does
+  not exist yet, and its container is not obliged to announce it.
 
-There is a structural reason, not just an implementation gap: AX notifications
-do not bubble, so "wait for an element to appear" would have to be registered
-on an element that does not exist yet, and the containing element is not
-obliged to announce it.
+The remaining case — a native target — did not justify the surface either, and
+in an instructive way: polling's *first* interval is 20 ms, so a fast
+transition is already caught fast, and a wait long enough to have backed off to
+250 ms is a wait where 250 ms is noise. The accelerator helped least where
+polling was cheap and mattered least where polling was slow. Five hand-written
+actions across two platforms never used it.
 
-So `wait_for` is **polling-first** (`keyhac/core/wait.py`), 20 ms backing off to
-250 ms, and subscription is an accelerator passed in as `wake=`. That inverts
-the dependency this section used to assert: the output side depends on
-`wait_for`, `wait_for` does not depend on subscription, and Windows therefore
-has working waits before its WinEvent/UIA counterpart exists at all. Against a
-browser — most of §2 — polling is what finds the change, and it is fast enough:
-a modal was seen 10–25 ms after the click.
+So `wait_for` is polling, full stop (`keyhac/core/wait.py`), and the output
+side depends on `wait_for` rather than on any subscription. Windows never
+needed a WinEvent/UIA counterpart, which is the same conclusion reached from
+the other direction.
 
 **Demoted — mouse input capture and trace recording.** Two independent findings push
 these down. First, of the concrete use cases catalogued in §2, almost none are authored
@@ -832,16 +835,15 @@ Extend `PRIVACY.md` with the above.
    been run (`tools/uia_pass.py`, 2026-08-07): the child walk, all three text
    accessors and `element_at_point` answer correctly, and the bug the pass found
    was in `core/fill.py` rather than in any slot.
-2. ~~**`wait_for` and event subscription**~~ — **done on macOS.**
-   `keyhac/core/wait.py` is portable and polling-first, so Windows has working
-   waits today; and one cell of the matrix is still empty — an Electron app's
-   *notifications* on macOS have never been measured (the Safari result is
-   WebKit web content, the Chromium/Electron result was tree exposure), which
-   `tools/ax_notification_pass.py` would settle. `keyhac/platform/mac/observer.py`
-   accelerates native apps and,
-   as measured, does nothing for web content (§5, Layer 1). A Windows
-   WinEvent/UIA observer is therefore optional, and worth doing only if a
-   Windows-native target shows the latency.
+2. ~~**`wait_for` and event subscription**~~ — **done, and half of it deleted.**
+   `keyhac/core/wait.py` is portable and polls. The empty matrix cell was
+   filled first — Chrome, tree exposed, driven page change, Finder control
+   passing in the same run: **nothing posted**, three times — and the observer,
+   `wake=` and the pass were then removed on the strength of it (§5, Layer 1).
+   Notifications never arrive for the content this workload targets, and the
+   native-only win did not pay for the surface. No Windows counterpart is
+   wanted. Still unmeasured, and now academic: a true Electron *application*
+   rather than Chromium the browser.
 3. **Two measurements, minutes each** — **the first is answered on both
    platforms** (§7.3: `set_value` works, focus being the precondition; ~5 ms on
    macOS, 15–33 ms on Windows), and it stays opt-in regardless for the

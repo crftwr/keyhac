@@ -105,26 +105,6 @@ def test_fixed_interval_when_asked():
     assert all(g < 0.2 for g in gaps)
 
 
-def test_wake_event_shortens_the_gap():
-    """The accelerator: a notification wakes the wait instead of the timer."""
-    wake = threading.Event()
-    ready = []
-
-    def condition():
-        return bool(ready)
-
-    def notify():
-        time.sleep(0.05)
-        ready.append(True)
-        wake.set()
-
-    threading.Thread(target=notify, daemon=True).start()
-    started = time.monotonic()
-    # A long fixed interval: without the wake this could not return quickly.
-    wait_for(condition, timeout=5, wake=wake, interval=2.0)
-    assert time.monotonic() - started < 1.0
-
-
 # -- element waits ----------------------------------------------------------
 
 def test_wait_for_element_returns_the_node():

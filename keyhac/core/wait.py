@@ -20,11 +20,15 @@ starts fast and backs off: a modal that opens in 30 ms is caught in 30 ms,
 while a ten-minute job costs a check every quarter second rather than a
 thousand tree walks a minute.
 
-An OS notification (macOS AXObserver, and eventually the Windows WinEvent /
-UIA equivalent) can be handed in as `wake`, which collapses the polling
-latency to the notification's own.  It is an accelerator, not a requirement:
-the wait is correct without it, which is what lets the output side work on both
-platforms before either observer is verified.
+There is deliberately no event-subscription path.  One existed - an AXObserver
+wrapper feeding a wake event into the loop below - and it was removed once
+measured: native Cocoa applications post notifications generously, but WebKit
+*and* Chromium content post nothing at all for a change inside the page, which
+is where this workload lives.  Even for native targets the win was small, and
+in the direction that does not matter: the first poll is 20 ms, so a fast
+transition is caught fast anyway, and a wait long enough to have backed off to
+250 ms is a wait where 250 ms of latency is noise.  See
+doc/dev/ai-integration.md §5 and the skill's references/quirks.md.
 
 NOT SOLVED HERE: a long wait occupies ThreadedAction's single pool worker for
 its whole duration, so a ten-minute wait stalls every other threaded action in
@@ -146,7 +150,6 @@ def _refuse_to_block_the_loop(name: str) -> None:
 def wait_for(condition: Callable[[], Any],
              timeout: float = DEFAULT_TIMEOUT,
              message: str | None = None,
-             wake: threading.Event | None = None,
              interval: float | None = None) -> Any:
     """Block until `condition()` returns something truthy, and return it.
 
@@ -157,8 +160,6 @@ def wait_for(condition: Callable[[], Any],
         timeout: Seconds before giving up.
         message: What was being waited for, used in the timeout error.  Worth
             writing: it is what an operator sees when an action stops.
-        wake: Optional event an OS notification can set to cut the polling
-            delay short.  Cleared each time it is observed.
         interval: Fixed polling gap.  The default backs off from MIN_INTERVAL
             to MAX_INTERVAL instead, which is nearly always what you want.
 
@@ -184,17 +185,12 @@ def wait_for(condition: Callable[[], Any],
             raise WaitTimeout(
                 f"timed out after {timeout}s waiting for "
                 f"{message or 'a condition'}")
-        if wake is not None:
-            wake.clear()
-            wake.wait(min(gap, remaining))
-        else:
-            time.sleep(min(gap, remaining))
+        time.sleep(min(gap, remaining))
         if interval is None:
             gap = min(gap * BACKOFF, MAX_INTERVAL)
 
 
 def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
-                     wake: threading.Event | None = None,
                      message: str | None = None, **criteria) -> UINode:
     """Wait until an element matching `criteria` exists, and return it.
 
@@ -205,7 +201,6 @@ def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
     Args:
         root: Element or UINode to search below.
         timeout: Seconds before giving up.
-        wake: Optional event an OS notification can set to cut the wait short.
         message: What was being waited for, for the timeout error.  Defaults to
             the criteria, which names the element but not the step - say what
             the step was when an operator will read it.
@@ -216,13 +211,11 @@ def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
         WaitTimeout: Nothing matched in time.
     """
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
-    return wait_for(lambda: find_element(root, **criteria),
-                    timeout=timeout, wake=wake,
+    return wait_for(lambda: find_element(root, **criteria), timeout=timeout,
                     message=message or f"an element matching {described}")
 
 
 def wait_until_gone(root, timeout: float = DEFAULT_TIMEOUT,
-                    wake: threading.Event | None = None,
                     message: str | None = None, **criteria) -> None:
     """Wait until no element matches `criteria`.
 
@@ -233,8 +226,7 @@ def wait_until_gone(root, timeout: float = DEFAULT_TIMEOUT,
     Takes the same arguments as `wait_for_element`.
     """
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
-    wait_for(lambda: find_element(root, **criteria) is None,
-             timeout=timeout, wake=wake,
+    wait_for(lambda: find_element(root, **criteria) is None, timeout=timeout,
              message=message or f"no element matching {described}")
 
 

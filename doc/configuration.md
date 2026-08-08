@@ -460,21 +460,12 @@ Three rules the API enforces so your action does not have to:
   as the keystroke is posted races the application, and the field ends up
   holding whatever was on the clipboard *before*.
 
-Waits poll, starting at 20 ms and backing off to 250 ms. On macOS an
-`AXObserver` can cut the latency for native applications:
-
-```python
-from keyhac.platform.mac.observer import UIObserver
-
-with UIObserver(keymap.focus.pid) as observer:
-    wait_for_element(window, name="Save", wake=observer.event)
-```
-
-It is an accelerator, never a requirement — and one with a measured limit: a
-native Cocoa app posts notifications generously, while **web content posts
-essentially nothing** for changes inside a page. Against a browser the polling
-is what finds the change, and that is fast enough (a modal was seen 10–25 ms
-after the click).
+Waits poll, starting at 20 ms and backing off to 250 ms. There is no
+event-subscription alternative and deliberately so: notifications are posted
+generously by native Cocoa applications and **not at all** by WebKit or
+Chromium content, which is where this kind of work happens. Polling catches a
+modal 10–25 ms after the click, which is as fast as a notification would have
+been.
 
 ## Keyboard macros
 
