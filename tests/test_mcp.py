@@ -310,21 +310,6 @@ def test_the_switch_reports_and_moves(tmp_path):
     assert keymap.mcp_server_running is False
 
 
-def test_the_removed_config_call_says_where_the_switch_went(tmp_path):
-    """A config written against 2.2.0's documentation still exists in the
-    world; it should fail with an instruction, not an AttributeError. Delete
-    this test and the shim together in 2.3.0."""
-    keymap = _real_keymap(tmp_path)
-    with pytest.raises(RuntimeError) as caught:
-        keymap.enable_mcp_server()
-    # Case-insensitive: the point is that both faces of the switch are named,
-    # not how the sentence happens to capitalise them.
-    message = str(caught.value).lower()
-    assert "tray menu" in message
-    assert "console" in message
-    assert "ai integration" in message, "the label it is filed under"
-
-
 # -- the bridge -------------------------------------------------------------
 
 def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):

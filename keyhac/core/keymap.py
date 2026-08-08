@@ -809,21 +809,6 @@ class Keymap:
         """The actions registered by name, for the MCP tools to list and run."""
         return dict(self._registered_actions)
 
-    def enable_mcp_server(self, port: int = 0) -> None:
-        """Removed in 2.3.0 - the endpoint is switched from the UI now.
-
-        Kept for one release so a configuration written against 2.2.0's
-        documentation fails with an instruction rather than an AttributeError.
-
-        lazydocs: ignore
-        """
-        raise RuntimeError(
-            "keymap.enable_mcp_server() has been removed. The MCP server is "
-            "switched on from the console window's 'AI Integration' "
-            "checkbox, or Tray menu > AI Integration > MCP Server, and the "
-            "choice is remembered across restarts - delete this line from "
-            "your configuration. See doc/mcp.md.")
-
     @property
     def mcp_server_running(self) -> bool:
         """Whether the endpoint is currently listening.
@@ -836,8 +821,9 @@ class Keymap:
         """Start the action-authoring endpoint on localhost.
 
         The switch is the console's **AI Integration** checkbox, or the tray
-        menu's *AI Integration > MCP Server*; this is the mechanism behind it. There is
-        deliberately no configuration API: an endpoint that reads every window
+        menu's *AI Integration > MCP Server*; this is the mechanism behind it.
+        There is deliberately no configuration API: an endpoint that reads every
+        window
         and can run registered actions should be visibly on or visibly off,
         and a line in the middle of a config file tells you what was asked for
         once, never what is true now.

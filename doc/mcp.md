@@ -48,8 +48,8 @@ every window and can run your actions should be visibly on or visibly off; a
 line in the middle of a several-hundred-line `config.py` tells you what was
 asked for once, and nothing about what is true now. The same reasoning already
 governs the keyboard hook, which has always been a checkbox rather than a
-setting. *(`keymap.enable_mcp_server()` existed in 2.2.0 and is gone; delete
-the line and use the switch.)*
+setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
+delete the line from your `config.py` and use the switch.)*
 
 ## Connecting an agent
 

@@ -123,8 +123,16 @@ class ConsoleWindow:
         # Beside the hook checkbox on purpose: both switch a capability the
         # user is entitled to see the state of, and the endpoint being visibly
         # off is most of the answer to "is this thing watching me".
+        #
+        # The category is folded into the label rather than standing beside it
+        # as its own text. A checkbox draws its box on the left and its label
+        # on the right, so a separate "AI Integration:" landed between the two
+        # checkboxes and read as a third peer in the row - it appeared to label
+        # the box that followed it only if you already knew that was the
+        # intent. A menu gets hierarchy from nesting; a flat row has to spell
+        # it, and this spells the same path the menu shows.
         self._mcp_checkbox = Checkbox(
-            "MCP server", checked=keymap.mcp_server_running,
+            "AI Integration: MCP server", checked=keymap.mcp_server_running,
             on_change=self._on_mcp_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
@@ -153,7 +161,6 @@ class ConsoleWindow:
         toolbar = HSplit(
             Item(self._hook_checkbox, size="content", align="center"),
             Item(Label(""), size=3),
-            Item(Label("AI Integration:"), size="content", align="center"),
             Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             Item(Label("Log level:"), size="content", align="center"),
