@@ -583,24 +583,44 @@ class UIElement:
         """True when the element this pointer refers to no longer exists.
 
         The cheapest read there is - a scalar property off the element itself,
-        no pattern to acquire - checked against the one HRESULT that means the
-        element is gone rather than the property being unavailable. Without the
-        distinction, a control that answers nothing would be reported dead.
+        no pattern to acquire. ControlType specifically, because every UIA
+        element is required to have one: a failure reading *this* property is
+        the element not answering, never "that property is unsupported here",
+        which is the distinction the check needs and the reason it is not any
+        other property.
 
         A fact, not a policy - `keyhac.core.uitree.StaleElement` is raised by
         the layer that decides what to do about it.
 
-        STATUS: written on macOS against UIAutomationClient.h and not yet run
-        on Windows. `tools/uia_pass.py` is where that gets settled; the slot it
-        uses (get_CurrentControlType, 21) is already pinned live by the
-        attribute reader above, so what is unverified here is the HRESULT
-        comparison rather than the call.
+        Any failure HRESULT, not one named constant, and that is measured
+        rather than assumed (`tools/uia_pass.py`, staleness section). A control
+        destroyed underneath us returns **E_UNEXPECTED (0x8000FFFF) for its
+        first ~90 ms** and only then settles on UIA_E_ELEMENTNOTAVAILABLE
+        (0x80040201), stably and in both sampling orders. Matching only the
+        named constant therefore answered False during exactly the window that
+        matters - the moment just after a dialog closed - and
+        `keyhac.core.fill._press` reported "element supports no press action"
+        for a button that had simply gone away, which is the misdiagnosis this
+        method exists to prevent.
+
+        The trade the widened check makes: a live element whose provider fails
+        this read for some transient reason is now called stale. That surfaces
+        as `StaleElement`, whose documented remedy is to re-find and carry on -
+        a better answer to be wrong with than blaming the operator's selector.
+
+        LIMITATION: a destroyed *top-level window* is not reliably detected.
+        UIA commonly keeps answering S_OK for one, degrading its ControlType
+        from Window (50032) to Pane (50033) rather than failing - seen to
+        persist for a full 10 s with the handle confirmed unrecycled, though
+        not on every run. So this answers "this control is gone" dependably and
+        "this window is gone" only sometimes; a caller holding a window-level
+        element (`from_hwnd`, `element_at_point`) must not rely on it.
         """
         control_type = ctypes.c_int()
         hr = _com_call(self._ptr, _IUIAutomationElement.get_CurrentControlType,
                        ctypes.c_long, [ctypes.POINTER(ctypes.c_int)],
                        ctypes.byref(control_type))
-        return (hr & 0xFFFFFFFF) == UIA_E_ELEMENTNOTAVAILABLE
+        return (hr & 0xFFFFFFFF) != S_OK
 
     def set_value(self, value: str) -> bool:
         """Write through the Value pattern (the editable-control setter)."""

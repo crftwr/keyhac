@@ -52,6 +52,7 @@ import time
 if sys.platform != "win32":
     sys.exit(f"{__file__} is a Windows pass; this is {sys.platform}.")
 
+import os                                                           # noqa: E402
 import subprocess                                                   # noqa: E402
 import ctypes                                                       # noqa: E402
 import tempfile                                                     # noqa: E402
@@ -67,6 +68,7 @@ from keyhac.platform.fake import FakeFocusProvider                  # noqa: E402
 from keyhac.platform.win.clipboard import WinClipboardProvider      # noqa: E402
 from keyhac.platform.win.hook import WinInputHook                   # noqa: E402
 from keyhac.platform.win.uielement import UIElement                 # noqa: E402
+from keyhac.platform.win import uielement as _uielement             # noqa: E402
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
@@ -79,6 +81,7 @@ user32.GetForegroundWindow.argtypes = []
 user32.GetForegroundWindow.restype = ctypes.c_void_p
 user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
 user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+user32.IsWindow.argtypes = [ctypes.c_void_p]
 
 WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 user32.EnumWindows.argtypes = [WNDENUMPROC, ctypes.c_void_p]
@@ -131,6 +134,144 @@ def notepad_window():
     """The window holding our scratch document, as a UIElement, or None."""
     hwnd = window_titled(DOCUMENT)
     return UIElement.from_hwnd(hwnd) if hwnd else None
+
+
+# --------------------------------------------------------------------------
+# is_stale(): the one check here that does not use Notepad.
+#
+# It needs a window it is allowed to *destroy*, which Notepad is not, so it
+# spawns its own - inline rather than as a second file in tools/, since the
+# whole of it is one window and one button.
+
+CHILD_WINDOW_SOURCE = r"""
+import ctypes, sys
+from ctypes import wintypes
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
+                             wintypes.WPARAM, wintypes.LPARAM)
+class WNDCLASSW(ctypes.Structure):
+    _fields_ = [("style", ctypes.c_uint), ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wintypes.HINSTANCE), ("hIcon", wintypes.HICON),
+                ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
+                ("lpszMenuName", wintypes.LPCWSTR),
+                ("lpszClassName", wintypes.LPCWSTR)]
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+user32.CreateWindowExW.argtypes = [
+    wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID]
+user32.CreateWindowExW.restype = wintypes.HWND
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                  wintypes.WPARAM, wintypes.LPARAM]
+user32.DefWindowProcW.restype = ctypes.c_ssize_t
+proc = WNDPROC(lambda h, m, w, l: user32.DefWindowProcW(h, m, w, l))
+wc = WNDCLASSW()
+wc.lpfnWndProc = proc
+wc.hInstance = kernel32.GetModuleHandleW(None)
+wc.lpszClassName = "KeyhacStaleProbe"
+user32.RegisterClassW(ctypes.byref(wc))
+hwnd = user32.CreateWindowExW(0, "KeyhacStaleProbe", sys.argv[1], 0x00CF0000,
+                              80, 80, 420, 160, None, None, wc.hInstance, None)
+button = user32.CreateWindowExW(0, "BUTTON", "Probe Button", 0x50000000,
+                                20, 20, 160, 40, hwnd, None, wc.hInstance, None)
+user32.ShowWindow(hwnd, 5)
+print(int(hwnd), int(button), flush=True)
+msg = ctypes.create_string_buffer(48)
+while user32.GetMessageW(msg, None, 0, 0) > 0:
+    user32.TranslateMessage(msg)
+    user32.DispatchMessageW(msg)
+"""
+
+
+def _control_type_hr(element):
+    """is_stale()'s own call, handing back the HRESULT instead of a verdict.
+
+    Reported raw on purpose: a wrong constant and a right one both look like
+    `False` from outside, which is exactly how this went unverified so long.
+    """
+    control_type = ctypes.c_int()
+    hr = _uielement._com_call(
+        element._ptr, _uielement._IUIAutomationElement.get_CurrentControlType,
+        ctypes.c_long, [ctypes.POINTER(ctypes.c_int)],
+        ctypes.byref(control_type))
+    return hr & 0xFFFFFFFF, control_type.value
+
+
+def stale_section():
+    """Settle is_stale()'s HRESULT comparison against a real destroyed element.
+
+    `_press` reaches this only when a press fails, and that is precisely when
+    it matters: a dead button reports no actions, so the same silence has to
+    be told apart from "your selector names a control that cannot be pressed".
+    """
+    section("is_stale(): UIA_E_ELEMENTNOTAVAILABLE against a destroyed element")
+    title = f"keyhac-stale-probe-{os.getpid()}"
+    child = subprocess.Popen([sys.executable, "-c", CHILD_WINDOW_SOURCE, title],
+                             stdout=subprocess.PIPE, text=True)
+    try:
+        hwnd, button_hwnd = (int(v) for v in child.stdout.readline().split())
+        window = UIElement.from_hwnd(hwnd)
+        button = UIElement.from_hwnd(button_hwnd)
+        check("the probe window and its button both yield elements",
+              window is not None and button is not None)
+        if window is None or button is None:
+            return
+
+        hr_live, ct_live = _control_type_hr(button)
+        check("a live button is not reported stale",
+              button.is_stale() is False,
+              f"hr=0x{hr_live:08X} control_type={ct_live} "
+              f"actions={button.get_action_names()}")
+
+        child.terminate()
+        child.wait(timeout=10)
+        deadline = time.monotonic() + 10
+        while user32.IsWindow(hwnd) and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        # The check that caught the real bug. Immediately after the window
+        # dies UIA answers E_UNEXPECTED, not UIA_E_ELEMENTNOTAVAILABLE, and a
+        # dialog that just closed is precisely when _press() asks - so a stale
+        # element must read as stale *now*, not once UIA has settled.
+        hr_now, _ = _control_type_hr(button)
+        check("a just-destroyed button reads as stale immediately",
+              button.is_stale() is True,
+              f"hr=0x{hr_now:08X} (E_UNEXPECTED=0x8000FFFF is the early answer)")
+
+        # And then it settles, which is what the named constant describes.
+        start = time.monotonic()
+        hr_dead = None
+        while time.monotonic() - start < 5:
+            hr_dead, _ = _control_type_hr(button)
+            if hr_dead == _uielement.UIA_E_ELEMENTNOTAVAILABLE:
+                break
+            time.sleep(0.025)
+        check("it settles on UIA_E_ELEMENTNOTAVAILABLE",
+              hr_dead == _uielement.UIA_E_ELEMENTNOTAVAILABLE,
+              f"hr=0x{hr_dead:08X} after {(time.monotonic() - start) * 1000:.0f} ms")
+
+        # What _press() asks first. Both go silent, which is the collision
+        # fill.py resolves by asking is_stale() before blaming the selector.
+        check("a destroyed button offers no action to press",
+              button.get_action_names() == []
+              and button.perform_action("Invoke") is False,
+              f"actions={button.get_action_names()}")
+
+        # Reported, not asserted: this one is genuinely unstable between runs
+        # (S_OK with ControlType degraded Window->Pane, or the failure), so a
+        # check either way would be a coin flip. is_stale()'s docstring says
+        # window-level staleness must not be relied on; this is the evidence.
+        hr_win, ct_win = _control_type_hr(window)
+        print(f"       note: destroyed top-level window -> hr=0x{hr_win:08X} "
+              f"control_type={ct_win} is_stale()={window.is_stale()} "
+              f"(unstable between runs; 50032=Window, 50033=Pane)")
+    finally:
+        if child.poll() is None:
+            child.kill()
 
 
 def popup_root(element, limit: int = 6):
@@ -201,6 +342,11 @@ def main():
     history = ClipboardHistory(clipboard, filename=str(scratch / "clipboard.json"))
     history.persist = False
     keymap._clipboard_history = history
+
+    # First, and deliberately before Notepad is involved at all: it owns its
+    # own window and needs nothing of the operator's, so it still runs when
+    # the Notepad half cannot.
+    stale_section()
 
     # Our own document, opened by name. Notepad 11 puts it in a new tab of the
     # window that is already running, which is fine - what matters is that the
