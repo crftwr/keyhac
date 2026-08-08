@@ -10,8 +10,10 @@ Generated from the docstrings. For how to *write* an action, the authoring
 skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 `examples/actions/` holds working ones.
 
-> **Experimental.** This surface may change in ways a minor release normally
-> would not, and an upgrade may require editing actions you have written. The
+> **Experimental.** This surface may change in ways a release number normally
+> promises it will not — 2.2.x is the line this feature is being built in, so
+> even a patch release can move it — and an upgrade may require editing
+> actions you have written. The
 > unsettled part is `UINode` itself — how an element is identified, and how
 > long a node you are holding stays valid — which is the shape everything
 > below is built on. The rest of Keyhac's API is not affected; see
