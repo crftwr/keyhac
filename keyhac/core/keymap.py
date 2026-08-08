@@ -20,6 +20,7 @@ from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core import log
+from keyhac.core.action import ThreadedAction
 from keyhac.core.config import Config
 from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
 
@@ -153,6 +154,9 @@ class Keymap:
             self._modifier = 0
             self.editor = ""
             self._vk_mod_map = dict(get_key_names().modifier_vk_map)
+            # Layout-dependent like every other vk, so it cannot outlive the
+            # init_key_names() above.
+            self._escape_vk_cached = None
 
             logger.info("Loading configuration script.")
 
@@ -438,11 +442,36 @@ class Keymap:
 
         lazydocs: ignore
         """
+        # Before the keytable, so Esc reaches a running action whether or not
+        # the active table binds it - and outside the engine lock, because
+        # this runs inside the hook's deadline and cancel_all() only sets an
+        # Event.
+        #
+        # kind == "real" is the whole of "physical, not ours". Output Keyhac
+        # injects in translated mode never reaches this callback at all (the
+        # platform layer drops it on its own tag), and "replay" is excluded
+        # here on purpose: a macro replaying an Esc must not kill an action
+        # the user is watching. What "real" does still include is another
+        # application's injected input, which the OS lets us distinguish but
+        # Keyhac does not - and an Esc from anywhere is a request to stop.
+        if event.down and event.kind == "real" and event.vk == self._escape_vk():
+            if ThreadedAction.cancel_all():
+                # Consumed only when it actually stopped something: swallowing
+                # every Esc would change what the focused application sees.
+                return True
+
         with self._lock:
             if event.down:
                 return bool(self._on_key_down(event.vk))
             else:
                 return bool(self._on_key_up(event.vk))
+
+    def _escape_vk(self) -> int:
+        """Esc's vk for the active layout, resolved once and remembered."""
+        vk = getattr(self, "_escape_vk_cached", None)
+        if vk is None:
+            vk = self._escape_vk_cached = get_key_names().str_to_vk("Escape")
+        return vk
 
     def on_hook_restored(self) -> None:
         """InputHook on_restored callback.

@@ -27,7 +27,7 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed)
+**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled)
 
 
 ## <kbd>class</kbd> `UI`
@@ -419,6 +419,26 @@ Deliberately its own type, and deliberately an error rather than a False return:
 A write did not take. 
 
 Carries what was attempted, because "the field is still empty" and "the field has the wrong text" want different responses from the caller. 
+
+---
+
+
+## <kbd>class</kbd> `ActionCancelled`
+Raised inside a running action when the user cancels it with Esc. 
+
+**Derived from BaseException rather than Exception, and that is the point.** An action of the kind this framework exists for catches `Exception` around each item, because partial failure is the thing it is built to survive: 
+
+```python
+for system in self.systems:
+     try:
+         self._read_system(system, rows)
+     except Exception as error:          # <- would swallow a cancellation
+         self.failed.append((system["name"], str(error)))
+``` 
+
+Were this an ordinary Exception, pressing Esc there would be recorded as "SystemA failed" and the run would carry on to SystemB - the one thing cancelling must not do. As a BaseException it passes through every such handler while still unwinding the action's `finally` blocks, so progress already written stays written. 
+
+Cancellation is KeyboardInterrupt's cousin, not an error. An action never needs to know this class exists: `wait_for` raises it, and long actions spend most of their time waiting. 
 
 ---
 

@@ -7,7 +7,8 @@ reference is `doc/action_api.md`; this is the working subset.
 The whole import list, and there is nothing else to reach for:
 
 ```python
-from keyhac import ThreadedAction, WaitTimeout, FillFailed, UINode, getLogger
+from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
+                    UINode, getLogger)
 
 logger = getLogger("MyAction")     # `logger` is NOT importable - make one
 ```
@@ -123,6 +124,29 @@ is for making several reads atomic against a moving UI, or for calling a
 platform element method this API does not wrap. `starting()` and `finished()`
 already run there; `run()` does not, and must not block it — waiting there
 raises rather than freezing the keyboard.
+
+## Cancellation
+
+The user can stop a running action by pressing **Esc**. You get this for free
+and should write nothing for it: `ui.wait` and every wait built on it raise
+`ActionCancelled` at the next poll, and a long action spends nearly all its
+time waiting.
+
+Two things to know, and only two:
+
+```python
+except Exception:          # fine - ActionCancelled passes straight through
+except BaseException:      # DON'T - this catches it and the action won't stop
+```
+
+`ActionCancelled` derives from `BaseException` precisely so the `except
+Exception` you write around each item — to survive one bad row without losing
+the rest — does not turn a cancellation into "item 7 failed, carrying on".
+Your `finally` blocks still run, so progress already written stays written.
+
+If a stretch of work has no wait in it at all (a long parse, a big file
+write), call `self.check_cancelled()` in the loop. Otherwise the cancellation
+is not noticed until the next wait.
 
 ## The one platform-specific call
 

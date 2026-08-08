@@ -44,6 +44,7 @@ the element half themselves.
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from typing import Any, Iterable
 
@@ -98,6 +99,18 @@ def _keymap():
 
 # -- clipboard ---------------------------------------------------------------
 
+#: Held across the whole save/write/restore, because that sequence is the one
+#: shared resource the action pool's single worker used to protect for free.
+#: With more than one worker, two actions pasting at once would each save the
+#: other's scratch value and put it back as "what the user had".
+#:
+#: Reentrant, and not optionally: `_paste` opens this context itself, while
+#: the documented way to write several fields is to wrap the lot in one - so
+#: the nested case is the normal case, and a plain Lock would deadlock the
+#: example in the docstring below.
+_clipboard_lock = threading.RLock()
+
+
 @contextlib.contextmanager
 def preserve_clipboard():
     """Put the clipboard back the way it was.
@@ -113,22 +126,25 @@ def preserve_clipboard():
         set_text(field, "REC-001")
     ```
     """
-    keymap = _keymap()
-    clipboard = keymap.clipboard if keymap else None
-    saved = None
-    if clipboard is not None:
-        try:
-            saved = clipboard.get_text()
-        except Exception:
-            logger.debug("could not read the clipboard to save it", exc_info=True)
-    try:
-        yield
-    finally:
-        if clipboard is not None and saved is not None:
+    with _clipboard_lock:
+        keymap = _keymap()
+        clipboard = keymap.clipboard if keymap else None
+        saved = None
+        if clipboard is not None:
             try:
-                clipboard.set_text(saved)
+                saved = clipboard.get_text()
             except Exception:
-                logger.debug("could not restore the clipboard", exc_info=True)
+                logger.debug("could not read the clipboard to save it",
+                             exc_info=True)
+        try:
+            yield
+        finally:
+            if clipboard is not None and saved is not None:
+                try:
+                    clipboard.set_text(saved)
+                except Exception:
+                    logger.debug("could not restore the clipboard",
+                                 exc_info=True)
 
 
 # -- focus -------------------------------------------------------------------

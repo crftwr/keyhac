@@ -426,16 +426,35 @@ precondition for eliminating runtime LLM calls.**
   writes, window moves and text insertion are genuinely reversible and can share an undo
   design with XeFM; writes already accepted by a remote system are not, and for the §2
   workload those dominate.
-- **Cancellation** — `Esc` must stop a long-running action
-- **A separate executor for long-running actions.** `ThreadedAction`'s `starting()` /
-  `run()` / `finished(result)` lifecycle is a good fit for single-shot transforms
-  (`starting()` is the right place to freeze origin; `finished()` the right place for
-  approval), but the pool is `max_workers=1` (`keyhac/core/action.py`), so one
-  minutes-long run blocks every other `ThreadedAction` in the app. That is a latent bug
-  today. The tens-of-minutes actions in §2 make fixing it a prerequisite, not a
-  nice-to-have. Whether the fix needs a full `AsyncAction` (resident event loop, task
-  handle, progress channel, mid-run approval) or just a second executor depends on
-  whether agent loops ever run at runtime — see §3.4.
+- ~~**Cancellation** — `Esc` must stop a long-running action~~ **Done.**
+  `ActionCancelled` derives from `BaseException`, which is the whole design: an
+  action of this class wraps each item in `except Exception` to survive partial
+  failure, and an ordinary exception would be filed there as "item 7 failed" and
+  the run would continue — the one thing cancelling must not do. `wait_for`
+  raises it at the top of each poll, so an action needs no line about it;
+  `check_cancelled()` covers a stretch with no wait in it. Only `kind == "real"`
+  cancels: Keyhac's own translated output never reaches `on_key_event` (the
+  platform layer drops it on its own tag) and replay is excluded on purpose, so
+  an action pressing Escape cannot kill itself and a macro cannot kill it either.
+  Esc is consumed only when it actually stopped something.
+- ~~**A separate executor for long-running actions.**~~ **Done, and it needed
+  neither a second pool nor an `AsyncAction`.** §3.4 killed the `AsyncAction`
+  branch (no runtime inference ever appeared), and the "second executor" branch
+  turned out to be answering the wrong question. `max_workers=1` was not what
+  kept concurrent actions safe: injected keystrokes are serialized by the engine
+  lock (`InputContext.__enter__` takes it) and AX access by
+  `call_on_main_thread`. The only thing the pool's shape protected was the
+  clipboard save/restore in `core/fill.py`, which now holds a reentrant lock of
+  its own — reentrant because `_paste` opens that context inside a caller that
+  already has. So the fix was to raise the worker count and lock the one
+  genuinely shared resource. **No `long_running` flag, and nothing for the skill
+  to teach**: a flag would have asked the author to classify work whose duration
+  they cannot know (`extract_records` is seconds against a fixture and tens of
+  minutes against a real system — same code), and getting it wrong would have
+  been silent.
+  *Cost:* two key bindings that used to queue can now overlap. Each `with ctx:`
+  batch stays atomic, so typing cannot interleave mid-batch, but two typing
+  actions started at once will interleave batches.
 - The output-side primitives these actions are built from — `wait_for`, form filling,
   pagination — are specified in §7.
 
@@ -1051,7 +1070,7 @@ Against the layers in §5 and the sequence in §10:
 |---|---|
 | Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
-| Layer 3 — execution safety | **Partial.** Waiting and read-back are in; per-step preconditions, checkpointing and idempotency are *patterns the actions follow*, not framework. `Action.preconditions()`, dry-run/preview, `Esc` cancellation and the long-action executor are **not built** — the `max_workers=1` pool is still the latent bug §2.1 names. |
+| Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
 | Layer 4 — action metadata | **Minimal.** `keymap.register_action(name, action)` and the MCP tool schemas; no argument schema, no description surface. |
 | Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
 | Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
