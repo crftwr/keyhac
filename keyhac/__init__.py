@@ -22,6 +22,7 @@ from keyhac.core.clipboard_history import ClipboardHistory
 from keyhac.core.uitree import UINode
 from keyhac.core.wait import WaitTimeout
 from keyhac.core.fill import FillFailed
+from keyhac.core.action import ActionCancelled
 from keyhac.actions import (
     ActivateWindow,
     MouseButtonClick,
@@ -59,6 +60,7 @@ __all__ = [
     "UINode",
     "WaitTimeout",
     "FillFailed",
+    "ActionCancelled",
     "ChooserAction",
     "MouseButtonClick",
     "MouseButtonDown",

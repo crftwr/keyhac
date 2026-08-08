@@ -24,11 +24,13 @@ directly, or through the node methods, which dispatch themselves.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import traceback
 
 from keyhac.core import log
+from keyhac.core.action import ActionCancelled
 
 logger = log.getLogger("MCP")
 
@@ -327,19 +329,33 @@ class ToolRegistry:
         if action is None:
             raise KeyError(f"no action named {name!r}; call list_actions")
 
-        # Deliberately not through ThreadedAction.__call__: that submits to the
-        # single-worker pool, which would make this call queue behind whatever
-        # else is running and return before the action had done anything. The
-        # lifecycle is reproduced here instead - starting() and finished() on
-        # the loop thread where they belong, run() on this one.
+        # Still not through ThreadedAction.__call__, but for one reason now
+        # rather than two. The pool no longer serializes everything behind a
+        # single worker, so queueing is no longer the problem; what remains is
+        # that __call__ returns as soon as it has submitted, and this tool has
+        # to hand back what the action logged. Registering with _running is
+        # what matters, and is done explicitly below, so Esc reaches an action
+        # started from here exactly as it reaches one started from a key.
         with _captured_log() as captured:
             try:
                 if hasattr(action, "run"):
                     self.ui.on_main_thread(action.starting)
-                    result = action.run()
+                    # register_action is duck-typed - anything with run() is
+                    # accepted - so an action that is not a ThreadedAction
+                    # still runs here, just without being cancellable.
+                    track = getattr(action, "cancellable", contextlib.nullcontext)
+                    with track():
+                        result = action.run()
                     self.ui.on_main_thread(lambda: action.finished(result))
                 else:
                     self.ui.on_main_thread(action)
+            except ActionCancelled:
+                # Its own arm because it is a BaseException: the handler below
+                # would not see it, and it would leave through the HTTP layer
+                # as a server error rather than as the answer it is.
+                return (captured.getvalue()
+                        + f"\n{name} was cancelled with Esc. Whatever it "
+                          f"logged above is how far it got.")
             except Exception:                             # noqa: BLE001
                 return (captured.getvalue()
                         + "\nthe action raised:\n" + traceback.format_exc())

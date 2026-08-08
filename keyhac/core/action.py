@@ -5,6 +5,8 @@ starting()/finished() run on the event-loop thread under the engine lock
 pool.
 """
 
+import contextlib
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -12,6 +14,47 @@ from typing import Any
 from keyhac.core import log
 
 logger = log.getLogger("Action")
+
+
+class ActionCancelled(BaseException):
+    """Raised inside a running action when the user cancels it with Esc.
+
+    **Derived from BaseException rather than Exception, and that is the
+    point.** An action of the kind this framework exists for catches
+    `Exception` around each item, because partial failure is the thing it is
+    built to survive:
+
+    ```python
+    for system in self.systems:
+        try:
+            self._read_system(system, rows)
+        except Exception as error:          # <- would swallow a cancellation
+            self.failed.append((system["name"], str(error)))
+    ```
+
+    Were this an ordinary Exception, pressing Esc there would be recorded as
+    "SystemA failed" and the run would carry on to SystemB - the one thing
+    cancelling must not do. As a BaseException it passes through every such
+    handler while still unwinding the action's `finally` blocks, so progress
+    already written stays written.
+
+    Cancellation is KeyboardInterrupt's cousin, not an error. An action never
+    needs to know this class exists: `wait_for` raises it, and long actions
+    spend most of their time waiting.
+    """
+
+
+#: The action whose run() this thread is executing.  How `wait_for` - a free
+#: function that is handed no action - knows whose cancellation to honour.
+_current = threading.local()
+
+
+def current_action():
+    """The ThreadedAction running on this thread, or None.
+
+    lazydocs: ignore
+    """
+    return getattr(_current, "action", None)
 
 
 class ThreadedAction:
@@ -43,7 +86,64 @@ class ThreadedAction:
     ```
     """
 
-    thread_pool = ThreadPoolExecutor(max_workers=1)
+    # More than one worker, so a run() that takes minutes stops holding up
+    # every other action in the application - the §2.1 bug that made a
+    # tens-of-minutes ETL action freeze an unrelated key binding.
+    #
+    # The single worker was never what kept concurrent actions safe, which is
+    # why raising it is not the hazard it looks like: injected keystrokes are
+    # serialized by the engine lock (InputContext.__enter__ takes it), and
+    # windows and AX elements are reachable only through
+    # call_on_main_thread, which serializes on the loop thread. The one thing
+    # the pool's shape *was* protecting is the clipboard save/restore in
+    # core/fill.py, and that now holds a lock of its own.
+    #
+    # What does change: two key bindings that used to queue can now overlap.
+    # Each `with ctx:` batch stays atomic, so typing cannot interleave mid-
+    # batch, but two typing actions started at once will interleave batches.
+    thread_pool = ThreadPoolExecutor(max_workers=None,
+                                     thread_name_prefix="keyhac-action")
+
+    #: Actions whose run() has not returned, so Esc can reach them.  A set
+    #: rather than one slot: nothing stops two long actions running now.
+    _running: set = set()
+    _running_lock = threading.Lock()
+
+    @classmethod
+    def cancel_all(cls) -> int:
+        """Ask every running action to stop.  Returns how many were asked.
+
+        Called from the keyboard hook, so it must stay O(1) in the number of
+        actions and do no I/O: setting an Event is the whole of it.
+
+        lazydocs: ignore
+        """
+        with cls._running_lock:
+            running = tuple(cls._running)
+        for action in running:
+            flag = getattr(action, "_cancel_flag", None)
+            if flag is not None:
+                flag.set()
+        return len(running)
+
+    def cancelled(self) -> bool:
+        """True once the user has asked this action to stop.
+
+        Check it in a loop that does not wait - `wait_for` already raises
+        `ActionCancelled` on its own, and a loop built out of waits needs
+        nothing else.
+        """
+        flag = getattr(self, "_cancel_flag", None)
+        return flag is not None and flag.is_set()
+
+    def check_cancelled(self) -> None:
+        """Raise `ActionCancelled` if the user has asked this action to stop.
+
+        For a stretch of work with no wait in it - a long parse, a big write -
+        where cancellation would otherwise not be noticed until the next wait.
+        """
+        if self.cancelled():
+            raise ActionCancelled(f"{self!r} was cancelled")
 
     @property
     def keymap(self):
@@ -70,8 +170,40 @@ class ThreadedAction:
         with keymap._lock:
             self.starting()
 
-        future = ThreadedAction.thread_pool.submit(self.run)
+        future = ThreadedAction.thread_pool.submit(self._run_tracked)
         future.add_done_callback(self._done_callback)
+
+    def _run_tracked(self):
+        with self.cancellable():
+            return self.run()
+
+    @contextlib.contextmanager
+    def cancellable(self):
+        """Make this action reachable by Esc for the duration of the block.
+
+        Both ways of starting an action enter this: `_run_tracked` for a key
+        press, and the MCP `run_action` tool, which drives the lifecycle
+        itself. Without it, an action started from a chat window would be the
+        one you could not stop.
+
+        The flag is built here rather than in `__init__` because subclasses
+        write their own and do not call `super()` - the documented shape, and
+        what all six examples do. Deregistration is here too rather than in
+        `_finish`, which is handed to the loop thread and may not have run
+        yet when the next Esc arrives.
+
+        lazydocs: ignore
+        """
+        self._cancel_flag = threading.Event()
+        _current.action = self
+        with ThreadedAction._running_lock:
+            ThreadedAction._running.add(self)
+        try:
+            yield self
+        finally:
+            _current.action = None
+            with ThreadedAction._running_lock:
+                ThreadedAction._running.discard(self)
 
     def _done_callback(self, future):
         # add_done_callback fires on the pool thread; hand finished() back to
@@ -87,6 +219,11 @@ class ThreadedAction:
             from keyhac.core.keymap import Keymap
             with Keymap.get_instance()._lock:
                 self.finished(result)
+        except ActionCancelled:
+            # Needs its own arm: BaseException would otherwise sail past the
+            # handler below and into the event loop.  finished() is skipped on
+            # purpose - it reports a result the action never produced.
+            logger.info(f"{self!r} cancelled.")
         except Exception:
             print()
             logger.error(f"Threaded action failed:\n{traceback.format_exc()}")

@@ -926,6 +926,30 @@ An action's most-used object, so it is one attribute away rather than two lines 
 
 ---
 
+### <kbd>method</kbd> `ThreadedAction.cancelled`
+
+```python
+cancelled() → bool
+```
+
+True once the user has asked this action to stop. 
+
+Check it in a loop that does not wait - `wait_for` already raises `ActionCancelled` on its own, and a loop built out of waits needs nothing else. 
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.check_cancelled`
+
+```python
+check_cancelled() → None
+```
+
+Raise `ActionCancelled` if the user has asked this action to stop. 
+
+For a stretch of work with no wait in it - a long parse, a big write - where cancellation would otherwise not be noticed until the next wait. 
+
+---
+
 ### <kbd>method</kbd> `ThreadedAction.finished`
 
 ```python

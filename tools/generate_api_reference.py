@@ -112,6 +112,7 @@ ACTION_API_NAMES = [
     "UINode",
     "WaitTimeout",
     "FillFailed",
+    "ActionCancelled",
 ]
 
 ACTION_HEADER = """# Action API reference

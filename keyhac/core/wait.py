@@ -43,6 +43,7 @@ import time
 from typing import Any, Callable
 
 from keyhac.core import log
+from keyhac.core.action import ActionCancelled, current_action
 from keyhac.core.uitree import UINode, find_element, get_ui_tree
 
 logger = log.getLogger("Wait")
@@ -169,6 +170,9 @@ def wait_for(condition: Callable[[], Any],
 
     Raises:
         WaitTimeout: The condition never became true.
+        ActionCancelled: The user pressed Esc.  Nothing has to catch this -
+            it unwinds through the action's `finally` blocks so progress
+            already recorded stays recorded.
         RuntimeError: Called on the event-loop thread, where blocking would
             hang the keyboard hook.
     """
@@ -177,6 +181,17 @@ def wait_for(condition: Callable[[], Any],
     gap = interval if interval is not None else MIN_INTERVAL
 
     while True:
+        # Here, at the top, rather than anywhere else in the loop: this is
+        # where control lands after each sleep, so cancelling costs at most
+        # one polling gap and never a whole condition evaluation. Waiting is
+        # where a long action spends nearly all of its time (§7.1), which is
+        # what makes one check in one function enough to make Esc work
+        # everywhere without an action containing a line about it.
+        action = current_action()
+        if action is not None and action.cancelled():
+            raise ActionCancelled(
+                f"cancelled while waiting for {message or 'a condition'}")
+
         result = evaluate_on_main_thread(condition)
         if result:
             return result
