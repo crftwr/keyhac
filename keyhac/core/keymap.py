@@ -819,10 +819,10 @@ class Keymap:
         """
         raise RuntimeError(
             "keymap.enable_mcp_server() has been removed. The MCP server is "
-            "switched on from the console's 'MCP server' checkbox or the same "
-            "item in the tray menu, and the choice is remembered across "
-            "restarts - delete this line from your configuration. See "
-            "doc/mcp.md.")
+            "switched on from the console window's 'AI Integration' "
+            "checkbox, or Tray menu > AI Integration > MCP Server, and the "
+            "choice is remembered across restarts - delete this line from "
+            "your configuration. See doc/mcp.md.")
 
     @property
     def mcp_server_running(self) -> bool:
@@ -835,8 +835,8 @@ class Keymap:
     def start_mcp_server(self, port: int = 0) -> None:
         """Start the action-authoring endpoint on localhost.
 
-        The switch is the console's **MCP server** checkbox, or the same item
-        in the tray menu; this is the mechanism behind it. There is
+        The switch is the console's **AI Integration** checkbox, or the tray
+        menu's *AI Integration > MCP Server*; this is the mechanism behind it. There is
         deliberately no configuration API: an endpoint that reads every window
         and can run registered actions should be visibly on or visibly off,
         and a line in the middle of a config file tells you what was asked for

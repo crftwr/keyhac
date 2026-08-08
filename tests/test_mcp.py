@@ -317,8 +317,12 @@ def test_the_removed_config_call_says_where_the_switch_went(tmp_path):
     keymap = _real_keymap(tmp_path)
     with pytest.raises(RuntimeError) as caught:
         keymap.enable_mcp_server()
-    assert "tray menu" in str(caught.value)
-    assert "console" in str(caught.value)
+    # Case-insensitive: the point is that both faces of the switch are named,
+    # not how the sentence happens to capitalise them.
+    message = str(caught.value).lower()
+    assert "tray menu" in message
+    assert "console" in message
+    assert "ai integration" in message, "the label it is filed under"
 
 
 # -- the bridge -------------------------------------------------------------

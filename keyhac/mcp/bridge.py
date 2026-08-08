@@ -92,8 +92,9 @@ def main(argv: list[str] | None = None) -> int:
             _respond(message, _error(
                 request_id,
                 f"Keyhac's MCP endpoint is not available ({path}). Is Keyhac "
-                f"running, and is its 'MCP server' switch on - the checkbox "
-                f"in the console window, or the item in the tray menu?"))
+                f"running, and is its MCP server switch on - the 'AI "
+                f"Integration' checkbox in the console window, or the same "
+                f"item in the tray menu?"))
             continue
 
         request = urllib.request.Request(

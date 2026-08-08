@@ -47,8 +47,15 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("Reload Config", on_select=keymap.configure),
         MenuItem("Keyboard Hook", on_select=toggle_hook,
                  checked=lambda: hook.installed),
-        MenuItem("MCP Server", on_select=toggle_mcp,
-                 checked=lambda: keymap.mcp_server_running),
+        # Nested under a name that means something to someone who has never
+        # heard of MCP. "MCP Server" at the top level is a row most users
+        # cannot evaluate - they can neither want it nor avoid it - whereas
+        # "AI Integration" says what the whole branch is for, and anyone who
+        # needs the protocol's name finds it one level in.
+        MenuItem("AI Integration", submenu=Menu(
+            MenuItem("MCP Server", on_select=toggle_mcp,
+                     checked=lambda: keymap.mcp_server_running),
+        )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
     )

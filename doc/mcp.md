@@ -39,9 +39,9 @@ open and can run the actions you register. See [Security](#security).
 
 ## Turning it on
 
-Tick **MCP server** in the console window, or the item of the same name in the
-tray / menu bar menu. The console logs the port it chose, and the choice is
-remembered across restarts.
+Tick **MCP server** under **AI Integration** in the console window, or
+**AI Integration → MCP Server** in the tray / menu bar menu. The console logs
+the port it chose, and the choice is remembered across restarts.
 
 There is deliberately no configuration API for this. An endpoint that reads
 every window and can run your actions should be visibly on or visibly off; a
@@ -208,8 +208,8 @@ don't type passwords or show private material while recording.
 ## Security
 
 - **Off by default**, and the switch is visible. Nothing listens until you tick
-  **MCP server**, and while it is on the checkbox and the menu item both say
-  so — which a line in a config file cannot.
+  **AI Integration → MCP server**, and while it is on the checkbox and the menu
+  item both say so — which a line in a config file cannot.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
   another process on the machine cannot use the endpoint without it.

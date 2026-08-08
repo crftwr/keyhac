@@ -120,7 +120,7 @@ verification record — including which passes caught which real bugs — is in
 
 **AI integration ships as experimental** — the MCP endpoint (`keyhac/mcp/`), the
 action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless the
-user ticks **MCP server** in the console or tray menu (persisted in
+user ticks **AI Integration > MCP Server** in the console or tray menu (persisted in
 `settings.json`; there is deliberately no config API), and it is the one part of
 the public surface
 **not** covered by the usual additive-only expectation: `UINode`'s element

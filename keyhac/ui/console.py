@@ -144,10 +144,16 @@ class ConsoleWindow:
         # breathing room between the rows, inspector labels on a shared fixed
         # width so the values line up, and the toolbar/label rows centered on
         # their cross axis.
-        # The flexible spacer absorbs the middle, so the only visible gap in
-        # this row is label <-> dropdown; keep it tight.
+        # The flexible spacer absorbs the middle, so the only visible gaps in
+        # this row are label <-> control; keep those tight.
+        # The fixed spacer is not decoration: at the shared 0.3 gap "Keyboard
+        # hook" and the next group read as one run of text, and the checkbox
+        # that belongs to which label becomes a guess. It buys the separation
+        # the grouping is claiming.
         toolbar = HSplit(
             Item(self._hook_checkbox, size="content", align="center"),
+            Item(Label(""), size=3),
+            Item(Label("AI Integration:"), size="content", align="center"),
             Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             Item(Label("Log level:"), size="content", align="center"),
