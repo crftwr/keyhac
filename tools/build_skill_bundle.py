@@ -23,6 +23,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SKILL = ROOT / "keyhac" / "skills" / "action-authoring"
 OUTPUT = ROOT / "dist" / "keyhac-action-authoring-skill.zip"
 
+#: An uploaded skill leaves the repository that carries its licence, so the
+#: bundle carries its own copy - the same shape anthropics/skills uses, where
+#: the frontmatter's `license` field points at a LICENSE.txt beside SKILL.md.
+LICENSE = ROOT / "LICENSE"
+
 #: Not shipped to the model: evals are for this repo's CI, and the fixture is a
 #: deliberately-wrong action that has no business in a skill's context.
 EXCLUDE = {"evals"}
@@ -53,6 +58,10 @@ def main() -> int:
             else:
                 bundle.write(path, name)
             written.append(name)
+
+        if LICENSE.is_file():
+            bundle.write(LICENSE, "LICENSE.txt")
+            written.append("LICENSE.txt")
 
     print(f"Wrote {OUTPUT.relative_to(ROOT)} ({len(written)} files, "
           f"{OUTPUT.stat().st_size // 1024} KB)")
