@@ -1,8 +1,12 @@
-# API reference for actions
+# Driving another application, in practice
 
 Everything an action needs hangs off `self.ui` inside a `ThreadedAction`
-(`keymap.ui` elsewhere) and off the nodes it hands back. The generated
-reference is `doc/action-api.md`; this is the working subset.
+(`keymap.ui` elsewhere) and off the nodes it hands back.
+
+**Signatures are in `action-api.md` beside this** — every argument and default,
+generated from the docstrings. This file is the other half: which call to reach
+for, what each one costs, and which of them fail without telling you. Nothing
+here can be generated, which is why it is written by hand and why it is short.
 
 The whole import list, and there is nothing else to reach for:
 

@@ -783,7 +783,7 @@ of knowledge, with different homes:
 
 | | Where | Why |
 |---|---|---|
-| Keyhac API reference | skill `references/` | Large; load on demand. Mostly already in `doc/configuration.md` |
+| Keyhac API reference | skill `references/` | Large; load on demand. **Built as three, on the axis of what can be generated**: `action-api.md` is the generated signatures, copied into the bundle rather than restated by hand — the half that drifts. `practice.md` is which call to reach for and what it costs, and `quirks.md` where the platform lies; neither can be generated, which is why both are short and hand-written. The config-side reference stays out and is linked at a version-pinned URL: an action needs four of its thirty-four names |
 | Trace schema | skill body | Short; always needed |
 | **Generalisation heuristics** | **skill body — the core** | Procedural knowledge; the only part genuinely worth writing |
 
@@ -928,7 +928,7 @@ Extend `PRIVACY.md` with the above.
 5. ~~**Derive the skill** from what step 4 taught (§8.4).~~ **Written**, in
    `keyhac/skills/keyhac-action-authoring/`: `SKILL.md` (seven hard rules, each one a
    failure that actually happened, plus structure and the done-checklist),
-   `references/api.md`, and `references/quirks.md` — the measured platform
+   `references/practice.md`, and `references/quirks.md` — the measured platform
    behaviour that makes correct-looking code wrong. The eval set is
    `evals/check.py` for the mechanical rules, calibrated in both directions
    (the four hand-written actions pass; a fixture breaking every rule is
@@ -1118,7 +1118,7 @@ had not written the skill, against the operator's own screen:
 
 1. *Open the Keyhac issue list in Chrome* — from a typed, intent-only prompt.
    Every hard rule satisfied; it could not be imported, because the skill
-   documented no import header and `references/api.md` gave an exhaustive list
+   documented no import header and `references/practice.md` gave an exhaustive list
    of importable names that was missing two of them. Fixed in the skill.
 2. *Save a set of pages as PDFs through Chrome's print dialog* — derived from a
    Claude Desktop **screen recording**, and the densest case in §2. The

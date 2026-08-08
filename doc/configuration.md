@@ -8,7 +8,7 @@ created from a fully commented template — the template
 everything on this page, and a good file to keep open while reading.
 
 This page introduces the APIs in the order you meet them. For the exact arguments
-of any one of them, see the [API reference](api-reference.md).
+of any one of them, see the [API reference](config-api.md).
 
 ## The config file
 
@@ -433,4 +433,4 @@ focus path — the two things you need when writing new bindings.
 | `getLogger(name)` | console logging |
 
 Exact signatures, defaults and per-argument notes for all of these are in the
-[API reference](api-reference.md).
+[API reference](config-api.md).

@@ -20,8 +20,21 @@ runtime, and a regex beats one on paths, line numbers, URLs and IDs - it is
 *more accurate*, not merely cheaper. If you reach for inference at runtime,
 state in a comment why the input space is not closed.
 
-Read `references/api.md` for the API surface and `references/quirks.md` before
-debugging anything that "should work". Both are short.
+Three references sit beside this, each answering a different question:
+
+- `references/practice.md` — **which call to reach for, and what it costs.**
+  Read it before writing.
+- `references/action-api.md` — **every signature**, generated from the
+  docstrings. Look things up here rather than guessing at an argument.
+- `references/quirks.md` — **where the platform lies to you.** Read it before
+  debugging anything that "should work".
+
+The whole of Keyhac's other API — what a `config.py` reaches, which an action
+touches only through `ThreadedAction` and `register_action` — is a fetch away
+and deliberately not carried here, since an action needs four names out of its
+thirty-four:
+
+    https://github.com/crftwr/keyhac/blob/v{VERSION}/doc/config-api.md
 
 ## Before you write anything
 

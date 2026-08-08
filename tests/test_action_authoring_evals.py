@@ -65,6 +65,6 @@ def test_the_skill_and_its_references_exist(check):
     """A skill whose references have drifted away is worse than none."""
     body = (SKILL / "SKILL.md").read_text()
     assert body.startswith("---"), "SKILL.md needs frontmatter"
-    for reference in ("references/api.md", "references/quirks.md"):
+    for reference in ("references/practice.md", "references/quirks.md"):
         assert (SKILL / reference).exists()
         assert reference.split("/")[-1] in body or reference in body
