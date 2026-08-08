@@ -1112,14 +1112,39 @@ follows — locate the bridge, patch the client config, verify by driving
 `tools/list` end to end, report what it could not do itself. Most of it is
 mechanical and was in fact done that way in the session that found the problem.
 
-Open questions. Which client — the config path, the schema and the
-restart requirement are all Claude Desktop's, and an "install for any MCP
-client" document is a different and much larger claim. What the agent must
-refuse to do unattended: editing another application's config file is
-reasonable with a backup; quitting that application is not. And whether this
-belongs in the repository or **in the skill itself** — a skill that installs
-its own transport is circular, since a user with no bridge is a user whose
-agent cannot verify its own work.
+**Resolved, and the resolution was to write less.** "Which client" was the
+blocking question, and it dissolves once you notice the agent already knows
+that half: it is running inside the client, and how that client installs an MCP
+server is exactly the kind of thing it knows better than a page written before
+that client existed. So `doc/mcp.md` carries a **prompt**, not a procedure, and
+the prompt covers only what Keyhac knows and the agent cannot guess — that the
+port and token are in `mcp.json` beside `config.py`, that **the port changes
+every restart** so the file is the thing to point at, that auth is a bearer
+header, that a stdio-only client wants `keyhac-mcp-bridge` at an absolute path,
+and that the skill is a separate install whose absence is the quiet failure.
+
+Writing the host's half is what would have made it Claude Desktop's document
+wearing a general name. Not writing it is what makes it work on clients nobody
+here has tried.
+
+The failure mode to design against is the one §14 already recorded: an agent
+given an exhaustive-*sounding* but incomplete list invents the remainder, and
+an agent unsure of its own config path will guess one confidently. Hence the
+prompt tells it to verify rather than assume, and the verification is
+unambiguous — call `list_windows` and see the user's own windows.
+
+The other two open questions answered themselves. The guardrails are in the
+prompt as requests rather than as machinery: back up before editing another
+application's config, and never quit or restart one — say what to expect
+instead. And the circularity is weaker than it looked. An agent cannot verify
+*before* the install, but it does not need to: the user restarts the client and
+the agent's first tool call settles it. That also decides where this lives —
+`doc/mcp.md`, because a user with no connection is a user with no skill either,
+so the skill is the one place it certainly cannot be.
+
+Still unwritten: nobody has run this prompt. It is the same "untried" as the
+client table beside it, and the first person to paste it into something other
+than Claude Desktop is the useful report.
 
 ### 15.2 Editing `config.py` is a step the skill still hand-waves
 
