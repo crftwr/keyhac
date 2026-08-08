@@ -768,7 +768,7 @@ of knowledge, with different homes:
 | Trace schema | skill body | Short; always needed |
 | **Generalisation heuristics** | **skill body — the core** | Procedural knowledge; the only part genuinely worth writing |
 
-Ship it in-repo (`keyhac/skills/action-authoring/SKILL.md`) so it versions with the API.
+Ship it in-repo (`keyhac/skills/keyhac-action-authoring/SKILL.md`) so it versions with the API.
 Works for both topology A and B.
 
 Rules to encode — the permanent ones, which are hard rules rather than preferences:
@@ -907,7 +907,7 @@ Extend `PRIVACY.md` with the above.
    inside the thing that can fail discards every page already read, which is
    the exact failure this class of action exists to avoid.
 5. ~~**Derive the skill** from what step 4 taught (§8.4).~~ **Written**, in
-   `keyhac/skills/action-authoring/`: `SKILL.md` (seven hard rules, each one a
+   `keyhac/skills/keyhac-action-authoring/`: `SKILL.md` (seven hard rules, each one a
    failure that actually happened, plus structure and the done-checklist),
    `references/api.md`, and `references/quirks.md` — the measured platform
    behaviour that makes correct-looking code wrong. The eval set is

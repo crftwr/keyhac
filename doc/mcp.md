@@ -161,7 +161,7 @@ unverified writes. Without it you will get plausible code that breaks on a
 slower machine.
 
 Skills are a Claude feature, so the packaged bundle is for Claude Desktop.
-The content is not: `keyhac/skills/action-authoring/` is Markdown, and any
+The content is not: `keyhac/skills/keyhac-action-authoring/` is Markdown, and any
 agent that can be given documents can be given these. What it cannot be given
 is the *habit* of consulting them unprompted, which is the part a skill buys.
 
