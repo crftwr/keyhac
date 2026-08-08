@@ -304,8 +304,10 @@ found.
   and `kbd106.dll` exactly on every physical key position where the two keyboards
   differ — the semicolon, colon, atmark, caret and bracket keys, and the two JIS
   backslash keys (¥ and ろ), which a US 101 renders as one. This is
-  hardware-independent, so only the `GetKeyboardType(0) == 7` *detection* still
-  needs a real JIS keyboard.
+  hardware-independent; the `GetKeyboardType(0) == 7` *detection* is the one
+  part that needed a real JIS keyboard, and it was confirmed on one by hand
+  (2026-08-07). Both halves of the layout story are now closed: the tables
+  against the keyboard-type DLLs, the detection against the hardware.
 - **`edit_config` on Windows**: `WinAppControl.edit_file` → `ShellExecuteW` run
   live, 8/8 — default editor, explicit editor, a path containing spaces opening as
   one file (the quoting), an unresolvable editor logging a warning instead of
@@ -315,26 +317,34 @@ found.
 ## The interactive pass before a release
 
 The genuinely-interactive checks were tracked in issue #10 and are all through
-as of 2026-08-06, but they are a **standing pass, not a burnt-down backlog**:
+as of 2026-08-07, but they are a **standing pass, not a burnt-down backlog**:
 they describe what to repeat before a release, since nothing here is covered by
-the automated harnesses.
+the automated harnesses. The two that needed hardware this machine does not
+have — a JIS keyboard, and a Japanese IME driving the chooser — were passed by
+hand on 2026-08-07 and stay on the list for the next release rather than being
+struck off.
 
 - **The `Keyhac.exe` bundle** — `tools/bundle_pass.py` does the mechanizable
   half; run it with no Keyhac running, or the instance guard makes every check
   fail for the wrong reason. By hand alongside it: the tray icon and its menu
   clicks, and the console's log pane, hook checkbox and log-level dropdown.
-- **The chooser filter box under a Japanese IME** — that 「か」 composes inline
-  rather than typing `ka`, that Enter is consumed by the IME to commit instead
-  of choosing the highlighted item, and that the committed text filters the
-  list. Needs puikit's per-window input contexts (keyhac #20, puikit `6906146`).
-- **JIS layout detection on real JIS hardware** — `GetKeyboardType(0) == 7`, one
-  line. The tables it selects are already pinned against `kbd106.dll`, so this is
-  the only part a JIS keyboard is needed for. It cannot be faked on this machine:
-  the VM presents a generic HID keyboard reporting type 4.
+- **The chooser filter box under a Japanese IME** *(passed 2026-08-07)* — that
+  「か」 composes inline rather than typing `ka`, that Enter is consumed by the
+  IME to commit instead of choosing the highlighted item, and that the committed
+  text filters the list. Needs puikit's per-window input contexts (keyhac #20,
+  puikit `6906146`). Repeat it whenever that input-context code moves.
+- **JIS layout detection on real JIS hardware** *(passed 2026-08-07)* —
+  `GetKeyboardType(0) == 7`, one line. The tables it selects are pinned against
+  `kbd106.dll` independently, so the keyboard is needed only for the detection.
+  It still cannot be faked on the development VM, which presents a generic HID
+  keyboard reporting type 4 — so this one needs the hardware present, or it
+  needs skipping honestly rather than assuming.
 - **On macOS**: the tray "Edit Config" menu click and mouse output feel in real
   apps (wheel direction, drag, double-click registration). Neither is drivable
   from the sandbox — the agent shell holds Accessibility but never window-server
   key focus — so both are hand checks by construction.
 
-On macOS: nothing outstanding — the tray "Edit Config" click and mouse feel were
-both verified live.
+Nothing outstanding on either platform: on macOS the tray "Edit Config" click
+and mouse feel were both verified live, and on Windows the JIS keyboard and the
+Japanese IME — the last two checks that needed hardware rather than a harness —
+were passed by hand on 2026-08-07.
