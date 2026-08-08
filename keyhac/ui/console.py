@@ -120,6 +120,12 @@ class ConsoleWindow:
 
         self._hook_checkbox = Checkbox(
             "Keyboard hook", checked=hook.installed, on_change=self._on_hook_toggle)
+        # Beside the hook checkbox on purpose: both switch a capability the
+        # user is entitled to see the state of, and the endpoint being visibly
+        # off is most of the answer to "is this thing watching me".
+        self._mcp_checkbox = Checkbox(
+            "MCP server", checked=keymap.mcp_server_running,
+            on_change=self._on_mcp_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
             selected=initial_level_index,
@@ -142,6 +148,7 @@ class ConsoleWindow:
         # this row is label <-> dropdown; keep it tight.
         toolbar = HSplit(
             Item(self._hook_checkbox, size="content", align="center"),
+            Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             Item(Label("Log level:"), size="content", align="center"),
             Item(self._level_dropdown, size="content", align="center"),
@@ -288,6 +295,27 @@ class ConsoleWindow:
                     self._hook_checkbox.checked = False
         else:
             self._hook.uninstall()
+
+    def _on_mcp_toggle(self, checked: bool) -> None:
+        # Persisted before it is acted on, so a start that throws still leaves
+        # the setting matching what the user asked for - and reverted with it
+        # if the start fails, because a checkbox that says "on" over a socket
+        # that never bound is the one state this switch must not reach.
+        if self._settings is not None:
+            self._settings.set("mcp_server", checked)
+        try:
+            if checked:
+                self._keymap.start_mcp_server()
+                logger.info("MCP server enabled.")
+            else:
+                self._keymap.stop_mcp_server()
+                logger.info("MCP server disabled.")
+        except Exception as e:
+            logger.error(f"Could not {'start' if checked else 'stop'} "
+                         f"the MCP server: {e}")
+            if self._settings is not None:
+                self._settings.set("mcp_server", not checked)
+            self._mcp_checkbox.checked = self._keymap.mcp_server_running
 
     def _on_level_change(self, index: int, name: str) -> None:
         self._console.log_level = _LEVELS[index][1]

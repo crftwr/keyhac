@@ -33,12 +33,22 @@ def install_tray(console, keymap, hook) -> None:
         console._hook_checkbox.checked = hook.installed
         console.panel.render()
 
+    def toggle_mcp():
+        # Through the console's handler rather than the keymap's, so the
+        # setting is written and the checkbox follows from one place - the two
+        # switches are one switch with two faces.
+        console._on_mcp_toggle(not keymap.mcp_server_running)
+        console._mcp_checkbox.checked = keymap.mcp_server_running
+        console.panel.render()
+
     menu = Menu(
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
         MenuItem("Reload Config", on_select=keymap.configure),
         MenuItem("Keyboard Hook", on_select=toggle_hook,
                  checked=lambda: hook.installed),
+        MenuItem("MCP Server", on_select=toggle_mcp,
+                 checked=lambda: keymap.mcp_server_running),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
     )

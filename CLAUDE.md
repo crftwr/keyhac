@@ -119,8 +119,10 @@ verification record — including which passes caught which real bugs — is in
 [doc/dev/testing.md](doc/dev/testing.md).
 
 **AI integration ships as experimental** — the MCP endpoint (`keyhac/mcp/`), the
-action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless a
-config calls `enable_mcp_server()`, and it is the one part of the public surface
+action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless the
+user ticks **MCP server** in the console or tray menu (persisted in
+`settings.json`; there is deliberately no config API), and it is the one part of
+the public surface
 **not** covered by the usual additive-only expectation: `UINode`'s element
 identity and handle lifetime are still open ([doc/dev/ai-integration.md](doc/dev/ai-integration.md)
 §11), and settling them may break actions. Do not treat that surface as frozen,

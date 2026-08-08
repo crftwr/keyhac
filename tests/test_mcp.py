@@ -265,6 +265,62 @@ def test_it_binds_loopback_only(server):
     assert server._server.server_address[0] == "127.0.0.1"
 
 
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+def test_the_declined_verbs_answer_405_and_not_501(server, method):
+    """Streamable HTTP lets a server offer no SSE stream and no sessions, but
+    the refusal has to be 405: a client that opens the optional server stream
+    before its first tool call reads the stdlib's default 501 as "this server
+    does not implement HTTP" rather than "no stream here". Only clients other
+    than the bridge ever send these, which is exactly who this is for."""
+    request = urllib.request.Request(f"http://127.0.0.1:{server.port}/",
+                                     method=method)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(request, timeout=10)
+    assert caught.value.code == 405
+    assert caught.value.headers.get("Allow") == "POST"
+
+
+# -- the switch -------------------------------------------------------------
+
+def _real_keymap(tmp_path):
+    from keyhac.core.keymap import Keymap
+    from keyhac.platform.fake import FakeFocusProvider
+    from tests.conftest import FakeInputHook
+
+    config = tmp_path / "config.py"
+    config.write_text("def configure(keymap):\n    pass\n")
+    keymap = Keymap(FakeInputHook("ansi"), FakeFocusProvider(), "mac",
+                    config_path=str(config), template_path=str(config))
+    keymap.configure()
+    return keymap
+
+
+def test_the_switch_reports_and_moves(tmp_path):
+    """`mcp_server_running` is what both faces of the switch read to draw
+    themselves, so it has to follow the socket rather than the request."""
+    keymap = _real_keymap(tmp_path)
+    assert keymap.mcp_server_running is False
+    keymap.start_mcp_server()
+    try:
+        assert keymap.mcp_server_running is True
+        keymap.start_mcp_server()          # idempotent: the menu can double-fire
+        assert keymap.mcp_server_running is True
+    finally:
+        keymap.stop_mcp_server()
+    assert keymap.mcp_server_running is False
+
+
+def test_the_removed_config_call_says_where_the_switch_went(tmp_path):
+    """A config written against 2.2.0's documentation still exists in the
+    world; it should fail with an instruction, not an AttributeError. Delete
+    this test and the shim together in 2.3.0."""
+    keymap = _real_keymap(tmp_path)
+    with pytest.raises(RuntimeError) as caught:
+        keymap.enable_mcp_server()
+    assert "tray menu" in str(caught.value)
+    assert "console" in str(caught.value)
+
+
 # -- the bridge -------------------------------------------------------------
 
 def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
@@ -279,7 +335,7 @@ def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
                         io.StringIO('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n'))
     bridge.main([])
     reply = json.loads(capsys.readouterr().out)
-    assert "enable_mcp_server" in reply["error"]["message"]
+    assert "MCP server" in reply["error"]["message"]
 
 
 def test_a_hollow_web_area_points_at_content_access(registry):
