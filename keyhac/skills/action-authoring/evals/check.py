@@ -107,8 +107,14 @@ def _accumulator_escapes(tree: ast.AST) -> list[str]:
 #: Calls that mean this action *changes* the UI rather than only reading it.
 ACTS_ON_UI = re.compile(r"\b(press|set_text|set_checked|perform_action)\s*\(")
 
+#: Every spelling of a wait in the method-style API: node.wait_for(),
+#: node.wait_until_gone(), node.wait_until_stable(), ui.wait().  The first
+#: version of this pattern knew only the function-style `wait_for(`, and went
+#: red on two actions the moment the API changed under it - which is the
+#: checker doing its job, but it has to learn the new vocabulary to keep doing
+#: it rather than being switched off.
 REQUIRED = [
-    (re.compile(r"\bwait_for\w*\("),
+    (re.compile(r"\bwait_for\w*\s*\(|\bwait_until_\w+\s*\(|\.wait\s*\("),
      "no wait: an action that acts on the UI must wait for it (rule 1)"),
 ]
 

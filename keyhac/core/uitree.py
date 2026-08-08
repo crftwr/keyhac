@@ -133,6 +133,121 @@ class UINode:
             bits.append(f"id={self.identifier!r}")
         return f"UINode({' '.join(bits)})"
 
+    # -- searching -----------------------------------------------------------
+    #
+    # Every method below reads the live UI, so every one dispatches to the
+    # event-loop thread itself.  That is not a convenience: element access is
+    # main-thread-only, an action's pipeline runs on a worker, and making each
+    # call site remember that produced a wrapper around nearly every line of
+    # the first six actions written against this API.
+
+    def find(self, **criteria) -> "UINode | None":
+        """The first element below this one matching `criteria`, or None.
+
+        Criteria are `role`, `name`, `value`, `identifier`, `text` and
+        `predicate`; patterns are case-insensitive fnmatch with "|"
+        alternation.  None rather than an exception, because only the caller
+        knows whether a missing element is a failed precondition or an
+        expected absence - `wait_for` is the one that insists.
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        return evaluate_on_main_thread(lambda: find_element(self, **criteria))
+
+    def find_all(self, **criteria) -> list["UINode"]:
+        """Every element below this one matching `criteria`, in tree order."""
+        from keyhac.core.wait import evaluate_on_main_thread
+        return evaluate_on_main_thread(lambda: find_elements(self, **criteria))
+
+    def reread(self, max_depth: int = DEFAULT_MAX_DEPTH,
+               max_nodes: int = DEFAULT_MAX_NODES,
+               roles: str | None = None, prune=None) -> "UINode":
+        """Read this subtree again, returning a fresh node.
+
+        A UINode is a snapshot: the screen moves on, and nothing here notices.
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        return evaluate_on_main_thread(lambda: get_ui_tree(
+            self, max_depth=max_depth, max_nodes=max_nodes, roles=roles,
+            prune=prune))
+
+    def dump(self, max_value: int = 60) -> str:
+        """This subtree as indented text - to read, and to hand to Claude."""
+        return format_tree(self, max_value=max_value)
+
+    # -- the text layer ------------------------------------------------------
+
+    def read_text(self) -> str | None:
+        """The whole text content, descending into child text nodes.
+
+        Distinct from the `text` / `all_text` properties, which are free reads
+        of the snapshot: this asks the application, and is what a terminal
+        buffer or a document body needs.
+        """
+        return self._on_element("get_text")
+
+    def line_at_caret(self) -> str | None:
+        """The line the caret is on - no selection, no pointer."""
+        return self._on_element("get_line_at_caret")
+
+    def selection(self) -> str | None:
+        """The selected text ("" is a real answer, meaning a bare caret)."""
+        return self._on_element("get_selection")
+
+    # -- acting --------------------------------------------------------------
+
+    def press(self) -> None:
+        """Press this element, by whichever action name the platform uses."""
+        from keyhac.core.fill import press
+        press(self)
+
+    def focus(self) -> bool:
+        """Give this element keyboard focus; True when it actually landed."""
+        from keyhac.core.fill import focus
+        return focus(self)
+
+    def set_text(self, text: str, **options) -> str:
+        """Write `text` into this field and prove it arrived.
+
+        Returns the mechanism that worked; raises `FillFailed` when none did.
+        Takes the same options as `keyhac.core.fill.set_text`.
+        """
+        from keyhac.core.fill import set_text
+        return set_text(self, text, **options)
+
+    def set_checked(self, checked: bool) -> bool:
+        """Set a checkbox, reading it first. True when it pressed."""
+        from keyhac.core.fill import set_checked
+        return set_checked(self, checked)
+
+    # -- waiting, scoped to this subtree -------------------------------------
+
+    def wait_for(self, timeout: float = 10.0, message: str | None = None,
+                 **criteria) -> "UINode":
+        """Wait until an element matching `criteria` exists below this one."""
+        from keyhac.core.wait import wait_for_element
+        return wait_for_element(self, timeout=timeout, message=message,
+                                **criteria)
+
+    def wait_until_gone(self, timeout: float = 10.0,
+                        message: str | None = None, **criteria) -> None:
+        """Wait until nothing below this one matches `criteria`."""
+        from keyhac.core.wait import wait_until_gone
+        wait_until_gone(self, timeout=timeout, message=message, **criteria)
+
+    def wait_until_stable(self, quiet: float = 0.3, timeout: float = 10.0,
+                          **bounds) -> None:
+        """Wait until this subtree stops changing."""
+        from keyhac.core.wait import wait_for_stable
+        wait_for_stable(self, quiet=quiet, timeout=timeout, **bounds)
+
+    def _on_element(self, method: str):
+        from keyhac.core.wait import evaluate_on_main_thread
+        call = getattr(self.element, method, None)
+        if call is None:
+            return None
+        return evaluate_on_main_thread(call)
+
+
     def walk(self) -> Iterator["UINode"]:
         """This node and every descendant, depth first."""
         yield self

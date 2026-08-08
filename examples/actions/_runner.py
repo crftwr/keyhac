@@ -40,6 +40,15 @@ def _platform_parts():
     return None
 
 
+def window_provider():
+    """The platform WindowProvider, which main() wires and a bare Keymap lacks."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.window import MacWindowProvider
+        return MacWindowProvider()
+    from keyhac.platform.win.window import WinWindowProvider
+    return WinWindowProvider()
+
+
 def run_action(action) -> int:
     """Drive one ThreadedAction to completion, then stop the loop."""
     parts = _platform_parts()
@@ -66,6 +75,10 @@ def run_action(action) -> int:
     # Silent, and it cost an afternoon of blaming the OS.
     keymap.configure()
     keymap.set_main_thread_dispatcher(loop.call_on_main_thread)
+    # main() wires this; a bare Keymap has none, and without it keymap.ui's
+    # window lookups return None - which reads exactly like "the application
+    # has no window" rather than "this harness is incomplete".
+    keymap.window_provider = window_provider()
 
     clipboard = Clipboard()
     history = ClipboardHistory(clipboard, str(config.with_name("_runner_clip.json")))
@@ -98,49 +111,3 @@ def run_action(action) -> int:
         config.unlink(missing_ok=True)
         config.with_name("_runner_clip.json").unlink(missing_ok=True)
     return status["code"]
-
-
-def front_window(app_name: str):
-    """The frontmost window of a running application, as a UIElement.
-
-    macOS only, and the second return value is the *application* element -
-    there is no such thing on Windows, where a process is reached through its
-    windows rather than the other way round.  Main-thread only, like every
-    other element read.
-    """
-    import ApplicationServices as AS
-    from AppKit import NSWorkspace
-    from keyhac.platform.mac.uielement import UIElement
-
-    for app in NSWorkspace.sharedWorkspace().runningApplications():
-        if str(app.localizedName()) == app_name:
-            element = UIElement(AS.AXUIElementCreateApplication(
-                app.processIdentifier()))
-            AS.AXUIElementSetMessagingTimeout(element._ref, 5.0)
-            windows = element.get_attribute_value("AXWindows") or []
-            return (windows[0] if windows else None), element
-    return None, None
-
-
-def top_level_windows(title_contains: str = "") -> list:
-    """Visible top-level windows whose title contains `title_contains`.
-
-    Windows only, and the counterpart of `front_window` rather than a portable
-    version of it: the two platforms genuinely disagree about how a window is
-    reached. macOS goes through the application element, so an action there
-    starts from an app name. A control-panel applet has no application of its
-    own to start from - it is hosted in a shared process - so on Windows the
-    desktop's children are enumerated and filtered by title instead.
-
-    Main-thread only, like every other element read.
-    """
-    from keyhac.platform.win.uielement import UIElement
-    from keyhac.platform.win.window import WinWindowProvider
-
-    found = []
-    for window in WinWindowProvider().list_windows():
-        if title_contains.lower() in (window.title or "").lower():
-            element = UIElement.from_hwnd(window.hwnd)
-            if element is not None:
-                found.append(element)
-    return found

@@ -313,159 +313,25 @@ gentle: an unsupported attribute reads `None`, an unknown action logs and return
 `False`. `focus.native` is the platform power object — the same AX element on
 macOS, an HWND wrapper on Windows.
 
-### Searching the element tree
+### Driving another application: the action API
 
-Attribute *names* differ per OS, but the tree itself has the same shape on both,
-so traversal and search are portable and need no `keymap.platform` branch:
-
-```python
-from keyhac import find_element, find_elements, get_ui_tree, format_tree
-
-field = find_element(keymap.focus.element, name="Query")
-field.element.set_value("REC-001")            # .element is the platform element
-
-for row in find_elements(window, role="AXRow|DataItem"):
-    print([c.all_text for c in row.children])
-```
-
-`get_ui_tree(root, max_depth=…, max_nodes=…, roles=…, prune=…)` returns a
-`UINode` tree; `find_element` / `find_elements` search it by `role`, `name`,
-`value`, `identifier`, `text` or a `predicate`. Patterns are the same
-case-insensitive fnmatch with `|` alternation used by `define_keytable`, and
-role patterns accept the macOS names with or without their `AX` prefix
-(`role="Button"` matches `AXButton`).
-
-Each `UINode` carries `role`, `name` (the label), `value` (the content),
-`identifier` (DOM id / `AXIdentifier` / `AutomationId` — the most stable thing
-to address an element by), `rect`, `children`, and `element`, the platform
-element for anything outside that projection. Two conveniences matter more than
-they look:
-
-- `node.text` is label and content together, and keeps falsy values — an
-  unchecked checkbox really is `0`.
-- `node.all_text` reaches into descendants. Web content puts a table cell's
-  string in a child node, so `cell.text` is empty and `cell.all_text` is what
-  you want.
-
-`format_tree(node)` renders the tree as indented text, which is what to paste
-into a conversation when asking Claude to write an action against a screen.
-
-**Budgets**: the walk stops at `max_depth` (14) or `max_nodes` (1000) and marks
-the node where it stopped `truncated` — check it rather than assume a short tree
-means a small screen.
-
-**Chromium and Electron apps expose nothing until asked** (macOS). Chrome, Edge,
-VS Code, Slack and friends build their accessibility tree only for an assistive
-client: until then a loaded page is browser chrome with no document in it. Turn
-it on for that application element, and off when done:
+Reading and writing another application's UI — searching element trees, waiting
+for a screen to change, filling fields — is a separate surface reached through
+`keymap.ui` (or `self.ui` inside a `ThreadedAction`):
 
 ```python
-app = keymap.focus.element         # or an application element
-app.set_manual_accessibility(True)
+class Extract(ThreadedAction):
+    def run(self):
+        window = self.ui.window(app="Safari")
+        window.wait_for(role="AXTable", message="the results to load")
+        for row in window.find_all(role="AXRow"):
+            print([cell.all_text for cell in row.children])
 ```
 
-### Reading text
-
-The tree does not reach into text: a terminal or an editor is one element
-holding an undifferentiated blob, so "the error line" cannot be found by
-traversal. Four accessors cover it, on both platforms:
-
-| | What |
-|---|---|
-| `element.get_text()` | The whole content, descending into child text nodes when the container's own value is empty (which is the web case) |
-| `element.get_line_at_caret()` | The line the caret is on — no selection, no pointer |
-| `element.get_selection()` | The selected text (`""` is a real answer) |
-| `UIElement.element_at_point(x, y)` | The element under a screen point, in whichever app owns it |
-
-Once the text is in hand the work is a regex, not guesswork — that is more
-accurate than inference for paths, line numbers, URLs and request IDs, not
-merely cheaper.
-
-### Waiting for the UI
-
-Anything that acts on the UI spends most of its time waiting: a modal opens, a
-page loads, a dependent field re-renders. `sleep` is the wrong tool — it passes
-on the machine it was written on and fails on a slower one, and on a faster one
-it fails *silently*, acting on a screen that has not arrived.
-
-```python
-from keyhac import wait_for, wait_for_element, wait_until_gone, wait_for_stable
-
-class OpenDetails(ThreadedAction):
-    def run(self):                                   # worker thread
-        button.element.perform_action("AXPress")
-        modal = wait_for_element(window, identifier="modal-text", timeout=5)
-        text = modal.all_text
-        close.element.perform_action("AXPress")
-        wait_until_gone(window, identifier="modal-text")   # the third beat
-        return text
-```
-
-That third wait is the one that breaks iteration when it is left out: without
-it the next cycle starts while the previous modal is still up, and clicks land
-in it.
-
-- `wait_for(condition, timeout, message=…)` returns whatever the condition
-  returned, so `element = wait_for(lambda: find_element(...))` is one step.
-- `wait_for_element(root, timeout, **criteria)` / `wait_until_gone(...)` take
-  the same criteria as `find_element`.
-- `wait_for_stable(root, quiet=0.3)` waits for a subtree to stop changing —
-  the fallback when there is no specific thing to wait for. It re-reads the
-  tree on each check, so bound it with `max_depth` / `max_nodes` on anything
-  large.
-- A timeout raises `WaitTimeout` (a `TimeoutError`). It is an error and not a
-  `False` on purpose: an action whose precondition never arrived should stop,
-  not carry on against a screen that is not there.
-
-**Waiting belongs in `ThreadedAction.run()`.** Called on the event-loop thread
-it would block the keyboard hook, so it raises `RuntimeError` instead of
-hanging your keyboard. The condition itself is dispatched back to the event-loop
-thread automatically, which is what makes it legal to read elements from a
-worker here; `keymap.call_on_main_thread` is the general form of that.
-
-### Writing into the UI
-
-Three mechanisms, and they are not interchangeable — choosing wrong fails in
-ways that look like success:
-
-| | How | Cost |
-|---|---|---|
-| `paste` | clipboard + Cmd/Ctrl-V | ~105 ms; bypasses the IME; costs the clipboard |
-| `keys` | key injection | ~70 ms; works everywhere; IME-dependent |
-| `set_value` | `AXValue` / UIA Value pattern | ~5 ms; **React and Vue commonly do not observe it** |
-
-`set_text()` tries paste, then keys, and **reads the value back either way** —
-a write that cannot be read back raises `FillFailed` rather than being logged
-and forgotten:
-
-```python
-from keyhac import set_text, set_checked, press, preserve_clipboard
-
-set_text(field, "REC-001")                    # returns the method that worked
-set_checked(urgent_box, True)                 # reads before pressing
-press(submit_button)                          # AXPress / Invoke / Toggle
-```
-
-Three rules the API enforces so your action does not have to:
-
-- **Focus is verified, not assumed.** `set_text` refuses to write when focus
-  did not land — an unfocused write fails silently, and unfocused *keystrokes*
-  go to whatever does have focus, which is usually the window behind.
-- **A checkbox is read before it is pressed.** Pressing toggles, so
-  `set_checked(box, True)` twice would untick it and a resumed run would undo
-  its own work.
-- **The clipboard goes back afterwards** — `set_text` restores it around a
-  paste, and `preserve_clipboard()` is available for anything else. Note the
-  restore waits until the value has actually arrived: putting it back as soon
-  as the keystroke is posted races the application, and the field ends up
-  holding whatever was on the clipboard *before*.
-
-Waits poll, starting at 20 ms and backing off to 250 ms. There is no
-event-subscription alternative and deliberately so: notifications are posted
-generously by native Cocoa applications and **not at all** by WebKit or
-Chromium content, which is where this kind of work happens. Polling catches a
-modal 10–25 ms after the click, which is as fast as a notification would have
-been.
+It is deliberately its own namespace and method-style: a config binds keys, an
+action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
+`FillFailed` are importable. **See [Action API](action_api.md)** for the full
+surface, and `keyhac/skills/action-authoring/` for how to write one.
 
 ## Keyboard macros
 

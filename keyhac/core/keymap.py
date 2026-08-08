@@ -746,6 +746,21 @@ class Keymap:
         return []
 
     @property
+    def ui(self):
+        """The action-facing UI API - see doc/action_api.md.
+
+        Reading and driving another application's elements: finding windows,
+        searching trees, waiting for the screen to change, filling fields.
+        Deliberately a separate namespace from the configuration API, and
+        deliberately method-style, so `from keyhac import *` does not acquire a
+        dozen generic verbs that only mean something inside an action.
+        """
+        if getattr(self, "_ui", None) is None:
+            from keyhac.core.ui import UI
+            self._ui = UI(self)
+        return self._ui
+
+    @property
     def clipboard_history(self):
         """The ClipboardHistory object (None while running without one, e.g.
         under --no-ui)."""

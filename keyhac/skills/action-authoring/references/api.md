@@ -1,128 +1,125 @@
 # API reference for actions
 
-Everything here is importable from `keyhac`. Fuller prose in
-`doc/configuration.md`; this is the working subset for writing an action.
+Everything an action needs hangs off `self.ui` inside a `ThreadedAction`
+(`keymap.ui` elsewhere) and off the nodes it hands back. Only three names are
+importable: `UINode`, `WaitTimeout`, `FillFailed`. The generated reference is
+`doc/action_api.md`; this is the working subset.
 
-## Reading the tree
+## Getting a root
 
 ```python
-from keyhac import get_ui_tree, find_element, find_elements, format_tree
+ui = self.ui                                  # inside a ThreadedAction
 
-tree  = get_ui_tree(root, max_depth=14, max_nodes=1000, roles=None, prune=None)
-node  = find_element(root, identifier="q")          # None when absent
-nodes = find_elements(root, role="AXRow|DataItem")
-print(format_tree(tree))                            # indented text, for reading
+node   = ui.focused()                         # the focused element
+window = ui.window(app="Safari")              # a window, to search inside
+windows= ui.windows(app="Terminal")           # all matching windows
+node   = ui.at_point(x, y)                    # whatever is under a point
+node   = ui.node(some_platform_element)       # wrap something you already have
 ```
 
-`root` is a platform element (`keymap.focus.element`, an application element, a
-window) or a `UINode`.
+`window()` / `windows()` match like `define_keytable`: case-insensitive
+fnmatch, `|` alternation, `.exe` optional on Windows.
 
-**Criteria** — `role`, `name`, `value`, `identifier`, `text`, `predicate`.
-Patterns are case-insensitive fnmatch with `|` alternation, the same matching
-`define_keytable` uses. Role patterns accept macOS names with or without the
-`AX` prefix (`role="Button"` matches `AXButton`).
+## Searching
 
-**UINode** carries `role`, `name` (the label), `value` (the content),
-`identifier` (DOM id / `AXIdentifier` / `AutomationId`), `rect`, `depth`,
-`children`, `truncated`, and `element` - the platform element, for anything
-outside this projection.
+```python
+field = window.find(identifier="q")           # first match, or None
+rows  = window.find_all(role="AXRow|DataItem")
+tree  = window.reread(max_depth=12, max_nodes=800)   # fresh snapshot
+print(window.dump())                          # indented text, for reading
+for node in tree.walk(): ...
+```
+
+**Criteria** — `role`, `name`, `value`, `identifier`, `text`, `predicate`, plus
+`max_depth` / `max_nodes` on `find_all` and `reread`. Role patterns accept the
+macOS names with or without the `AX` prefix, but the prefix is stripped from
+the *role*, not the pattern: `role="AXTable"` matches nothing on Windows.
+
+**A node is a snapshot.** `find`/`find_all` read the live UI each time; the
+node they return does not update. Re-`find` after the screen changes.
 
 | | Use for |
 |---|---|
-| `node.text` | this element's own label + content; keeps falsy values (`0`, `""`) |
-| `node.all_text` | the subtree's text - what a table **cell** needs, since web content puts the string in a child |
-| `node.name` | anything that has its own label: a heading, a button, a field |
-
-`truncated` is set where the walk hit `max_depth` or `max_nodes`. Check it
-before concluding a screen is small.
+| `node.text` | its own label + content; keeps falsy values (`0`, `""`) |
+| `node.all_text` | the subtree's text — what a **table cell** needs |
+| `node.name` | anything with its own label: a heading, a button, a field |
+| `node.identifier` | DOM id / AutomationId — but not macOS `_NS:*` nib numbers |
+| `node.truncated` | the walk hit a bound here; not a leaf |
+| `node.element` | the platform element, for anything this API does not wrap |
 
 ## Waiting
 
 ```python
-from keyhac import wait_for, wait_for_element, wait_until_gone, wait_for_stable, WaitTimeout
-
-value  = wait_for(lambda: condition(), timeout=10, message="the job to finish")
-node   = wait_for_element(window, identifier="modal", timeout=5, message="the sheet to open")
-wait_until_gone(window, identifier="modal", message="the sheet to close")
-wait_for_stable(window, quiet=0.3, max_nodes=300)
+node = window.wait_for(identifier="modal", timeout=5,
+                       message="the sheet to open")
+window.wait_until_gone(identifier="modal", message="the sheet to close")
+window.wait_until_stable(quiet=0.3, max_nodes=300)
+value = ui.wait(lambda: something(), timeout=10, message="the job to finish")
 ```
 
-`wait_for` returns whatever the condition returned, so
-`node = wait_for(lambda: find_element(...))` is one step. A timeout raises
-`WaitTimeout` (a `TimeoutError`) - an error, not a `False`, because an action
-whose precondition never arrived must stop.
+`ui.wait` returns what the condition returned. A timeout raises `WaitTimeout`
+(a `TimeoutError`) — an error, not a `False`, because an action whose
+precondition never arrived must stop.
 
 The three-beat, for every menu, modal and sheet:
 
 ```python
-press(opener)
-node = wait_for_element(window, identifier="dialog-title")   # 1: appears
-...                                                          # 2: act
-wait_until_gone(window, identifier="dialog-title")           # 3: gone
+opener.press()
+dialog = window.wait_for(identifier="dialog-title")   # 1: appears
+...                                                   # 2: act
+window.wait_until_gone(identifier="dialog-title")     # 3: gone
 ```
 
-Beat 3 is the one that breaks iteration when omitted: the next cycle starts
-while the previous dialog is still up, and presses land in it.
+Beat 3 is the one that breaks iteration when omitted.
+
+## Reading text the tree cannot reach
+
+```python
+buffer = node.read_text()        # whole content, descending into child nodes
+line   = node.line_at_caret()    # no selection, no pointer
+sel    = node.selection()        # "" is a real answer
+```
 
 ## Writing
 
 ```python
-from keyhac import set_text, set_checked, press, focus, preserve_clipboard, FillFailed
-
-used = set_text(field, "REC-001")      # paste → keys; returns the method used
-set_checked(box, True)                 # reads first; returns whether it pressed
-press(button)                          # AXPress / Invoke / Toggle
+used = field.set_text("REC-001")     # paste → keys; returns which worked
+box.set_checked(True)                # reads first; True if it pressed
+button.press()                       # AXPress / Invoke / Toggle / Select
+ok = field.focus()                   # verified against the system focus
+with ui.preserve_clipboard(): ...
 ```
 
-| mechanism | cost | caveat |
+| mechanism | cost (macOS / Windows) | caveat |
 |---|---|---|
-| `paste` (default) | ~105 ms | costs the clipboard; some fields refuse paste |
-| `keys` (fallback) | ~70 ms | goes through the IME |
-| `set_value` (opt-in) | ~5 ms | React/Vue frequently do not observe it |
+| `paste` (default) | ~105 / 48–95 ms | costs the clipboard; some fields refuse it |
+| `keys` (fallback) | ~70 / 114–272 ms | goes through the IME |
+| `set_value` (opt-in) | ~5 / 15–33 ms | React/Vue frequently do not observe it |
 
-`set_text(field, text, methods=("paste", "keys"), clear=True, verify=True)`
-focuses first, verifies focus landed, writes, and reads the value back; it
-raises `FillFailed` naming what each mechanism did. Pass
-`methods=("set_value",)` deliberately, never for speed.
+`set_text` focuses first, verifies focus landed, writes, and reads the value
+back; it raises `FillFailed` naming what each mechanism did. `verify=False`
+removes the only signal that the write landed *and* that the clipboard is safe
+to restore — password fields or nothing.
 
-`preserve_clipboard()` restores the clipboard around a block. `set_text`
-already does this internally, and holds the swap until the value has arrived -
-restoring earlier races the application.
-
-## Threading
+## Threads
 
 ```python
-from keyhac import ThreadedAction
-from keyhac.core.wait import evaluate_on_main_thread
+value = ui.on_main_thread(lambda: ...)     # rarely needed
 ```
 
-- `starting()` / `finished(result)` — loop thread. UI, windows, elements OK.
-  Keep light; they hold the lock the keyboard hook needs.
-- `run()` — worker. May block. Wrap element reads in
-  `evaluate_on_main_thread(lambda: ...)`; the `wait_*` and `fill` helpers do it
-  for you.
-- The pool is **one worker shared by every threaded action**, so a long run
-  delays the others.
+Every method above dispatches to the event-loop thread itself. `on_main_thread`
+is for making several reads atomic against a moving UI, or for calling a
+platform element method this API does not wrap. `starting()` and `finished()`
+already run there; `run()` does not, and must not block it — waiting there
+raises rather than freezing the keyboard.
 
-## Platform elements
-
-Reached with `node.element` when the projection is not enough.
+## The one platform-specific call
 
 ```python
-element.get_text()             # whole content, descending into child text nodes
-element.get_line_at_caret()    # the caret's line - no selection, no pointer
-element.get_selection()        # "" is a real answer
-element.set_focus()            # verified against the system-wide focused element
-UIElement.element_at_point(x, y)
-element.get_attribute_value("AXVisibleCharacterRange")   # anything else
+ui.enable_content_access(node)          # ...and False when done
 ```
 
-Attribute *names* are the OS's own (`AXRole` vs `ControlType`); branch on
-`keymap.platform` if you need them. The tree API above is portable and usually
-makes that unnecessary.
-
-macOS only, for Chromium and Electron targets:
-
-```python
-app_element.set_manual_accessibility(True)    # …and False when done
-```
+macOS only, and safe to call anywhere: Chromium and Electron applications
+expose no content until asked (59 nodes of browser chrome → 119). Windows needs
+nothing equivalent and returns `False`, so call it unconditionally rather than
+branching.

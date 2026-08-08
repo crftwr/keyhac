@@ -28,11 +28,9 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import front_window, run_action                      # noqa: E402
+from _runner import run_action                                    # noqa: E402
+from keyhac import WaitTimeout                                    # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.uitree import find_element                       # noqa: E402
-from keyhac.core.wait import (WaitTimeout, evaluate_on_main_thread,  # noqa: E402
-                              wait_for, wait_for_element, wait_until_gone)
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("HandleQueue")
@@ -69,10 +67,11 @@ class HandleQueue(ThreadedAction):
 
     def run(self):
         subprocess.run(["open", "-a", self.app_name, self.url], check=True)
-        window = wait_for(lambda: front_window(self.app_name)[0], timeout=20,
-                          message=f"{self.app_name} to open a window")
-        wait_for_element(window, identifier="next-item", timeout=20,
-                         message="the queue page to load")
+        window = self.ui.wait(lambda: self.ui.window(app=self.app_name),
+                              timeout=20,
+                              message=f"{self.app_name} to open a window")
+        window.wait_for(identifier="next-item", timeout=20,
+                        message="the queue page to load")
 
         for _ in range(self.limit):
             try:
@@ -92,40 +91,36 @@ class HandleQueue(ThreadedAction):
         if result["stopped"]:
             logger.error(f"stopped: {result['stopped']}")
         # The one thing this example must never print on a clean run.
-        state = evaluate_on_main_thread(self._log_line)
+        state = self._log_line()
         if state and "DESTROYED" in state:
             logger.error(f"page says: {state}")
 
     # -- one item -----------------------------------------------------------
 
     def _one_item(self, window) -> None:
-        opener = evaluate_on_main_thread(
-            lambda: find_element(window, identifier="next-item"))
+        opener = window.find(identifier="next-item")
         if opener is None:
             raise PreconditionFailed("the queue page no longer has its button")
-        evaluate_on_main_thread(lambda: opener.element.perform_action("AXPress"))
+        opener.press()
 
         # Beat 1: wait for *a* dialog. Deliberately not for the one we want -
         # we have to look at what actually appeared before deciding.
-        title = wait_for_element(window, role="AXHeading", timeout=10,
-                                 message="a dialog to open")
+        title = window.wait_for(role="AXHeading", timeout=10,
+                                message="a dialog to open")
         self._check(window, title)
 
-        approve = evaluate_on_main_thread(
-            lambda: find_element(window, role="AXButton",
-                                 text=self.EXPECTED_BUTTON))
-        detail = evaluate_on_main_thread(
-            lambda: find_element(window, identifier="confirm-detail"))
+        approve = window.find(role="AXButton", text=self.EXPECTED_BUTTON)
+        detail = window.find(identifier="confirm-detail")
         item = detail.all_text.strip() if detail else "?"
 
         # Beat 2: act.
-        evaluate_on_main_thread(lambda: approve.element.perform_action("AXPress"))
+        approve.press()
         self.handled.append(item)
 
         # Beat 3: wait for it to go before the next iteration starts.  Leaving
         # this out is what makes the next cycle press into a closing dialog.
-        wait_until_gone(window, role="AXButton", text=self.EXPECTED_BUTTON,
-                        timeout=10, message="the dialog to close")
+        window.wait_until_gone(role="AXButton", text=self.EXPECTED_BUTTON,
+                               timeout=10, message="the dialog to close")
 
     def _check(self, window, title) -> None:
         """Every precondition, before any press.
@@ -142,16 +137,14 @@ class HandleQueue(ThreadedAction):
             raise PreconditionFailed(
                 f"dialog says {heading!r}, expected {self.EXPECTED_TITLE!r} - "
                 f"the queue is done or the page changed; not pressing anything")
-        button = evaluate_on_main_thread(
-            lambda: find_element(window, role="AXButton",
-                                 text=self.EXPECTED_BUTTON))
+        button = window.find(role="AXButton", text=self.EXPECTED_BUTTON)
         if button is None:
             raise PreconditionFailed(
                 f"no {self.EXPECTED_BUTTON!r} button in the dialog")
 
     def _log_line(self):
-        window, _ = front_window(self.app_name)
-        node = find_element(window, identifier="log") if window else None
+        window = self.ui.window(app=self.app_name)
+        node = window.find(identifier="log") if window else None
         return node.all_text.strip() if node else None
 
 

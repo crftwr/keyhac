@@ -35,11 +35,8 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import front_window, run_action                      # noqa: E402
+from _runner import run_action                                    # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.fill import press                                # noqa: E402
-from keyhac.core.uitree import find_elements, get_ui_tree         # noqa: E402
-from keyhac.core.wait import evaluate_on_main_thread, wait_for    # noqa: E402
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("SnapshotSettings")
@@ -65,10 +62,10 @@ class SnapshotSettings(ThreadedAction):
         logger.info(f"snapshotting {self.app_name} settings")
 
     def run(self):
-        window = wait_for(lambda: self._settings_window(), timeout=20,
-                          message=f"the {self.app_name} settings window")
-        tabs = evaluate_on_main_thread(lambda: [
-            (node.name, node.value) for node in self._tabs(window) if node.name])
+        window = self.ui.wait(self._settings_window, timeout=20,
+                              message=f"the {self.app_name} settings window")
+        tabs = [(node.name, node.value)
+                for node in self._tabs(window) if node.name]
         if not tabs:
             raise RuntimeError("no tabs in this settings window")
         originally = next((name for name, value in tabs if str(value) == "1"), None)
@@ -102,28 +99,26 @@ class SnapshotSettings(ThreadedAction):
         proceeds and cannot be matched against anything fixed.  AXDialog plus a
         tab group is what actually identifies it.
         """
-        window, app = front_window(self.app_name)
-        if app is None:
-            return None
-        for candidate in (app.get_attribute_value("AXWindows") or []):
-            if candidate.get_attribute_value("AXSubrole") != "AXDialog":
+        for candidate in self.ui.windows(app=self.app_name):
+            subrole = self.ui.on_main_thread(
+                lambda c=candidate: c.element.get_attribute_value("AXSubrole"))
+            if subrole != "AXDialog":
                 continue
-            if find_elements(candidate, role="AXTabGroup", max_depth=4):
+            if candidate.find_all(role="AXTabGroup", max_depth=4):
                 return candidate
         return None
 
     def _select(self, window, name: str) -> None:
-        tab = evaluate_on_main_thread(lambda: self._tab(window, name))
+        tab = self._tab(window, name)
         if tab is None:
             raise RuntimeError(f"no tab named {name!r} any more")
         if str(tab.value) == "1":
             return                          # already there: pressing re-selects
-        press(tab)
+        tab.press()
         # Wait for the tab to report itself selected, not for the window to
         # look busy: the value is the signal the control itself publishes.
-        wait_for(lambda: str(getattr(
-            evaluate_on_main_thread(lambda: self._tab(window, name)),
-            "value", "")) == "1",
+        self.ui.wait(
+            lambda: str(getattr(self._tab(window, name), "value", "")) == "1",
             timeout=10, message=f"the {name!r} tab to become selected")
 
     @staticmethod
@@ -136,7 +131,7 @@ class SnapshotSettings(ThreadedAction):
         available memory" as a seventh tab and then failed trying to select it.
         A tab is defined by its parent, not by its role.
         """
-        groups = find_elements(window, role="AXTabGroup", max_depth=6)
+        groups = window.find_all(role="AXTabGroup", max_depth=6)
         if not groups:
             return []
         return [child for child in groups[0].children
@@ -161,7 +156,7 @@ class SnapshotSettings(ThreadedAction):
         window on a different tab.
         """
         def read():
-            tree = get_ui_tree(window, max_depth=12, max_nodes=800)
+            tree = window.reread(max_depth=12, max_nodes=800)
             nodes = list(tree.walk())
             labels = [n for n in nodes if n.role == "AXStaticText" and n.rect]
             values = {}
@@ -180,7 +175,7 @@ class SnapshotSettings(ThreadedAction):
                 values[key] = node.value
             return values
 
-        return evaluate_on_main_thread(read)
+        return self.ui.on_main_thread(read)
 
     @staticmethod
     def _label_for(node, labels) -> str | None:

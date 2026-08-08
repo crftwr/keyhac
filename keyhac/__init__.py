@@ -16,15 +16,12 @@ from keyhac.core.action import (
     PlaybackRecordedKeys,
 )
 from keyhac.core.clipboard_history import ClipboardHistory
-from keyhac.core.uitree import (
-    UINode, find_element, find_elements, format_tree, get_ui_tree,
-)
-from keyhac.core.wait import (
-    WaitTimeout, wait_for, wait_for_element, wait_for_stable, wait_until_gone,
-)
-from keyhac.core.fill import (
-    FillFailed, focus, preserve_clipboard, press, set_checked, set_text,
-)
+# The action API is reached through keymap.ui and UINode's own methods (see
+# doc/action_api.md); only the node type and the two exceptions an action has
+# to be able to catch are named here.
+from keyhac.core.uitree import UINode
+from keyhac.core.wait import WaitTimeout
+from keyhac.core.fill import FillFailed
 from keyhac.actions import (
     ActivateWindow,
     MouseButtonClick,
@@ -60,20 +57,7 @@ __all__ = [
     "PlaybackRecordedKeys",
     "ClipboardHistory",
     "UINode",
-    "get_ui_tree",
-    "find_element",
-    "find_elements",
-    "format_tree",
-    "wait_for",
-    "wait_for_element",
-    "wait_until_gone",
-    "wait_for_stable",
     "WaitTimeout",
-    "set_text",
-    "set_checked",
-    "press",
-    "focus",
-    "preserve_clipboard",
     "FillFailed",
     "ChooserAction",
     "MouseButtonClick",

@@ -28,8 +28,7 @@ Look at the actual screen. Do not write selectors from memory or from what the
 page probably contains:
 
 ```python
-from keyhac import get_ui_tree, format_tree
-print(format_tree(get_ui_tree(keymap.focus.element)))
+print(keymap.ui.focused().reread().dump())        # or ui.window(app="Safari")
 ```
 
 If the state you need does not exist yet - a modal, a later wizard step - ask
@@ -72,14 +71,14 @@ that looks correct and is not.
    wrong question, address by **capability**: the thing you can tick is the one
    with a `ToggleState`, whatever it calls itself - and scope that search to the
    panel, or you will find a toolbar button that also toggles.
-3. **Read back after writing.** `set_text()` does this for you and raises
+3. **Read back after writing.** `node.set_text()` does this for you and raises
    `FillFailed`. Every write mechanism has a silent-failure mode; the read-back
    is what turns all of them into loud ones. `verify=False` is not a speed
    option: it removes the only signal that the write landed *and* the only
    signal that the clipboard is safe to restore. Use it for a password field or
    not at all.
-4. **Read before toggling.** A checkbox press *toggles*. `set_checked(box,
-   True)` twice would untick it, and a resumed run would undo its own work.
+4. **Read before toggling.** A checkbox press *toggles*. `box.set_checked(True)`
+   twice would untick it, and a resumed run would undo its own work.
 5. **Preconditions per step, before every press.** Not once at the top. The
    screen changes between item 2 and item 3, and a handler that trusts the
    dialog it saw last time will press the first button of a *different* dialog.
@@ -102,7 +101,7 @@ class ExtractThings(ThreadedAction):
         logger.info("extracting…")
 
     def run(self):                 # worker: the whole pipeline, may block
-        window = wait_for(lambda: front_window("Safari")[0], timeout=20)
+        window = self.ui.window(app="Safari")
         rows = []
         for target in targets:
             try:
@@ -116,9 +115,9 @@ class ExtractThings(ThreadedAction):
         logger.info(f"{len(result)} rows")
 ```
 
-Element reads inside `run()` go through `evaluate_on_main_thread(...)`; the
-`wait_*` helpers already do it. Calling `wait_for` *on* the loop thread raises
-rather than freezing the keyboard.
+`self.ui` and every node method dispatch to the loop thread themselves, so an
+action's body has no thread ceremony in it. Calling a *wait* on the loop
+thread raises rather than freezing the keyboard.
 
 ## Failure, progress, resume
 
@@ -157,7 +156,7 @@ Check the generated action against this list, and fix rather than explain:
 Domain knowledge is theirs and irreducible: which system, output paths and
 naming, column correspondences, which error formats their tools emit, what
 should happen on failure. **API names are not.** If you find yourself needing
-the user to say `get_ui_tree` or `set_value`, this skill has failed - fix the
+the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 
 Working examples of every pattern above: `examples/actions/` in the Keyhac

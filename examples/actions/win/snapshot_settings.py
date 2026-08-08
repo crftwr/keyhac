@@ -42,11 +42,8 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import run_action, top_level_windows                 # noqa: E402
+from _runner import run_action                                    # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.fill import press                                # noqa: E402
-from keyhac.core.uitree import find_elements, get_ui_tree         # noqa: E402
-from keyhac.core.wait import evaluate_on_main_thread, wait_for    # noqa: E402
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("SnapshotWinSettings")
@@ -82,13 +79,13 @@ class SnapshotWinSettings(ThreadedAction):
         logger.info(f"snapshotting {self.title}")
 
     def run(self):
-        window = wait_for(lambda: self._settings_window(), timeout=20,
+        window = self.ui.wait(self._settings_window, timeout=20,
                           message=f"the {self.title} dialog")
-        tabs = evaluate_on_main_thread(
+        tabs = (
             lambda: [node.name for node in self._tabs(window) if node.name])
         if not tabs:
             raise RuntimeError("no tab strip in this dialog")
-        originally = evaluate_on_main_thread(lambda: next(
+        originally = (next(
             (node.name for node in self._tabs(window) if self._is_selected(node)),
             None))
         logger.info(f"{len(tabs)} tabs, currently on {originally!r}")
@@ -123,21 +120,21 @@ class SnapshotWinSettings(ThreadedAction):
         in it is, and requiring that is what stops the walk starting on some
         other window that happens to be named similarly.
         """
-        for candidate in top_level_windows(self.title):
-            if find_elements(candidate, role="Tab", max_depth=4):
+        for candidate in self.ui.windows(title=self.title):
+            if candidate.find_all(role="Tab", max_depth=4):
                 return candidate
         return None
 
     def _select(self, window, name: str) -> None:
-        tab = evaluate_on_main_thread(lambda: self._tab(window, name))
+        tab = self._tab(window, name)
         if tab is None:
             raise RuntimeError(f"no tab named {name!r} any more")
-        if evaluate_on_main_thread(lambda: self._is_selected(tab)):
+        if self._is_selected(tab):
             return                          # already there: pressing re-selects
-        press(tab)                          # reaches SelectionItem::Select
+        tab.press()                         # reaches SelectionItem::Select
         # Wait for the tab to report itself selected, not for the dialog to look
         # busy: the selection is what the control itself publishes.
-        wait_for(lambda: self._is_selected(self._tab(window, name)),
+        self.ui.wait(lambda: self._is_selected(self._tab(window, name)),
                  timeout=10, message=f"the {name!r} tab to become selected")
 
     @staticmethod
@@ -161,7 +158,7 @@ class SnapshotWinSettings(ThreadedAction):
         "the selectable things near the top" would collect them and then fail
         trying to select one as a tab.
         """
-        strips = find_elements(window, role="Tab", max_depth=6)
+        strips = window.find_all(role="Tab", max_depth=6)
         if not strips:
             return []
         return [child for child in strips[0].children if child.role == "TabItem"]
@@ -186,7 +183,7 @@ class SnapshotWinSettings(ThreadedAction):
         different tab.
         """
         def read():
-            tree = get_ui_tree(window, max_depth=12, max_nodes=800)
+            tree = window.reread(max_depth=12, max_nodes=800)
             nodes = list(tree.walk())
             labels = [n for n in nodes if n.role == "Text" and n.rect]
             values = {}
@@ -208,7 +205,7 @@ class SnapshotWinSettings(ThreadedAction):
                 values[key] = state
             return values
 
-        return evaluate_on_main_thread(read)
+        return self.ui.on_main_thread(read)
 
     @staticmethod
     def _state_of(node):

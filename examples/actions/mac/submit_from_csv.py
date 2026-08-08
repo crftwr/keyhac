@@ -34,13 +34,9 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import front_window, run_action                      # noqa: E402
+from _runner import run_action                                    # noqa: E402
+from keyhac import FillFailed                                     # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.fill import (FillFailed, press, set_checked,     # noqa: E402
-                              set_text)
-from keyhac.core.uitree import find_element                       # noqa: E402
-from keyhac.core.wait import (evaluate_on_main_thread, wait_for,  # noqa: E402
-                              wait_for_element)
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("SubmitFromCsv")
@@ -73,10 +69,11 @@ class SubmitFromCsv(ThreadedAction):
             return {"ok": 0, "failed": 0, "skipped": len(rows)}
 
         subprocess.run(["open", "-a", self.app_name, self.url], check=True)
-        window = wait_for(lambda: front_window(self.app_name)[0], timeout=20,
-                          message=f"{self.app_name} to open a window")
-        wait_for_element(window, identifier="submit", timeout=20,
-                         message="the form to load")
+        window = self.ui.wait(lambda: self.ui.window(app=self.app_name),
+                              timeout=20,
+                              message=f"{self.app_name} to open a window")
+        window.wait_for(identifier="submit", timeout=20,
+                        message="the form to load")
 
         ok = failed = 0
         for row in todo[:self.limit]:
@@ -101,25 +98,21 @@ class SubmitFromCsv(ThreadedAction):
 
     def _submit(self, window, row) -> None:
         for column, identifier in FIELDS.items():
-            field = evaluate_on_main_thread(
-                lambda i=identifier: find_element(window, identifier=i))
+            field = window.find(identifier=identifier)
             if field is None:
                 raise RuntimeError(f"no field {identifier!r} on the form")
             # set_text reads the value back; a write that did not take raises
             # rather than letting the row submit half-filled.
-            set_text(field, row.get(column, ""))
+            field.set_text(row.get(column, ""))
 
-        urgent = evaluate_on_main_thread(
-            lambda: find_element(window, identifier="urgent"))
+        urgent = window.find(identifier="urgent")
         if urgent is not None:
             # Read before toggling: pressing blindly would invert whatever the
             # previous row left behind.
-            set_checked(urgent, row.get("urgent", "").strip().lower()
-                        in ("yes", "true", "1"))
+            urgent.set_checked(row.get("urgent", "").strip().lower()
+                               in ("yes", "true", "1"))
 
-        button = evaluate_on_main_thread(
-            lambda: find_element(window, identifier="submit"))
-        press(button)
+        window.find(identifier="submit").press()
 
         message = self._result_message(window, row)
         if message.startswith("error:"):
@@ -128,12 +121,12 @@ class SubmitFromCsv(ThreadedAction):
     def _result_message(self, window, row) -> str:
         """Whatever the form says happened - accepted, or why not."""
         def read():
-            node = find_element(window, identifier="result")
+            node = window.find(identifier="result")
             return node.all_text.strip() if node else ""
 
         reference = row.get("ref", "")
         try:
-            return wait_for(
+            return self.ui.wait(
                 lambda: read() or None, timeout=5,
                 message=f"the form to respond to {reference}")
         except Exception:

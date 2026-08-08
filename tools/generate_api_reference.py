@@ -103,6 +103,40 @@ FOOTER = """Generated from the docstrings by `make api-reference`. Edit the
 docstrings, not this file.
 """
 
+#: The action API is generated into its own document. It is a different
+#: audience with a different question: a config author asks "how do I bind a
+#: key", an action asks "how do I read that table". Mixing them is what grew a
+#: `press` and a `focus` into the config namespace in the first place.
+ACTION_API_NAMES = [
+    "UI",
+    "UINode",
+    "WaitTimeout",
+    "FillFailed",
+]
+
+ACTION_HEADER = """# Action API reference
+
+The surface an action uses to drive another application: finding windows,
+searching element trees, waiting for the screen to change, filling fields.
+Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
+methods on the nodes it hands back — the three names below are the only ones a
+config imports.
+
+Generated from the docstrings. For how to *write* an action, the authoring
+skill in `keyhac/skills/action-authoring/` is the procedural half, and
+`examples/actions/` holds working ones.
+
+**Cross-platform by shape, not by data.** Every method here exists and behaves
+the same on Windows and macOS. What differs is the tree it reads: roles are
+`AXTable` / `Table`, macOS keeps a control's state in one value where Windows
+splits it across Value, ToggleState and IsSelected, and neither platform's
+attribute names mean anything to the other. An action is written against a
+screen that was inspected first, so it is not portable — the framework is.
+`UI.enable_content_access()` is the one deliberately one-sided call, exposed so
+an action can make it unconditionally.
+
+"""
+
 
 class _Generator(MarkdownGenerator):
     """MarkdownGenerator that drops two kinds of members lazydocs would emit.
@@ -136,12 +170,15 @@ class _Generator(MarkdownGenerator):
 def _resolve(name):
     """The object a name in API_NAMES refers to.
 
-    Everything is exported from the package except Window, which a
-    configuration only ever receives from keymap.get_active_window() and
-    friends, so it is not in `keyhac.__all__`.
+    Everything is exported from the package except Window and UI, which a
+    configuration only ever receives - from keymap.get_active_window() and
+    from keymap.ui respectively - so neither is in `keyhac.__all__`.
     """
     if name == "Window":
         return Window
+    if name == "UI":
+        from keyhac.core.ui import UI
+        return UI
     return getattr(keyhac, name)
 
 
@@ -157,16 +194,17 @@ def _anchor(name):
     return f"#{kind}-{name.lower()}"
 
 
-def generate() -> str:
+def generate(names=None, header=None) -> str:
     generator = _Generator()
 
-    parts = [HEADER]
+    names = names or API_NAMES
+    parts = [header or HEADER]
 
     parts.append("**Contents:** ")
-    parts.append(" · ".join(f"[{name}]({_anchor(name)})" for name in API_NAMES))
+    parts.append(" · ".join(f"[{name}]({_anchor(name)})" for name in names))
     parts.append("\n\n")
 
-    for name in API_NAMES:
+    for name in names:
         print(f"Generating API reference for {name}")
         obj = _resolve(name)
         if isinstance(obj, type):
@@ -180,12 +218,26 @@ def generate() -> str:
     return "".join(parts)
 
 
+DOCUMENTS = [
+    ("api_reference.md", None, None),
+    ("action_api.md", "ACTION", "ACTION"),
+]
+
+
 def main() -> int:
     check = "--check" in sys.argv[1:]
+    failed = 0
+    for filename, names_key, header_key in DOCUMENTS:
+        names = ACTION_API_NAMES if names_key else API_NAMES
+        header = ACTION_HEADER if header_key else HEADER
+        failed += _one(filename, names, header, check)
+    return 1 if failed else 0
 
+
+def _one(filename, names, header, check) -> int:
     output_path = os.path.join(
-        os.path.dirname(__file__), "..", "doc", "api_reference.md")
-    generated = generate()
+        os.path.dirname(__file__), "..", "doc", filename)
+    generated = generate(names, header)
 
     if check:
         try:

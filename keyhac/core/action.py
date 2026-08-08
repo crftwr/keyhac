@@ -45,6 +45,21 @@ class ThreadedAction:
 
     thread_pool = ThreadPoolExecutor(max_workers=1)
 
+    @property
+    def keymap(self):
+        """The running Keymap, so an action need not import and look it up."""
+        from keyhac.core.keymap import Keymap
+        return Keymap.get_instance()
+
+    @property
+    def ui(self):
+        """The action-facing UI API (`keymap.ui`) - see doc/action_api.md.
+
+        An action's most-used object, so it is one attribute away rather than
+        two lines of lookup at the top of every run().
+        """
+        return self.keymap.ui
+
     def __repr__(self):
         return f"{type(self).__name__}()"
 

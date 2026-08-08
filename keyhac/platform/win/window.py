@@ -137,6 +137,12 @@ class WinWindow(Window):
     # -- identity -----------------------------------------------------------
 
     @property
+    def element(self):
+        """lazydocs: ignore"""
+        from keyhac.platform.win.uielement import UIElement
+        return UIElement.from_hwnd(self.hwnd)
+
+    @property
     def title(self) -> str | None:
         length = user32.GetWindowTextLengthW(self.hwnd)
         buf = ctypes.create_unicode_buffer(length + 1)

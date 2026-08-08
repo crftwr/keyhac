@@ -24,6 +24,14 @@ One Keymap exists per Keyhac process.  The configuration file receives it as ``c
 
 ---
 
+#### <kbd>property</kbd> Keymap.clipboard
+
+The OS clipboard - get_text() / set_text(), or None if unwired. 
+
+The history's provider, exposed directly because actions that paste need to read and restore the clipboard around what they do, which is not a history operation. 
+
+---
+
 #### <kbd>property</kbd> Keymap.clipboard_history
 
 The ClipboardHistory object (None while running without one, e.g. under --no-ui). 
@@ -33,6 +41,14 @@ The ClipboardHistory object (None while running without one, e.g. under --no-ui)
 #### <kbd>property</kbd> Keymap.focus
 
 Portable snapshot of the current keyboard focus (a Focus), or None before the first key event. 
+
+---
+
+#### <kbd>property</kbd> Keymap.ui
+
+The action-facing UI API - see doc/action_api.md. 
+
+Reading and driving another application's elements: finding windows, searching trees, waiting for the screen to change, filling fields. Deliberately a separate namespace from the configuration API, and deliberately method-style, so `from keyhac import *` does not acquire a dozen generic verbs that only mean something inside an action. 
 
 
 
@@ -712,6 +728,14 @@ Win32 window class. None on macOS, which has no such concept.
 
 ---
 
+#### <kbd>property</kbd> Window.element
+
+This window as an element, for searching inside it. 
+
+The bridge from window operations to element introspection: an action finds a window portably (``keymap.find_window``) and then has to look *into* it, which until now meant reaching for a platform-specific entry point. macOS already holds the AX element; Windows resolves the HWND through UI Automation. 
+
+---
+
 #### <kbd>property</kbd> Window.native
 
 The underlying platform object (HWND wrapper / AX UIElement). 
@@ -847,6 +871,20 @@ class Fetch(ThreadedAction):
 ``` 
 
 
+---
+
+#### <kbd>property</kbd> ThreadedAction.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> ThreadedAction.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
 
 
 ---
@@ -935,6 +973,21 @@ Build the action.
  - <b>`app_name`</b>:  Application to launch, named the way the OS resolves 
  - <b>`it`</b>:  "Terminal.app" on macOS, an executable name or path on Windows. 
 
+
+---
+
+#### <kbd>property</kbd> LaunchApplication.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> LaunchApplication.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
 ---
 
 
@@ -960,6 +1013,21 @@ Build the action.
 **Args:**
  
  - <b>`app`</b>:  Application name pattern, matched like define_keytable's  app= - case-insensitive, fnmatch wildcards, "|" alternation,  ".exe" optional. 
+
+
+---
+
+#### <kbd>property</kbd> ActivateWindow.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> ActivateWindow.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 
 ---
 
@@ -999,6 +1067,21 @@ Build the action.
  - <b>`distance`</b>:  How far to move, in pixels (default 10).  Pass a large  value together with window_edge / screen_edge to travel until  something stops it. 
  - <b>`window_edge`</b>:  Stop at the edges of other windows (default False). 
  - <b>`screen_edge`</b>:  Stop at the edge of the screen (default True). 
+
+
+---
+
+#### <kbd>property</kbd> MoveWindow.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> MoveWindow.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action_api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
 
 ---
 

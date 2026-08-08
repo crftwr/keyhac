@@ -34,11 +34,9 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import front_window, run_action                      # noqa: E402
+from _runner import run_action                                    # noqa: E402
+from keyhac import UINode, WaitTimeout                            # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.uitree import find_element, find_elements        # noqa: E402
-from keyhac.core.wait import (WaitTimeout, evaluate_on_main_thread,  # noqa: E402
-                              wait_for, wait_for_element)
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("ExtractRecords")
@@ -114,13 +112,14 @@ class ExtractRecords(ThreadedAction):
     # -- the pipeline -------------------------------------------------------
 
     def _read_system(self, system, rows: list[dict]) -> None:
+        ui = self.ui
         self._open(system["url"])
-        window = wait_for(lambda: front_window(self.app_name)[0],
-                          timeout=20, message=f"{self.app_name} to open a window")
+        window = ui.wait(lambda: ui.window(app=self.app_name), timeout=20,
+                         message=f"{self.app_name} to open a window")
         # Precondition per step, not only per action: the right page really is
         # the one on screen before anything is read off it.
-        wait_for_element(window, role="AXTable", timeout=20,
-                         message=f"{system['name']} to load a result table")
+        window.wait_for(role="AXTable", timeout=20,
+                        message=f"{system['name']} to load a result table")
 
         page = 0
         while page < self.page_limit:
@@ -129,13 +128,11 @@ class ExtractRecords(ThreadedAction):
             rows += self._read_page(window, system)
             self.done.append(f"{system['name']} {label or f'page {page}'}")
 
-            following = evaluate_on_main_thread(
-                lambda: find_element(window, identifier="next")
-                or find_element(window, role="AXLink", text="Next"))
+            following = (window.find(identifier="next")
+                         or window.find(role="AXLink", text="Next"))
             if following is None:
                 break
-            evaluate_on_main_thread(
-                lambda: following.element.perform_action("AXPress"))
+            following.press()
             # Wait for the page to actually change, not for time to pass: the
             # label is the one thing guaranteed to differ between pages.
             self._wait_for_new_page(window, label)
@@ -146,15 +143,10 @@ class ExtractRecords(ThreadedAction):
     def _read_page(self, window, system) -> list[dict]:
         """One table, normalised. Returns [] rather than raising on an empty
         page - a search with no results is an answer, not a failure."""
-        def read():
-            table = find_element(window, role="AXTable")
-            if table is None:
-                return None
-            return [[cell.all_text.strip()
-                     for cell in row.children if cell.role == "AXCell"]
-                    for row in table.children if row.role == "AXRow"]
-
-        grid = evaluate_on_main_thread(read)
+        table = window.find(role="AXTable")
+        grid = table and [[cell.all_text.strip()
+                           for cell in row.children if cell.role == "AXCell"]
+                          for row in table.children if row.role == "AXRow"]
         if not grid:
             return []
 
@@ -188,22 +180,19 @@ class ExtractRecords(ThreadedAction):
         wait can never see a change.  The document title survives into the web
         area's name, which is both stable and free.
         """
-        def read():
-            web_area = find_element(window, role="AXWebArea")
-            if web_area is not None and web_area.name:
-                return web_area.name
-            # Fall back to the on-page text, matched by what it says rather
-            # than by an id it does not have.
-            node = find_element(window, role="AXStaticText", value="page*of*")
-            return node.all_text.strip() if node else None
-
-        return evaluate_on_main_thread(read)
+        web_area = window.find(role="AXWebArea")
+        if web_area is not None and web_area.name:
+            return web_area.name
+        # Fall back to the on-page text, matched by what it says rather than by
+        # an id it does not have.
+        node = window.find(role="AXStaticText", value="page*of*")
+        return node.all_text.strip() if node else None
 
     def _wait_for_new_page(self, window, previous_label: str | None) -> None:
         try:
-            wait_for(lambda: self._page_label(window) != previous_label,
-                     timeout=20,
-                     message=f"the page after {previous_label!r} to load")
+            self.ui.wait(
+                lambda: self._page_label(window) != previous_label, timeout=20,
+                message=f"the page after {previous_label!r} to load")
         except WaitTimeout:
             raise RuntimeError(
                 f"stuck on {previous_label!r} after pressing Next")

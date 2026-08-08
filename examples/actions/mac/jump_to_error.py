@@ -34,10 +34,8 @@ _ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
 sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
 sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
-from _runner import front_window, run_action                      # noqa: E402
+from _runner import run_action                                    # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
-from keyhac.core.uitree import find_element                       # noqa: E402
-from keyhac.core.wait import evaluate_on_main_thread              # noqa: E402
 from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("JumpToError")
@@ -80,13 +78,11 @@ class JumpToError(ThreadedAction):
         logger.info(f"looking for a file:line in {self.app_name}")
 
     def run(self):
-        window, _app = evaluate_on_main_thread(
-            lambda: front_window(self.app_name))
+        window = self.ui.window(app=self.app_name)
         if window is None:
             raise RuntimeError(f"{self.app_name} has no window open")
 
-        text_area = evaluate_on_main_thread(
-            lambda: find_element(window, role="AXTextArea"))
+        text_area = window.find(role="AXTextArea")
         if text_area is None:
             raise RuntimeError(
                 f"no text area in the {self.app_name} window - this action "
@@ -94,7 +90,7 @@ class JumpToError(ThreadedAction):
 
         for strategy in (self._from_whole_text, self._from_caret_line,
                          self._from_selection):
-            location = strategy(text_area.element)
+            location = strategy(text_area)
             if location is not None:
                 return location
         return None
@@ -117,22 +113,22 @@ class JumpToError(ThreadedAction):
 
     # -- the ladder ---------------------------------------------------------
 
-    def _from_whole_text(self, element):
+    def _from_whole_text(self, element: "UINode"):
         """Rung 1: the last match in the whole buffer."""
-        text = evaluate_on_main_thread(element.get_text)
+        text = element.read_text()
         matches = find_locations(text)
         return self._resolve(matches[-1], "the last match in the buffer") \
             if matches else None
 
     def _from_caret_line(self, element):
         """Rung 2: the line the caret is on."""
-        line = evaluate_on_main_thread(element.get_line_at_caret)
+        line = element.line_at_caret()
         matches = find_locations(line)
         return self._resolve(matches[-1], "the caret line") if matches else None
 
     def _from_selection(self, element):
         """Rung 3: whatever the human selected."""
-        selection = evaluate_on_main_thread(element.get_selection)
+        selection = element.selection()
         matches = find_locations(selection)
         return self._resolve(matches[-1], "the selection") if matches else None
 

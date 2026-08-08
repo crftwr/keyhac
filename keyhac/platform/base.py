@@ -266,6 +266,18 @@ class Window(ABC):
         """Win32 window class. None on macOS, which has no such concept."""
         return None
 
+    @property
+    def element(self):
+        """This window as an element, for searching inside it.
+
+        The bridge from window operations to element introspection: an action
+        finds a window portably (``keymap.find_window``) and then has to look
+        *into* it, which until now meant reaching for a platform-specific
+        entry point. macOS already holds the AX element; Windows resolves the
+        HWND through UI Automation.
+        """
+        return None
+
     @abstractmethod
     def get_frame(self) -> tuple[float, float, float, float] | None:
         """Get the window's frame.
