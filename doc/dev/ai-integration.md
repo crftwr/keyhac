@@ -1189,3 +1189,44 @@ privacy rules cover, and the retention answer there was deliberately
 conservative. Whether the operator is prompted at all, or the record simply
 exists for an agent that asks. And whether a repeated failure should surface a
 notification, given that Keyhac's whole posture is to stay out of the way.
+
+### 15.5 A command line onto the daemon, over the transport that already exists
+
+Running an action has three entry points and they are not equally available.
+A key press needs the action bound. MCP `run_action` needs a chat client with
+the bridge registered — §15.1's nine steps. The third, `tools/run_action_file.py`,
+needs neither and is the one that cannot ship, because a bare interpreter cannot
+use the Accessibility permission granted to `Keyhac.app`: `doc/dev/packaging.md`
+is explicit that it "would grant the permission to that interpreter, not to
+Keyhac". What it borrows instead is the grant held by whatever is responsible
+for the shell — Terminal, the IDE, the agent's host — which is a far wider
+authorisation, since it covers every process that shell will ever spawn, and it
+reaches the UI and the keyboard without passing any of §4.4's gates.
+
+The idea is the fourth: a small command-line client that speaks the **same
+loopback HTTP and per-start token as the MCP server** and asks the running
+daemon to run a registered action. Both objections above dissolve at once, and
+not by argument — by construction. The work happens inside the process that
+already holds the permission (§4.3's first bullet), so nothing new is
+authorised; and because it is the same endpoint, "off unless the config asks",
+the loopback bind and the token apply unchanged rather than being reasoned about
+again.
+
+What it buys that MCP does not: an operator, a shell script, or an agent with
+`Bash` and no bridge gets the run-read-fix loop without a chat client — which is
+exactly the half-installed state §15.1 describes, and the alternative it
+currently pushes people toward is granting their terminal Accessibility. It also
+gives §15.3 a second consumer, which raises the value of fixing the capture
+rather than changing it.
+
+Constraint inherited from §4.3: like the bridge, it must be a thin client — no
+tool definitions, no logic — or the two diverge and are maintained twice.
+
+Open questions. It reaches only *registered* actions, so §15.2's "the operator is
+the transport" is untouched, and the two interact if Layer 5 ever lands. The
+token is already readable by any local process that can read the bridge's copy,
+so a CLI adds a consumer rather than surface — but it makes that file's
+permissions load-bearing in a way worth stating rather than inheriting silently.
+And whether it ships in the bundle or stays in `tools/`: shipping is what makes
+it useful to an operator, and unlike the file runner there is no permission
+argument against it.
