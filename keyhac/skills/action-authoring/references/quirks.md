@@ -80,9 +80,11 @@ swap, which is what `set_text` does.
 
 Native Cocoa applications post generously (`AXWindowCreated`, `AXValueChanged`,
 `AXUIElementDestroyed`). A Safari `<dialog>` opening posted **nothing at all**,
-registered on the application element and on the `AXWebArea` alike. Notifications
-also do not bubble, so "wait for an element to appear" cannot be registered
-anywhere useful.
+registered on the application element and on the `AXWebArea` alike — and
+Chrome, measured separately with its tree exposed and a driven page change,
+posted nothing either. So this is Chromium as well as WebKit, not a WebKit
+quirk. Notifications also do not bubble, so "wait for an element to appear"
+cannot be registered anywhere useful.
 
 Measured against Safari; an Electron app's notifications are untested, and
 Windows has no observer at all. Neither changes what you should write — the

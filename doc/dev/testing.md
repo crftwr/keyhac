@@ -190,8 +190,27 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   would settle it: Finder as an automated control, `set_manual_accessibility()`
   on the target first so "no notifications" cannot be confounded with "no tree
   to post about", and an operator-supplied in-page change, since driving VS
-  Code from the agent shell is not reliable. **Written on 2026-08-07 and never
-  run — it needs a macOS machine, and this one is Windows.**
+  Code from the agent shell is not reliable. **Run on 2026-08-07**, on macOS:
+  the Finder control passed (`AXFocusedUIElementChanged`, `AXCreated`,
+  `AXValueChanged`, `AXUIElementDestroyed`), Chrome's tree was exposed at 522
+  nodes, and **Chrome posted nothing at all** across three runs while a driven
+  in-page change verifiably occurred inside the listening window each time —
+  a `<dialog>` opened and closed and the page's own status text went
+  "3 items pending" → "0 items pending". So Chromium content matches WebKit
+  content: measured now, not inferred.
+
+  Two bugs in the pass itself, both found only by running it, both fixed:
+  `open -a Finder ~` is a no-op when a Finder window is already open — which is
+  the state the pass's *own previous run* leaves behind, so the second run of
+  the day reported a dead control and thereby invalidated its own Electron row
+  — and `ELECTRON_CANDIDATES` said "Visual Studio Code" where NSWorkspace says
+  "Code", so the pass could never auto-find the one Electron application most
+  likely to be running.
+
+  **Still unmeasured: a true Electron *application*.** This measured Chromium
+  the browser. VS Code and Slack need a run when the operator is not working in
+  them, since `set_manual_accessibility()` flips VS Code to its
+  screen-reader rendering while the pass holds it on.
 
 - **Windows element API, the text layer and the write side** (2026-08-07,
   `tools/uia_pass.py` against Notepad on Windows 11 Home 10.0.26200, 26/26 on

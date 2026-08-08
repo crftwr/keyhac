@@ -70,7 +70,11 @@ from keyhac.platform.mac.observer import UIObserver                 # noqa: E402
 from keyhac.platform.mac.uielement import UIElement                 # noqa: E402
 
 #: Tried in order when --app is not given.
-ELECTRON_CANDIDATES = ("Visual Studio Code", "Slack", "Google Chrome", "Discord")
+#: What NSWorkspace calls them, which is not always what the installer does:
+#: VS Code reports "Code", and a list saying "Visual Studio Code" can never
+#: auto-find the one Electron application most likely to be running.
+ELECTRON_CANDIDATES = ("Code", "Visual Studio Code", "Slack", "Google Chrome",
+                       "Discord", "Claude")
 
 results = []
 
@@ -143,10 +147,18 @@ def control_finder() -> bool:
     check("observer installed on Finder", observer.active,
           f"accepted {len(observer.notifications)} notifications")
     try:
-        # An automated stimulus, so the control needs nobody's cooperation.
-        subprocess.run(["open", "-a", "Finder", str(pathlib.Path.home())],
-                       check=False)
+        # An automated stimulus, so the control needs nobody's cooperation -
+        # but it has to *cause* something. `open -a Finder ~` is a no-op when a
+        # Finder window is already open, which is exactly the state the pass's
+        # own previous run leaves behind: the second run of the day then
+        # reported a dead control and invalidated its own Electron row.
+        subprocess.run(["osascript", "-e",
+                        'tell application "Finder" to make new Finder window'],
+                       check=False, capture_output=True)
         arrived = listen(observer, 6.0)
+        subprocess.run(["osascript", "-e",
+                        'tell application "Finder" to close front window'],
+                       check=False, capture_output=True)
     finally:
         observer.close()
 
