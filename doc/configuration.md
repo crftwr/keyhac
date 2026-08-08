@@ -340,8 +340,9 @@ action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
 surface, and `keyhac/skills/keyhac-action-authoring/` for how to write one.
 
 **This surface is experimental** and the rest of this document is not: it may
-change in ways a minor release normally would not, and an upgrade may require
-editing actions you have written. Everything else here — key tables, clipboard
+change in ways a release number normally promises it will not — 2.2.x is the
+line this feature is being built in, so even a patch release can move it — and
+an upgrade may require editing actions you have written. Everything else here — key tables, clipboard
 history, macros, window control — keeps the stability you expect from a 2.x
 release. [AI Integration](ai-integration.md) says what is unsettled and
 what would settle it.

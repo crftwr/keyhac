@@ -39,6 +39,12 @@ open and can run the actions you register. See [Security](#security).
 > identified, and how long a node you are holding stays valid — is not
 > settled, and it is the shape everything else is built on.
 >
+> **And it is not only minor releases. The 2.2.x line is where this feature is
+> being built**, so a *patch* release in it can change the AI surface too —
+> 2.2.1 removed `keymap.enable_mcp_server()` and replaced `run_action` with
+> three tools. Read these notes before upgrading if you have turned it on.
+> Everything outside this feature keeps what a patch number promises.
+>
 > **Why it is shipped anyway:** it is off by default and additive, so it costs
 > nothing to anyone who does not enable it, and the shape will be settled by
 > people writing real actions rather than by more design. If you write some,

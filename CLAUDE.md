@@ -128,6 +128,12 @@ identity and handle lifetime are still open ([doc/dev/ai-integration.md](doc/dev
 §11), and settling them may break actions. Do not treat that surface as frozen,
 and do not extend the experimental marker to anything else.
 
+**2.2.x is the line this feature is being built in**, so a patch release may
+break the AI surface - 2.2.1 removed `enable_mcp_server()` and replaced
+`run_action` with three tools. The version number therefore does not carry that
+warning, which means the release notes have to: lead with what breaks, every
+time, for as long as the marker is up.
+
 What remains is tracked in the GitHub issues: the deferred features (themes/fonts,
 i18n, migemo, rich clipboard formats, macOS ISO layout, balloon help UI). The
 genuinely-interactive verification passes are through (issue #10, closed), but
