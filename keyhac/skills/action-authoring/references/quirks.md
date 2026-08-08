@@ -102,7 +102,8 @@ and `get_line_at_caret()` returns the prompt line. So the cheap path - read
 everything, take the last match - works, and neither a selection nor the
 pointer is needed. iTerm2 untested.
 
-Measured on Windows too (`tools/text_pattern_survey.py`, 2026-08-07): **Windows
+Measured on Windows too (`tools/text_pattern_survey.py` in the Keyhac
+repository, 2026-08-07): **Windows
 Terminal** exposes the buffer as a `Text` element - 366 characters of
 scrollback, with `get_line_at_caret()` returning one line of it - and **VS
 Code** exposes the editor as an `Edit` named for the open file. Both answer the
@@ -176,9 +177,9 @@ Two separate things bite here.
 `role="Button"` matches a macOS `AXButton` and a Windows `Button` alike, while
 `role="AXButton"` matches **only** macOS - `AXTable` will not find a Windows
 `Table` even though that role exists. Write patterns *without* the prefix and
-they work on both. Every example under `examples/actions/mac/` breaks this,
-having been written on macOS - which is also why they live in a `mac/` folder
-rather than looking like the general case.
+they work on both. Every example under the repository's `examples/actions/mac/`
+breaks this, having been written on macOS - which is also why they live in a
+`mac/` folder rather than looking like the general case.
 
 **And where the names have no pair, no rule saves you.** Windows has
 `Table`, `DataGrid`, `DataItem`, `Header` and `HeaderItem` - and no `Cell` or

@@ -211,8 +211,22 @@ should happen on failure. **API names are not.** If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 
-Working examples of every pattern above: `examples/actions/` in the Keyhac
-repository, split into `mac/` and `win/` because an action targets one
-platform, with `README.md` recording what each one taught. Read the folder for
-the platform you are on; read the other one for its shape, never for selectors
-to copy across.
+Working examples of every pattern above live in the Keyhac repository - not in
+this skill, so they are a fetch away rather than a path away. They are split
+into `mac/` and `win/` because an action targets one platform, and `README.md`
+records what each one taught. Read the folder for the platform you are on; read
+the other one for its shape, never for selectors to copy across.
+
+    https://github.com/crftwr/keyhac/tree/v{VERSION}/examples/actions
+
+If you can fetch a URL, a single file comes back as source from
+
+    https://raw.githubusercontent.com/crftwr/keyhac/v{VERSION}/examples/actions/mac/extract_records.py
+
+and the same path shape reaches any of the others. The tag is pinned to the
+Keyhac this skill describes, so what you read matches the API documented here -
+follow a link to `main` instead and you may be reading a different version's
+code against this version's rules.
+
+If you cannot fetch, nothing above depends on them: every pattern in this
+document is stated in full here, and the examples only show them at length.
