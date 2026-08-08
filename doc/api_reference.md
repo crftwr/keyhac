@@ -44,6 +44,12 @@ Portable snapshot of the current keyboard focus (a Focus), or None before the fi
 
 ---
 
+#### <kbd>property</kbd> Keymap.registered_actions
+
+The actions registered by name, for the MCP tools to list and run. 
+
+---
+
 #### <kbd>property</kbd> Keymap.ui
 
 The action-facing UI API - see doc/action_api.md. 
@@ -164,6 +170,24 @@ Open the configuration file in a text editor.
 
 ---
 
+### <kbd>method</kbd> `Keymap.enable_mcp_server`
+
+```python
+enable_mcp_server(port: int = 0) → None
+```
+
+Serve the action-authoring tools on localhost, for Claude to use. 
+
+**Off unless a configuration calls this.** The endpoint reads the UI tree and can run registered actions, so it binds to 127.0.0.1 only and every request carries a token published - readable by this user alone - beside the configuration. `keyhac-mcp-bridge` reads that file; nothing else needs to know the port. 
+
+
+
+**Args:**
+ 
+ - <b>`port`</b>:  TCP port, or 0 to let the OS choose (the default - the bridge  reads whichever port was chosen, so a fixed one buys nothing  but a collision). 
+
+---
+
 ### <kbd>method</kbd> `Keymap.find_window`
 
 ```python
@@ -275,6 +299,29 @@ List the visible top-level windows.
 **Note:**
 
 > UI-thread only. 
+
+---
+
+### <kbd>method</kbd> `Keymap.register_action`
+
+```python
+register_action(name: str, action) → None
+```
+
+Make an action runnable by name over MCP. 
+
+Registering is opt-in and per-action, which is the point: it is the line between "Keyhac can be driven by a model" and "everything a configuration defines can be". Bind it to a key as usual too - this only adds the name. 
+
+```python
+keymap.register_action("extract_records", ExtractRecords())
+``` 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  The name run_action takes. 
+ - <b>`action`</b>:  Any callable, usually a ThreadedAction. 
 
 ---
 

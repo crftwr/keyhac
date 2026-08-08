@@ -51,6 +51,26 @@ nothing and reads like a page that failed to load. If the target is Windows,
 read the **Windows:** entries in `references/quirks.md` first; three of the
 four are cases where the macOS answer was confidently wrong.
 
+## Working from a recorded demonstration
+
+If the operator recorded the task (Claude Desktop's "Record a skill" captures
+screen, clicks, typing and **voice**, and turns it into a skill), that skill is
+your intent source — not your selector source. The split is strict:
+
+- **Take from the recording**: what they were trying to do, which values vary
+  and which are constants, where the iteration boundary is, what they checked
+  before moving on, which steps were slow. The narration carries the
+  transformation that happened in their head; the clicks do not.
+- **Never take selectors from it.** A recording has pixels and screenshots. An
+  action addressed by pixels is a failed action (rule 2). Re-derive every
+  selector from the live tree.
+
+And ask before generating. A recording shows that they set a filter to
+"active"; it does not show whether that is a constant or an argument. It shows
+one run, not the branch they would have taken on a different item. Turn those
+into questions first — demonstration → clarifying questions → generation, never
+demonstration → generation.
+
 ## The seven hard rules
 
 Each of these was a real failure, not a preference. Breaking one produces code

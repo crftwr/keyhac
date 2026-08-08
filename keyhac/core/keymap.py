@@ -107,6 +107,8 @@ class Keymap:
         self.app_control = None             # platform AppControl
         self.window_provider = None         # platform WindowProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
+        self._registered_actions = {}       # name -> action, for MCP
+        self._mcp_server = None             # MCPServer while enabled
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self._main_thread_dispatcher = None  # callable(callback) - see below
@@ -744,6 +746,65 @@ class Keymap:
             from keyhac.platform.mac.uielement import UIElement
             return UIElement.get_running_applications()
         return []
+
+    # ------------------------------------------------------------------
+    # Named actions and the MCP endpoint
+
+    def register_action(self, name: str, action) -> None:
+        """Make an action runnable by name over MCP.
+
+        Registering is opt-in and per-action, which is the point: it is the
+        line between "Keyhac can be driven by a model" and "everything a
+        configuration defines can be". Bind it to a key as usual too - this
+        only adds the name.
+
+        ```python
+        keymap.register_action("extract_records", ExtractRecords())
+        ```
+
+        Args:
+            name: The name run_action takes.
+            action: Any callable, usually a ThreadedAction.
+        """
+        self._registered_actions[name] = action
+
+    @property
+    def registered_actions(self) -> dict:
+        """The actions registered by name, for the MCP tools to list and run."""
+        return dict(self._registered_actions)
+
+    def enable_mcp_server(self, port: int = 0) -> None:
+        """Serve the action-authoring tools on localhost, for Claude to use.
+
+        **Off unless a configuration calls this.** The endpoint reads the UI
+        tree and can run registered actions, so it binds to 127.0.0.1 only and
+        every request carries a token published - readable by this user alone -
+        beside the configuration. `keyhac-mcp-bridge` reads that file; nothing
+        else needs to know the port.
+
+        Args:
+            port: TCP port, or 0 to let the OS choose (the default - the bridge
+                reads whichever port was chosen, so a fixed one buys nothing
+                but a collision).
+        """
+        if self._mcp_server is not None:
+            return
+        from keyhac.mcp.server import ENDPOINT_FILE, MCPServer
+        from keyhac.mcp.tools import ToolRegistry
+
+        endpoint = os.path.join(
+            os.path.dirname(self._config_path or ""), ENDPOINT_FILE)
+        self._mcp_server = MCPServer(ToolRegistry(self), endpoint, port=port)
+        self._mcp_server.start()
+
+    def stop_mcp_server(self) -> None:
+        """Stop the endpoint and remove its published token.
+
+        lazydocs: ignore
+        """
+        server, self._mcp_server = self._mcp_server, None
+        if server is not None:
+            server.stop()
 
     @property
     def ui(self):

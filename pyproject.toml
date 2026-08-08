@@ -44,6 +44,8 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 keyhac = "keyhac.main:main"
+# The stdio shim an MCP client spawns; it forwards to the running daemon.
+keyhac-mcp-bridge = "keyhac.mcp.bridge:main"
 
 [project.urls]
 Homepage = "https://github.com/crftwr/keyhac"
@@ -54,6 +56,7 @@ Issues = "https://github.com/crftwr/keyhac/issues"
 packages = [
     "keyhac",
     "keyhac.core",
+    "keyhac.mcp",
     "keyhac.platform",
     "keyhac.platform.mac",
     "keyhac.platform.win",

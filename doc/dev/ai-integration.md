@@ -352,25 +352,39 @@ side depends on `wait_for` rather than on any subscription. Windows never
 needed a WinEvent/UIA counterpart, which is the same conclusion reached from
 the other direction.
 
-**Demoted — mouse input capture and trace recording.** Two independent findings push
-these down. First, of the concrete use cases catalogued in §2, almost none are authored
-from a recorded demonstration. Second, most cases that appeared to need a demonstration
-are served by having the user *open* a UI state and letting Claude read it, which records
-nothing (§8.1). Build them last, if at all:
+**Demoted — mouse input capture and trace recording.** Two independent findings
+pushed these down. First, of the concrete use cases catalogued in §2, almost
+none are authored from a recorded demonstration. Second, most cases that
+appeared to need a demonstration are served by having the user *open* a UI
+state and letting Claude read it, which records nothing (§8.1).
 
-- **Mouse input events** — output exists; input exists only as an observation-only
-  cancellation channel: `WH_MOUSE_LL` is already installed on Windows
-  (`keyhac/platform/win/hook.py`) and the macOS tap already masks button-down /
-  scroll types when `on_mouse` is wired (`keyhac/platform/mac/hook.py`), but the
-  callback carries no event data. The work is widening that channel to deliver full
-  events (button, position, wheel), not adding a hook — filtering out Keyhac's own
-  injected output (sentinel `dwExtraInfo` / private `CGEventSource`) is already
-  solved there.
-- **Structured trace (JSONL)** — timestamped unified stream of key / mouse / focus
-  change / UI event / clipboard change. Separate layer from the human-readable console
-  log. **Design the schema after capturing real traces, not before.** Recording is
-  explicit start/stop only, and the privacy requirements in §9 are part of the feature,
-  not a later hardening pass.
+**And now: not ours to build at all.** Claude Desktop records a task itself —
+screen, clicks, typing and **voice** — and turns it into a skill. That answers
+rung 4 from outside, and it answers the two objections that demoted it:
+
+- **The intent objection.** §8 says traces capture form, not intent: "the
+  transformation happened in their head and never reaches the keyboard." It
+  reaches the *microphone*. A narrated demonstration carries the reasoning a
+  keystroke log structurally cannot, which is a different artefact from the
+  JSONL trace this section was contemplating.
+- **The privacy objection.** All of §9 — redaction, a pause key, review before
+  egress, never to disk — was specified for a recorder **Keyhac** would ship,
+  because building one means an application whose main trust problem is proving
+  it is not a keylogger shipping a keylogger. If the recorder belongs to the
+  client the user already trusts with their screen, Keyhac never takes that on.
+
+What the recording cannot supply is selectors: it has pixels, and §8.4's rule 2
+makes pixel addressing a failed generation. So the division is intent from the
+recording, selectors from the live tree via the MCP tools — which is §8.2's
+"demonstration → clarifying questions → generation" with the demonstration
+arriving pre-summarised. Recorded in the authoring skill; no Keyhac code.
+
+Two things this does **not** settle. The recording's privacy properties are the
+recorder's, and they are weaker than §9 asked of ours: the consent dialog warns
+against typing secrets, but there is no secure-field redaction and no
+review-before-egress step — the recording goes to Claude. And its output format
+has not been examined here; the first real one should be, before the skill's
+guidance hardens.
 
 ### Layer 2 — State reading
 
@@ -1012,3 +1026,24 @@ Latency budget:
 | Candidate suggestion, intent parsing | Haiku class | 1 s |
 | Multi-step operation | Sonnet class | seconds+ |
 | UI-mediated ETL (§2) | none — pure Python | minutes; background, resumable |
+
+---
+
+## 14. What is built (2026-08-07)
+
+Against the layers in §5 and the sequence in §10:
+
+| | State |
+|---|---|
+| Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
+| Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
+| Layer 3 — execution safety | **Partial.** Waiting and read-back are in; per-step preconditions, checkpointing and idempotency are *patterns the actions follow*, not framework. `Action.preconditions()`, dry-run/preview, `Esc` cancellation and the long-action executor are **not built** — the `max_workers=1` pool is still the latent bug §2.1 names. |
+| Layer 4 — action metadata | **Minimal.** `keymap.register_action(name, action)` and the MCP tool schemas; no argument schema, no description surface. |
+| Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
+| Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/mcp.md`. |
+| Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
+| `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
+
+The one thing the sequence has never done is **step 6 against a real client**:
+generation has only been exercised by the same model that wrote the skill, in
+this repository. Everything above is scaffolding for that test.
