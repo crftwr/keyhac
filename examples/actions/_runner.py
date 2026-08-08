@@ -6,12 +6,12 @@ run() executes on a worker, and every UI read is dispatched back - exactly the
 arrangement `keyhac.core.wait` is written against, and the one that makes
 waiting legal from a worker at all.
 
-    python examples/actions/extract_records.py
+    python examples/actions/mac/extract_records.py
 
 Both platforms are wired here, because the *framework* is portable and an
 action is not. Each example targets one OS and says which in its docstring:
-four macOS, and `snapshot_settings_win.py` the Windows counterpart of
-`snapshot_settings.py`. Nothing is gained by making a generated action carry
+five under `mac/`, and `win/snapshot_settings.py` the counterpart of
+`mac/snapshot_settings.py`. Nothing is gained by making a generated action carry
 selectors for a tree it will never meet - role names are not a shared
 vocabulary (see the Windows entries in the authoring skill's
 `references/quirks.md`).

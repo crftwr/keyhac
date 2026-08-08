@@ -30,7 +30,9 @@ import re
 import subprocess
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
+sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
+sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
 from _runner import front_window, run_action                      # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402
@@ -41,7 +43,7 @@ from keyhac.core import log                                       # noqa: E402
 
 logger = log.getLogger("ExtractRecords")
 
-FIXTURES = pathlib.Path(__file__).with_name("fixtures")
+FIXTURES = _ACTIONS / "fixtures"
 
 #: The systems to read, and what each calls the three columns we want.  This
 #: mapping is the whole of "normalisation" - the part a demonstration could

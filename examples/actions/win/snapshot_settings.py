@@ -38,7 +38,9 @@ import json
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+_ACTIONS = pathlib.Path(__file__).resolve().parents[1]   # examples/actions
+sys.path.insert(0, str(_ACTIONS.parents[1]))             # the repo root
+sys.path.insert(0, str(_ACTIONS))                        # _runner.py, fixtures/
 
 from _runner import run_action, top_level_windows                 # noqa: E402
 from keyhac.core.action import ThreadedAction                     # noqa: E402

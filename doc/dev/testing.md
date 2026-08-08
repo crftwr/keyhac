@@ -178,7 +178,7 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   ordering pinned in `tests/test_fill.py`.
 
 - **`SelectionItem`, and the first action to run on both platforms**
-  (2026-08-07). Porting `examples/actions/snapshot_settings.py` to Windows
+  (2026-08-07). Porting `examples/actions/mac/snapshot_settings.py` to Windows
   stopped before it reached a selector: a Win32 `TabItem` supports no `Invoke`,
   no `Toggle` and no `Expand` — `get_action_names()` returned `[]` — and has no
   value, so neither selecting a tab nor asking which tab was current could be
@@ -186,7 +186,7 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `TCM_GETCURSEL` on a real `SysTabControl32` built in the test
   (`tests/test_win_focus.py`), which is the control's own answer and is not
   reachable through UI Automation — so it cannot agree with a wrong slot by
-  accident. `examples/actions/snapshot_settings_win.py` then walked Mouse
+  accident. `examples/actions/win/snapshot_settings.py` then walked Mouse
   Properties' five tabs live and wrote 15 values to JSON, leaving the
   originally-selected tab selected.
 

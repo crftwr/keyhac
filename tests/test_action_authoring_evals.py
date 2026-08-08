@@ -24,14 +24,25 @@ def check():
     return module.check
 
 
-@pytest.mark.parametrize("name", [
-    "extract_records.py", "handle_queue.py", "jump_to_error.py",
-    "submit_from_csv.py",
-])
-def test_the_hand_written_actions_follow_the_rules(check, name):
+#: Discovered rather than listed. The list this replaces named four files and
+#: was written when there were four; snapshot_settings.py was added and never
+#: joined it, and neither did the Windows one - so two examples sat unchecked
+#: while the suite reported the rules as enforced. A glob cannot drift.
+ACTIONS = sorted(p for p in EXAMPLES.rglob("*.py") if not p.name.startswith("_"))
+
+
+def test_the_examples_were_found_at_all():
+    """Guards the glob: a layout change that empties it must fail loudly rather
+    than silently checking nothing, which is the failure mode it exists to fix."""
+    assert len(ACTIONS) >= 6
+    assert {p.parent.name for p in ACTIONS} == {"mac", "win"}
+
+
+@pytest.mark.parametrize("action", ACTIONS, ids=lambda p: f"{p.parent.name}/{p.name}")
+def test_the_hand_written_actions_follow_the_rules(check, action):
     """These are what the rules were derived from; a rule they fail is a rule
     that is wrong, or an example that needs fixing - both worth knowing."""
-    assert check(EXAMPLES / name) == []
+    assert check(action) == []
 
 
 def test_every_rule_is_actually_enforced(check):

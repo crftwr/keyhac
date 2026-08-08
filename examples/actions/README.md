@@ -6,7 +6,7 @@ applications, so that the generalisation heuristics in the authoring skill come
 from real failures instead of first principles.
 
 Each action targets one OS, and says so in its docstring. Five are macOS; the
-sixth is `snapshot_settings_win.py`, the same task as `snapshot_settings.py`
+sixth is `win/snapshot_settings.py`, the same task as `mac/snapshot_settings.py`
 written against Windows. **They are two files rather than one with branches in
 it on purpose** — an action is generated for one screen, and carrying selectors
 for a tree it will never meet buys nothing. The framework underneath is
@@ -14,15 +14,15 @@ portable; the selectors are not, and pretending otherwise would teach the wrong
 thing to anyone reading these as a template.
 
 ```bash
-python examples/actions/extract_records.py ~/Desktop/records.csv   # macOS, Safari
-python examples/actions/handle_queue.py                            # macOS, Safari
-python examples/actions/jump_to_error.py --dry-run                 # macOS, Terminal
-python examples/actions/submit_from_csv.py                         # macOS, Safari
-python examples/actions/snapshot_settings.py                       # macOS, Terminal > Settings
-python examples/actions/snapshot_settings_win.py                   # Windows, control main.cpl
+python examples/actions/mac/extract_records.py ~/Desktop/records.csv   # Safari
+python examples/actions/mac/handle_queue.py                            # Safari
+python examples/actions/mac/jump_to_error.py --dry-run                 # Terminal
+python examples/actions/mac/submit_from_csv.py                         # Safari
+python examples/actions/mac/snapshot_settings.py                       # Terminal > Settings
+python examples/actions/win/snapshot_settings.py                       # control main.cpl
 ```
 
-`submit_from_csv.py` types, so running it installs a keyboard tap for as long
+`mac/submit_from_csv.py` types, so running it installs a keyboard tap for as long
 as it runs — that is what puts the modifier flags on injected keystrokes.
 
 `_runner.py` starts an event loop on the main thread and runs the action on a
@@ -31,12 +31,12 @@ from a worker at all.
 
 | Action | Exercises | Verified |
 |---|---|---|
-| [`extract_records.py`](extract_records.py) | pagination, cross-system normalisation, partial failure, CSV output, idempotent re-run | 17 rows from 5 pages across 2 systems; re-running leaves 17 |
-| [`handle_queue.py`](handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
-| [`jump_to_error.py`](jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
-| [`submit_from_csv.py`](submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
-| [`snapshot_settings.py`](snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
-| [`snapshot_settings_win.py`](snapshot_settings_win.py) | the same task on Windows: `SelectionItem` for tabs, state read from three patterns | 15 values from Mouse Properties' five tabs, into JSON |
+| [`mac/extract_records.py`](mac/extract_records.py) | pagination, cross-system normalisation, partial failure, CSV output, idempotent re-run | 17 rows from 5 pages across 2 systems; re-running leaves 17 |
+| [`mac/handle_queue.py`](mac/handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
+| [`mac/jump_to_error.py`](mac/jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
+| [`mac/submit_from_csv.py`](mac/submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
+| [`mac/snapshot_settings.py`](mac/snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
+| [`win/snapshot_settings.py`](win/snapshot_settings.py) | the same task on Windows: `SelectionItem` for tabs, state read from three patterns | 15 values from Mouse Properties' five tabs, into JSON |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -179,10 +179,10 @@ this action was written.
 
 ## The port: what survived crossing to Windows
 
-`snapshot_settings.py` was carried to Windows to find out how much of an action
+`mac/snapshot_settings.py` was carried to Windows to find out how much of an action
 is portable in practice. The answer is encouraging about structure and blunt
 about everything else — and the shape of the answer is why the result is a
-second file, `snapshot_settings_win.py`, rather than branches in the first.
+second file, `win/snapshot_settings.py`, rather than branches in the first.
 
 The port was written as one cross-platform file to begin with. That was the
 right *instrument* — running both halves through the same code is how the

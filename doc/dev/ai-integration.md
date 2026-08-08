@@ -864,7 +864,8 @@ Extend `PRIVACY.md` with the above.
    holes in the platform layer**, which is an argument for doing it early
    rather than once.
 
-   It landed as a second file, `snapshot_settings_win.py`, not as branches in
+   It landed as a second file, `examples/actions/win/snapshot_settings.py`,
+   not as branches in
    the first. **A generated action does not need to be portable and should not
    pay for it**: it is written against one screen that was inspected first, and
    the two accessibility vocabularies do not merge (`uitree.py` unifies role
@@ -922,7 +923,7 @@ captures the mouse. **If the AI side fails entirely, the investment still stands
   textarea, so the pointer path is coarser than the caret path.
   **Terminal.app: yes** — its `AXTextArea` returns the whole scrollback through
   `AXValue`, and `get_line_at_caret()` returns the prompt line, so the
-  one-keystroke path works there too and `examples/actions/jump_to_error.py`
+  one-keystroke path works there too and `examples/actions/mac/jump_to_error.py`
   uses it. iTerm2 untested (not installed here).
   **Windows: yes, for the Text pattern itself** — Notepad's editor answers
   `get_text()`, `get_line_at_caret()` (the caret's line, not the document) and

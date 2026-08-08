@@ -8,7 +8,7 @@ are in cases.md for a human or a model to score; everything here is decidable.
     python keyhac/skills/action-authoring/evals/check.py path/to/action.py [...]
 
 Exit status is the number of files with violations.  Calibrated against
-examples/actions/*.py, which must pass.
+examples/actions/*/*.py, which must pass.
 """
 
 from __future__ import annotations

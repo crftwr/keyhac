@@ -141,8 +141,9 @@ Two separate things bite here.
 `role="Button"` matches a macOS `AXButton` and a Windows `Button` alike, while
 `role="AXButton"` matches **only** macOS - `AXTable` will not find a Windows
 `Table` even though that role exists. Write patterns *without* the prefix and
-they work on both. Every example in `examples/actions/` breaks this, because
-they were all written on macOS.
+they work on both. Every example under `examples/actions/mac/` breaks this,
+having been written on macOS - which is also why they live in a `mac/` folder
+rather than looking like the general case.
 
 **And where the names have no pair, no rule saves you.** Windows has
 `Table`, `DataGrid`, `DataItem`, `Header` and `HeaderItem` - and no `Cell` or

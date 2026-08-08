@@ -161,6 +161,7 @@ the user to say `get_ui_tree` or `set_value`, this skill has failed - fix the
 skill instead.
 
 Working examples of every pattern above: `examples/actions/` in the Keyhac
-repository, with `README.md` recording what each one taught. All four were
-written and run on macOS and address elements by `AX*` role names - read them
-for their shape, not for selectors to copy onto Windows.
+repository, split into `mac/` and `win/` because an action targets one
+platform, with `README.md` recording what each one taught. Read the folder for
+the platform you are on; read the other one for its shape, never for selectors
+to copy across.
