@@ -1,4 +1,4 @@
-"""Generate doc/api_reference.md from the docstrings of the public API.
+"""Generate doc/config-api.md from the docstrings of the public API.
 
 Run it with `make api-reference`; `make api-reference-check` verifies that the
 committed file still matches the source, the same way `icons-check` does for
@@ -229,8 +229,8 @@ def generate(names=None, header=None) -> str:
 
 
 DOCUMENTS = [
-    ("api_reference.md", None, None),
-    ("action_api.md", "ACTION", "ACTION"),
+    ("config-api.md", None, None),
+    ("action-api.md", "ACTION", "ACTION"),
 ]
 
 

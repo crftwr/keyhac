@@ -265,8 +265,12 @@ def configure(keymap):
     # it would block the keyboard hook.  ThreadedAction gives you a worker
     # thread for run(), while starting() and finished() stay on the main
     # thread under the engine lock - so UI and window access is fine in those
-    # two and not in run().  The worker is a single one shared by every
-    # threaded action, so a run() that sleeps holds up the others.
+    # two and not in run().  Actions run concurrently, so a slow one no longer
+    # holds up the others.
+    #
+    # Esc stops a running action.  You write nothing for that: the waiting
+    # helpers raise, and your finally blocks still run - so whatever the action
+    # already recorded stays recorded.
     class TypeSlowly(ThreadedAction):
         def __init__(self, text):
             self.text = text
@@ -288,7 +292,26 @@ def configure(keymap):
         def __repr__(self):
             return f"TypeSlowly({self.text!r})"
 
-    kt[f"{LEADER}-Y"] = TypeSlowly("keyhac")
+    slowly = TypeSlowly("keyhac")
+    kt[f"{LEADER}-Y"] = slowly
+
+    # --- giving an action a name ---------------------------------------
+    # A key binding is how *you* run an action.  register_action is how it
+    # can be named - listed, started and read back by an AI agent, if you
+    # ever switch the MCP server on (AI Integration in the tray menu; it is
+    # off until you do, and this line exposes nothing on its own).
+    #
+    # The two are independent: a key binding alone leaves the action
+    # nameless, which is the usual reason a generated one cannot be found.
+    keymap.register_action("type-slowly", slowly)
+
+    # An action written for you by an agent goes in ~/.keyhac/extensions/ as
+    # its own module, and gets three lines here:
+    #
+    #     import open_issues                            # from extensions/
+    #     action = open_issues.OpenIssues()
+    #     keymap.register_action("open-issues", action)
+    #     kt[f"{LEADER}-I"] = action                    # optional
 
     # ==================================================================
     # Multi-stroke key tables

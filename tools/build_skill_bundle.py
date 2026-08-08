@@ -29,6 +29,16 @@ OUTPUT = ROOT / "dist" / "keyhac-action-authoring-skill.zip"
 #: the frontmatter's `license` field points at a LICENSE.txt beside SKILL.md.
 LICENSE = ROOT / "LICENSE"
 
+#: Copied in rather than restated by hand. The signatures are the half of the
+#: skill's API knowledge that *drifts* - three hand-edits in one day when
+#: exceptions were added and a tool was renamed - and they are already
+#: generated from the docstrings, checked by `make api-reference-check`. So the
+#: generated file travels with the bundle and references/practice.md keeps only
+#: what cannot be generated: what each mechanism costs, and which of them fail
+#: silently. It also makes the pointer true: practice.md used to cite a path
+#: the uploaded skill did not carry.
+GENERATED = [(ROOT / "doc" / "action-api.md", "references/action-api.md")]
+
 #: Not shipped to the model: evals are for this repo's CI, and the fixture is a
 #: deliberately-wrong action that has no business in a skill's context.
 EXCLUDE = {"evals"}
@@ -90,6 +100,19 @@ def main() -> int:
                 bundle.writestr(name, text)
             else:
                 bundle.write(path, name)
+            written.append(name)
+
+        for source, name in GENERATED:
+            if not source.is_file():
+                problems.append(f"{source.relative_to(ROOT)} is missing - run "
+                                f"'make api-reference'")
+                continue
+            text = source.read_text(encoding="utf-8").replace(
+                VERSION_TOKEN, keyhac.__version__)
+            problems += [f"{name}: link to a moving ref {m['ref']!r} - "
+                         f"the bundle must point at a tag"
+                         for m in MOVING_REF.finditer(text)]
+            bundle.writestr(name, text)
             written.append(name)
 
         if LICENSE.is_file():

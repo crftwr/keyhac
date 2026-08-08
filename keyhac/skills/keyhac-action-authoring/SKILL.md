@@ -20,8 +20,21 @@ runtime, and a regex beats one on paths, line numbers, URLs and IDs - it is
 *more accurate*, not merely cheaper. If you reach for inference at runtime,
 state in a comment why the input space is not closed.
 
-Read `references/api.md` for the API surface and `references/quirks.md` before
-debugging anything that "should work". Both are short.
+Three references sit beside this, each answering a different question:
+
+- `references/practice.md` — **which call to reach for, and what it costs.**
+  Read it before writing.
+- `references/action-api.md` — **every signature**, generated from the
+  docstrings. Look things up here rather than guessing at an argument.
+- `references/quirks.md` — **where the platform lies to you.** Read it before
+  debugging anything that "should work".
+
+The whole of Keyhac's other API — what a `config.py` reaches, which an action
+touches only through `ThreadedAction` and `register_action` — is a fetch away
+and deliberately not carried here, since an action needs four names out of its
+thirty-four:
+
+    https://github.com/crftwr/keyhac/blob/v{VERSION}/doc/config-api.md
 
 ## Before you write anything
 
@@ -118,7 +131,8 @@ header is fixed, and the two names that look like they should exist do not:
 ```python
 """One line: what this drives, on which platform, tree inspected when."""
 
-from keyhac import ThreadedAction, WaitTimeout, FillFailed, UINode, getLogger
+from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
+                    StaleElement, UINode, getLogger)
 
 logger = getLogger("OpenIssues")     # there is no importable `logger`
 ```
@@ -138,8 +152,36 @@ def configure(keymap):
 
 `register_action` is what makes the action visible to `list_actions` and
 runnable by `start_action`; **a key binding alone leaves it invisible to both**,
-which costs you the run-read-fix loop. Reloading re-imports the module, so an
-edit is picked up without restarting Keyhac.
+which costs you the run-read-fix loop.
+
+## Running it
+
+Do not hand over an action you have not run. The point of the tools is that
+you read your own failure rather than the operator relaying it, and an action
+that has never executed is a draft.
+
+1. **The operator saves the file.** No tool writes Python to disk, on purpose,
+   so give them the module and the `configure()` block and ask them to save
+   both.
+2. **`reload_config`** — re-imports `extensions/`, so an edit is picked up
+   without restarting Keyhac. Without this step you re-run the previous
+   version and it reports success against code you have already changed.
+3. **`list_actions`** — confirm the name is there. If it is not, the config
+   did not load; the console will say why.
+4. **`start_action("name")`** — **returns immediately, and the action is not
+   finished.** These drive real applications and can take minutes.
+5. **`get_action_result("name")`** — waits for it and hands back everything it
+   logged or printed, with the traceback if it raised. This is the step that
+   tells you what happened; skipping it means you did not check your work.
+6. Read, fix, and go back to 1.
+
+`cancel_action("name")` stops a run doing the wrong thing — the same as the
+operator pressing Esc. Prefer it to waiting one out: an action that is filling
+the wrong form should be stopped, not observed.
+
+If `get_action_result` says the subprocess left no stderr, add
+`capture_output=True` to that `subprocess.run` and go round again — that note
+exists because the reason is otherwise unreachable.
 
 ## Structure
 
@@ -194,6 +236,7 @@ remote system has already accepted - so rollback is usually not available and
 
 Check the generated action against this list, and fix rather than explain:
 
+- [ ] **It has been run**, and you read the result — not "it should work"
 - [ ] No `sleep`, no coordinates, no bare `time` waits
 - [ ] Every wait names what it is waiting for, in words an operator would read
 - [ ] Every write is verified; every toggle is read first

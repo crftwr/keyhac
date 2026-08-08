@@ -92,15 +92,25 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
 ## Release pipeline
 
 `make tag` → `make release-github` → `make release-macos-dmg` (on macOS) /
-`make release-windows-zip` (on Windows) → `make release-whl`; `make release-status`
-shows where a version stands. `make release-windows-msix` (on Windows) is the
+`make release-windows-zip` (on Windows) → `make release-whl` → `make release-skill`;
+`make release-status` shows where a version stands. `make release-windows-msix`
+(on Windows) is the
 odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporting scripts:
 `tools/{release_preflight,bump_version,_version_source}.py`. The version lives in
 `keyhac/__init__.py` (`__version__`), one number for both OSes.
 
-Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`
-(attached to the GitHub Release), and the `keyhac` wheel on PyPI. PuiKit is
+Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
+`keyhac-action-authoring-skill.zip` (attached to the GitHub Release), and the
+`keyhac` wheel on PyPI. PuiKit is
 versioned/released independently on PyPI; Keyhac2 pins a minimum (`puikit>=1.0.8`).
+
+**`release-skill` is not optional the way it looks.** The skill bundle is the
+only way a user can obtain the authoring skill — `make skill-bundle` needs the
+Makefile and `tools/`, and neither ships — so a release without it leaves
+[doc/ai-integration.md](../ai-integration.md) pointing at an asset that is not
+there, and leaves anyone who connects the MCP endpoint in the half-installed
+state that fails *quietly*: the tools work and the actions come back full of
+`sleep` and screen coordinates.
 
 ## Data & config paths (unified)
 

@@ -8,7 +8,7 @@ created from a fully commented template — the template
 everything on this page, and a good file to keep open while reading.
 
 This page introduces the APIs in the order you meet them. For the exact arguments
-of any one of them, see the [API reference](api_reference.md).
+of any one of them, see the [API reference](config-api.md).
 
 ## The config file
 
@@ -336,7 +336,7 @@ class Extract(ThreadedAction):
 
 It is deliberately its own namespace and method-style: a config binds keys, an
 action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
-`FillFailed` are importable. **See [Action API](action_api.md)** for the full
+`FillFailed` are importable. **See [Action API](action-api.md)** for the full
 surface, and `keyhac/skills/keyhac-action-authoring/` for how to write one.
 
 **This surface is experimental** and the rest of this document is not: it may
@@ -433,4 +433,4 @@ focus path — the two things you need when writing new bindings.
 | `getLogger(name)` | console logging |
 
 Exact signatures, defaults and per-argument notes for all of these are in the
-[API reference](api_reference.md).
+[API reference](config-api.md).
