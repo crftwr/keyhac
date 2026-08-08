@@ -132,12 +132,12 @@ paste into `~/.keyhac/config.py` instead:
 def configure(keymap):
     import open_issues                              # from extensions/
     action = open_issues.OpenIssues()
-    keymap.register_action("open-issues", action)   # list_actions / run_action
+    keymap.register_action("open-issues", action)   # list_actions / start_action
     kt["Fn-I"] = action                             # optional: bind a key
 ```
 
 `register_action` is what makes the action visible to `list_actions` and
-runnable by `run_action`; **a key binding alone leaves it invisible to both**,
+runnable by `start_action`; **a key binding alone leaves it invisible to both**,
 which costs you the run-read-fix loop. Reloading re-imports the module, so an
 edit is picked up without restarting Keyhac.
 

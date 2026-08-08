@@ -895,7 +895,9 @@ Anything slow - network, subprocess, sleeping, heavy computation - must not run 
 
 Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
 
-The pool is a single worker shared by every threaded action, so a run() that sleeps or loops delays every other one until it returns. 
+Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
+
+**The user can stop a running action with Esc**, and an action needs to write nothing for that: `wait_for` raises `ActionCancelled`, and a long action spends nearly all its time waiting.  Use `check_cancelled()` in a stretch of work that has no wait in it. 
 
 ```python
 class Fetch(ThreadedAction):

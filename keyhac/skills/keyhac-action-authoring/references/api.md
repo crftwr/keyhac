@@ -127,10 +127,13 @@ raises rather than freezing the keyboard.
 
 ## Saying what happened
 
-Whatever the action logs or prints comes back to you from `run_action`, which
-is how you read your own failure instead of asking the operator to copy it out
-of a console window. `logger.info(...)`, `print(...)` and a logger made with
-the standard library all arrive.
+**Starting an action and collecting it are two calls.** `start_action` returns
+at once - these drive real applications and can take minutes - and
+`get_action_result` waits for the end and hands back everything the action
+logged or printed, with the traceback if it raised. That is how you read your
+own failure instead of asking the operator to copy it out of a console window.
+`logger.info(...)`, `print(...)` and a logger made with the standard library
+all arrive. `cancel_action` stops one, the same as the operator's Esc.
 
 **Shell out with `capture_output=True`.** It is the one thing that does *not*
 arrive on its own — a child process writes to a real file descriptor, so
@@ -142,8 +145,8 @@ subprocess.run(cmd, check=True, capture_output=True, text=True)
 ```
 
 Without it a failure reads "returned 1" with no reason, and the run-read-fix
-loop stops there. `run_action` says so explicitly when it happens, so if you
-see that note, add the argument.
+loop stops there. `get_action_result` says so explicitly when it happens, so
+if you see that note, add the argument.
 
 Log what a rerun would need, not that something broke: which selector, what was
 found instead, which item of how many.

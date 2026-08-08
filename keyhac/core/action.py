@@ -1,8 +1,13 @@
 """Threaded actions (ported from keyhac-mac keyhac_action.py).
 
 starting()/finished() run on the event-loop thread under the engine lock
-(serialized with the hook); run() executes in a shared single-worker thread
-pool.
+(serialized with the hook); run() executes on a shared pool, concurrently with
+other actions.
+
+Two things beyond that lifecycle live here, and both exist because an action of
+the kind this framework serves runs for minutes rather than milliseconds: it
+can be stopped with Esc, and what it produced is recorded where something can
+come back for it (keyhac/core/capture.py).
 """
 
 import contextlib
@@ -11,7 +16,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from keyhac.core import log
+from keyhac.core import capture, log
 
 logger = log.getLogger("Action")
 
@@ -72,8 +77,15 @@ class ThreadedAction:
     needs.  run() executes on a worker, where input contexts are allowed but
     windows and AX elements are not.
 
-    The pool is a single worker shared by every threaded action, so a run()
-    that sleeps or loops delays every other one until it returns.
+    Actions run concurrently, so a run() that takes minutes no longer holds up
+    every other one.  What is still serialized is what has to be: injected
+    keystrokes (one `with ctx:` batch at a time) and the clipboard save and
+    restore around a paste.
+
+    **The user can stop a running action with Esc**, and an action needs to
+    write nothing for that: `wait_for` raises `ActionCancelled`, and a long
+    action spends nearly all its time waiting.  Use `check_cancelled()` in a
+    stretch of work that has no wait in it.
 
     ```python
     class Fetch(ThreadedAction):
@@ -178,13 +190,19 @@ class ThreadedAction:
             return self.run()
 
     @contextlib.contextmanager
-    def cancellable(self):
-        """Make this action reachable by Esc for the duration of the block.
+    def cancellable(self, name: str | None = None):
+        """Make this action reachable by Esc, and record what it produces.
 
-        Both ways of starting an action enter this: `_run_tracked` for a key
-        press, and the MCP `run_action` tool, which drives the lifecycle
-        itself. Without it, an action started from a chat window would be the
-        one you could not stop.
+        `name` is what the run is filed under. A caller that knows it - the
+        MCP tool, which was handed a name to look the action up by - passes it
+        rather than letting the lookup below go through the Keymap singleton,
+        which is not necessarily the registry it came from.
+
+        Both ways of starting an action enter this - `_run_tracked` for a key
+        press, and the MCP tool that starts one from a chat window - which is
+        what makes both stoppable and both retrievable. A run started by a key
+        this morning is the one §15.4 wants readable at noon, and it lands here
+        by taking the same path.
 
         The flag is built here rather than in `__init__` because subclasses
         write their own and do not call `super()` - the documented shape, and
@@ -198,12 +216,43 @@ class ThreadedAction:
         _current.action = self
         with ThreadedAction._running_lock:
             ThreadedAction._running.add(self)
+
+        self._run_record = capture.start_run(name or self._registered_name())
         try:
-            yield self
+            with capture.capture(self._run_record.output):
+                yield self
+        except ActionCancelled:
+            self._run_record.finish("cancelled", "stopped with Esc")
+            raise
+        except BaseException as error:                    # noqa: BLE001
+            self._run_record.finish(
+                "failed",
+                "the action raised:\n" + traceback.format_exc()
+                + capture.subprocess_detail(error))
+            raise
+        else:
+            self._run_record.finish("finished")
         finally:
             _current.action = None
             with ThreadedAction._running_lock:
                 ThreadedAction._running.discard(self)
+
+    def _registered_name(self) -> str:
+        """The name this action was registered under, for the run record.
+
+        Reversed out of the registry rather than stored, so an action that was
+        never registered still gets a record - under its repr, which is what a
+        key binding has instead of a name.
+        """
+        try:
+            from keyhac.core.keymap import Keymap
+            registry = getattr(Keymap.get_instance(), "registered_actions", {})
+            for name, action in registry.items():
+                if action is self:
+                    return name
+        except Exception:                                 # noqa: BLE001
+            pass
+        return repr(self)
 
     def _done_callback(self, future):
         # add_done_callback fires on the pool thread; hand finished() back to

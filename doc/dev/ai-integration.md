@@ -1106,7 +1106,7 @@ Against the layers in §5 and the sequence in §10:
 | Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
-| Layer 4 — action metadata | **Minimal.** `keymap.register_action(name, action)` and the MCP tool schemas; no argument schema, no description surface. |
+| Layer 4 — action metadata | **Minimal, plus run state.** `keymap.register_action(name, action)` and the MCP tool schemas; still no argument schema and no description surface. `list_actions` now also reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
 | Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
 | Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
@@ -1288,7 +1288,42 @@ capturing stdout for the duration of a run on the loop thread captures whatever
 else logs on that thread in the same window. Bound the output, and say in the
 result when it was truncated.
 
-### 15.4 A failing action should be able to hand the agent its own trace
+### 15.4 A failing action should be able to hand the agent its own trace — **done, as a side effect**
+
+It fell out of making the tools asynchronous, which is the second time on this
+page that the answer was to notice two problems were one.
+
+The transport answers one message per request and has no stream to push
+progress over (`server.py`: no GET, no SSE, no sessions), while §2's actions
+run for minutes — so `run_action` could not wait for the end without timing out
+for exactly the workload it exists to serve, and the bridge's 60-second cap
+made that concrete. Splitting it into **`start_action`** and
+**`get_action_result`** means a run's output has to live somewhere retrievable
+rather than being the return value of the call that started it.
+
+Which is what this section asked for. Once that store exists, the entry point
+that fills it is `ThreadedAction.cancellable()` — the same seam Esc uses — so a
+run started by a **key press** records itself identically. "The PDF one failed
+this morning" is now `get_action_result("print-tabs")`, with the traceback, the
+subprocess stderr, and how far it got.
+
+The open questions answered themselves, mostly conservatively:
+
+- **Where it lives, and for how long.** Memory only, one run per action, a
+  second run replacing the first. A record holds window titles and element
+  names, which is §9's material, and the conservative answer there is the one
+  taken here: nothing on disk, nothing accumulating.
+- **Whether the operator is prompted.** No. The record simply exists for an
+  agent that asks, which is what this section preferred.
+- **Whether a repeated failure notifies.** Still not built, and still against
+  Keyhac's posture of staying out of the way.
+
+`cancel_action` came along with it: refusing a model the ability to stop what it
+was allowed to start is the odd asymmetry, and stopping is the safer half.
+
+The original note follows.
+
+---
 
 Today the loop is: the action fails, the operator notices something did not
 happen, opens the Keyhac console, finds the traceback, copies it, pastes it
