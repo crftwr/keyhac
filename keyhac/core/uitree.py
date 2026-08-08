@@ -40,6 +40,30 @@ import fnmatch
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
 
+
+class StaleElement(Exception):
+    """The element this node was read from no longer exists.
+
+    **A `UINode` is a snapshot.** It records what an element was when the tree
+    was walked; the screen moves on and the node does not notice. That is the
+    contract on purpose - a node that quietly re-read itself would hide exactly
+    the change an action's preconditions exist to catch.
+
+    So the node has to say when it has gone stale, and say it in a way an
+    action can act on. The distinction this exists for is the one §3.7 turns
+    on:
+
+    - `StaleElement` - *the screen moved*. Re-find the element and carry on, or
+      stop and hand back to a human. The action is not wrong.
+    - `FillFailed` / an empty search - *the selector is wrong*. The action was
+      written against a screen that is not this one, and running it again will
+      fail the same way.
+
+    Before this existed both arrived as "element supports no press action",
+    because a dead element reports no actions - true, and the least useful true
+    thing to say.
+    """
+
 #: Depth bound.  Deep enough to reach table cells in web content (which sit at
 #: about 10) without following an Electron tree to its bottom.
 DEFAULT_MAX_DEPTH = 14

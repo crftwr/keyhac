@@ -49,7 +49,7 @@ import time
 from typing import Any, Iterable
 
 from keyhac.core import log
-from keyhac.core.uitree import UINode
+from keyhac.core.uitree import StaleElement, UINode
 from keyhac.core.wait import WaitTimeout, evaluate_on_main_thread, wait_for
 
 logger = log.getLogger("Fill")
@@ -376,9 +376,28 @@ def _press(element) -> None:
     names = element.get_action_names() or []
     for name in ("AXPress", "Invoke", "Toggle", "AXConfirm", "Select"):
         if name in names:
-            element.perform_action(name)
+            if element.perform_action(name) is False:
+                _raise_if_stale(element, f"{name} was refused")
+                raise FillFailed(f"the element refused {name}")
             return
+    # A dead element reports no actions, so this is where the two arrive at the
+    # same place - and they need different answers. Ask before blaming the
+    # selector: "supports no press action" sent an operator looking at their
+    # action when the dialog had simply closed underneath it.
+    _raise_if_stale(element, "it went away before it could be pressed")
     raise FillFailed(f"element supports no press action (has {names})")
+
+
+def _raise_if_stale(element, what: str) -> None:
+    """Turn the platform's "this element is gone" into the typed error.
+
+    Policy lives here rather than in the platform layer, which only answers
+    the question. `getattr` because register_action and the tests both accept
+    duck-typed elements that predate `is_stale`.
+    """
+    probe = getattr(element, "is_stale", None)
+    if probe is not None and probe():
+        raise StaleElement(f"the element is no longer on screen: {what}")
 
 
 def press(target) -> None:

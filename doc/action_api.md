@@ -27,7 +27,7 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled)
+**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
 
 
 ## <kbd>class</kbd> `UI`
@@ -439,6 +439,22 @@ for system in self.systems:
 Were this an ordinary Exception, pressing Esc there would be recorded as "SystemA failed" and the run would carry on to SystemB - the one thing cancelling must not do. As a BaseException it passes through every such handler while still unwinding the action's `finally` blocks, so progress already written stays written. 
 
 Cancellation is KeyboardInterrupt's cousin, not an error. An action never needs to know this class exists: `wait_for` raises it, and long actions spend most of their time waiting. 
+
+---
+
+
+## <kbd>class</kbd> `StaleElement`
+The element this node was read from no longer exists. 
+
+**A `UINode` is a snapshot.** It records what an element was when the tree was walked; the screen moves on and the node does not notice. That is the contract on purpose - a node that quietly re-read itself would hide exactly the change an action's preconditions exist to catch. 
+
+So the node has to say when it has gone stale, and say it in a way an action can act on. The distinction this exists for is the one §3.7 turns on: 
+
+
+- `StaleElement` - *the screen moved*. Re-find the element and carry on, or  stop and hand back to a human. The action is not wrong. 
+- `FillFailed` / an empty search - *the selector is wrong*. The action was  written against a screen that is not this one, and running it again will  fail the same way. 
+
+Before this existed both arrived as "element supports no press action", because a dead element reports no actions - true, and the least useful true thing to say. 
 
 ---
 
