@@ -10,18 +10,18 @@ else ifeq ($(OS),Windows_NT)
     IS_WINDOWS := 1
 endif
 
-# Keyhac 2 targets Python 3.13 (the version embedded in the shipped app).
+# Keyhac 2 targets Python 3.14 (the version embedded in the shipped app).
 ifeq ($(IS_WINDOWS),1)
-    PY_ON_PATH := $(shell command -v python3.13 2>/dev/null)
+    PY_ON_PATH := $(shell command -v python3.14 2>/dev/null)
     ifneq ($(strip $(PY_ON_PATH)),)
-        PYTHON := python3.13
+        PYTHON := python3.14
     else
         PYTHON := py
     endif
     VENV_PYTHON := $(VENV)/Scripts/python.exe
     VENV_PIP := $(VENV)/Scripts/pip.exe
 else
-    PYTHON := python3.13
+    PYTHON := python3.14
     VENV_PYTHON := $(VENV)/bin/python
     VENV_PIP := $(VENV)/bin/pip
 endif

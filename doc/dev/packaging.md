@@ -4,7 +4,7 @@
 
 | Layer | Language | Size | Why |
 |---|---|---|---|
-| Application (engine, UI, platform bindings) | Python 3.13 | ~everything | ctypes covers Win32 (PuiKit's Windows backend proves it incl. COM/Direct2D); PyObjC covers Quartz/AX/AppKit |
+| Application (engine, UI, platform bindings) | Python 3.14 | ~everything | ctypes covers Win32 (PuiKit's Windows backend proves it incl. COM/Direct2D); PyObjC covers Quartz/AX/AppKit |
 | Embedding launcher, Windows (`Keyhac.exe`) | C | ~150 lines | PEP 587 `PyConfig` isolated init, module search paths. Also: exe icon, DPI manifest. |
 | Embedding launcher, macOS (`Keyhac.app` main) | Objective-C | ~150 lines | Same PEP 587 pattern. A real bundle executable is **required** so the Accessibility permission attaches to a stable identity — running under a generic `python3` would grant the permission to that interpreter, not to Keyhac. |
 | Build scripts | PowerShell / shell / Python | | `windows_app/build.ps1`, `macos_app/build.sh`, `tools/` |
@@ -102,7 +102,7 @@ odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporti
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
 `keyhac-action-authoring-skill.zip` (attached to the GitHub Release), and the
 `keyhac` wheel on PyPI. PuiKit is
-versioned/released independently on PyPI; Keyhac2 pins a minimum (`puikit>=1.0.8`).
+versioned/released independently on PyPI; Keyhac2 pins a minimum (`puikit>=1.0.10`).
 
 **`release-skill` is not optional the way it looks.** The skill bundle is the
 only way a user can obtain the authoring skill — `make skill-bundle` needs the
