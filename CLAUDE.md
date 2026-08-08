@@ -118,6 +118,14 @@ and the macOS bundle is signed/notarized and verified end-to-end. The live
 verification record — including which passes caught which real bugs — is in
 [doc/dev/testing.md](doc/dev/testing.md).
 
+**AI integration ships as experimental** — the MCP endpoint (`keyhac/mcp/`), the
+action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless a
+config calls `enable_mcp_server()`, and it is the one part of the public surface
+**not** covered by the usual additive-only expectation: `UINode`'s element
+identity and handle lifetime are still open ([doc/dev/ai-integration.md](doc/dev/ai-integration.md)
+§11), and settling them may break actions. Do not treat that surface as frozen,
+and do not extend the experimental marker to anything else.
+
 What remains is tracked in the GitHub issues: the deferred features (themes/fonts,
 i18n, migemo, rich clipboard formats, macOS ISO layout, balloon help UI). The
 genuinely-interactive verification passes are through (issue #10, closed), but

@@ -339,6 +339,13 @@ action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
 `FillFailed` are importable. **See [Action API](action_api.md)** for the full
 surface, and `keyhac/skills/action-authoring/` for how to write one.
 
+**This surface is experimental** and the rest of this document is not: it may
+change in ways a minor release normally would not, and an upgrade may require
+editing actions you have written. Everything else here — key tables, clipboard
+history, macros, window control — keeps the stability you expect from a 2.x
+release. [Authoring actions with Claude](mcp.md) says what is unsettled and
+what would settle it.
+
 ## Keyboard macros
 
 ```python

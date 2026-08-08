@@ -9,6 +9,28 @@ handing you code to debug.
 you do: the endpoint reads the accessibility tree of every application you have
 open and can run the actions you register. See [Security](#security).
 
+> ### Experimental
+>
+> This feature — the MCP endpoint, the [action API](action_api.md), the
+> authoring skill — is **experimental**, and the rest of Keyhac is not. Key
+> tables, clipboard history, macros and window control keep the stability you
+> expect from a 2.x release; this does not.
+>
+> **What that means in practice:** an upgrade may require editing actions you
+> have already written. The usual rule that a minor release only *adds* does
+> not apply here. In particular the shape of a `UINode` — how an element is
+> identified, and how long a node you are holding stays valid — is not
+> settled, and it is the shape everything else is built on.
+>
+> **Why it is shipped anyway:** it is off by default and additive, so it costs
+> nothing to anyone who does not enable it, and the shape will be settled by
+> people writing real actions rather than by more design. If you write some,
+> what broke is the useful report.
+>
+> It stops being experimental when that shape stops moving — which needs, at
+> minimum, actions generated against Windows as well as macOS, and by more
+> than one person. Today the evidence is two sessions on one machine.
+
 ## Turning it on
 
 In `~/.keyhac/config.py`:
