@@ -71,6 +71,17 @@ class WinAppControl(AppControl):
     def launch(self, app_name: str) -> None:
         os.startfile(app_name)
 
+    def open_url(self, url: str) -> None:
+        # startfile on a URL is ShellExecute "open", which is what the shell
+        # does for a link: the registered handler for the scheme, not a browser
+        # we picked.
+        if sys.platform != "win32":
+            return
+        try:
+            os.startfile(url)
+        except OSError as e:
+            logger.warning(f"Could not open {url}: {e}")
+
     def edit_file(self, path: str, editor: str | None = None) -> None:
         """ShellExecute the editor with the quoted path (the keyhac-win
         editTextFile call: PATH and App Paths both resolve the name, so

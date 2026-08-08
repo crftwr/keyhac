@@ -6,6 +6,10 @@ from pathlib import Path
 
 from puikit import Menu, MenuItem, SEPARATOR
 
+from keyhac.core import log
+
+logger = log.getLogger("Tray")
+
 _ASSETS = Path(__file__).with_name("assets")
 
 
@@ -33,6 +37,18 @@ def install_tray(console, keymap, hook) -> None:
         console._hook_checkbox.checked = hook.installed
         console.panel.render()
 
+    def open_guide():
+        # Pinned to the running version, not main: the page tells an agent
+        # which skill bundle to fetch and what this build's API looks like, and
+        # main would hand it a newer answer than the Keyhac it is talking to.
+        import keyhac
+        url = (f"https://github.com/crftwr/keyhac/blob/v{keyhac.__version__}"
+               f"/doc/ai-integration.md")
+        if keymap.app_control is None:
+            logger.info(f"AI integration guide: {url}")
+            return
+        keymap.app_control.open_url(url)
+
     def toggle_mcp():
         # Through the console's handler rather than the keymap's, so the
         # setting is written and the checkbox follows from one place - the two
@@ -55,6 +71,11 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("AI Integration", submenu=Menu(
             MenuItem("MCP Server", on_select=toggle_mcp,
                      checked=lambda: keymap.mcp_server_running),
+            SEPARATOR,
+            # The setup instructions are the thing you hand to an agent, so
+            # what this really provides is the URL - the page's first line
+            # tells the reader to pass it on rather than follow it themselves.
+            MenuItem("Setup Guide", on_select=open_guide),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),

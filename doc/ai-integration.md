@@ -1,15 +1,26 @@
-# Authoring actions with an AI agent
+# AI Integration
+
+> ## Give this page's URL to your AI agent
+>
+> Ask it to set up Keyhac's skill and MCP server, and it can do most of it
+> from here — it will read [Setting it up](#setting-it-up) below, which is
+> written for it, and ask you for the parts only you can do. You do not have
+> to follow these instructions yourself.
+>
+> Keyhac's tray menu has the link: **AI Integration → Setup Guide**, pinned to
+> the version you are running.
 
 Keyhac can expose its element tools over MCP, so you can ask for an action in a
 chat window and have the agent inspect the actual screen, write it, run it,
 read the error, and fix it — instead of guessing at selectors and handing you
-code to debug.
+code to debug. The action it writes is plain Python on a key binding: no model
+runs when you later press the key.
 
 MCP is an open protocol and nothing here is specific to one vendor: Keyhac
 serves ordinary JSON-RPC over loopback HTTP with a bearer token, which is a
 plain Streamable HTTP endpoint. Any client that can reach one should work.
-[Connecting an agent](#connecting-an-agent) lists which have actually been
-tried, which is a shorter list.
+[Which clients have been tried](#which-clients-have-been-tried) is a shorter
+list.
 
 **This is off unless you turn it on**, and it is worth understanding why before
 you do: the endpoint reads the accessibility tree of every application you have
@@ -51,63 +62,79 @@ governs the keyboard hook, which has always been a checkbox rather than a
 setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
 delete the line from your `config.py` and use the switch.)*
 
-## Connecting an agent
+## Setting it up
+
+**This section is addressed to the AI agent.** If you are a person reading it,
+you can follow it too — but handing the URL over is the shorter path.
+
+There are **two installs, and neither implies the other**. Getting one without
+the other is the common failure, and the halves fail very differently: with the
+skill and no connection, you will correctly say you cannot see the user's
+screen, which looks like the feature being broken. With the connection and no
+skill, everything appears to work and you will write actions containing `sleep`
+and screen coordinates, which break on a different machine.
+
+How your host installs an MCP server or a skill is **your** knowledge, and this
+page deliberately does not guess at it. What follows is only what Keyhac knows
+and you cannot.
+
+### 1. The skill
+
+Download `keyhac-action-authoring-skill.zip` from the Keyhac release matching
+the running version — the tag is in the URL you fetched this page from:
+
+```
+https://github.com/crftwr/keyhac/releases/tag/v<version>
+```
+
+Install it however this host takes a skill. It documents *that version's* API,
+so a mismatch is worth mentioning to the user rather than working around.
+
+### 2. The connection
+
+Ask the user to switch the endpoint on first: **AI Integration → MCP Server**
+in Keyhac's tray menu, or the **AI Integration** checkbox in its console
+window. It is off by default and you cannot turn it on yourself.
+
+Then:
+
+- Keyhac publishes the connection details as `mcp.json` beside the user's
+  `config.py` — `~/.keyhac/mcp.json` unless Keyhac's console reported a
+  different config directory at startup.
+- That file holds a `port` and a `token`. The endpoint is
+  `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every request
+  needs an `Authorization: Bearer <token>` header.
+- **The port changes every time Keyhac restarts.** Point the client at the file
+  if it can read one. If it can only take a fixed value, say so — that is a
+  real limitation, not something to work around by pinning today's port.
+- If this host can only launch an MCP server as a subprocess over stdio, use
+  the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes no
+  arguments and finds that file itself. A GUI client usually needs its absolute
+  path, since it does not inherit a shell `PATH`.
+
+### 3. How to go about it
+
+- **Back up** any other application's config file before editing it, and show
+  the user the change.
+- **Do not quit or restart another application.** Ask, and say what they should
+  see afterwards.
+- **Verify rather than assume.** Once the client is restarted, call
+  `list_windows`. If the user's own windows come back, it worked. If the tool
+  is not there, say so plainly instead of guessing at the cause — and if you
+  are unsure of this host's config path or schema, ask rather than writing a
+  plausible one.
+- Anything you cannot do from here, ask the user for. Most of it you can.
+
+## Which clients have been tried
 
 | Client | Transport | Status |
 |---|---|---|
-| Claude Desktop | stdio → the bridge below | **Verified** — the actions in `examples/actions/` were authored through it |
+| Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified** — the actions in `examples/actions/` were authored through it |
 | Claude Code | HTTP directly (`claude mcp add --transport http`) | Should work, **untried** |
 | Anything else with MCP support | HTTP directly | Should work, **untried** |
 
 "Untried" is not scepticism about those clients — nobody has run them against
 this endpoint yet. If you do, whether it worked or not is the useful report.
-
-### Let the agent connect itself
-
-Every client installs MCP servers differently, and the agent running inside
-yours knows how its own host does it — far better than this page can, and for
-clients that did not exist when this page was written. So rather than a
-procedure per client, here is the half only Keyhac knows. Turn the switch on
-first, then paste this:
-
-> Set up Keyhac's MCP server for yourself, using whatever mechanism this client
-> uses to install MCP servers — you know that part, and the notes below
-> deliberately do not cover it.
->
-> What you cannot guess, so please don't:
->
-> - Keyhac is running with its MCP switch on. It publishes the connection
->   details as `mcp.json` beside my `config.py` — `~/.keyhac/mcp.json` unless
->   Keyhac's console reported a different config directory at startup.
-> - That file holds a `port` and a `token`. The endpoint is
->   `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every
->   request needs an `Authorization: Bearer <token>` header.
-> - **The port changes every time Keyhac restarts.** Point the client at the
->   file if it can read one. If it can only take a fixed value, tell me that
->   rather than pinning today's port — it is a real limitation, not something
->   to work around.
-> - If this client can only launch an MCP server as a subprocess over stdio,
->   use the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes
->   no arguments and finds that file itself. A GUI client usually needs its
->   absolute path, since it does not inherit a shell `PATH`.
->
-> How I would like you to go about it:
->
-> - Back up any other application's config file before editing it, and show me
->   the change.
-> - Do not quit or restart another application yourself. Tell me to, and tell
->   me what I should see afterwards.
-> - Once I have restarted it, verify by calling `list_windows` — if my open
->   windows come back, it worked. If the tool is not there, say so plainly
->   instead of guessing at the cause.
-> - Finally, check whether the authoring skill is installed as well. It is a
->   separate install, and having the tools without it is the quiet failure:
->   you will be able to see my screen and will write actions containing
->   `sleep` and screen coordinates.
-
-The last point is the one worth keeping even if you install by hand. Neither
-half implies the other, and the two ways of getting it half-done fail very
-differently — see [the skill is not the connection](#add-the-authoring-skill).
 
 **Connecting over HTTP directly**, for a client that can: the port and token
 are published in `mcp.json` beside your `config.py`, the endpoint is
@@ -160,27 +187,30 @@ write an action — the rules that stop it emitting `sleep`, coordinates, and
 unverified writes. Without it you will get plausible code that breaks on a
 slower machine.
 
-Skills are a Claude feature, so the packaged bundle is for Claude Desktop.
-The content is not: `keyhac/skills/keyhac-action-authoring/` is Markdown, and any
-agent that can be given documents can be given these. What it cannot be given
-is the *habit* of consulting them unprompted, which is the part a skill buys.
-
-Claude Desktop → Settings → カスタマイズ / Customize → Skills → Add → **Upload
-skill**, and give it the bundle:
+**Get it from the release**, as `keyhac-action-authoring-skill.zip`:
 
 ```
-make skill-bundle        # writes dist/keyhac-action-authoring-skill.zip
+https://github.com/crftwr/keyhac/releases/tag/v<your version>
 ```
 
-The uploader states two requirements, and the bundle is built to meet both:
-the archive must contain a `SKILL.md` **at its root** (not nested in a folder),
-and that file must carry its name and description as YAML frontmatter. Uploads
-go through a security scan that takes a minute or two before the skill becomes
-usable.
+Match the version you are running — Keyhac's console prints it at startup, and
+the release for it is the one whose API the skill describes. The bundle carries
+that version stamped inside, so a mismatch is visible after the fact rather
+than silent.
 
-The skill documents *this version's* API, so re-upload it after upgrading
-Keyhac — `make skill-bundle` stamps the version into the bundle so a mismatch
-is visible.
+Skills are a Claude feature, so the packaged bundle is shaped for Claude
+Desktop: Settings → カスタマイズ / Customize → Skills → Add → **Upload skill**.
+The uploader states two requirements and the bundle meets both — a `SKILL.md`
+at the archive root, carrying its name and description as YAML frontmatter.
+Uploads go through a security scan that takes a minute or two.
+
+The *content* is not Claude-specific. Unzipped it is Markdown, and any agent
+that can be handed documents can be handed these. What that does not buy is the
+*habit* of consulting them unprompted, which is the part a skill mechanism
+provides.
+
+(Building it from a source checkout, if you are working on Keyhac itself:
+`make skill-bundle` writes the same zip into `dist/`.)
 
 **The skill is not the connection, and neither step implies the other.** The
 skill is knowledge — writing rules and an API reference, with no way to reach

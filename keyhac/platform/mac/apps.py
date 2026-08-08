@@ -54,6 +54,13 @@ class MacAppControl(AppControl):
     def launch(self, app_name: str) -> None:
         subprocess.Popen(["open", "-a", app_name])
 
+    def open_url(self, url: str) -> None:
+        # No -a: LaunchServices picks the default browser for the scheme.
+        try:
+            subprocess.Popen(["open", url])
+        except OSError as e:
+            logger.warning(f"Could not open {url}: {e}")
+
     def edit_file(self, path: str, editor: str | None = None) -> None:
         """``open -a`` the file in the editor, or in the first installed
         fallback.  Each attempt blocks until LaunchServices accepts or

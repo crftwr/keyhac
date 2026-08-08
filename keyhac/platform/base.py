@@ -224,6 +224,10 @@ class AppControl(ABC):
         application (a name or path meaningful to the OS); None picks a
         platform default.  Failure is logged, not raised."""
 
+    @abstractmethod
+    def open_url(self, url: str) -> None:
+        """Open a URL in the user's default browser.  Logged, not raised."""
+
 
 class Window(ABC):
     """A top-level OS window.
