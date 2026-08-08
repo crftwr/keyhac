@@ -1054,7 +1054,7 @@ Against the layers in §5 and the sequence in §10:
 | Layer 3 — execution safety | **Partial.** Waiting and read-back are in; per-step preconditions, checkpointing and idempotency are *patterns the actions follow*, not framework. `Action.preconditions()`, dry-run/preview, `Esc` cancellation and the long-action executor are **not built** — the `max_workers=1` pool is still the latent bug §2.1 names. |
 | Layer 4 — action metadata | **Minimal.** `keymap.register_action(name, action)` and the MCP tool schemas; no argument schema, no description surface. |
 | Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
-| Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/mcp.md`. |
+| Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
 
@@ -1068,7 +1068,7 @@ had not written the skill, against the operator's own screen:
    of importable names that was missing two of them. Fixed in the skill.
 2. *Save a set of pages as PDFs through Chrome's print dialog* — derived from a
    Claude Desktop **screen recording**, and the densest case in §2. The
-   recording/selector split in `doc/mcp.md` held: no pixel addressing survived
+   recording/selector split in `doc/ai-integration.md` held: no pixel addressing survived
    into the action, and its selectors are real AppKit identifiers read from the
    live tree.
 
@@ -1094,7 +1094,7 @@ Getting a working setup took: enable the server in `config.py`, reload, find
 the bridge's absolute path, write `mcpServers` into
 `claude_desktop_config.json`, fully quit and reopen Claude Desktop, run
 `make skill-bundle`, delete the previous skill, upload, wait for the security
-scan. Nine steps across three applications, and `doc/mcp.md` describes all of
+scan. Nine steps across three applications, and `doc/ai-integration.md` describes all of
 them correctly.
 
 It still went wrong, because **the skill and the bridge are independent
@@ -1103,7 +1103,7 @@ one.** With the skill uploaded and no bridge registered, Claude correctly
 reports that it is knowledge with no execution environment and cannot see your
 windows — which reads exactly like the feature not working. The reverse is
 quieter and worse: tools without the skill work, and return actions full of
-`sleep` and screen coordinates. `doc/mcp.md` now says so explicitly, which
+`sleep` and screen coordinates. `doc/ai-integration.md` now says so explicitly, which
 helps a reader and does nothing for the several remaining ways to get this
 half-done.
 
@@ -1116,7 +1116,7 @@ mechanical and was in fact done that way in the session that found the problem.
 blocking question, and it dissolves once you notice the agent already knows
 that half: it is running inside the client, and how that client installs an MCP
 server is exactly the kind of thing it knows better than a page written before
-that client existed. So `doc/mcp.md` carries a **prompt**, not a procedure, and
+that client existed. So `doc/ai-integration.md` carries a **prompt**, not a procedure, and
 the prompt covers only what Keyhac knows and the agent cannot guess — that the
 port and token are in `mcp.json` beside `config.py`, that **the port changes
 every restart** so the file is the thing to point at, that auth is a bearer
@@ -1139,7 +1139,7 @@ application's config, and never quit or restart one — say what to expect
 instead. And the circularity is weaker than it looked. An agent cannot verify
 *before* the install, but it does not need to: the user restarts the client and
 the agent's first tool call settles it. That also decides where this lives —
-`doc/mcp.md`, because a user with no connection is a user with no skill either,
+`doc/ai-integration.md`, because a user with no connection is a user with no skill either,
 so the skill is the one place it certainly cannot be.
 
 Still unwritten: nobody has run this prompt. It is the same "untried" as the
@@ -1151,7 +1151,7 @@ than Claude Desktop is the useful report.
 f6cf4e0 gave the skill the file header, the `extensions/` placement and the
 `configure()` registration block, so a generated action now says where it goes.
 What it does not address: **no tool writes Python to disk, deliberately** (§4.4
-and `doc/mcp.md`), so the operator is the transport. They paste a class into
+and `doc/ai-integration.md`), so the operator is the transport. They paste a class into
 `~/.keyhac/extensions/`, then paste three more lines into the middle of a
 config file that is theirs, several hundred lines long, and already working.
 

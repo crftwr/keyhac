@@ -57,7 +57,7 @@ VENV_STAMP := $(VENV)/.installed
 .PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo icons icons-check \
         api-reference api-reference-check skill-bundle \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
-        tag release-github release-whl release-status build publish-testpypi \
+        tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
         windows-app windows-zip install-windows-zip uninstall-windows-zip release-windows-zip \
         windows-msix install-windows-msix uninstall-windows-msix release-windows-msix
@@ -105,6 +105,7 @@ help:
 	@echo "  make tag VERSION=x.y.z - bump __version__, commit, tag, push (no publishing)"
 	@echo "  make release-github    - open the GitHub Release at that tag"
 	@echo "  make release-whl       - upload sdist + wheel to PyPI, and to the Release"
+	@echo "  make release-skill     - attach the AI authoring skill bundle to the Release"
 	@echo "  make release-macos-dmg   - (on macOS)   attach Keyhac-<ver>-macos.dmg"
 	@echo "  make release-windows-zip - (on Windows) attach Keyhac-<ver>-win64.zip"
 	@echo "  make release-windows-msix - (on Windows) submit the MSIX to the Microsoft Store"
@@ -409,6 +410,17 @@ release-whl: $(PYPI_SDIST)
 	$(VENV_PYTHON) -m twine upload "$(PYPI_SDIST)" "$(PYPI_WHEEL)"
 	gh release upload v$(KEYHAC_VERSION) "$(PYPI_SDIST)" "$(PYPI_WHEEL)" --clobber
 	@echo "Published $(KEYHAC_VERSION) to PyPI and attached both distributions to release v$(KEYHAC_VERSION)"
+
+# --- release-skill: the authoring skill, where a user can reach it -----------
+# `make skill-bundle` needs the Makefile and tools/, and neither ships: the
+# sdist prunes tools and the wheel names its packages explicitly. So without
+# this target the only people who can obtain the bundle are the people who
+# already have the repository, and doc/ai-integration.md would be describing a
+# developer step as if it were the user's download.
+release-skill: skill-bundle
+	@$(call check_release_exists)
+	gh release upload v$(KEYHAC_VERSION) "dist/keyhac-action-authoring-skill.zip" --clobber
+	@echo "Attached the authoring skill to release v$(KEYHAC_VERSION)"
 
 # --- release-status: read-only progress check -------------------------------
 # The one place to see which artifacts have landed for the version the
