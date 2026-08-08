@@ -232,6 +232,7 @@ clean-venv:
 #   make tag VERSION=x.y.z     any machine  bump __version__, commit, tag, push
 #   make release-github        any machine  open the GitHub Release at that tag
 #   make release-whl           any machine  sdist + wheel -> PyPI (+ the Release)
+#   make release-skill         any machine  the AI authoring skill -> the Release
 #   make release-status        any machine  what has landed so far
 #
 #   make release-macos-dmg     macOS        Keyhac-<ver>-macos.dmg -> the Release
@@ -433,11 +434,30 @@ release-status:
 	@gh release view v$(KEYHAC_VERSION) --json assets \
 		--template '{{range .assets}}  GitHub asset: {{.name}}{{"\n"}}{{end}}' \
 		2>/dev/null || echo "  (no GitHub Release yet — run 'make release-github')"
-	@$(VENV_PYTHON) -c "import json,urllib.request as u; \
+	@# Through certifi's CA bundle rather than the interpreter's default store:
+	@# a python.org build whose Install Certificates.command was never run
+	@# cannot verify pypi.org, and this reported that as "unknown" - which
+	@# reads as "not published" at exactly the moment you are checking whether
+	@# it is. certifi is already here (twine depends on it); no certifi falls
+	@# back to the default rather than failing.
+	@$(VENV_PYTHON) -c "import json,ssl,urllib.request as u,importlib.util as il; \
 		v='$(KEYHAC_VERSION)'; \
-		d=json.load(u.urlopen('https://pypi.org/pypi/keyhac/json')); \
+		ctx=ssl.create_default_context(cafile=__import__('certifi').where()) \
+			if il.find_spec('certifi') else None; \
+		d=json.load(u.urlopen('https://pypi.org/pypi/keyhac/json', context=ctx)); \
 		print('  PyPI: ' + ('published' if v in d['releases'] else 'NOT published'))" \
-		2>/dev/null || echo "  PyPI: unknown (package not on PyPI yet, or no venv / network)"
+		2>/dev/null || echo "  PyPI: could not be checked (no venv, or no network)"
+	@# Called out by name rather than left to be spotted among the asset lines:
+	@# its absence is the one that fails quietly. Without it there is no way for
+	@# a user to obtain the authoring skill at all, and connecting the endpoint
+	@# without the skill produces actions full of sleep and screen coordinates
+	@# rather than an error anyone would notice.
+	@if gh release view v$(KEYHAC_VERSION) --json assets --jq '.assets[].name' 2>/dev/null \
+		| grep -q '^keyhac-action-authoring-skill\.zip$$'; then \
+		echo "  Skill bundle: attached"; \
+	else \
+		echo "  Skill bundle: MISSING - run 'make release-skill'"; \
+	fi
 
 # ============================================================================
 # macOS App Bundle Targets
