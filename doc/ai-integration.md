@@ -74,7 +74,25 @@ open and can run the actions you register. See [Security](#security).
 
 Tick **AI Integration: MCP Server** in the console window, or
 **AI Integration → MCP Server** in the tray / menu bar menu. The console logs
-the port it chose.
+the port it chose, and then one line for every call the agent makes — which
+tool, with which arguments, and how big an answer went back:
+
+```
+INFO [keyhac.MCP] describe_screen(app='Chrome') -> 4812 chars
+INFO [keyhac.MCP] write_extension(name='translate_clipboard', source='import ...') -> 118 chars
+```
+
+Set the console's level to **Debug** for the whole of each request and reply
+rather than a summary. The envelope stays on one line and the payload is
+printed underneath as itself, so a screen dump reads as the tree it is:
+
+```
+DEBUG [keyhac.MCP] <- {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":"<result.content[0].text>"}],"isError":false}}
+AXWindow 'my-projects (Workspace)'
+  AXGroup 'my-projects (Workspace)'
+    AXWebArea 'my-projects (Workspace)'
+      AXStaticText = 'Diff editor'
+```
 
 **It turns itself off after 60 minutes**, and it is not remembered across
 restarts. Tick it again when you need it — that is the intended rhythm, not an
@@ -481,6 +499,10 @@ don't type passwords or show private material while recording.
   another process on the machine cannot use the endpoint without it.
 - **It closes itself after 60 minutes**, and is never restored at startup, so
   the exposure lasts as long as the work rather than as long as you forget.
+- **Every call is on the console**, one line each, whether or not it changed
+  anything: reading a window leaves a trace the same way writing a file does.
+  The chat window shows you what the agent chose to tell you about; this shows
+  you what it actually asked Keyhac for.
 - **Two places can be written, and no others**: a `.py` under
   `~/.keyhac/extensions/` — the name has to be an importable module name, which
   is what rules out paths and traversal — and `config.py` itself. Neither is
@@ -527,5 +549,5 @@ what it says it does.
 
 The practical answer is therefore built in rather than left to you: the exposure
 coincides with you sitting in front of the screen, watching a console that
-reports every write, and it ends by itself. Which is worth more than a gate
-nobody reads.
+reports every call and not only every write, and it ends by itself. Which is
+worth more than a gate nobody reads.

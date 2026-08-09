@@ -170,6 +170,142 @@ def test_a_failing_tool_reports_inside_the_result(dispatcher):
     assert "absent" in reply["result"]["content"][0]["text"]
 
 
+# -- the console trail -------------------------------------------------------
+
+def _rpc(dispatcher, name, arguments=None):
+    return dispatcher.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                              "params": {"name": name,
+                                         "arguments": arguments or {}}})
+
+
+def _info(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+
+
+def _debug(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
+
+
+def test_every_call_is_one_info_line(dispatcher, caplog):
+    """The console is where an operator watches an open endpoint, and until
+    this it reported only the two writes - a session could read every window on
+    the screen and leave nothing behind."""
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        _rpc(dispatcher, "describe_screen", {"app": "TestApp"})
+    assert len(_info(caplog)) == 1
+    assert _info(caplog)[0].startswith("describe_screen(app='TestApp')")
+
+
+def test_the_line_carries_the_outcome(dispatcher, caplog):
+    """Half of what the line is for: a call that was refused and one that
+    handed over a window are not the same event."""
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        _rpc(dispatcher, "list_windows")
+        _rpc(dispatcher, "start_action", {"name": "absent"})
+    served, refused = _info(caplog)
+    assert served.endswith("chars")
+    assert "absent" in refused
+
+
+def test_a_failure_stays_on_one_line(dispatcher, caplog):
+    """A tool reports failure as text and some of that text is a traceback.
+    One call is one line, or the trail is unreadable in the window it is in."""
+    def explode(**_):
+        raise RuntimeError("first line\nsecond line\nthird line")
+
+    dispatcher.registry.tools["list_windows"].run = explode
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        _rpc(dispatcher, "list_windows")
+    assert "\n" not in _info(caplog)[0]
+    assert "first line second line" in _info(caplog)[0]
+
+
+def test_a_long_argument_is_elided_not_dropped(writable, caplog):
+    """`write_extension` carries a whole module. Logging it whole would push
+    the rest of the session out of the console's ring buffer; logging only the
+    tool name would lose which module was written."""
+    source = "# " + "x" * 5000 + "\n"
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        _rpc(Dispatcher(writable), "write_extension",
+             {"name": "thing", "source": source})
+    # Two lines here, saying different things: the tool announces the file it
+    # replaced, and the call line is the one under test.
+    line = next(m for m in _info(caplog) if m.startswith("write_extension("))
+    assert "name='thing'" in line
+    assert source not in line and len(line) < 300
+    assert "source='# xxx" in line, "and enough of it to recognise"
+
+
+def test_the_handshake_is_not_an_info_line(dispatcher, caplog):
+    """A client pings for as long as it stays connected. An audit trail nobody
+    can read is not one."""
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        for method in ("initialize", "tools/list", "ping"):
+            dispatcher.handle({"jsonrpc": "2.0", "id": 1, "method": method})
+    assert _info(caplog) == []
+
+
+def test_debug_carries_the_whole_exchange(dispatcher, caplog):
+    with caplog.at_level(logging.DEBUG, logger="keyhac.MCP"):
+        _rpc(dispatcher, "describe_keymap")
+    sent = [m for m in _debug(caplog) if m.startswith("-> ")]
+    received = [m for m in _debug(caplog) if m.startswith("<- ")]
+    assert any("describe_keymap" in m for m in sent)
+    assert any("focus path" in m for m in received), "the reply, not just a shape"
+
+
+def test_the_debug_line_spends_no_characters_on_nothing(registry, caplog):
+    """Both of json.dumps's defaults inflate it: padded separators cost a
+    character per field, and ensure_ascii turns one Japanese label into six
+    characters each. `DETAIL_CHARS` is the budget they were spending."""
+    registry.keymap.node.name = "セカイブラウザ"
+    with caplog.at_level(logging.DEBUG, logger="keyhac.MCP"):
+        _rpc(Dispatcher(registry), "describe_screen")
+    reply = next(m for m in _debug(caplog) if m.startswith("<- "))
+    assert '{"jsonrpc":"2.0","id":9' in reply
+    assert "セカイブラウザ" in reply and "\\u30bb" not in reply
+
+
+def test_the_payload_reads_as_itself_not_as_an_escaped_ribbon(registry, caplog):
+    """A UI tree inside JSON is one line with `\\n` written out along it, which
+    is the one thing the console could have shown properly and did not. The
+    envelope stays on its line; the tree goes underneath as a tree."""
+    registry.keymap.node.dump = lambda: ("AXWindow 'Root'\n"
+                                         "  AXGroup 'Sidebar'\n"
+                                         "    AXButton 'Explorer'")
+    with caplog.at_level(logging.DEBUG, logger="keyhac.MCP"):
+        _rpc(Dispatcher(registry), "describe_screen")
+    envelope, *body = next(
+        m for m in _debug(caplog) if m.startswith("<- ")).splitlines()
+
+    assert "\\n" not in envelope, "the tree is lifted out, not written along it"
+    assert envelope.endswith('"isError":false}}'), "and the shape still shows"
+    assert "<result.content[0].text>" in envelope, "naming where it went"
+    assert body[:3] == ["AXWindow 'Root'",
+                        "  AXGroup 'Sidebar'",
+                        "    AXButton 'Explorer'"], "indentation is the tree"
+
+
+def test_a_debug_block_is_bounded(writable, caplog):
+    """The bound is per block rather than per record, because the block is what
+    would evict the ring buffer: `describe_screen` answers with a whole UI tree
+    and `write_extension` is handed a whole module."""
+    with caplog.at_level(logging.DEBUG, logger="keyhac.MCP"):
+        _rpc(Dispatcher(writable), "write_extension",
+             {"name": "thing", "source": "# " + "x" * 50_000 + "\n"})
+    envelope, block = next(
+        m for m in _debug(caplog) if m.startswith("-> ")).splitlines()
+    assert len(envelope) < 300, "the source is not in it"
+    assert len(block) < server_module.DETAIL_CHARS + 100
+    assert "more characters" in block
+
+
+def test_a_notification_logs_no_reply(dispatcher, caplog):
+    with caplog.at_level(logging.DEBUG, logger="keyhac.MCP"):
+        dispatcher.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    assert not [m for m in _debug(caplog) if m.startswith("<- ")]
+
+
 # -- tools ------------------------------------------------------------------
 
 def test_list_windows_marks_the_focused_one(registry):
@@ -987,6 +1123,31 @@ def test_with_the_token_it_serves(server):
     assert reply["result"]["tools"]
 
 
+def test_the_reply_goes_out_as_utf8_not_escapes(server):
+    """A tool reply is a UI tree, so on a Japanese system it is mostly
+    non-ASCII, and `\\uXXXX` spends six bytes on each character UTF-8 carries in
+    three. Asserted on the bytes: a client would decode either form to the same
+    string, so only the wire shows it."""
+    server.registry.keymap.node.name = "セカイブラウザ"
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.port}/",
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                         "params": {"name": "describe_screen"}}).encode(),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {server.token}"},
+        method="POST")
+    with urllib.request.urlopen(request, timeout=10) as reply:
+        body = reply.read()
+        # A Content-Length counted off a different string than the one written
+        # is a hang, not a wrong answer - urlopen would wait for bytes that
+        # never come. Reading the whole body under a timeout is that assertion.
+        assert int(reply.headers["Content-Length"]) == len(body)
+
+    assert "セカイブラウザ".encode() in body
+    assert b"\\u30bb" not in body
+    assert json.loads(body)["result"]["content"][0]["text"], "and it still parses"
+
+
 def _no_other_user_can_read(path):
     """Windows' answer to the 0600 question, asked of the mechanism it uses.
 
@@ -1266,6 +1427,39 @@ def test_the_bridge_reads_its_pipe_as_utf8(tmp_path, monkeypatch):
 
     sent = json.loads(forwarded[0].decode("utf-8"))
     assert sent["params"]["arguments"]["name"] == "メモ帳"
+
+
+def test_the_bridge_writes_its_pipe_as_utf8(tmp_path, monkeypatch):
+    """The other half of the same reconfigure, and it only became load-bearing
+    when the daemon stopped `\\uXXXX`-escaping its replies: until then every
+    body was ASCII whatever the pipe's code page was, so a cp932 stdout could
+    not fail on one. Now a reply carries the window titles it read."""
+    import io
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+    monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
+    monkeypatch.setattr("sys.stdin", io.StringIO(
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}) + "\n"))
+
+    served = json.dumps({"jsonrpc": "2.0", "id": 1,
+                         "result": {"text": "メモ帳 - 無題"}},
+                        ensure_ascii=False).encode("utf-8")
+
+    class Reply:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self): return served
+
+    monkeypatch.setattr(bridge.urllib.request, "urlopen",
+                        lambda prepared, timeout=None: Reply())
+    written = io.BytesIO()
+    monkeypatch.setattr("sys.stdout", io.TextIOWrapper(written, encoding="cp1252"))
+    bridge.main([])
+
+    relayed = json.loads(written.getvalue().decode("utf-8"))
+    assert relayed["result"]["text"] == "メモ帳 - 無題"
 
 
 def test_a_hollow_web_area_points_at_content_access(registry):
@@ -1573,5 +1767,25 @@ def test_an_unrelated_print_does_not_land_in_a_running_action(writable):
     peek = writable.call("get_action_result", {"name": "slow.Slow", "wait": 0})
     assert "started working" in peek, "the action's own print is captured"
     assert "NOT THE ACTION'S OUTPUT" not in peek
+    gate.set()
+    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
+
+
+def test_the_call_log_does_not_land_in_a_running_action(writable):
+    """The same problem the print tee had, arriving by the other route: the log
+    handler is global on purpose, so one line per call would mean a model
+    polling a long run reading back the polls that read it."""
+    dispatcher = Dispatcher(writable)
+    gate = _slow_action(writable)
+    _rpc(dispatcher, "start_action", {"name": "slow.Slow"})
+    time.sleep(0.1)
+    _rpc(dispatcher, "get_action_result", {"name": "slow.Slow", "wait": 0})
+
+    peek = _rpc(dispatcher, "get_action_result",
+                {"name": "slow.Slow", "wait": 0})["result"]["content"][0]["text"]
+    assert "started working" in peek, "the action's own output is still captured"
+    # The report quotes get_action_result itself - it says how to ask again -
+    # so the marker is the log format, not the tool name.
+    assert "[keyhac.MCP]" not in peek
     gate.set()
     writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})

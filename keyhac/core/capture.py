@@ -42,6 +42,14 @@ MAX_CAPTURE = 20_000
 #: not losing the halves that say how the run ended.
 _captures: list = []
 
+#: The MCP server's own logger, which is the one thing on the `keyhac` tree
+#: that is never an action's output: it reports the calls made *about* the
+#: action, one line each. A run lasts minutes and a model polls it, so without
+#: this every `get_action_result` comes back quoting the calls that read it.
+#: Named rather than imported - `keyhac.mcp` imports this module, not the
+#: reverse - and matched exactly, since it is produced in exactly one place.
+_MCP_LOGGER = "keyhac.MCP"
+
 #: Where `print()` on *this* thread goes. Thread-scoped where the log handler
 #: is not, and the difference is not fussiness: a run lasts minutes, and a
 #: global stdout tee spent all of them absorbing every unrelated print in the
@@ -138,6 +146,7 @@ def capture(buffer: Bounded | None = None):
     handler = _Handler(buffer)
     handler.setFormatter(
         logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+    handler.addFilter(lambda record: record.name != _MCP_LOGGER)
 
     # Both, and it is not belt-and-braces. `keyhac` is configured with
     # propagate=False (core/log.py), so a record from the documented

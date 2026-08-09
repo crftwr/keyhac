@@ -56,6 +56,18 @@ ENDPOINT_FILE = "mcp.json"
 #: is a mistake or an attack, and reading it would be the damage.
 MAX_BODY = 1 << 20
 
+#: How much of one argument value the INFO line for a call shows.  Long enough
+#: to tell two calls on the same tool apart, short enough that
+#: `write_extension`'s source cannot push the rest of the console out of the
+#: ring buffer - the file it lands in is announced with a line count anyway.
+VALUE_CHARS = 60
+
+#: How much of one JSON-RPC message the DEBUG traffic lines show.  A
+#: `describe_screen` reply is a whole UI tree: the point of the traffic log is
+#: what was asked and roughly what came back, not a transcript that scrolls
+#: everything else out of the window.
+DETAIL_CHARS = 2000
+
 
 #: APPMODEL_ERROR_NO_PACKAGE - what GetCurrentPackageFullName answers when the
 #: calling process has no package identity, i.e. is not running from an MSIX
@@ -219,7 +231,16 @@ class _Handler(BaseHTTPRequestHandler):
         return secrets.compare_digest(header[len(prefix):], self.server.token)
 
     def _send(self, status: int, payload) -> None:
-        body = b"" if payload is None else json.dumps(payload).encode("utf-8")
+        # UTF-8 on the wire rather than `\uXXXX` escapes, which is what JSON is
+        # specified to be (RFC 8259 §8.1) and what the bridge already decodes
+        # the body as. A tool reply is a UI tree, so on a Japanese system it is
+        # mostly non-ASCII: escaping sent every one of those characters as six
+        # bytes instead of three, and the CJK case measured 1.77x. The compact
+        # separators beside it save a constant handful of bytes per reply - the
+        # padding is per field, not per character, so it is the escaping that
+        # was worth the change.
+        body = b"" if payload is None else json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -240,6 +261,22 @@ class Dispatcher:
         self.registry = registry
 
     def handle(self, request):
+        """One reply, with the whole exchange logged around it at DEBUG.
+
+        A wrapper so that every reply is logged from one place rather than at
+        each of `_handle`'s returns - and so a request that is not JSON-RPC at
+        all, which the dispatch below refuses before reading it, is still
+        visible as something that arrived. The INFO half of the console trail
+        is one line per *tool* call, in `_call`.
+        """
+        logger.debug(f"-> {_detail(request)}")
+        response = self._handle(request)
+        # A notification has no reply to log; the 202 is the whole answer.
+        if response is not None:
+            logger.debug(f"<- {_detail(response)}")
+        return response
+
+    def _handle(self, request):
         if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
             return _error(None, -32600, "not a JSON-RPC 2.0 request")
 
@@ -287,7 +324,101 @@ class Dispatcher:
             logger.debug(f"tool {name} failed", exc_info=True)
             text = f"{type(error).__name__}: {error}"
             is_error = True
+
+        # One INFO line per tool call, and only for tool calls: `initialize`,
+        # `tools/list` and the ping a client repeats while it is connected are
+        # handshake, and an audit trail nobody can read is not one. Logged on
+        # the way out rather than the way in, because the outcome is half of
+        # what the line is for - the access-log shape, not a progress display.
+        # A call that blocks by design (`get_action_result` waits) therefore
+        # reports when it returns, and what it was waiting for is already on
+        # the console: the action's own output goes there as it happens.
+        logger.info(f"{name}({_call_arguments(arguments)}) -> "
+                    f"{_elide(text, VALUE_CHARS) if is_error else f'{len(text)} chars'}")
         return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+def _call_arguments(arguments) -> str:
+    """`name='thing', wait=20` - what tells two calls on one tool apart.
+
+    Values are elided rather than dropped. Which module was written and which
+    window was read is the whole content of the audit line, and a tool whose
+    arguments are all long (`write_extension`) is exactly the one where seeing
+    the first words of them matters.
+    """
+    if not isinstance(arguments, dict):
+        return _elide(repr(arguments), VALUE_CHARS)
+    return ", ".join(f"{key}={_value(value)}" for key, value in arguments.items())
+
+
+def _value(value) -> str:
+    # Elided *inside* the quotes, so a shortened string still reads as one.
+    if isinstance(value, str) and len(value) > VALUE_CHARS:
+        return repr(_elide(value, VALUE_CHARS))
+    return repr(value)
+
+
+def _elide(text: str, limit: int) -> str:
+    """One console line, at most `limit` characters of it.
+
+    Newlines collapse rather than wrap: a traceback from a failing tool would
+    otherwise turn one audit line into thirty, and the whole of it is a DEBUG
+    line away.
+    """
+    line = " ".join(text.split())
+    return line if len(line) <= limit else line[:limit] + "..."
+
+
+def _detail(message) -> str:
+    """A JSON-RPC message as something a person can read, bounded.
+
+    **The envelope stays one compact line.** `jsonrpc`, `id` and the shape of
+    the result say almost nothing to a reader, and folding them over ten
+    indented lines would bury the part that does.
+
+    **The payload becomes a block.** That part is a `describe_screen` reply or
+    the module `write_extension` was handed, and inside JSON either arrives as
+    one line with `\\n` written out in it - a UI tree rendered as an unreadable
+    ribbon in a window that would have shown it perfectly well. So every string
+    with a newline in it is lifted out, leaving `<its.path>` where it sat, and
+    printed underneath as itself. Blocks follow in the order their placeholders
+    appear.
+
+    The console splits a record on its newlines and prefixes only the first
+    (`core/log.py`), so this lands as a header line and an indented body - the
+    shape a logged traceback already has there. `ensure_ascii` is off for the
+    same reason: a Japanese menu label is worth more as itself than as six
+    characters of `\\u30bb`.
+    """
+    blocks: list[str] = []
+
+    def lift(node, path):
+        if isinstance(node, str) and "\n" in node:
+            blocks.append(node)
+            return f"<{path}>"
+        if isinstance(node, dict):
+            return {key: lift(value, f"{path}.{key}" if path else str(key))
+                    for key, value in node.items()}
+        if isinstance(node, list):
+            return [lift(value, f"{path}[{index}]")
+                    for index, value in enumerate(node)]
+        return node
+
+    try:
+        envelope = json.dumps(lift(message, ""), default=repr,
+                              ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        envelope, blocks = repr(message), []
+    return "\n".join([_bounded(envelope)] + [_bounded(block) for block in blocks])
+
+
+def _bounded(text: str) -> str:
+    """`DETAIL_CHARS` of it, and how much was left. Per block rather than per
+    record: the cap is there to keep one reply from evicting the console's ring
+    buffer, and a reply's tree is the block."""
+    if len(text) <= DETAIL_CHARS:
+        return text
+    return f"{text[:DETAIL_CHARS]}... [{len(text) - DETAIL_CHARS} more characters]"
 
 
 def _result(request_id, result):
