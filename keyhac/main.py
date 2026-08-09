@@ -13,10 +13,13 @@ import argparse
 import signal
 import sys
 
+from keyhac import __version__
 from keyhac.core import log, paths
 from keyhac.core.keymap import Keymap
 
 logger = log.getLogger("Main")
+
+WEBSITE_URL = "https://crftwr.github.io/keyhac/"
 
 
 def main() -> int:
@@ -32,6 +35,18 @@ def main() -> int:
     args = parser.parse_args()
 
     log.set_debug(args.debug)
+
+    # First line of every run, before anything that can fail: which build this
+    # is, and where its documentation is. The console window backfills the
+    # lines logged before it opened, so it heads that too - and a run that
+    # stops at the single-instance check or the accessibility prompt has still
+    # said which version stopped.
+    #
+    # A banner, not a record: no level and no source name in front of it. That
+    # is what print() writes here, except that print() only becomes console
+    # output at redirect_std_streams() below, which is after the point where
+    # this has to be said - so it goes to the same place by hand.
+    log.Console.get_instance().write(f"Keyhac {__version__} - {WEBSITE_URL}\n")
 
     if sys.platform == "darwin":
         platform_name = "mac"
