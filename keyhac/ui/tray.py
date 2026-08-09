@@ -57,9 +57,9 @@ def install_tray(console, keymap, hook) -> None:
         console._mcp_checkbox.checked = keymap.mcp_server_running
         console.panel.render()
 
-    def toggle_extension_writes():
-        console._on_extension_write_toggle(not keymap.extension_writes_allowed)
-        console._write_checkbox.checked = keymap.extension_writes_allowed
+    def toggle_authoring():
+        console._on_authoring_toggle(not keymap.action_authoring_allowed)
+        console._authoring_checkbox.checked = keymap.action_authoring_allowed
         console.panel.render()
 
     menu = Menu(
@@ -79,8 +79,8 @@ def install_tray(console, keymap, hook) -> None:
             # Its own row rather than something the server switch implies. The
             # tick is evaluated when the menu opens, so a window that has since
             # run out reads as off without anything having to push it.
-            MenuItem("Allow extension writes", on_select=toggle_extension_writes,
-                     checked=lambda: keymap.extension_writes_allowed),
+            MenuItem("Allow action authoring", on_select=toggle_authoring,
+                     checked=lambda: keymap.action_authoring_allowed),
             SEPARATOR,
             # The setup instructions are the thing you hand to an agent, so
             # what this really provides is the URL - the page's first line

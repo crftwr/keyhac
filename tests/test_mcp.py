@@ -88,13 +88,12 @@ class FakeKeymap:
     def __init__(self, extensions_dir=""):
         self.node = FakeNode()
         self.ui = FakeUI(self.node)
-        self.registered_actions = {}
         self.focus = type("F", (), {"app_name": "TestApp", "window_title": "Main",
                                     "path": "/App/Window"})()
         self.reloaded = 0
         self.extensions_dir = extensions_dir
-        self.extension_writes_allowed = False
-        self.extension_writes_lapsed = False
+        self.action_authoring_allowed = False
+        self.action_authoring_lapsed = False
 
     def list_windows(self):
         return [FakeWindow("TestApp", "Main")]
@@ -110,9 +109,9 @@ def registry():
 
 @pytest.fixture
 def writable(tmp_path):
-    """A registry whose keymap has the extension-write window open."""
+    """A registry whose keymap has the action-authoring window open."""
     keymap = FakeKeymap(extensions_dir=str(tmp_path / "extensions"))
-    keymap.extension_writes_allowed = True
+    keymap.action_authoring_allowed = True
     return ToolRegistry(keymap)
 
 
@@ -188,24 +187,24 @@ def test_find_elements_requires_a_criterion(registry):
         registry.call("find_elements", {})
 
 
-def test_an_action_reports_what_it_logged(registry):
+def test_an_action_reports_what_it_logged(writable):
     from keyhac.core import log
 
     def run():
         log.getLogger("Probe").info("did the thing")
         return "ok"
 
-    output = _register(registry, run)
+    output = _register(writable, run)
     assert "did the thing" in output
     assert "finished" in output
 
 
-def test_a_failure_comes_back_as_a_traceback_rather_than_raising(registry):
+def test_a_failure_comes_back_as_a_traceback_rather_than_raising(writable):
     """The whole point of the tool: the model reads the failure itself."""
     def run():
         raise ValueError("selector matched nothing")
 
-    output = _register(registry, run, name="bad")
+    output = _register(writable, run, name="bad")
     assert "ValueError: selector matched nothing" in output
     assert "Traceback" in output
     assert "failed" in output
@@ -241,7 +240,7 @@ def test_a_write_is_refused_while_the_switch_is_off(registry, tmp_path):
 def test_a_lapsed_window_says_so_rather_than_reading_as_broken(registry, tmp_path):
     """The timeout's whole cost is a refusal the operator cannot act on."""
     registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    registry.keymap.extension_writes_lapsed = True
+    registry.keymap.action_authoring_lapsed = True
     result = registry.call("write_extension", {"name": "thing", "source": "x = 1\n"})
     assert "run out" in result and "60 minutes" in result
 
@@ -307,46 +306,250 @@ def test_the_write_is_announced_on_the_console(writable, caplog):
     assert any("thing.py (+1/-0 lines)" in m for m in messages)
 
 
-# -- the extension-write switch ---------------------------------------------
+# -- drafts in extensions/ ---------------------------------------------------
+#
+# The property worth guarding hardest is that listing does not execute: the
+# whole point of the AST scan is that a directory of half-finished actions
+# stays inert until something names one.
+
+DRAFT = '''\
+from keyhac import ThreadedAction
+
+RAN_AT_IMPORT.append("yes")          # NameError unless someone injected it
+
+
+class OpenIssues(ThreadedAction):
+    """Opens the issue list."""
+
+    def run(self):
+        return "ran"
+
+
+class NeedsArgs(ThreadedAction):
+    def __init__(self, target, limit=10):
+        self.target = target
+
+
+class NotAnAction:
+    pass
+'''
+
+
+def write_draft(registry, name="thing", source=DRAFT):
+    directory = extensions(registry)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{name}.py").write_text(source)
+    return directory / f"{name}.py"
+
+
+def test_listing_drafts_does_not_import_them(writable):
+    """The module raises at import; listing it must still work."""
+    write_draft(writable)
+    result = writable.call("list_actions", {})
+
+    assert "thing.OpenIssues: Opens the issue list." in result
+    assert "thing" not in sys.modules
+
+
+def test_a_class_that_is_not_an_action_is_not_listed(writable):
+    write_draft(writable)
+    assert "NotAnAction" not in writable.call("list_actions", {})
+
+
+def test_a_draft_needing_arguments_says_so_instead_of_offering_itself(writable):
+    write_draft(writable)
+    result = writable.call("list_actions", {})
+    assert "thing.NeedsArgs: needs constructor arguments (target)" in result
+
+
+def test_starting_one_that_needs_arguments_is_refused(writable):
+    write_draft(writable)
+    with pytest.raises(KeyError, match="constructor arguments.*target"):
+        writable.call("start_action", {"name": "thing.NeedsArgs"})
+
+
+def test_drafts_are_invisible_and_unstartable_while_the_window_is_shut(registry,
+                                                                      tmp_path):
+    registry.keymap.extensions_dir = str(tmp_path / "extensions")
+    write_draft(registry)
+
+    assert "OpenIssues" not in registry.call("list_actions", {})
+    with pytest.raises(KeyError, match="Allow action authoring"):
+        registry.call("start_action", {"name": "thing.OpenIssues"})
+
+
+def test_a_lapsed_window_refuses_a_draft_by_saying_it_lapsed(registry, tmp_path):
+    registry.keymap.extensions_dir = str(tmp_path / "extensions")
+    registry.keymap.action_authoring_lapsed = True
+    write_draft(registry)
+
+    with pytest.raises(KeyError, match="run out"):
+        registry.call("start_action", {"name": "thing.OpenIssues"})
+
+
+def test_a_file_that_does_not_parse_is_skipped_not_reported(writable):
+    write_draft(writable, name="broken", source="def nope(:\n")
+    write_draft(writable, name="good")
+    result = writable.call("list_actions", {})
+    assert "good.OpenIssues" in result and "broken" not in result
+
+
+def test_underscore_files_are_helpers_not_drafts(writable):
+    write_draft(writable, name="_helpers")
+    assert "OpenIssues" not in writable.call("list_actions", {})
+
+
+# -- loading a draft ---------------------------------------------------------
+
+RUNNABLE = '''\
+from keyhac import ThreadedAction
+
+VERSION = {version}
+
+
+class Thing(ThreadedAction):
+    def run(self):
+        return VERSION
+'''
+
+
+def test_a_draft_runs_without_any_config_edit(writable):
+    write_draft(writable, source=RUNNABLE.format(version=1))
+    writable.call("start_action", {"name": "thing.Thing"})
+    result = writable.call("get_action_result", {"name": "thing.Thing", "wait": 5})
+    assert "finished" in result
+    assert writable.keymap.reloaded == 0        # no reload_config needed
+
+
+def test_an_edited_draft_is_reimported_without_a_reload(writable):
+    """Round two of a fix loop must not run round one's code."""
+    path = write_draft(writable, source=RUNNABLE.format(version=1))
+    first = writable._startable("thing.Thing")
+
+    # A distinct mtime: the cache is keyed on it, and a fast test can land
+    # inside one timestamp tick.
+    path.write_text(RUNNABLE.format(version=2))
+    os.utime(path, (0, 0))
+
+    second = writable._startable("thing.Thing")
+    assert second is not first
+    assert sys.modules["thing"].VERSION == 2
+
+
+def test_an_unchanged_draft_keeps_its_instance(writable):
+    """cancel_action reaches the running object by looking it up again."""
+    write_draft(writable, source=RUNNABLE.format(version=1))
+    assert writable._startable("thing.Thing") is writable._startable("thing.Thing")
+
+
+SLOW = '''\
+import time
+
+from keyhac import ThreadedAction, getLogger
+
+logger = getLogger("Slow")
+
+
+class Slow(ThreadedAction):
+    def run(self):
+        logger.info("started")
+        for _ in range(200):
+            self.check_cancelled()
+            time.sleep(0.01)
+        return "finished the whole loop"
+'''
+
+
+def test_a_draft_is_asynchronous_and_reports_what_it_logged(writable):
+    """The authoring loop's three calls, on a draft: start, collect, read."""
+    write_draft(writable, source=SLOW)
+
+    started = writable.call("start_action", {"name": "thing.Slow"})
+    assert "started" in started
+
+    # Returned before the action finished - that is the contract that lets
+    # these drive real applications for minutes.
+    looking = writable.call("get_action_result", {"name": "thing.Slow", "wait": 0})
+    assert "RUNNING" in looking or "running" in looking
+
+    writable.call("cancel_action", {"name": "thing.Slow"})
+    result = writable.call("get_action_result", {"name": "thing.Slow", "wait": 5})
+    assert "cancelled" in result
+    assert "started" in result           # what it logged comes back too
+
+
+def test_a_draft_that_raises_hands_back_its_traceback(writable):
+    write_draft(writable, source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Boom(ThreadedAction):\n"
+        "    def run(self):\n"
+        "        raise ValueError('the selector matched nothing')\n"))
+
+    writable.call("start_action", {"name": "thing.Boom"})
+    result = writable.call("get_action_result", {"name": "thing.Boom", "wait": 5})
+    assert "failed" in result
+    assert "the selector matched nothing" in result
+    assert "Traceback" in result
+
+
+def test_a_started_draft_stays_readable_after_the_window_shuts(writable):
+    """The run already happened; its traceback must not become unreachable."""
+    write_draft(writable, source=RUNNABLE.format(version=1))
+    writable.call("start_action", {"name": "thing.Thing"})
+    writable.keymap.action_authoring_allowed = False
+
+    result = writable.call("get_action_result", {"name": "thing.Thing", "wait": 5})
+    assert "finished" in result
+
+
+def test_reloading_the_config_drops_cached_drafts(writable):
+    write_draft(writable, source=RUNNABLE.format(version=1))
+    first = writable._startable("thing.Thing")
+    writable.call("reload_config", {})
+    assert writable._drafts.cached("thing.Thing") is None
+    assert writable._startable("thing.Thing") is not first
+
+
+# -- the action-authoring switch ---------------------------------------------
 
 def test_the_write_switch_is_off_until_asked(engine):
     keymap = engine(lambda keymap: None).keymap
-    assert keymap.extension_writes_allowed is False
-    assert keymap.extension_writes_lapsed is False
+    assert keymap.action_authoring_allowed is False
+    assert keymap.action_authoring_lapsed is False
 
 
 def test_the_window_lapses_on_its_own(engine, monkeypatch):
     keymap = engine(lambda keymap: None).keymap
-    monkeypatch.setattr(keymap_module, "_EXTENSION_WRITE_WINDOW", 0.05)
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.05)
 
-    keymap.set_extension_writes_allowed(True)
-    assert keymap.extension_writes_allowed is True
+    keymap.set_action_authoring_allowed(True)
+    assert keymap.action_authoring_allowed is True
 
     time.sleep(0.1)
-    assert keymap.extension_writes_allowed is False
+    assert keymap.action_authoring_allowed is False
     # Distinguishable from "never switched on", which is a different thing for
     # the operator to do something about.
-    assert keymap.extension_writes_lapsed is True
+    assert keymap.action_authoring_lapsed is True
 
 
 def test_using_it_does_not_extend_it(engine, monkeypatch):
     """A fixed window, so a model that keeps writing cannot keep its own
     permission alive."""
     keymap = engine(lambda keymap: None).keymap
-    monkeypatch.setattr(keymap_module, "_EXTENSION_WRITE_WINDOW", 0.15)
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.15)
 
-    keymap.set_extension_writes_allowed(True)
+    keymap.set_action_authoring_allowed(True)
     for _ in range(3):
         time.sleep(0.06)
-        keymap.extension_writes_allowed          # a write would read this
-    assert keymap.extension_writes_allowed is False
+        keymap.action_authoring_allowed          # a write would read this
+    assert keymap.action_authoring_allowed is False
 
 
 def test_stopping_the_endpoint_closes_the_window(engine):
     keymap = engine(lambda keymap: None).keymap
-    keymap.set_extension_writes_allowed(True)
+    keymap.set_action_authoring_allowed(True)
     keymap.stop_mcp_server()
-    assert keymap.extension_writes_allowed is False
+    assert keymap.action_authoring_allowed is False
 
 
 # -- the two security properties --------------------------------------------
@@ -624,24 +827,42 @@ def test_a_native_window_keeps_the_truncation_note(registry):
 # fails silently if it regresses: the tool still returns *something*, just
 # without the line that says what went wrong.
 
-def _register(registry, run, name="probe"):
-    """Start an action and collect it, which is now two calls rather than one."""
-    class Action:
-        def starting(self): pass
-        def finished(self, result): pass
-    Action.run = staticmethod(run)
-    registry.keymap.registered_actions[name] = Action()
-    registry.call("start_action", {"name": name})
-    return registry.call("get_action_result", {"name": name, "wait": 20})
+PROBE = '''\
+from keyhac import ThreadedAction
+
+RUN = None                       # the test installs its body after import
 
 
-def test_print_reaches_the_model(registry):
+class Probe(ThreadedAction):
+    def run(self):
+        return RUN()
+'''
+
+
+def _register(writable, run, name="probe"):
+    """Run the test's callable as a draft, and collect what it produced.
+
+    Actions reach the endpoint only as classes in `extensions/` now, so the
+    body has to arrive through a file. Importing it first and installing the
+    callable afterwards keeps these tests written as closures over their own
+    state - `_startable` hands back the cached instance the second time,
+    because the file has not moved.
+    """
+    write_draft(writable, name=name, source=PROBE)
+    writable._startable(f"{name}.Probe")
+    sys.modules[name].RUN = run
+    writable.call("start_action", {"name": f"{name}.Probe"})
+    return writable.call("get_action_result",
+                         {"name": f"{name}.Probe", "wait": 20})
+
+
+def test_print_reaches_the_model(writable):
     """The shipped config.py template teaches print() on the same line as the
     logger. It reached the console window and stopped there."""
-    assert "printed this" in _register(registry, lambda: print("printed this"))
+    assert "printed this" in _register(writable, lambda: print("printed this"))
 
 
-def test_print_still_reaches_the_console(registry):
+def test_print_still_reaches_the_console(writable):
     """Teed, not redirected: the operator watching the console window is not
     who this change was for, and must not lose anything."""
     import sys
@@ -654,23 +875,23 @@ def test_print_still_reaches_the_console(registry):
     original = sys.stdout
     sys.stdout = Console()
     try:
-        _register(registry, lambda: print("both places"))
+        _register(writable, lambda: print("both places"))
     finally:
         sys.stdout = original
     assert any("both places" in text for text in seen)
 
 
-def test_a_logger_outside_the_keyhac_tree_is_captured(registry):
+def test_a_logger_outside_the_keyhac_tree_is_captured(writable):
     """What getLogger(__name__) produces in a module under extensions/."""
     import logging as stdlib_logging
 
     def run():
         stdlib_logging.getLogger("my_extension").info("from an extension")
 
-    assert "from an extension" in _register(registry, run)
+    assert "from an extension" in _register(writable, run)
 
 
-def test_the_documented_logger_is_still_captured(registry):
+def test_the_documented_logger_is_still_captured(writable):
     """`keyhac` is configured with propagate=False, so a root-only handler sees
     none of it - the regression this pins."""
     from keyhac.core import log
@@ -678,19 +899,19 @@ def test_the_documented_logger_is_still_captured(registry):
     def run():
         log.getLogger("Probe").info("through keyhac's own logger")
 
-    assert "through keyhac's own logger" in _register(registry, run)
+    assert "through keyhac's own logger" in _register(writable, run)
 
 
-def test_nothing_is_captured_twice(registry):
+def test_nothing_is_captured_twice(writable):
     from keyhac.core import log
 
     def run():
         log.getLogger("Probe").info("once please")
 
-    assert _register(registry, run).count("once please") == 1
+    assert _register(writable, run).count("once please") == 1
 
 
-def test_a_failed_subprocess_hands_over_its_stderr(registry):
+def test_a_failed_subprocess_hands_over_its_stderr(writable):
     """No stream wrapper can see this: the child writes to the real file
     descriptor, not to Python's sys.stderr. It survives only on the exception,
     and only when the action asked for it."""
@@ -700,11 +921,11 @@ def test_a_failed_subprocess_hands_over_its_stderr(registry):
         subprocess.run([sys.executable, "-c", "import sys; sys.stderr.write('the child complained'); sys.exit(3)"],
                        check=True, capture_output=True, text=True)
 
-    output = _register(registry, run)
+    output = _register(writable, run)
     assert "the child complained" in output
 
 
-def test_a_subprocess_run_without_capture_says_so(registry):
+def test_a_subprocess_run_without_capture_says_so(writable):
     """Better than silence: "returned 1" with no reason is where the loop
     stalls, and the fix is a line in the action rather than a mystery."""
     import subprocess
@@ -712,11 +933,11 @@ def test_a_subprocess_run_without_capture_says_so(registry):
     def run():
         subprocess.run([sys.executable, "-c", "import sys; sys.exit(4)"], check=True)
 
-    output = _register(registry, run)
+    output = _register(writable, run)
     assert "capture_output=True" in output
 
 
-def test_a_long_run_is_bounded_and_says_it_was_truncated(registry):
+def test_a_long_run_is_bounded_and_says_it_was_truncated(writable):
     """A run logging a line per row over hundreds of rows would otherwise fill
     a context window with the middle of its own progress."""
     from keyhac.mcp.tools import MAX_CAPTURE
@@ -726,7 +947,7 @@ def test_a_long_run_is_bounded_and_says_it_was_truncated(registry):
             print(f"row {index} " + "x" * 40)
         print("THE LAST LINE")
 
-    output = _register(registry, run)
+    output = _register(writable, run)
     assert len(output) < MAX_CAPTURE * 1.5
     assert "characters dropped" in output
     assert "THE LAST LINE" in output, "the tail is where the failure is"
@@ -738,119 +959,133 @@ def test_a_long_run_is_bounded_and_says_it_was_truncated(registry):
 # message per request and §2's actions run for minutes. These pin the parts
 # that only exist because of that.
 
-def _slow_action(registry, name="slow"):
-    import threading as t
-    gate = t.Event()
+GATED = '''\
+import threading
 
-    class Action:
-        def starting(self): pass
-        def finished(self, result): pass
-        def run(self):
-            print("started working")
-            gate.wait(20)
-            print("done working")
+from keyhac import ThreadedAction
 
-    registry.keymap.registered_actions[name] = Action()
-    return gate
+GATE = threading.Event()         # the test releases it
 
 
-def test_start_action_returns_before_the_action_finishes(registry):
+class Slow(ThreadedAction):
+    def run(self):
+        print("started working")
+        GATE.wait(20)
+        print("done working")
+'''
+
+
+def _slow_action(writable, name="slow"):
+    """A draft that blocks until the returned event is set."""
+    write_draft(writable, name=name, source=GATED)
+    writable._startable(f"{name}.Slow")
+    return sys.modules[name].GATE
+
+
+def test_start_action_returns_before_the_action_finishes(writable):
     """The property the whole shape exists for: a call that waited for the end
     is a call that times out for exactly the workload this serves."""
-    gate = _slow_action(registry)
-    reply = registry.call("start_action", {"name": "slow"})
+    gate = _slow_action(writable)
+    reply = writable.call("start_action", {"name": "slow.Slow"})
     assert "started" in reply
-    assert "slow" in registry.call("list_actions", {})
-    assert "RUNNING" in registry.call("list_actions", {})
+    assert "slow.Slow" in writable.call("list_actions", {})
+    assert "RUNNING" in writable.call("list_actions", {})
     gate.set()
-    registry.call("get_action_result", {"name": "slow", "wait": 20})
+    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
 
 
-def test_still_running_is_an_answer_not_a_timeout(registry):
-    gate = _slow_action(registry)
-    registry.call("start_action", {"name": "slow"})
-    reply = registry.call("get_action_result", {"name": "slow", "wait": 0})
+def test_still_running_is_an_answer_not_a_timeout(writable):
+    gate = _slow_action(writable)
+    writable.call("start_action", {"name": "slow.Slow"})
+    reply = writable.call("get_action_result", {"name": "slow.Slow", "wait": 0})
     assert "still running" in reply
     assert "started working" in reply, "output so far comes back too"
     assert "again" in reply, "and it says what to do about it"
     gate.set()
-    registry.call("get_action_result", {"name": "slow", "wait": 20})
+    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
 
 
-def test_a_waiting_collect_returns_as_soon_as_it_ends(registry):
+def test_a_waiting_collect_returns_as_soon_as_it_ends(writable):
     """Waiting rather than polling is what keeps a fast action fast: two round
     trips, no added latency."""
     import threading as t
     import time as clock
 
-    gate = _slow_action(registry)
-    registry.call("start_action", {"name": "slow"})
+    gate = _slow_action(writable)
+    writable.call("start_action", {"name": "slow.Slow"})
     t.Timer(0.2, gate.set).start()
     began = clock.monotonic()
-    reply = registry.call("get_action_result", {"name": "slow", "wait": 20})
+    reply = writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
     assert clock.monotonic() - began < 5, "it waited out the full timeout"
     assert "done working" in reply
 
 
-def test_cancel_action_stops_it(registry):
+CANCELLABLE = '''\
+import threading
+
+from keyhac import ThreadedAction
+from keyhac.core.wait import wait_for
+
+ENTERED = threading.Event()
+
+
+class Slow(ThreadedAction):
+    def run(self):
+        ENTERED.set()
+        wait_for(lambda: False, timeout=20, message="never", interval=0.01)
+'''
+
+
+def test_cancel_action_stops_it(writable):
     """The model can stop what it started - refusing that while allowing
-    starting would be the odd asymmetry."""
-    from keyhac.core.action import ActionCancelled, ThreadedAction
+    starting would be the odd asymmetry.
 
-    class Slow(ThreadedAction):
-        def __init__(self):
-            self.entered = __import__("threading").Event()
-        def run(self):
-            self.entered.set()
-            from keyhac.core.wait import wait_for
-            wait_for(lambda: False, timeout=20, message="never", interval=0.01)
+    Also pins that cancel reaches the *running* object: it looks the draft up
+    again, and a fresh instance per start would hand it a flag nobody is
+    waiting on.
+    """
+    write_draft(writable, name="slow2", source=CANCELLABLE)
+    writable._startable("slow2.Slow")
+    writable.call("start_action", {"name": "slow2.Slow"})
 
-    action = Slow()
-    registry.keymap.registered_actions["slow2"] = action
-    registry.call("start_action", {"name": "slow2"})
-    assert action.entered.wait(5)
-    assert "asked" in registry.call("cancel_action", {"name": "slow2"})
-    assert "cancelled" in registry.call("get_action_result",
-                                        {"name": "slow2", "wait": 20})
+    assert sys.modules["slow2"].ENTERED.wait(5)
+    assert "asked" in writable.call("cancel_action", {"name": "slow2.Slow"})
+    assert "cancelled" in writable.call("get_action_result",
+                                        {"name": "slow2.Slow", "wait": 20})
 
 
-def test_collecting_an_action_that_never_ran(registry):
-    class Action:
-        def starting(self): pass
-        def run(self): pass
-        def finished(self, result): pass
-
-    registry.keymap.registered_actions["idle"] = Action()
-    assert "has not been run" in registry.call("get_action_result",
-                                               {"name": "idle", "wait": 0})
-    assert "not run yet" in registry.call("list_actions", {})
+def test_collecting_an_action_that_never_ran(writable):
+    write_draft(writable, name="idle", source=RUNNABLE.format(version=1))
+    assert "has not been run" in writable.call("get_action_result",
+                                               {"name": "idle.Thing", "wait": 0})
+    assert "not run yet" in writable.call("list_actions", {})
 
 
-def test_starting_one_that_is_already_running_says_so(registry):
-    gate = _slow_action(registry)
-    registry.call("start_action", {"name": "slow"})
-    assert "already running" in registry.call("start_action", {"name": "slow"})
+def test_starting_one_that_is_already_running_says_so(writable):
+    gate = _slow_action(writable)
+    writable.call("start_action", {"name": "slow.Slow"})
+    assert "already running" in writable.call("start_action", {"name": "slow.Slow"})
     gate.set()
-    registry.call("get_action_result", {"name": "slow", "wait": 20})
+    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
 
 
-def test_an_unrelated_print_does_not_land_in_a_running_action(registry):
+def test_an_unrelated_print_does_not_land_in_a_running_action(writable):
     """A run lasts minutes. A global stdout tee spent all of them absorbing
     every unrelated print in the process into whichever action happened to be
     running - which the first end-to-end run showed as an action's record
     quoting the script that started it."""
     import threading as t
 
-    gate = _slow_action(registry)
-    registry.call("start_action", {"name": "slow"})
+    gate = _slow_action(writable)
+    writable.call("start_action", {"name": "slow.Slow"})
     time.sleep(0.1)
 
     elsewhere = t.Thread(target=lambda: print("NOT THE ACTION'S OUTPUT"))
     elsewhere.start()
     elsewhere.join(5)
 
-    peek = registry.call("get_action_result", {"name": "slow", "wait": 0})
+    peek = writable.call("get_action_result", {"name": "slow.Slow", "wait": 0})
     assert "started working" in peek, "the action's own print is captured"
     assert "NOT THE ACTION'S OUTPUT" not in peek
     gate.set()
-    registry.call("get_action_result", {"name": "slow", "wait": 20})
+    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})

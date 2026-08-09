@@ -295,27 +295,19 @@ def configure(keymap):
     slowly = TypeSlowly("keyhac")
     kt[f"{LEADER}-Y"] = slowly
 
-    # --- giving an action a name ---------------------------------------
-    # A key binding is how *you* run an action.  register_action is how it
-    # can be named - listed, started and read back by an AI agent, if you
-    # ever switch the MCP server on (AI Integration in the tray menu; it is
-    # off until you do, and this line exposes nothing on its own).
-    #
-    # The two are independent: a key binding alone leaves the action
-    # nameless, which is the usual reason a generated one cannot be found.
-    keymap.register_action("type-slowly", slowly)
-
-    # An action written for you by an agent goes in ~/.keyhac/extensions/ as
-    # its own module, and gets three lines here:
+    # --- an action written for you by an agent -------------------------
+    # It goes in ~/.keyhac/extensions/ as its own module.  Two lines here put
+    # it on a key:
     #
     #     import open_issues                            # from extensions/
-    #     action = open_issues.OpenIssues()
-    #     keymap.register_action("open-issues", action)
-    #     kt[f"{LEADER}-I"] = action                    # optional
+    #     kt[f"{LEADER}-I"] = open_issues.OpenIssues()
     #
-    # The agent can save the module itself while "Allow extension writes" is
-    # ticked, but these lines stay yours: writing a file and deciding it may
-    # run are separate, and only the first one is delegated.
+    # Nothing above is needed to *write* one.  While "Allow action authoring"
+    # is ticked (AI Integration in the tray menu, off until you tick it), an
+    # agent saves the module and runs the class straight out of extensions/,
+    # so a fix loop never touches this file.  These two lines are what makes
+    # the result yours: a key of your choosing, working whether or not
+    # anything is connected.
 
     # ==================================================================
     # Multi-stroke key tables

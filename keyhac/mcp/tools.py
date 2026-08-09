@@ -18,11 +18,19 @@ otherwise the transport for every iteration of every fix - and because the
 manual step it replaces was never the review it resembled; nobody reads what
 they paste.
 
-What it does not do is decide what *runs*. A module no `configure()` imports is
-inert on disk. A module one does import goes live at the next reload, and that
-residual is real: it is the same trust the operator extended when they
-registered it, not a new one this tool invents. Nothing here types text or
-presses a key.
+Drafts (`keyhac/mcp/drafts.py`) are the other half of that: a class in
+`extensions/` is runnable by `module.Class` without any `config.py` edit. It is
+the same switch, because the two are one activity, and because "the agent may
+put code here" and "the agent may run the code it put here" are not usefully
+separated once both are true.
+
+**Drafts are the whole of the action surface.** There is no registry of named
+actions to consult first - `register_action` existed to add a `config.py` line
+that nothing needs any more, and keeping it would have left two ways in, one of
+them permanent. So the honest statement of what the switch grants is also
+unusually short: while the window is open, code the operator has not read can be
+written and run; while it is shut, **nothing here can start anything at all**.
+Listing never imports, and nothing types text or presses a key.
 
 THREADS. Element access is main-thread-only and these run on the MCP server's
 threads, so every tool that touches the UI goes through `ui.on_main_thread` -
@@ -31,7 +39,6 @@ directly, or through the node methods, which dispatch themselves.
 
 from __future__ import annotations
 
-import contextlib
 import difflib
 import keyword
 import logging
@@ -40,10 +47,9 @@ import shutil
 import sys
 import threading
 import time
-import traceback
 
 from keyhac.core import capture, log
-from keyhac.core.action import ActionCancelled
+from keyhac.mcp import drafts
 
 logger = log.getLogger("MCP")
 
@@ -87,6 +93,7 @@ class ToolRegistry:
 
     def __init__(self, keymap):
         self.keymap = keymap
+        self._drafts = drafts.DraftLoader()
         self.tools = {t.name: t for t in self._build()}
 
     def describe(self) -> list[dict]:
@@ -184,19 +191,25 @@ class ToolRegistry:
                                 "False to turn it back off when done."}}},
                  self.enable_content_access),
             Tool("list_actions",
-                 "The actions this configuration has registered by name, "
-                 "which are running now, and how the last run of each ended.",
+                 "The action classes in ~/.keyhac/extensions/ - addressed as "
+                 "module.Class - which are running now, and how the last run "
+                 "of each ended. They need no config.py entry to be listed or "
+                 "run; the operator's edit comes later, to put a working one "
+                 "on a key. Found by reading the files, so listing never "
+                 "executes them. Needs action authoring switched on.",
                  {"type": "object", "properties": {}},
                  self.list_actions),
             Tool("start_action",
-                 "Start a registered action and return immediately. **It is "
-                 "not finished when this returns** - call get_action_result "
-                 "for what it did. Actions here drive real applications and "
-                 "can take minutes, which is why starting and collecting are "
-                 "separate steps.",
+                 "Start an action class and return immediately. **It is not "
+                 "finished when this returns** - call get_action_result for "
+                 "what it did. Actions here drive real applications and can "
+                 "take minutes, which is why starting and collecting are "
+                 "separate steps. Takes a module.Class from list_actions, and "
+                 "re-imports the file when it has changed - so write_extension "
+                 "then start_action needs no reload_config in between.",
                  {"type": "object", "properties": {
                      "name": {**string, "description":
-                              "Name from list_actions."}},
+                              "module.Class, from list_actions."}},
                   "required": ["name"]},
                  self.start_action),
             Tool("get_action_result",
@@ -204,13 +217,11 @@ class ToolRegistry:
                  "logged or printed, with the traceback if it raised. Blocks "
                  "up to `wait` seconds; if it is still running when that is "
                  "up, that is the answer - call again. This is how you check "
-                 "your own work: write the action, have the operator save and "
-                 "reload it, start it, read what happened, fix it. It also "
-                 "holds the last run of an action the operator triggered with "
-                 "a key, so \"the PDF one failed this morning\" is answerable.",
+                 "your own work: write it, start it, read what happened, fix "
+                 "it, write it again.",
                  {"type": "object", "properties": {
                      "name": {**string, "description":
-                              "Name from list_actions."},
+                              "module.Class, from list_actions."},
                      "wait": {**integer, "description":
                               "Seconds to wait for it to finish (default 30, "
                               "0 to look without waiting)."}},
@@ -222,19 +233,18 @@ class ToolRegistry:
                  "has already recorded stays recorded.",
                  {"type": "object", "properties": {
                      "name": {**string, "description":
-                              "Name from list_actions."}},
+                              "module.Class, from list_actions."}},
                   "required": ["name"]},
                  self.cancel_action),
             Tool("write_extension",
                  "Save an action module into ~/.keyhac/extensions/ - the whole "
                  "file, replacing whatever is there and keeping a backup. This "
-                 "is how you close the loop yourself: write, reload_config, "
-                 "start_action, get_action_result, write again. It needs the "
-                 "operator to have switched **AI Integration > Allow extension "
-                 "writes** on - off by default, lapsing an hour later, and not "
-                 "something you can turn on; if this refuses, tell them what "
-                 "it said and ask. Registering the action in config.py stays "
-                 "theirs to do, once.",
+                 "is how you close the loop yourself: write, start_action, "
+                 "get_action_result, write again - no config.py edit and no "
+                 "reload in between. It needs the operator to have switched "
+                 "**AI Integration > Allow action authoring** on - off by "
+                 "default, lapsing an hour later, and not something you can "
+                 "turn on; if this refuses, tell them what it said and ask.",
                  {"type": "object", "properties": {
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."},
@@ -374,29 +384,81 @@ class ToolRegistry:
         return (f"content access {'enabled' if enable else 'disabled'}; "
                 f"call describe_screen again to see the difference")
 
+    def _state(self, name: str, running) -> str:
+        run = capture.get_run(name)
+        if name in running:
+            return f"RUNNING for {run.seconds:.0f}s"
+        if run is not None:
+            return f"last run: {run.status}"
+        return "not run yet"
+
     def list_actions(self) -> str:
-        actions = self.keymap.registered_actions
-        if not actions:
-            return ("no actions registered. A configuration registers one "
-                    "with keymap.register_action(\"name\", TheAction()).")
+        if not self.keymap.action_authoring_allowed:
+            return self._shut("there is nothing to list")
+
+        # Read out of the files, never imported, so this costs nothing and
+        # executes nothing - see keyhac/mcp/drafts.py.
+        found = drafts.discover(self.keymap.extensions_dir)
+        if not found:
+            return (f"no action classes in {self.keymap.extensions_dir}. "
+                    f"write_extension puts one there; it needs to subclass "
+                    f"ThreadedAction to be found.")
         running = capture.running_names()
-        lines = []
-        for name, action in sorted(actions.items()):
-            run = capture.get_run(name)
-            if name in running:
-                state = f"RUNNING for {run.seconds:.0f}s"
-            elif run is not None:
-                state = f"last run: {run.status}"
-            else:
-                state = "not run yet"
-            lines.append(f"{name}: {action!r} - {state}")
+        lines = ["action classes in extensions/, runnable by the name below "
+                 "while action authoring is on:"]
+        for draft in found:
+            lines.append(f"{draft.describe()} - "
+                         f"{self._state(draft.name, running)}")
         return "\n".join(lines)
 
+    def _shut(self, consequence: str) -> str:
+        """What to say when the authoring window is not open.
+
+        Two different things for the operator to do, so they read differently -
+        a timeout that looks like a broken feature is the cost the window is
+        otherwise paying for itself.
+        """
+        if self.keymap.action_authoring_lapsed:
+            return (f"the action-authoring window has run out, so "
+                    f"{consequence}. Ask the operator to tick AI Integration > "
+                    f"Allow action authoring again.")
+        return (f"action authoring is switched off, so {consequence}. Ask the "
+                f"operator to tick AI Integration > Allow action authoring - "
+                f"in the tray menu or the console window. It is off by default "
+                f"and only they can turn it on.")
+
     def _action(self, name: str):
-        action = self.keymap.registered_actions.get(name)
+        """Resolve a name for *reading* - results, cancellation.
+
+        Deliberately ungated and import-free: a run that started while the
+        window was open must stay readable after it closes, or the model loses
+        the traceback for the thing it just ran.
+        """
+        action = self._drafts.cached(name)
         if action is None:
-            raise KeyError(f"no action named {name!r}; call list_actions")
+            raise KeyError(f"{name!r} has not been started; call list_actions")
         return action
+
+    def _startable(self, name: str):
+        """Resolve a name for *running*, which is where the gate belongs."""
+        if not self.keymap.action_authoring_allowed:
+            raise KeyError(self._shut(f"{name!r} cannot be started"))
+
+        found = {draft.name: draft
+                 for draft in drafts.discover(self.keymap.extensions_dir)}
+        draft = found.get(name)
+        if draft is None:
+            raise KeyError(f"no action class named {name!r}; call list_actions")
+        if draft.required:
+            raise KeyError(
+                f"{name} takes constructor arguments with no default "
+                f"({', '.join(draft.required)}), so it cannot be started from "
+                f"here. Give them defaults - the operator can still pass other "
+                f"values where they bind it to a key.")
+        # Re-imports when the file has moved, so write_extension followed by
+        # start_action runs what was just written, with no reload_config
+        # between them.
+        return self._drafts.instantiate(draft)
 
     def start_action(self, name: str) -> str:
         """Start it and get out of the way.
@@ -409,50 +471,35 @@ class ToolRegistry:
         how fast the action happened to be would be worse still: the branch
         would hinge on the least predictable thing there is.
         """
-        action = self._action(name)
+        action = self._startable(name)
         if capture.get_run(name) is not None and capture.get_run(name).running:
             return (f"{name} is already running - get_action_result to watch "
                     f"it, or cancel_action to stop it.")
 
-        def drive():
-            with action.cancellable(name) if hasattr(action, "cancellable") \
-                    else contextlib.nullcontext():
-                if hasattr(action, "run"):
+        # Always a ThreadedAction: that is what the scan matches on, and what
+        # instantiate() confirms. So `cancellable` opens the run record, files
+        # the traceback and closes it - the same path a key press takes, which
+        # is what makes a run started from here and one started by a key report
+        # identically.
+        def body():
+            try:
+                with action.cancellable(name):
                     self.ui.on_main_thread(action.starting)
                     result = action.run()
                     self.ui.on_main_thread(lambda: action.finished(result))
-                else:
-                    self.ui.on_main_thread(action)
-
-        # A duck-typed action - register_action accepts anything with run() -
-        # has no cancellable() to record itself, so the record is opened here
-        # for it and closed by whichever arm finishes.
-        plain = not hasattr(action, "cancellable")
-        record = capture.start_run(name) if plain else None
-
-        def body():
-            try:
-                if plain:
-                    with capture.capture(record.output):
-                        drive()
-                    record.finish("finished")
-                else:
-                    drive()
-            except ActionCancelled:
-                if plain:
-                    record.finish("cancelled", "stopped with Esc")
-            except BaseException as error:                # noqa: BLE001
-                if plain:
-                    record.finish(
-                        "failed",
-                        "the action raised:\n" + traceback.format_exc()
-                        + capture.subprocess_detail(error))
+            except BaseException:                         # noqa: BLE001
+                # Recorded by cancellable() on the way out; re-raising here
+                # would only reach a daemon thread nobody is watching.
+                pass
 
         threading.Thread(target=body, name=f"mcp-{name}", daemon=True).start()
         return (f"{name} started. Call get_action_result to see what it did.")
 
     def get_action_result(self, name: str, wait: int = 30) -> str:
-        self._action(name)
+        # No name resolution first: the run record is the whole answer, and a
+        # class that has been listed but never started should read as "not run"
+        # rather than as an unknown name. It also keeps a result readable after
+        # the authoring window has closed under a run that already happened.
         run = capture.wait_for_run(name, float(wait))
         if run is None:
             return (f"{name} has not been run since Keyhac started. "
@@ -485,17 +532,17 @@ class ToolRegistry:
         imported, and the operator would meet it as a config that stopped
         loading. Refusing costs the model one retry and costs them nothing.
         """
-        from keyhac.core.keymap import _EXTENSION_WRITE_WINDOW
+        from keyhac.core.keymap import _AUTHORING_WINDOW
 
         keymap = self.keymap
-        if not keymap.extension_writes_allowed:
-            if keymap.extension_writes_lapsed:
-                return (f"nothing written: the extension-write window has run "
-                        f"out - it lasts {_EXTENSION_WRITE_WINDOW // 60} "
+        if not keymap.action_authoring_allowed:
+            if keymap.action_authoring_lapsed:
+                return (f"nothing written: the action-authoring window has run "
+                        f"out - it lasts {_AUTHORING_WINDOW // 60} "
                         f"minutes from when it is switched on. Ask the "
                         f"operator to tick AI Integration > Allow extension "
                         f"writes again, then call this again.")
-            return ("nothing written: extension writes are switched off. Ask "
+            return ("nothing written: action authoring is switched off. Ask "
                     "the operator to tick AI Integration > Allow extension "
                     "writes, in the tray menu or the console window. It is off "
                     "by default and only they can turn it on.")
@@ -542,6 +589,11 @@ class ToolRegistry:
     def reload_config(self) -> str:
         def reload():
             self.keymap.configure()
+            # configure() evicts every extensions/ module from sys.modules, so
+            # a cached draft instance now belongs to a class no import would
+            # produce again. Drop them rather than leave the next start_action
+            # running the pre-reload code.
+            self._drafts.forget()
             return "reloaded"
 
         with _captured_log() as captured:

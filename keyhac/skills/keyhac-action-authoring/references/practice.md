@@ -17,9 +17,10 @@ from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
 logger = getLogger("MyAction")     # `logger` is NOT importable - make one
 ```
 
-**`keymap` is not importable either.** It is the argument to `configure()`; a
-module-scope `keymap.register_action(...)` raises `NameError` at import. See
-"Where the file goes" in `SKILL.md`.
+**`keymap` is not importable either.** It is the argument to `configure()`, so
+any module-scope `keymap.…` raises `NameError` at import - reach it through
+`self.keymap` inside the action instead. See "Where the file goes" in
+`SKILL.md`.
 
 ## Getting a root
 

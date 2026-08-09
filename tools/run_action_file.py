@@ -8,8 +8,8 @@ Neither Keyhac nor the MCP server is involved: this imports the file, finds the
     python tools/run_action_file.py examples/actions/win/snapshot_settings.py output_path=s.json
 
 Arguments are `key=value` and become **constructor** keyword arguments, because
-that is where a real action takes them - `keymap.register_action("snapshot",
-SnapshotSettings(output_path=...))` in `configure()` is the call site this is
+that is where a real action takes them - `kt["Fn-S"] =
+SnapshotSettings(output_path=...)` in `configure()` is the call site this is
 standing in for.  `true`/`false` and integers are converted; everything else
 stays a string.  If a file defines more than one action, pick with `class=Name`.
 

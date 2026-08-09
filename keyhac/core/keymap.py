@@ -36,7 +36,7 @@ _MODIFIER_BITS = (
 )
 
 
-#: How long *Allow extension writes* stays on, in seconds.
+#: How long *Allow action authoring* stays on, in seconds.
 #:
 #: Fixed from the moment it is switched on, never extended by use.  A sliding
 #: window would be kinder to a long authoring session and would also hand the
@@ -46,7 +46,7 @@ _MODIFIER_BITS = (
 #: to deny.  An hour is longer than the authoring sessions measured so far
 #: (doc/dev/improvements.md), so re-arming should be rare enough not to become
 #: reflexive.
-_EXTENSION_WRITE_WINDOW = 60 * 60
+_AUTHORING_WINDOW = 60 * 60
 
 
 def _collapse_planes(mod: int) -> int:
@@ -123,10 +123,9 @@ class Keymap:
         self.app_control = None             # platform AppControl
         self.window_provider = None         # platform WindowProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
-        self._registered_actions = {}       # name -> action, for MCP
         self._mcp_server = None             # MCPServer while enabled
-        self._extension_write_deadline = None   # monotonic, while writes allowed
-        self._extension_write_lapsed = False    # a window ran out, vs never armed
+        self._authoring_deadline = None     # monotonic, while authoring allowed
+        self._authoring_lapsed = False      # a window ran out, vs never armed
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self._main_thread_dispatcher = None  # callable(callback) - see below
@@ -829,30 +828,14 @@ class Keymap:
         return []
 
     # ------------------------------------------------------------------
-    # Named actions and the MCP endpoint
-
-    def register_action(self, name: str, action) -> None:
-        """Make an action runnable by name over MCP.
-
-        Registering is opt-in and per-action, which is the point: it is the
-        line between "Keyhac can be driven by a model" and "everything a
-        configuration defines can be". Bind it to a key as usual too - this
-        only adds the name.
-
-        ```python
-        keymap.register_action("extract_records", ExtractRecords())
-        ```
-
-        Args:
-            name: The name run_action takes.
-            action: Any callable, usually a ThreadedAction.
-        """
-        self._registered_actions[name] = action
-
-    @property
-    def registered_actions(self) -> dict:
-        """The actions registered by name, for the MCP tools to list and run."""
-        return dict(self._registered_actions)
+    # The MCP endpoint
+    #
+    # There is no registry of named actions here any more. A model reaches an
+    # action by finding the class in `extensions/` (keyhac/mcp/drafts.py), which
+    # needs no `config.py` line at all - so `register_action`, whose whole job
+    # was to add that line, was removed rather than kept as a second way in.
+    # What a `config.py` still does is bind a key, and a key binding was never
+    # what registration bought.
 
     @property
     def mcp_server_running(self) -> bool:
@@ -906,7 +889,7 @@ class Keymap:
         # The endpoint is the only thing that can write, so an armed window
         # outliving it is state with no consumer - and one that would still be
         # counting down if the switch went back on a minute later.
-        self.set_extension_writes_allowed(False)
+        self.set_action_authoring_allowed(False)
 
     @property
     def extensions_dir(self) -> str:
@@ -919,11 +902,11 @@ class Keymap:
             os.path.dirname(self._config_path or ""), "extensions")
 
     @property
-    def extension_writes_allowed(self) -> bool:
+    def action_authoring_allowed(self) -> bool:
         """Whether the endpoint may write into ``extensions/`` right now.
 
         Off unless the operator switched it on, off again when the window in
-        :data:`_EXTENSION_WRITE_WINDOW` runs out, and off after a restart -
+        :data:`_AUTHORING_WINDOW` runs out, and off after a restart -
         deliberately not persisted, because forgetting to switch it back off is
         the failure this is shaped around.
 
@@ -933,18 +916,18 @@ class Keymap:
 
         lazydocs: ignore
         """
-        if self._extension_write_deadline is None:
+        if self._authoring_deadline is None:
             return False
-        if time.monotonic() < self._extension_write_deadline:
+        if time.monotonic() < self._authoring_deadline:
             return True
-        self._extension_write_deadline = None
-        self._extension_write_lapsed = True
-        logger.info(f"Extension writes disabled "
-                    f"({_EXTENSION_WRITE_WINDOW // 60} minute timeout).")
+        self._authoring_deadline = None
+        self._authoring_lapsed = True
+        logger.info(f"Action authoring disabled "
+                    f"({_AUTHORING_WINDOW // 60} minute timeout).")
         return False
 
     @property
-    def extension_writes_lapsed(self) -> bool:
+    def action_authoring_lapsed(self) -> bool:
         """Whether a write window ran out, as opposed to never being opened.
 
         One refusal at the endpoint, two different things for the operator to
@@ -954,10 +937,10 @@ class Keymap:
 
         lazydocs: ignore
         """
-        return self._extension_write_lapsed
+        return self._authoring_lapsed
 
-    def set_extension_writes_allowed(self, allowed: bool) -> None:
-        """The *AI Integration > Allow extension writes* switch.
+    def set_action_authoring_allowed(self, allowed: bool) -> None:
+        """The *AI Integration > Allow action authoring* switch.
 
         Like the endpoint's own switch there is no configuration API for this,
         and for the same reason: a capability this size should be visibly on or
@@ -966,9 +949,9 @@ class Keymap:
 
         lazydocs: ignore
         """
-        self._extension_write_deadline = (
-            time.monotonic() + _EXTENSION_WRITE_WINDOW if allowed else None)
-        self._extension_write_lapsed = False
+        self._authoring_deadline = (
+            time.monotonic() + _AUTHORING_WINDOW if allowed else None)
+        self._authoring_lapsed = False
 
     @property
     def ui(self):

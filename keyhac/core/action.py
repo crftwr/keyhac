@@ -217,7 +217,12 @@ class ThreadedAction:
         with ThreadedAction._running_lock:
             ThreadedAction._running.add(self)
 
-        self._run_record = capture.start_run(name or self._registered_name())
+        # `name` when the caller has one - the MCP tool, which was handed the
+        # draft's `module.Class` to look this up by. A key press has no name to
+        # give, so the record is filed under the repr; it is still reachable by
+        # Esc and still reports itself to the console, which is what a key-press
+        # run needs.
+        self._run_record = capture.start_run(name or repr(self))
         try:
             with capture.capture(self._run_record.output):
                 yield self
@@ -236,23 +241,6 @@ class ThreadedAction:
             _current.action = None
             with ThreadedAction._running_lock:
                 ThreadedAction._running.discard(self)
-
-    def _registered_name(self) -> str:
-        """The name this action was registered under, for the run record.
-
-        Reversed out of the registry rather than stored, so an action that was
-        never registered still gets a record - under its repr, which is what a
-        key binding has instead of a name.
-        """
-        try:
-            from keyhac.core.keymap import Keymap
-            registry = getattr(Keymap.get_instance(), "registered_actions", {})
-            for name, action in registry.items():
-                if action is self:
-                    return name
-        except Exception:                                 # noqa: BLE001
-            pass
-        return repr(self)
 
     def _done_callback(self, future):
         # add_done_callback fires on the pool thread; hand finished() back to

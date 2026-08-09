@@ -24,7 +24,7 @@ from puikit.layout import HSplit, Item, VSplit
 from puikit.widgets import Button, Checkbox, DropDown, Label, LayoutView, LogView
 
 from keyhac.core import log
-from keyhac.core.keymap import _EXTENSION_WRITE_WINDOW
+from keyhac.core.keymap import _AUTHORING_WINDOW
 
 logger = log.getLogger("Console")
 
@@ -142,10 +142,10 @@ class ConsoleWindow:
         # half at the short-lived half's risk. The wording is the tray menu's,
         # the guide's and the skill's, so what the operator is told to look for
         # is what is written here.
-        self._write_checkbox = Checkbox(
-            "Allow extension writes",
-            checked=keymap.extension_writes_allowed,
-            on_change=self._on_extension_write_toggle)
+        self._authoring_checkbox = Checkbox(
+            "Allow action authoring",
+            checked=keymap.action_authoring_allowed,
+            on_change=self._on_authoring_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
             selected=initial_level_index,
@@ -191,7 +191,7 @@ class ConsoleWindow:
             Item(Label(""), size=1),
             Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), size=2),
-            Item(self._write_checkbox, size="content", align="center"),
+            Item(self._authoring_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             gap=0.3,
         )
@@ -296,9 +296,9 @@ class ConsoleWindow:
         # reading "on" over a window that has run out is the one state this
         # switch must not show. Reading the property is also what makes the
         # timeout happen and log itself, so nothing else has to tick it.
-        writes_allowed = self._keymap.extension_writes_allowed
-        if writes_allowed != self._write_checkbox.checked:
-            self._write_checkbox.checked = writes_allowed
+        writes_allowed = self._keymap.action_authoring_allowed
+        if writes_allowed != self._authoring_checkbox.checked:
+            self._authoring_checkbox.checked = writes_allowed
             changed = True
 
         now = time.monotonic()
@@ -373,16 +373,16 @@ class ConsoleWindow:
                 self._settings.set("mcp_server", not checked)
             self._mcp_checkbox.checked = self._keymap.mcp_server_running
 
-    def _on_extension_write_toggle(self, checked: bool) -> None:
+    def _on_authoring_toggle(self, checked: bool) -> None:
         # Not persisted, unlike the endpoint's switch: this one is armed for a
         # task and forgetting to disarm it is the failure it is shaped around,
         # so a restart is one more thing that closes it.
-        self._keymap.set_extension_writes_allowed(checked)
+        self._keymap.set_action_authoring_allowed(checked)
         if checked:
-            logger.info(f"Extension writes enabled for "
-                        f"{_EXTENSION_WRITE_WINDOW // 60} minutes.")
+            logger.info(f"Action authoring enabled for "
+                        f"{_AUTHORING_WINDOW // 60} minutes.")
         else:
-            logger.info("Extension writes disabled.")
+            logger.info("Action authoring disabled.")
 
     def _on_level_change(self, index: int, name: str) -> None:
         self._console.log_level = _LEVELS[index][1]

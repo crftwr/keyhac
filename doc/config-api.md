@@ -24,6 +24,28 @@ One Keymap exists per Keyhac process.  The configuration file receives it as ``c
 
 ---
 
+#### <kbd>property</kbd> Keymap.action_authoring_allowed
+
+Whether the endpoint may write into ``extensions/`` right now. 
+
+Off unless the operator switched it on, off again when the window in :data:`_AUTHORING_WINDOW` runs out, and off after a restart - deliberately not persisted, because forgetting to switch it back off is the failure this is shaped around. 
+
+The deadline *is* the state: expiry is decided here rather than by a timer thread, so a headless run with nothing polling still refuses a late write, and there is no timer to cancel at shutdown. 
+
+lazydocs: ignore 
+
+---
+
+#### <kbd>property</kbd> Keymap.action_authoring_lapsed
+
+Whether a write window ran out, as opposed to never being opened. 
+
+One refusal at the endpoint, two different things for the operator to do about it - so the tool that refuses says which one happened.  A timeout that reads as "this feature does not work" is the cost this exists to avoid. 
+
+lazydocs: ignore 
+
+---
+
 #### <kbd>property</kbd> Keymap.clipboard
 
 The OS clipboard - get_text() / set_text(), or None if unwired. 
@@ -38,6 +60,14 @@ The ClipboardHistory object (None while running without one, e.g. under --no-ui)
 
 ---
 
+#### <kbd>property</kbd> Keymap.extensions_dir
+
+``extensions/`` beside config.py: on sys.path, and re-imported on every reload. 
+
+lazydocs: ignore 
+
+---
+
 #### <kbd>property</kbd> Keymap.focus
 
 Portable snapshot of the current keyboard focus (a Focus), or None before the first key event. 
@@ -49,12 +79,6 @@ Portable snapshot of the current keyboard focus (a Focus), or None before the fi
 Whether the endpoint is currently listening. 
 
 lazydocs: ignore 
-
----
-
-#### <kbd>property</kbd> Keymap.registered_actions
-
-The actions registered by name, for the MCP tools to list and run. 
 
 ---
 
@@ -289,29 +313,6 @@ List the visible top-level windows.
 **Note:**
 
 > UI-thread only. 
-
----
-
-### <kbd>method</kbd> `Keymap.register_action`
-
-```python
-register_action(name: str, action) → None
-```
-
-Make an action runnable by name over MCP. 
-
-Registering is opt-in and per-action, which is the point: it is the line between "Keyhac can be driven by a model" and "everything a configuration defines can be". Bind it to a key as usual too - this only adds the name. 
-
-```python
-keymap.register_action("extract_records", ExtractRecords())
-``` 
-
-
-
-**Args:**
- 
- - <b>`name`</b>:  The name run_action takes. 
- - <b>`action`</b>:  Any callable, usually a ThreadedAction. 
 
 ---
 

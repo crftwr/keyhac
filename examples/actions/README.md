@@ -30,8 +30,8 @@ $RUN examples/actions/win/snapshot_settings.py             # control main.cpl
 ```
 
 Arguments are `key=value` and become constructor keyword arguments, because that
-is where a real action takes them: `keymap.register_action("snapshot",
-SnapshotSettings(output_path=…))` in `configure()` is the call site being stood
+is where a real action takes them: `kt["Fn-S"] =
+SnapshotSettings(output_path=…)` in `configure()` is the call site being stood
 in for.
 
 The runner starts an event loop on the main thread and runs the action on a

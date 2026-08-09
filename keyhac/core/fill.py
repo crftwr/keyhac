@@ -392,7 +392,7 @@ def _raise_if_stale(element, what: str) -> None:
     """Turn the platform's "this element is gone" into the typed error.
 
     Policy lives here rather than in the platform layer, which only answers
-    the question. `getattr` because register_action and the tests both accept
+    the question. `getattr` because a key binding and the tests both accept
     duck-typed elements that predate `is_stale`.
     """
     probe = getattr(element, "is_stale", None)

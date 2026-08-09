@@ -45,6 +45,18 @@ open and can run the actions you register. See [Security](#security).
 > three tools. Read these notes before upgrading if you have turned it on.
 > Everything outside this feature keeps what a patch number promises.
 >
+> **`keymap.register_action()` is gone**, after it too: an action class in
+> `~/.keyhac/extensions/` is now reachable by `module.Class` with no
+> registration at all, so the call had nothing left to do. **If your
+> `config.py` calls it, delete those lines** — it will otherwise fail to load,
+> loudly, and the previous configuration stays active until you do. A key
+> binding never went through it and is unaffected:
+>
+> ```python
+> import open_issues
+> kt["Fn-I"] = open_issues.OpenIssues()      # this is all it ever needed
+> ```
+>
 > **Why it is shipped anyway:** it is off by default and additive, so it costs
 > nothing to anyone who does not enable it, and the shape will be settled by
 > people writing real actions rather than by more design. If you write some,
@@ -68,25 +80,37 @@ governs the keyboard hook, which has always been a checkbox rather than a
 setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
 delete the line from your `config.py` and use the switch.)*
 
-### Allow extension writes
+### Allow action authoring
 
-The second switch, beside the first, lets the agent save action modules into
-`~/.keyhac/extensions/` itself — which is what turns a three-round fix into
-three tool calls instead of three trips through your clipboard.
+The second switch, beside the first, is what makes the fix loop the agent's
+rather than yours. While it is on:
+
+- **it can save action modules** into `~/.keyhac/extensions/` itself, instead of
+  handing you source to copy on every round;
+- **it can run a class it finds there**, addressed as `module.Class`, without
+  that action being registered in your `config.py`. These are **drafts** — see
+  [The loop](#the-loop).
+
+Listing drafts does **not** run them. Keyhac finds them by parsing the files,
+never by importing them, so a directory of half-finished experiments stays inert
+until something names one. That is the same property `extensions/` has always
+had: a module your `config.py` does not import does not execute.
 
 It is a separate switch because the two have different natural lifetimes. The
-endpoint is worth leaving on; **write access is worth minutes**, while you are
-actually authoring something. So this one is off by default, is **not**
-remembered across restarts, and **lapses on its own 60 minutes** after you tick
-it. Re-tick it when you need it again.
+endpoint is worth leaving on; **authoring is worth minutes**, while you are
+actually writing something. So this one is off by default, is **not** remembered
+across restarts, and **lapses on its own 60 minutes** after you tick it. Re-tick
+it when you need it again.
 
 The timeout is fixed from when you switch it on and is not extended by use.
 That is deliberate: a sliding window would let whatever is driving the endpoint
-keep its own permission alive by writing periodically, which is the one thing
+keep its own permission alive by working periodically, which is the one thing
 this is here to prevent.
 
-Registering an action is still yours — see [The loop](#the-loop). Writing a file
-and deciding it may run are different decisions, and only the first one moved.
+**Registering an action is still yours.** A draft is runnable from a chat window
+and bound to no key; it becomes a real action — with a name you chose, on a key
+you chose, working when the switch is off — only when you put it in `config.py`.
+That edit moved to the end of the loop rather than away.
 
 ## Setting it up
 
@@ -289,19 +313,20 @@ screen coordinates.
 | `find_elements` | targeted search by role / name / identifier / text |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
-| `list_actions` | what is registered, what is running, how each last ended |
-| `start_action`, `get_action_result`, `cancel_action` | start a registered action, collect what it logged, stop it |
-| `write_extension` | save a module into `extensions/` — only while [the write switch](#allow-extension-writes) is on |
+| `list_actions` | what is registered, what is running, how each last ended — plus [drafts](#allow-action-authoring) while authoring is on |
+| `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
+| `write_extension` | save a module into `extensions/` — only while [authoring](#allow-action-authoring) is on |
 | `reload_config` | pick up an edited action without restarting |
 
-`start_action` only runs actions you have registered by name:
+With the authoring switch **off**, `start_action` reaches **nothing**: the
+action surface is exactly the classes in `extensions/`, and those are visible
+only while the switch is on. That is the whole line, and it is a simpler one
+than Keyhac had before — there is no list of names to audit, because the switch
+being off *is* the answer.
 
-```python
-keymap.register_action("extract_records", ExtractRecords())
-```
-
-Registering is per-action and opt-in — it is the line between "the agent can
-run this" and "the agent can run anything the config defines".
+With it on, every action class under `extensions/` is startable by
+`module.Class`. Your `config.py` decides which of them get a key; it no longer
+decides which the agent may run, because that is now the switch's job.
 
 ## The loop
 
@@ -309,19 +334,20 @@ run this" and "the agent can run anything the config defines".
 2. Ask for what you want, in your own words. Naming the application and the
    output is useful; naming an API is not — if you find yourself typing
    `find_element`, tell us, because that means the skill is failing.
-3. The agent reads the screen and writes the action.
-4. It saves the module itself, if you have ticked
-   [Allow extension writes](#allow-extension-writes) — otherwise you paste it
-   into `~/.keyhac/extensions/`.
-5. **You register it, once**: paste the `configure()` block it hands you into
-   `config.py`. Then ask it to reload and run.
-6. It reads the failure itself, fixes it, and saves again. Step 5 does not
-   repeat — the name is already registered, so every round after the first is
-   the agent's alone.
+3. The agent reads the screen, writes the action, and saves it into
+   `extensions/` — with [Allow action authoring](#allow-action-authoring)
+   ticked. It runs it as a draft, reads its own failure, fixes it, and runs it
+   again. **You are not in this part**, however many rounds it takes.
+4. **When it works, you install it**: paste the `configure()` block it hands you
+   into `config.py` — two lines, an `import` and a key binding. That is what
+   makes it yours: it works whether or not anything is connected.
 
-Step 5 is the manual one, and it is the decision worth keeping manual: naming
-an action in your `config.py` is what makes it runnable at all, and that is a
-line you draw rather than one the agent draws for itself.
+Step 4 is the manual one, and it stays manual deliberately. A draft is
+throwaway — runnable from a chat window, gone when the switch lapses. Putting it
+in `config.py` is what makes it *yours*: a name you chose, a key you chose,
+working when the agent is not connected at all. That is a line worth drawing
+yourself, and now you draw it around something you have seen work rather than
+around a guess.
 
 **Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
 not Keyhac's own modules — a new version of the tools is only picked up by a
@@ -369,14 +395,18 @@ don't type passwords or show private material while recording.
   is logged to the console with a `+N/-M` line count.
 - **Nothing types text or presses keys.** Reading trees is one thing; driving
   your keyboard from a chat window is a decision that has not been made.
-- **`start_action` is limited to registered actions**, by name, and
-  `cancel_action` can only stop what it started.
+- **With authoring off, `start_action` is limited to registered actions**, by
+  name; `cancel_action` can only stop what it started. Draft classes in
+  `extensions/` are neither listed nor runnable.
+- **Listing drafts never imports them.** The catalogue is parsed out of the
+  files, so nothing in `extensions/` executes until something names it.
 - Turn it off with the same switch; the token file is deleted then, and when
-  Keyhac stops. Stopping the endpoint closes the write window too.
+  Keyhac stops. Stopping the endpoint closes the authoring window too.
 
 ### What this does not protect you from
 
-Worth knowing before you tick either switch.
+Worth knowing before you tick the authoring switch, which is the one that
+matters here.
 
 `describe_screen` and `read_text` put the contents of your windows — including
 web pages — into the model's context. That text is untrusted: a page can
@@ -384,14 +414,18 @@ contain something written to be read *by an agent* rather than by you. The
 authoring skill tells the agent that screen content is data and never an
 instruction, and that is a real mitigation rather than a complete one.
 
-What it means concretely: **while the write switch is on, a page you happen to
-have open is part of the trusted input**. The fences above bound the damage — a
-module nothing imports never runs, and the backup means nothing is
-unrecoverable — but a module that *is* already registered goes live at the next
-reload, and there is no check that stops that. That is the same trust you extend
-when you paste an action you did not read, which is what everyone does; it is
-stated here rather than left implicit.
+So state it plainly: **while authoring is on, code you have not read can be
+written into `extensions/` and run.** That is what the switch grants — it is the
+feature, not a gap in it. Before drafts existed, registering an action in
+`config.py` was a human step between "the agent wrote code" and "the code ran";
+it is not any more, for the duration of the window.
 
-The practical answer is the one the design already points at: turn writing on
-while you are authoring, and let it lapse. That way the window when it matters
-is the window you are watching.
+What still holds: the write can only land in `extensions/`, under a module name,
+with the previous version kept and the write logged to the console. Nothing
+executes unless it is named. And **when the window lapses, the drafts stop being
+runnable** — only what you registered survives it.
+
+The practical answer is the one the design points at: tick it while you are
+authoring, and let it lapse. The exposure then coincides with you sitting in
+front of the screen, watching a console that reports every write — which is
+worth more than a gate nobody reads.

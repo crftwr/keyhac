@@ -30,9 +30,8 @@ Three references sit beside this, each answering a different question:
   debugging anything that "should work".
 
 The whole of Keyhac's other API — what a `config.py` reaches, which an action
-touches only through `ThreadedAction` and `register_action` — is a fetch away
-and deliberately not carried here, since an action needs four names out of its
-thirty-four:
+touches only through `ThreadedAction` — is a fetch away and deliberately not
+carried here, since an action needs three names out of its thirty-odd:
 
     https://github.com/crftwr/keyhac/blob/v{VERSION}/doc/config-api.md
 
@@ -158,22 +157,31 @@ from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
 logger = getLogger("OpenIssues")     # there is no importable `logger`
 ```
 
-Emit **no registration at module scope.** `keymap` is not a global - it is the
-argument to `configure()` - so `keymap.register_action(...)` beside the class
-raises `NameError` the moment the module is imported. Hand the user this to
-paste into `~/.keyhac/config.py` instead:
+**Emit nothing at module scope but the class.** `keymap` is not a global - it is
+the argument to `configure()` - so anything reaching for it beside the class
+raises `NameError` the moment the module is imported.
+
+**You need no `config.py` edit to run it.** A class in `extensions/` is a
+**draft**: `list_actions` finds it by reading the file, and `start_action`
+addresses it as `module.Class` - `open_issues.OpenIssues`. That is the whole
+test loop. The operator's edit comes at the *end*, when the action works and
+they want it on a key. Hand them this then, not before, and keep it to two
+lines:
 
 ```python
 def configure(keymap):
     import open_issues                              # from extensions/
-    action = open_issues.OpenIssues()
-    keymap.register_action("open-issues", action)   # list_actions / start_action
-    kt["Fn-I"] = action                             # optional: bind a key
+    kt["Fn-I"] = open_issues.OpenIssues()           # a key of their choosing
 ```
 
-`register_action` is what makes the action visible to `list_actions` and
-runnable by `start_action`; **a key binding alone leaves it invisible to both**,
-which costs you the run-read-fix loop.
+Two consequences worth writing for:
+
+- **Give every constructor argument a default.** A draft is instantiated with
+  none, so `def __init__(self, target)` cannot be run as one - `list_actions`
+  will say so instead of offering it. Defaults keep it testable and lose you
+  nothing; the operator can still pass values when they register it.
+- **Drafts are only listed while action authoring is on**, and the class must
+  subclass `ThreadedAction` to be found at all.
 
 ## Running it
 
@@ -181,24 +189,28 @@ Do not hand over an action you have not run. The point of the tools is that
 you read your own failure rather than the operator relaying it, and an action
 that has never executed is a draft.
 
-1. **Get the file onto disk.** `write_extension("open_issues", source)` saves
-   `~/.keyhac/extensions/open_issues.py` for you, replacing what is there and
-   keeping a backup. It works only while the operator has **AI Integration →
-   Allow extension writes** switched on — off by default, and it lapses 60
-   minutes after they switch it on. If it refuses, tell them what it said and
-   ask; never route around it. The `configure()` block from *Where the file
-   goes* stays theirs to paste, once, the first time.
-2. **`reload_config`** — re-imports `extensions/`, so an edit is picked up
-   without restarting Keyhac. Without this step you re-run the previous
-   version and it reports success against code you have already changed.
-3. **`list_actions`** — confirm the name is there. If it is not, the config
-   did not load; the console will say why.
-4. **`start_action("name")`** — **returns immediately, and the action is not
-   finished.** These drive real applications and can take minutes.
-5. **`get_action_result("name")`** — waits for it and hands back everything it
-   logged or printed, with the traceback if it raised. This is the step that
-   tells you what happened; skipping it means you did not check your work.
-6. Read, fix, and go back to 1.
+1. **`write_extension("open_issues", source)`** saves
+   `~/.keyhac/extensions/open_issues.py`, replacing what is there and keeping a
+   backup. It works only while the operator has **AI Integration → Allow action
+   authoring** switched on — off by default, and it lapses 60 minutes after
+   they switch it on. If it refuses, tell them what it said and ask; never
+   route around it.
+2. **`list_actions`** — your class should be there as a draft, named
+   `open_issues.OpenIssues`. If it is not: the file does not parse, the class
+   does not subclass `ThreadedAction`, or the switch is off. The message says
+   which.
+3. **`start_action("open_issues.OpenIssues")`** — **returns immediately, and
+   the action is not finished.** These drive real applications and can take
+   minutes. A draft is re-imported when its file has changed, so **no
+   `reload_config` between rounds** — that is only for actions `config.py`
+   imports.
+4. **`get_action_result("open_issues.OpenIssues")`** — waits for it and hands
+   back everything it logged or printed, with the traceback if it raised. This
+   is the step that tells you what happened; skipping it means you did not
+   check your work.
+5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
+6. **When it works**, hand them the `configure()` block so they can name it and
+   bind a key. Say plainly that this last step is theirs.
 
 `cancel_action("name")` stops a run doing the wrong thing — the same as the
 operator pressing Esc. Prefer it to waiting one out: an action that is filling

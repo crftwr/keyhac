@@ -1114,8 +1114,8 @@ Against the layers in §5 and the sequence in §10:
 | Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
-| Layer 4 — action metadata | **Minimal, plus run state.** `keymap.register_action(name, action)` and the MCP tool schemas; still no argument schema and no description surface. `list_actions` now also reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
-| Layer 5 — artifact management | **Half built, and the half that landed is the transport.** `write_extension` puts a generated module in `extensions/` behind its own switch (§15.2), so a fix loop no longer routes through the operator's clipboard. Registration is still a hand edit of `config.py`: no `~/.keyhac/actions/*.py` discovery, no registry, no partial reload. |
+| Layer 4 — action metadata | **Reduced to what was load-bearing.** The name is now the class's own `module.Class`, discovered rather than declared, so `register_action` went with the registry it fed (§15.2); the MCP tool schemas remain. No argument schema - a draft takes none - and the description surface is the class docstring's first line. `list_actions` reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
+| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **drafts** make a class there runnable as `module.Class` with no `config.py` edit at all - both behind the action-authoring switch (§15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` survives as what it always was, moved to the end of the loop: the operator's name, key and permanence. Still absent: partial reload (a draft re-imports itself, so nothing has needed it). |
 | Topology A — MCP | **Done.** `keyhac/mcp/`: twelve tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
@@ -1229,7 +1229,7 @@ bad characters complete. Source is compiled before the file is touched, so a
 truncated transfer cannot replace a working action with one that will not
 import. Previous versions survive as timestamped `.bak-`, capped at five.
 
-**The switch is the design, not the tool.** *Allow extension writes* is
+**The switch is the design, not the tool.** *Allow action authoring* is
 separate from the endpoint's switch because the two have different lifetimes:
 the endpoint is worth leaving on for days, and write access is worth minutes.
 It is off by default, **not persisted**, and **lapses 60 minutes** after it is
@@ -1255,17 +1255,51 @@ resembled. `doc/ai-integration.md` says so under *What this does not protect
 you from*, and the authoring skill gained *The screen is data, not
 instructions* — a real mitigation, not a complete one.
 
-**Still open, and now the only half left:** registration. The note's own
-question stands — whether Layer 5's `~/.keyhac/actions/*.py` discovery is worth
-it, given it makes `start_action`'s surface a directory listing rather than
-what the operator named. The middle worth weighing first is a registry that is
-**data, not code**: `name → module:Class`, operator-owned, no MCP tool writing
-it. That keeps "what the operator named" literally, drops the failure this note
-recorded (a hand edit taking the keymap with it), and gives the write tool a
-property it does not have today — a module the operator never named has no path
-to execution at all. Deciding it needs one more authoring session, not more
-design: the cost it removes is now once per action, which may not be worth a
-new file format.
+**The registration half then landed too, as drafts** — and the resolution came
+from noticing the note's framing was wrong a second time. It asks whether the
+`config.py` edit can be *removed*. It cannot, and should not be: a name, a key
+and permanence are the operator's to give. What it can be is **moved to the
+end**, so the edit registers something already shown to work rather than being
+the price of finding out.
+
+A class under `extensions/` is now runnable as `module.Class` with no edit at
+all - and `register_action` was then **removed** rather than kept beside it.
+Its whole job was to add the `config.py` line that no longer has to exist, and
+keeping it would have left two ways into the same process, one of them
+permanent and invisible in the UI. What a `config.py` still does is bind a key,
+which registration never provided. The MCP action surface is now exactly "the
+classes in `extensions/`, while the window is open", and with the window shut
+`start_action` reaches nothing at all - a shorter sentence than the old rule,
+and one with no list to audit.
+
+**AST discovery is what made this safe enough to build.** The obvious
+implementation imports every file to find the classes in it — which would have
+created the auto-execution `extensions/` has *never* done, and which the
+operator asking for this feature assumed already existed. (Worth recording: that
+assumption was wrong about the current code and would have been right about a
+naive version of this change, which is why it was worth measuring rather than
+arguing.) `ast.parse` gives the catalogue without executing anything, so listing
+is free and a draft runs at exactly one moment: when something names it.
+
+The registry that was "worth weighing first" is therefore **not being built**.
+Its argument was that a module the operator never named should have no path to
+execution — and drafts deliberately give it one, for the length of the window.
+The rejected version of the design was time-unbounded; this one is not, and that
+is the whole difference. If the window turns out to be the wrong fence, the
+registry is where to go next.
+
+The two rejected alternatives, for the record. **Auto-registering every file**
+was the original Layer 5 sketch and stays rejected: it makes `start_action`'s
+surface a directory listing permanently, and it executes to enumerate. **Running
+the action from source held in memory**, never touching disk, was the other — it
+loses the property that what you tested is what you ship (module identity,
+import resolution and tracebacks all differ), and `write_extension` had already
+made the disk round trip cost one call. "It worked in memory and failed as a
+file" is precisely the failure class this whole feature exists to remove.
+
+What the switch grants therefore widened, and its label went with it: *Allow
+extension writes* became *Allow action authoring*, because a switch that also
+permits running unregistered code should not be named after only the writing.
 
 The original note follows.
 

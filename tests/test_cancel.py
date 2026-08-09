@@ -290,7 +290,7 @@ def test_staleness_is_an_ordinary_exception():
 
 
 def test_an_element_without_is_stale_is_unaffected():
-    """register_action and the tests both accept duck-typed elements."""
+    """A key binding and the tests both accept duck-typed elements."""
     from keyhac.core.fill import FillFailed, _press
 
     with pytest.raises(FillFailed):
