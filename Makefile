@@ -420,8 +420,8 @@ release-whl: $(PYPI_SDIST)
 # developer step as if it were the user's download.
 release-skill: skill-bundle
 	@$(call check_release_exists)
-	gh release upload v$(KEYHAC_VERSION) "dist/keyhac-action-authoring-skill.zip" --clobber
-	@echo "Attached the authoring skill to release v$(KEYHAC_VERSION)"
+	gh release upload v$(KEYHAC_VERSION) dist/keyhac-*-skill.zip --clobber
+	@echo "Attached the skill bundles to release v$(KEYHAC_VERSION)"
 
 # --- release-status: read-only progress check -------------------------------
 # The one place to see which artifacts have landed for the version the
@@ -452,11 +452,13 @@ release-status:
 	@# a user to obtain the authoring skill at all, and connecting the endpoint
 	@# without the skill produces actions full of sleep and screen coordinates
 	@# rather than an error anyone would notice.
-	@if gh release view v$(KEYHAC_VERSION) --json assets --jq '.assets[].name' 2>/dev/null \
-		| grep -q '^keyhac-action-authoring-skill\.zip$$'; then \
-		echo "  Skill bundle: attached"; \
+	@attached=$$(gh release view v$(KEYHAC_VERSION) --json assets --jq '.assets[].name' 2>/dev/null \
+		| grep -c '^keyhac-.*-skill\.zip$$'); \
+	expected=$$(ls -d keyhac/skills/*/ | wc -l | tr -d ' '); \
+	if [ "$$attached" = "$$expected" ]; then \
+		echo "  Skill bundles: $$attached of $$expected attached"; \
 	else \
-		echo "  Skill bundle: MISSING - run 'make release-skill'"; \
+		echo "  Skill bundles: $$attached of $$expected - run 'make release-skill'"; \
 	fi
 
 # ============================================================================

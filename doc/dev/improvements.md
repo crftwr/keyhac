@@ -130,17 +130,6 @@ on screen**, and it is not currently written that way: wait for the value to
 match what the screen should be showing, not for it to differ from what it was.
 The identity-transform case is the example that makes it concrete.
 
-**9. `references/practice.md` needs the clipboard read surface.**
-
-`ui.preserve_clipboard()` is documented; `self.keymap.clipboard.get_text()` is
-not, so the session shelled out to `pbpaste`.
-
-The systemic half matters more than the missing line: the skill says the config
-API is reachable by fetching it, but the fetch target is a version-tagged URL,
-and a model cannot fetch a URL that never appeared in its conversation. Adding a
-fifth name to the "four of thirty-four" list treats the symptom. The question is
-whether this surface belongs inline in the skill.
-
 **10. A section on closing what you opened.** *(Best design observation here.)*
 
 The hardest decision in this action was neither language detection nor text

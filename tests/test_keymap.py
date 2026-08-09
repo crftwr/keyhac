@@ -481,3 +481,60 @@ class TestEditConfig:
         monkeypatch.setattr(e.keymap, "configure", lambda: calls.append(1))
         e.keymap.reload_config()
         assert calls == [1]
+
+
+class TestDescribeKeymap:
+    """What an agent can check about a key binding without pressing it.
+
+    The action loop closes because a run can be started and read back; nothing
+    can press a key on the operator's behalf, and nothing should. This is the
+    half that can be closed - the binding landed, in the table meant, and that
+    table applies where they are standing.
+    """
+
+    def _config(self, keymap):
+        kt = keymap.define_keytable(name="global", focus_path_pattern="*")
+        kt["Fn-J"] = "Left"
+        kt["U-A"] = "Right"
+        chrome = keymap.define_keytable(name="chrome", app="Google Chrome")
+        chrome["Fn-J"] = "Cmd-Left"
+        multi = keymap.define_keytable(name="LEADER-X")
+        multi["C"] = "Cmd-C"
+
+    def _focused(self, engine, app="Google Chrome"):
+        e = engine(self._config)
+        e.keymap._focus = Focus(app_name=app, window_title="w",
+                                class_name="", path="/App/Window")
+        return e.keymap
+
+    def test_it_reports_the_focus_path_a_pattern_is_written_against(self, engine):
+        """Nothing else in the tool set hands that value back in a form you can
+        paste into focus_path_pattern."""
+        assert "/App/Window" in self._focused(engine).describe_keymap()
+
+    def test_it_marks_which_tables_the_current_focus_activates(self, engine):
+        text = self._focused(engine).describe_keymap()
+        assert "  *  global" in text and "  *  chrome" in text
+
+        text = self._focused(engine, app="Finder").describe_keymap()
+        assert "  *  global" in text and "  *  chrome" not in text
+
+    def test_a_multi_stroke_table_says_it_is_reached_from_a_key(self, engine):
+        assert "LEADER-X: no condition" in self._focused(engine).describe_keymap()
+
+    def test_keys_are_spelled_the_way_a_config_writes_them(self, engine):
+        """str(KeyCondition) states the edge - D-Fn-J - because it is a
+        diagnostic. Reporting that would not match the file it came from."""
+        text = self._focused(engine).describe_keymap()
+        assert "Fn-J -> 'Left'" in text and "D-Fn-J" not in text
+        assert "U-A -> 'Right'" in text, "a key-up binding keeps its prefix"
+
+    def test_the_override_case_is_visible(self, engine):
+        """Two active tables binding one key is what configurations get wrong,
+        so both rows have to be there to be compared."""
+        text = self._focused(engine).describe_keymap()
+        assert "Fn-J -> 'Left'" in text and "Fn-J -> 'Cmd-Left'" in text
+
+    def test_it_stops_at_the_limit_rather_than_running_long(self, engine):
+        text = self._focused(engine).describe_keymap(limit=1)
+        assert "stopped at limit=1" in text

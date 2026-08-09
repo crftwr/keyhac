@@ -250,6 +250,36 @@ class ToolRegistry:
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
                  self.cancel_action),
+            Tool("describe_keymap",
+                 "The key tables this configuration defined: their conditions, "
+                 "which ones match the current focus, and what each binds. "
+                 "**This is how you check a key binding**, because nothing here "
+                 "can press a key - it tells you the binding landed in the "
+                 "table you meant and that the table applies where the operator "
+                 "is; only whether pressing it feels right is left to them. It "
+                 "also reports the live focus path, which is what a "
+                 "focus_path_pattern is written against.",
+                 {"type": "object", "properties": {}},
+                 self.describe_keymap),
+            Tool("read_config",
+                 "Read ~/.keyhac/config.py - the operator's own configuration: "
+                 "key tables, bindings, and the lines that wire up actions. "
+                 "Read it before proposing any change to it.",
+                 {"type": "object", "properties": {}},
+                 self.read_config),
+            Tool("write_config",
+                 "Replace ~/.keyhac/config.py, keeping a backup. Separate from "
+                 "write_extension because the stakes differ: a module in "
+                 "extensions/ is inert until something names it, while this "
+                 "file runs at every start and takes the operator's key "
+                 "bindings down with it if it is wrong. **Read it first** - "
+                 "this replaces the whole file, and it is theirs. It is also "
+                 "the only thing you can do that outlives the endpoint's hour, "
+                 "so say what you changed.",
+                 {"type": "object", "properties": {
+                     "source": {**string, "description": "The complete file."}},
+                  "required": ["source"]},
+                 self.write_config),
             Tool("list_extensions",
                  "The files in ~/.keyhac/extensions/, with what each one "
                  "holds. list_actions shows what can be *run*; this shows what "
@@ -540,6 +570,30 @@ class ToolRegistry:
         return (f"asked {name} to stop. It unwinds at its next wait, so "
                 f"get_action_result for how far it got.")
 
+    def describe_keymap(self) -> str:
+        return self.keymap.describe_keymap()
+
+    def read_config(self) -> str:
+        """The operator's whole `config.py`."""
+        return self._read_file(self.keymap.config_path)
+
+    def write_config(self, source: str) -> str:
+        """Replace `config.py`, having been asked to.
+
+        **A separate tool from `write_extension`, deliberately.** The two have
+        different blast radii and the tool list is where that should be
+        visible: a module in `extensions/` is inert until something names it,
+        while `config.py` runs at every start and is what stops working if it
+        is wrong - taking the operator's key bindings with it. Folding both
+        into one call would hide that behind an argument.
+
+        It is also the one thing here that **outlives the endpoint's hour**.
+        Everything else an agent does expires with the window; a key binding
+        written here keeps working, which is the point of writing it and worth
+        saying out loud.
+        """
+        return self._write_file(self.keymap.config_path, source, "config.py")
+
     def list_extensions(self) -> str:
         """Every `.py` in `extensions/`, and what each one holds.
 
@@ -588,6 +642,50 @@ class ToolRegistry:
                 f"and underscores, not starting with a digit.")
         return os.path.join(self.keymap.extensions_dir, name + ".py")
 
+    def _read_file(self, path: str) -> str:
+        try:
+            size = os.path.getsize(path)
+        except OSError as error:
+            return f"could not read {path}: {error}"
+        if size > MAX_SOURCE:
+            # Refused rather than truncated, because the caller's next move is
+            # a whole-file write: half a file read is how you lose the other
+            # half.
+            return (f"{path} is {size} bytes, over the {MAX_SOURCE} this "
+                    f"returns. Refusing rather than truncating: the write "
+                    f"tools replace whole files, so acting on half of one "
+                    f"would drop the rest. Ask the operator to edit it by "
+                    f"hand.")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return handle.read()
+        except OSError as error:
+            return f"could not read {path}: {error}"
+
+    def _write_file(self, path: str, source: str, what: str) -> str:
+        try:
+            compile(source, path, "exec")
+        except SyntaxError as error:
+            return (f"nothing written: that source does not parse - "
+                    f"{error.msg}, line {error.lineno}. The file on disk is "
+                    f"untouched; send the whole file again.")
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            previous = None
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as handle:
+                    previous = handle.read()
+                shutil.copyfile(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
+                _prune_backups(path)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+        except OSError as error:
+            return f"nothing written: {error}"
+
+        summary = _change_summary(previous, source)
+        logger.info(f"Wrote {path} ({summary}).")
+        return f"wrote {what} ({summary})."
+
     def read_extension(self, name: str) -> str:
         """The whole of one module in `extensions/`.
 
@@ -599,28 +697,14 @@ class ToolRegistry:
         is the read.
         """
         path = self._module_path(name)
-        try:
-            size = os.path.getsize(path)
-        except OSError:
+        if not os.path.exists(path):
             modules = sorted(
                 entry[:-3] for entry in _listdir(self.keymap.extensions_dir)
                 if entry.endswith(".py"))
             return (f"no {name}.py in {self.keymap.extensions_dir}"
                     + (f". There is: {', '.join(modules)}" if modules
                        else " - the directory is empty."))
-        if size > MAX_SOURCE:
-            # Refused rather than truncated, because the caller's next move is
-            # a whole-file write: half a file read is how you lose the other
-            # half. Nothing this large is a hand-written action anyway.
-            return (f"{path} is {size} bytes, over the {MAX_SOURCE} this "
-                    f"returns. Refusing rather than truncating: write_extension "
-                    f"replaces the whole file, so acting on half of one would "
-                    f"drop the rest. Ask the operator to edit it by hand.")
-        try:
-            with open(path, encoding="utf-8") as handle:
-                return handle.read()
-        except OSError as error:
-            return f"could not read {path}: {error}"
+        return self._read_file(path)
 
     def write_extension(self, name: str, source: str) -> str:
         """Save a module into ``extensions/``, while the window is open.
@@ -639,36 +723,16 @@ class ToolRegistry:
             path = self._module_path(name)
         except ValueError as error:
             return f"nothing written: {error}"
-        directory = os.path.dirname(path)
 
-        try:
-            compile(source, path, "exec")
-        except SyntaxError as error:
-            return (f"nothing written: that source does not parse - "
-                    f"{error.msg}, line {error.lineno}. The file on disk is "
-                    f"untouched; send the whole module again.")
-
-        try:
-            os.makedirs(directory, exist_ok=True)
-            previous = None
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as handle:
-                    previous = handle.read()
-                shutil.copyfile(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
-                _prune_backups(path)
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(source)
-        except OSError as error:
-            return f"nothing written: {error}"
-
-        # The console line is the audit trail, and it is the answer to the one
-        # thing this tool adds that pasting did not: a file can now arrive
-        # without appearing in the conversation.  An operator who sees a module
+        # The console line _write_file logs is the audit trail, and it answers
+        # the one thing these tools add that pasting did not: a file can arrive
+        # without appearing in the conversation. An operator who sees a module
         # they did not ask for scroll past has been told.
-        summary = _change_summary(previous, source)
-        logger.info(f"Wrote {path} ({summary}).")
-        return (f"wrote {path} ({summary}). start_action picks it up as "
-                f"soon as it is named - no reload needed.")
+        result = self._write_file(path, source, path)
+        if result.startswith("wrote "):
+            return result[:-1] + " - start_action picks it up as soon as it "\
+                                 "is named, no reload needed."
+        return result
 
     def reload_config(self) -> str:
         # Cached instances are deliberately *not* dropped here. Staleness is

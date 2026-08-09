@@ -93,6 +93,11 @@ class FakeKeymap:
         self.reloaded = 0
         self.extensions_dir = extensions_dir
 
+        self.config_path = os.path.join(extensions_dir or "", "..", "config.py")
+
+    def describe_keymap(self, limit=300):
+        return "focus now: TestApp - 'Main'\nfocus path: /App/Window"
+
     def list_windows(self):
         return [FakeWindow("TestApp", "Main")]
 
@@ -245,6 +250,54 @@ def test_source_that_does_not_parse_never_reaches_the_disk(writable):
                            {"name": "thing", "source": "def broken(:\n"})
     assert "does not parse" in result and "line 1" in result
     assert good.read_text() == "x = 1\n"
+
+
+# -- config.py --------------------------------------------------------------
+#
+# A separate pair from the extension one, because the blast radius differs: a
+# module in extensions/ is inert until something names it, while this file runs
+# at every start and takes the key bindings down with it if it is wrong.
+
+@pytest.fixture
+def configurable(tmp_path):
+    keymap = FakeKeymap(extensions_dir=str(tmp_path / "extensions"))
+    keymap.config_path = str(tmp_path / "config.py")
+    return ToolRegistry(keymap)
+
+
+def test_it_reads_and_replaces_config_py(configurable, tmp_path):
+    (tmp_path / "config.py").write_text("def configure(keymap):\n    pass\n")
+    assert "def configure" in configurable.call("read_config", {})
+
+    result = configurable.call(
+        "write_config", {"source": "def configure(keymap):\n    x = 1\n"})
+    assert "wrote config.py" in result
+    assert "x = 1" in (tmp_path / "config.py").read_text()
+
+
+def test_the_previous_config_survives_a_write(configurable, tmp_path):
+    """This is the file that stops Keyhac working, so the undo has to exist."""
+    (tmp_path / "config.py").write_text("original = 1\n")
+    configurable.call("write_config", {"source": "replacement = 2\n"})
+
+    backups = list(tmp_path.glob("config.py.bak-*"))
+    assert [b.read_text() for b in backups] == ["original = 1\n"]
+
+
+def test_a_config_that_does_not_parse_never_reaches_the_disk(configurable,
+                                                             tmp_path):
+    (tmp_path / "config.py").write_text("good = 1\n")
+    result = configurable.call("write_config", {"source": "def broken(:\n"})
+    assert "does not parse" in result
+    assert (tmp_path / "config.py").read_text() == "good = 1\n"
+
+
+def test_writing_the_config_is_announced_on_the_console(configurable, tmp_path,
+                                                        caplog):
+    (tmp_path / "config.py").write_text("x = 1\n")
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        configurable.call("write_config", {"source": "x = 1\ny = 2\n"})
+    assert any("config.py (+1/-0 lines)" in r.getMessage() for r in caplog.records)
 
 
 def test_list_extensions_shows_the_files_list_actions_hides(writable):

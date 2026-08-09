@@ -135,15 +135,24 @@ and you cannot.
 
 ### 1. The skill
 
-Download `keyhac-action-authoring-skill.zip` from the Keyhac release matching
-the running version — the tag is in the URL you fetched this page from:
+There are two, and which you need depends on what the user asked for:
+
+- **`keyhac-key-table-configuration-skill.zip`** — changing what keys do: remapping,
+  per-application key tables, one-shot and user modifiers, editing `config.py`.
+- **`keyhac-action-authoring-skill.zip`** — writing an *action*: Python that
+  drives another application's UI, for automation with no API behind it.
+
+Most people want the first. Take both if you do not know yet. They are on the
+release matching the running version — the tag is in the URL you fetched this
+page from:
 
 ```
 https://github.com/crftwr/keyhac/releases/tag/v<version>
 ```
 
-Install it however this host takes a skill. It documents *that version's* API,
-so a mismatch is worth mentioning to the user rather than working around.
+Install them however this host takes a skill. Each documents *that version's*
+API, so a mismatch is worth mentioning to the user rather than working
+around.
 
 ### 2. The connection
 
@@ -270,23 +279,32 @@ executables without a shell — point it at the interpreter instead:
 The bridge does not have to come from the same install as the daemon — it reads
 the endpoint file and forwards.
 
-## Add the authoring skill
+## Add the skills
 
-The tools tell the agent what your screen contains. The skill tells it how to
-write an action — the rules that stop it emitting `sleep`, coordinates, and
-unverified writes. Without it you will get plausible code that breaks on a
-slower machine.
+The tools tell the agent what your screen contains and what your configuration
+holds. The skills tell it what to do with that — and without them you get
+plausible-looking work that fails later: actions full of `sleep` and screen
+coordinates, or a key binding written into a table that never activates.
 
-**Get it from the release**, as `keyhac-action-authoring-skill.zip`:
+There are two, and they overlap in nothing:
+
+| | For |
+|---|---|
+| **`keyhac-key-table-configuration-skill.zip`** | changing what keys do — remapping, per-application tables, one-shot and user modifiers, editing `config.py` |
+| **`keyhac-action-authoring-skill.zip`** | writing an *action* — Python that drives another application's UI, for systems with no API |
+
+Most people want the first. Take both if you are not sure.
+
+**Get them from the release**:
 
 ```
 https://github.com/crftwr/keyhac/releases/tag/v<your version>
 ```
 
 Match the version you are running — Keyhac's console prints it at startup, and
-the release for it is the one whose API the skill describes. The bundle carries
-that version stamped inside, so a mismatch is visible after the fact rather
-than silent.
+the release for it is the one whose API the skills describe. Each bundle
+carries that version stamped inside, so a mismatch is visible after the fact
+rather than silent.
 
 Skills are a Claude feature, so the packaged bundle is shaped for Claude
 Desktop: Settings → カスタマイズ / Customize → Skills → Add → **Upload skill**.
@@ -299,15 +317,15 @@ that can be handed documents can be handed these. What that does not buy is the
 *habit* of consulting them unprompted, which is the part a skill mechanism
 provides.
 
-(Building it from a source checkout, if you are working on Keyhac itself:
-`make skill-bundle` writes the same zip into `dist/`.)
+(Building them from a source checkout, if you are working on Keyhac itself:
+`make skill-bundle` writes the same zips into `dist/`.)
 
-**The skill is not the connection, and neither step implies the other.** The
-skill is knowledge — writing rules and an API reference, with no way to reach
-your machine; the tools come from the bridge registered above. Upload only the
-skill and the agent will correctly tell you it cannot see your windows. Connect
-only the tools and it will see them, then write actions that use `sleep` and
-screen coordinates.
+**A skill is not the connection, and neither step implies the other.** A skill
+is knowledge — rules and an API reference, with no way to reach your machine;
+the tools come from the bridge registered above. Upload only a skill and the
+agent will correctly tell you it cannot see your windows. Connect only the
+tools and it will see them, then write actions that use `sleep` and screen
+coordinates, or bindings it never checked.
 
 ## What the agent can do
 
@@ -318,6 +336,8 @@ screen coordinates.
 | `find_elements` | targeted search by role / name / identifier / text |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
+| `describe_keymap` | the key tables, which match the current focus, and what each binds |
+| `read_config`, `write_config` | your `config.py` — read it, replace it (backup kept) |
 | `list_actions` | the action classes in `extensions/`, what is running, how each last ended |
 | `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
 | `list_extensions` | the files in `extensions/`, including helpers with no action class |
@@ -390,12 +410,17 @@ don't type passwords or show private material while recording.
   another process on the machine cannot use the endpoint without it.
 - **It closes itself after 60 minutes**, and is never restored at startup, so
   the exposure lasts as long as the work rather than as long as you forget.
-- **`write_extension` is the only tool that puts anything on disk**, and it can
-  only write a `.py` under `~/.keyhac/extensions/` — the name has to be an
-  importable module name, which is what rules out paths and traversal. It
-  replaces nothing silently: the previous version is kept as a
-  `.bak-<timestamp>` beside it, and every write is logged to the console with a
-  `+N/-M` line count.
+- **Two places can be written, and no others**: a `.py` under
+  `~/.keyhac/extensions/` — the name has to be an importable module name, which
+  is what rules out paths and traversal — and `config.py` itself. Neither is
+  replaced silently: the previous version is kept as a `.bak-<timestamp>`
+  beside it, and every write is logged to the console with a `+N/-M` line
+  count.
+- **`write_config` is the one thing that outlives the hour.** Everything else
+  an agent does here expires when the endpoint closes; a key binding written
+  into `config.py` keeps working, which is the point of writing it. It is a
+  separate tool from `write_extension` so that difference is visible rather
+  than hidden behind an argument.
 - **Nothing types text or presses keys.** Reading trees is one thing; driving
   your keyboard from a chat window is a decision that has not been made.
 - **Listing never imports.** The catalogue is parsed out of the files, so

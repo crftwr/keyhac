@@ -100,12 +100,12 @@ odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporti
 `keyhac/__init__.py` (`__version__`), one number for both OSes.
 
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
-`keyhac-action-authoring-skill.zip` (attached to the GitHub Release), and the
-`keyhac` wheel on PyPI. PuiKit is
+the skill bundles - one zip per folder in `keyhac/skills/`, all attached to the
+GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
 versioned/released independently on PyPI; Keyhac2 pins a minimum (`puikit>=1.0.10`).
 
-**`release-skill` is not optional the way it looks.** The skill bundle is the
-only way a user can obtain the authoring skill — `make skill-bundle` needs the
+**`release-skill` is not optional the way it looks.** The bundles are the
+only way a user can obtain the skills — `make skill-bundle` needs the
 Makefile and `tools/`, and neither ships — so a release without it leaves
 [doc/ai-integration.md](../ai-integration.md) pointing at an asset that is not
 there, and leaves anyone who connects the MCP endpoint in the half-installed

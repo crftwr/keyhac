@@ -56,6 +56,35 @@ _MODIFIER_BITS = (
 _AUTHORING_WINDOW = 60 * 60
 
 
+def _key_text(key: KeyCondition) -> str:
+    """A KeyCondition spelled the way a `config.py` would write it.
+
+    `str(KeyCondition)` always states the edge - `D-Fn-J` - because it is a
+    diagnostic. A configuration writes `kt["Fn-J"]`, key-down being the default,
+    so reporting the diagnostic spelling here would hand back something that
+    does not match the file it came from and would not round-trip if pasted.
+    `U-` and `O-` stay, being the spellings you do have to write.
+    """
+    text = str(key)
+    return text[2:] if text.startswith("D-") else text
+
+
+def _condition_text(condition) -> str:
+    """A FocusCondition as the `define_keytable(...)` call that made it."""
+    parts = [f"{name}={value!r}"
+             for name, value in (("focus_path_pattern",
+                                  condition.focus_path_pattern),
+                                 ("app", condition.app),
+                                 ("title", condition.title),
+                                 ("class_name", condition.class_name))
+             if value]
+    if condition.custom_condition_func is not None:
+        # Reported but not evaluated for the listing: it is the operator's own
+        # code, and the * marker already says whether it passed just now.
+        parts.append("custom_condition_func=...")
+    return ", ".join(parts) or "no condition"
+
+
 def _collapse_planes(mod: int) -> int:
     """Fold the Left and Right modifier planes down onto the generic plane."""
     mod |= mod >> MODKEY_PLANE_BITS
@@ -351,6 +380,71 @@ class Keymap:
             logger.error(f"Invalid modifier expression for argument 'mod': {mod}")
             return
         self._vk_mod_map[key] = mod
+
+    def describe_keymap(self, limit: int = 300) -> str:
+        """Every key table this configuration defined, as readable text.
+
+        What a key binding has that an action does not is a way to check it
+        without pressing it. An action can be started and its result read, so
+        the write-run-read loop closes; nothing can press a key on the
+        operator's behalf, and nothing should. This is the half of that loop
+        that *can* be closed - it answers "did the binding land, in the table I
+        meant, and does that table apply where the operator is standing?", and
+        leaves only "does pressing it do the right thing?" to them.
+
+        Reported per table rather than merged, because which table a key lands
+        in is the thing configurations get wrong: every matching table is
+        active at once and merged in definition order, so a binding can be
+        present and still be overridden by one defined later.
+
+        Args:
+            limit: Maximum bindings to report, oldest table first.
+
+        lazydocs: ignore
+        """
+        with self._lock:
+            focus = self._focus
+            conditioned = list(self._keytable_list)
+            all_tables = list(self._all_keytables)
+
+        lines = []
+        if focus is not None:
+            lines.append(f"focus now: {focus.app_name} - {focus.window_title!r}")
+            # The one value a focus_path_pattern is written against, and the
+            # one nothing else in the tool set reports in a form you can paste.
+            lines.append(f"focus path: {focus.path}")
+        else:
+            lines.append("focus now: unknown (no window has been focused yet)")
+        lines.append("")
+        lines.append("Key tables, in definition order. Every table whose "
+                     "condition matches is active at")
+        lines.append("once and they merge in this order, so a later table "
+                     "overrides the keys it binds.")
+
+        by_table = {id(table): condition for condition, table in conditioned}
+        shown = 0
+        for table in all_tables:
+            condition = by_table.get(id(table))
+            if condition is None:
+                where = "no condition - a multi-stroke table, reached from a key"
+                state = "     "
+            else:
+                where = _condition_text(condition)
+                state = "  *  " if condition.check(focus) else "     "
+            lines.append("")
+            lines.append(f"{state}{table.name or '(unnamed)'}: {where}")
+            if not table.table:
+                lines.append("       (nothing bound)")
+            for key, action in table.table.items():
+                if shown >= limit:
+                    lines.append(f"       ... more, stopped at limit={limit}")
+                    return "\n".join(lines)
+                shown += 1
+                lines.append(f"       {_key_text(key)} -> {action!r}")
+
+        lines.append("")
+        lines.append("  *  = its condition matches the focus above")
+        return "\n".join(lines)
 
     def define_keytable(self,
                         name: str = None,
@@ -927,6 +1021,14 @@ class Keymap:
         server, self._mcp_server = self._mcp_server, None
         if server is not None:
             server.stop()
+
+    @property
+    def config_path(self) -> str:
+        """The configuration script this run loads.
+
+        lazydocs: ignore
+        """
+        return self._config_path
 
     @property
     def extensions_dir(self) -> str:
