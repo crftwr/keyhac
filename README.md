@@ -7,6 +7,10 @@ Python. You write one file, `~/.keyhac/config.py`, and it runs unchanged on both
 remapping keys, binding keys to Python functions, and driving windows, applications and
 the clipboard from the keyboard.
 
+It can also write the harder scripts for you. Connect an AI assistant and it reads the
+screen in front of you, generates a plain-Python action against the real UI, and tests
+it — then the action runs on its own, with no AI in the loop.
+
 <!-- pypi-exclude-start -->
 <p>
   <a href="https://apps.microsoft.com/detail/9P8H1PG6PRHH">
@@ -45,6 +49,39 @@ Keyhac 2's UI is built on [PuiKit](https://github.com/crftwr/puikit).
 - **Mouse output**: send clicks, wheel scrolls and pointer moves from key bindings.
 - **Console window**: live log, last-key and focus-path inspector — see exactly what to
   bind. Runs from the system tray (Windows) / menu-bar extra (macOS).
+- **AI-authored actions**: let an AI assistant read the screen and write the automation
+  for you, then bind it to a key — see [AI integration](#ai-integration) below.
+
+## AI integration
+
+Keyhac can be driven by an AI assistant while you *write* your automation, and by
+nothing but Python once you run it.
+
+Connect Claude Desktop — or any MCP client — to Keyhac's local endpoint, and it can read
+the accessibility tree of the application in front of you, write an `Action` against the
+real element names it finds there, run it, read its own traceback, and fix it. No
+copy-pasting between a chat window and an editor. What you are left with is an ordinary
+Python class on a key:
+
+```python
+import translate_clipboard
+
+def configure(keymap):
+    kt = keymap.define_keytable(focus_path_pattern="*")
+    kt["Fn-T"] = translate_clipboard.TranslateClipboard()
+```
+
+From then on it runs in milliseconds, offline, with no tokens and no model — the AI was
+the author, not the runtime. That matters most for applications with no API at all:
+walking pagination to the end, filling a form from each row of a CSV, reading tables out
+of an internal web app, capturing every settings screen to JSON.
+
+**It is off unless you turn it on** — a checkbox in the console window. The endpoint
+listens on loopback only, behind a token generated at startup, and closes itself an hour
+after you open it.
+
+[AI integration](doc/ai-integration.md) covers setup, which clients have been tried,
+what it can reach, and the security model.
 
 ## Screenshots
 
@@ -106,6 +143,10 @@ reference [doc/config-api.md](doc/config-api.md); the shipped template
 - [Configuration](doc/configuration.md) — the complete config.py guide.
 - [API reference](doc/config-api.md) — every class and function a config.py
   can reach, with its exact arguments.
+- [AI integration](doc/ai-integration.md) — connect an MCP client, what the endpoint
+  reaches, and the security model.
+- [Action API](doc/action-api.md) — the surface an action uses to drive another
+  application: finding windows, searching element trees, waiting, filling fields.
 - [Migrating from Keyhac for macOS](doc/migration-from-keyhac-mac.md) — mostly drop-in.
 - [Migrating from Keyhac for Windows](doc/migration-from-keyhac-win.md) — API renamed;
   translation table.
