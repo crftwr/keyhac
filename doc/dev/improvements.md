@@ -57,38 +57,6 @@ Open before building: when does recording stop on its own; what happens across a
 `reload_config`; and continuous window-title capture is a privacy surface that
 [§9 trace privacy](ai-integration.md) should be re-read against.
 
-**2. Reading `~/.keyhac/extensions/`.** *(Write half **landed**; read half
-shrank and stays.)*
-
-Withholding *write* is a deliberate design decision. Withholding *read* is an
-asymmetry with no argument behind it: before the second run there was no way to
-confirm the new version had actually been saved, so a failure would have been
-ambiguous between "the fix does not work" and "the fix is not on disk" — one
-wasted round trip minimum, and a misleading one.
-
-`get_extension_source(name)` is read-only, so it can land without reopening the
-write question.
-
-The write side stays open and is recorded as measurement, not proposal: with
-`reload_config` present, saving by hand (download → `mv` → tell the operator) is
-the remaining manual step in every fix loop.
-
-**What happened:** the write side was reopened and `write_extension` landed,
-behind its own switch, followed by **class discovery** — every action class in
-`extensions/` is runnable as `module.Class` with no `config.py` edit at all,
-and `register_action` was removed once nothing needed it.
-[ai-integration.md §15.2](ai-integration.md) carries both, and the hole they do
-not close. **No step of the fix loop is manual now**; the `config.py` edit
-survives only as installation — a key binding — and happens once, after the
-action is known to work.
-
-That takes most of the read half's motivation with it: the agent now writes the
-file and gets back the path and a `+N/-M` summary, so "is the fix on disk?" is
-answered by the call that put it there. What `get_extension_source` would still
-answer is narrower — an action the *operator* edited by hand, or one written in
-an earlier session — and neither has cost a round trip yet. Left standing at a
-lower rank until one does.
-
 **3. `describe_screen` should report how much it truncated.**
 
 It says to raise `max_nodes` / `max_depth`, but not by how much, so the next
@@ -202,8 +170,6 @@ Recorded so a later tidying pass does not remove them:
 2. **6** — small, additive, certain; deletes the `_page()` helper.
 3. **3 and 4** — best cost-to-effort ratio of the tool changes; both convert a
    guessing loop into a single call.
-4. ~~**2 (read half)**~~ — the write half landed instead and dissolved most of
-   the read half's motivation; see the entry.
-5. **10** — a rule worth writing once, correctly.
-6. **5** — investigate the cause first; do not write the hint from a guess.
-7. **1** — the one that changes the experience, and the one that needs design.
+4. **10** — a rule worth writing once, correctly.
+5. **5** — investigate the cause first; do not write the hint from a guess.
+6. **1** — the one that changes the experience, and the one that needs design.

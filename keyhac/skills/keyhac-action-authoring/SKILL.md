@@ -189,6 +189,12 @@ Do not hand over an action you have not run. The point of the tools is that
 you read your own failure rather than the operator relaying it, and an action
 that has never executed is a guess.
 
+0. **Changing an action you did not write in this conversation?
+   `read_extension("open_issues")` first.** `write_extension` replaces the
+   whole file, so editing one you have not read means rebuilding it from a
+   guess — and whatever you did not guess is gone. `list_extensions` shows what
+   is in the directory, helper modules included; `list_actions` shows only what
+   can be run.
 1. **`write_extension("open_issues", source)`** saves
    `~/.keyhac/extensions/open_issues.py`, replacing what is there and keeping a
    backup.

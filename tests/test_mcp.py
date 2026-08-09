@@ -247,6 +247,58 @@ def test_source_that_does_not_parse_never_reaches_the_disk(writable):
     assert good.read_text() == "x = 1\n"
 
 
+def test_list_extensions_shows_the_files_list_actions_hides(writable):
+    """The two lists answer different questions, and the file view is the one
+    that can see a helper split out beside an action."""
+    write_action(writable, name="act")
+    write_action(writable, name="shared", source="VALUE = 1\n")
+    write_action(writable, name="_private", source="VALUE = 1\n")
+
+    files = writable.call("list_extensions", {})
+    assert "act.py" in files and "OpenIssues" in files
+    assert "shared.py" in files and "no ThreadedAction subclass" in files
+    assert "_private.py" in files and "helper" in files
+
+    runnable = writable.call("list_actions", {})
+    assert "shared" not in runnable and "_private" not in runnable
+
+
+def test_read_extension_reads_a_module_back(writable):
+    """The counterpart write_extension needed: it replaces whole files, so an
+    action changed without being read is reconstructed from a guess."""
+    writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    assert writable.call("read_extension", {"name": "thing"}) == "x = 1\n"
+
+
+def test_reading_a_helper_the_listing_does_not_show(writable):
+    """list_actions only reports action classes; a module split out beside one
+    still has to be readable to be maintained."""
+    write_action(writable, name="shared", source="VALUE = 1\n")
+    assert "VALUE = 1" in writable.call("read_extension", {"name": "shared"})
+
+
+def test_a_missing_module_says_what_is_there(writable):
+    write_action(writable, name="present", source="x = 1\n")
+    result = writable.call("read_extension", {"name": "absent"})
+    assert "no absent.py" in result and "present" in result
+
+
+@pytest.mark.parametrize("name", ["../config", "sub/thing", "thing.py", ".."])
+def test_reading_is_fenced_by_the_same_module_name_rule(writable, name):
+    with pytest.raises(ValueError, match="cannot be a module name"):
+        writable.call("read_extension", {"name": name})
+
+
+def test_an_oversized_module_is_refused_rather_than_truncated(writable,
+                                                              monkeypatch):
+    """Half a read feeding a whole-file write is how you lose the other half."""
+    monkeypatch.setattr(tools_module, "MAX_SOURCE", 10)
+    writable.call("write_extension", {"name": "big", "source": "x = 1\n" * 20})
+    result = writable.call("read_extension", {"name": "big"})
+    assert "Refusing rather than truncating" in result
+    assert "x = 1" not in result, "it must not leak a partial file"
+
+
 def test_it_writes_and_says_what_to_do_next(writable):
     result = writable.call("write_extension",
                            {"name": "open_issues", "source": "x = 1\n"})

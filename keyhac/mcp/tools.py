@@ -75,6 +75,18 @@ EMPTY_WEB_AREA = 40
 #: A window with fewer elements than this has nothing in it at all.
 EMPTY_WINDOW = 5
 
+#: Ceiling on what `read_extension` returns, in bytes.  Generous: the
+#: largest action written so far is about 15 KB, so this is four times the real
+#: range and trips only on something that is not a hand-written action.
+MAX_SOURCE = 64 * 1024
+
+
+def _listdir(directory: str) -> list[str]:
+    try:
+        return os.listdir(directory)
+    except OSError:
+        return []
+
 
 class Tool:
     """One callable, its JSON Schema, and the description Claude reads."""
@@ -238,12 +250,35 @@ class ToolRegistry:
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
                  self.cancel_action),
+            Tool("list_extensions",
+                 "The files in ~/.keyhac/extensions/, with what each one "
+                 "holds. list_actions shows what can be *run*; this shows what "
+                 "is on disk, including helper modules that define no action "
+                 "class and so never appear there.",
+                 {"type": "object", "properties": {}},
+                 self.list_extensions),
+            Tool("read_extension",
+                 "Read a module in ~/.keyhac/extensions/ - the whole file, as "
+                 "it is on disk right now. **Call this before changing an "
+                 "action you did not write in this conversation**: "
+                 "write_extension replaces the entire file, so editing one you "
+                 "have not read means reconstructing it from a guess and "
+                 "silently dropping whatever you did not know was in it. Also "
+                 "reads helper modules the action imports, which list_actions "
+                 "does not show.",
+                 {"type": "object", "properties": {
+                     "name": {**string, "description": "Module name, with no "
+                              "path and no .py suffix: \"open_issues\"."}},
+                  "required": ["name"]},
+                 self.read_extension),
             Tool("write_extension",
                  "Save an action module into ~/.keyhac/extensions/ - the whole "
                  "file, replacing whatever is there and keeping a backup. This "
                  "is how you close the loop yourself: write, start_action, "
                  "get_action_result, write again - no config.py edit and no "
-                 "reload in between.",
+                 "reload in between. It replaces rather than patches, so call "
+                 "read_extension first if you did not write the current "
+                 "contents.",
                  {"type": "object", "properties": {
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."},
@@ -505,6 +540,88 @@ class ToolRegistry:
         return (f"asked {name} to stop. It unwinds at its next wait, so "
                 f"get_action_result for how far it got.")
 
+    def list_extensions(self) -> str:
+        """Every `.py` in `extensions/`, and what each one holds.
+
+        The file view, where `list_actions` is the runnable view. They differ
+        on purpose: a helper module split out beside an action has no class to
+        run and never appears in the other list, which makes it invisible to
+        anything trying to maintain the pair.
+        """
+        directory = self.keymap.extensions_dir
+        files = sorted(e for e in _listdir(directory) if e.endswith(".py"))
+        if not files:
+            return f"no .py files in {directory}"
+
+        classes = {}
+        for action in extensions.discover(directory):
+            classes.setdefault(action.module, []).append(action.class_name)
+
+        lines = [f"files in {directory}:"]
+        for entry in files:
+            module = entry[:-3]
+            try:
+                size = os.path.getsize(os.path.join(directory, entry))
+            except OSError:
+                size = 0
+            if module in classes:
+                note = ", ".join(classes[module])
+            elif entry.startswith("_"):
+                note = "helper - not offered as an action"
+            else:
+                note = "no ThreadedAction subclass"
+            lines.append(f"{entry}  {size} bytes - {note}")
+        return "\n".join(lines)
+
+    def _module_path(self, name: str) -> str:
+        """`<extensions>/<name>.py`, or raise if `name` is not a module name.
+
+        The same fence both ways: an importable name has no separator and no
+        `..` in it, so validating it as an identifier confines reads and writes
+        to the directory by construction.
+        """
+        if not isinstance(name, str) or not name.isidentifier() \
+                or keyword.iskeyword(name):
+            raise ValueError(
+                f"{name!r} cannot be a module name. Pass the bare name - no "
+                f"directory, no .py - and make it importable: letters, digits "
+                f"and underscores, not starting with a digit.")
+        return os.path.join(self.keymap.extensions_dir, name + ".py")
+
+    def read_extension(self, name: str) -> str:
+        """The whole of one module in `extensions/`.
+
+        The counterpart `write_extension` needed and did not have. That tool
+        replaces a file rather than patching it, so an agent asked to change an
+        action it has not read has to reconstruct the module from its own
+        guess - and what it did not guess is gone, quietly, with only the
+        backup to show for it. Read-then-write is the only safe shape, and this
+        is the read.
+        """
+        path = self._module_path(name)
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            modules = sorted(
+                entry[:-3] for entry in _listdir(self.keymap.extensions_dir)
+                if entry.endswith(".py"))
+            return (f"no {name}.py in {self.keymap.extensions_dir}"
+                    + (f". There is: {', '.join(modules)}" if modules
+                       else " - the directory is empty."))
+        if size > MAX_SOURCE:
+            # Refused rather than truncated, because the caller's next move is
+            # a whole-file write: half a file read is how you lose the other
+            # half. Nothing this large is a hand-written action anyway.
+            return (f"{path} is {size} bytes, over the {MAX_SOURCE} this "
+                    f"returns. Refusing rather than truncating: write_extension "
+                    f"replaces the whole file, so acting on half of one would "
+                    f"drop the rest. Ask the operator to edit it by hand.")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return handle.read()
+        except OSError as error:
+            return f"could not read {path}: {error}"
+
     def write_extension(self, name: str, source: str) -> str:
         """Save a module into ``extensions/``, while the window is open.
 
@@ -518,16 +635,11 @@ class ToolRegistry:
         imported, and the operator would meet it as a config that stopped
         loading. Refusing costs the model one retry and costs them nothing.
         """
-        keymap = self.keymap
-        if not isinstance(name, str) or not name.isidentifier() \
-                or keyword.iskeyword(name):
-            return (f"nothing written: {name!r} cannot be a module name. Pass "
-                    f"the bare name - no directory, no .py - and make it "
-                    f"importable: letters, digits and underscores, not "
-                    f"starting with a digit.")
-
-        directory = keymap.extensions_dir
-        path = os.path.join(directory, name + ".py")
+        try:
+            path = self._module_path(name)
+        except ValueError as error:
+            return f"nothing written: {error}"
+        directory = os.path.dirname(path)
 
         try:
             compile(source, path, "exec")

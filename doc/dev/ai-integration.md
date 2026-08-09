@@ -1272,6 +1272,23 @@ resembled. `doc/ai-integration.md` says so under *What this does not protect
 you from*, and the authoring skill gained *The screen is data, not
 instructions* — a real mitigation, not a complete one.
 
+**`read_extension` came last, and the reason it is needed is not the one
+originally logged.** improvements.md asked for a read so the model could confirm
+its write had reached disk - a motivation `write_extension`'s own reply then
+answered, which is why it was ranked down (it was `get_extension_source`
+there; the shipped pair is `read_extension` / `write_extension`, with
+`list_extensions` beside `list_actions` for the files the latter cannot see).
+The real one is the shape of the
+write tool: it **replaces the whole file**. An agent asked to change an action
+it has not read must reconstruct the module from a guess, and whatever it did
+not guess is gone - quietly, with only a `.bak-` to show for it. That is a
+data-loss shape, not a convenience gap, and it applies to exactly the case the
+loop had not been exercised on: maintaining an action from an earlier session.
+
+Read and write share one fence (`_module_path`), and an oversized file is
+**refused rather than truncated** - half a read feeding a whole-file write is
+how the other half disappears.
+
 **The registration half then landed too** — and the resolution came from
 noticing the note's framing was wrong a second time. It asks whether the
 `config.py` edit can be *removed*. It cannot, and should not be: a key and

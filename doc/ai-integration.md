@@ -320,7 +320,9 @@ screen coordinates.
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
 | `list_actions` | the action classes in `extensions/`, what is running, how each last ended |
 | `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
-| `write_extension` | save a module into `extensions/` |
+| `list_extensions` | the files in `extensions/`, including helpers with no action class |
+| `read_extension` | read a module as it is on disk |
+| `write_extension` | save a module — the whole file |
 | `reload_config` | re-read your `config.py` after you edit it, and report any error |
 
 None of these has a permission of its own, and that is the design rather than
