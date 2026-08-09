@@ -199,7 +199,7 @@ def test_evaluate_runs_inline_without_a_loop():
 
 
 def test_refuses_to_block_the_loop_thread(engine, monkeypatch):
-    """Waiting on the loop thread would hang the keyboard hook (§13)."""
+    """Waiting on the loop thread would hang the keyboard hook (§12)."""
     fixture = engine(lambda keymap: None)
     # A dispatcher that never runs anything: if the guard fails to fire, the
     # test hangs rather than passing by accident.

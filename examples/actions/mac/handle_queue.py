@@ -1,6 +1,6 @@
 """Work a queue of confirmation dialogs - and refuse the one that is wrong.
 
-The third hand-written action of doc/dev/ai-integration.md §10.  Queue
+The third of the hand-written actions in this directory.  Queue
 processing with per-item branching (§2) plus the three-beat modal cycle (§7.2),
 but what it is really here to demonstrate is **preconditions** (§3.7):
 

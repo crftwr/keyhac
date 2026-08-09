@@ -1581,7 +1581,7 @@ def test_a_native_window_keeps_the_truncation_note(registry):
     assert "enable_content_access" not in text
 
 
-# -- what an action hands back (§15.3) --------------------------------------
+# -- what an action hands back ----------------------------------------------
 #
 # Three things reached the console window and not the model. Each of these
 # fails silently if it regresses: the tool still returns *something*, just

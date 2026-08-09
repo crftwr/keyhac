@@ -339,13 +339,11 @@ action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
 `FillFailed` are importable. **See [Action API](action-api.md)** for the full
 surface, and `keyhac/skills/keyhac-action-authoring/` for how to write one.
 
-**This surface is experimental** and the rest of this document is not: it may
-change in ways a release number normally promises it will not — 2.2.x is the
-line this feature is being built in, so even a patch release can move it — and
-an upgrade may require editing actions you have written. Everything else here — key tables, clipboard
-history, macros, window control — keeps the stability you expect from a 2.x
-release. [AI Integration](ai-integration.md) says what is unsettled and
-what would settle it.
+**A `UINode` is a snapshot** — it records what an element was when it was read,
+and the screen moves on without it noticing. `reread()` refreshes one
+deliberately, and `StaleElement` tells you a node you are holding has outlived
+what it pointed at. [AI Integration](ai-integration.md) covers turning the
+endpoint on and what it can reach.
 
 ## Keyboard macros
 

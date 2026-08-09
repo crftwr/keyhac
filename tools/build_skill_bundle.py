@@ -53,7 +53,7 @@ LICENSE = ROOT / "LICENSE"
 #: fetch a version-tagged URL is what the action skill used to do. It failed in
 #: measurement - the model shelled out to `pbpaste` rather than use
 #: `keymap.clipboard.get_text()`, because a URL that never entered the
-#: conversation cannot be fetched (doc/dev/improvements.md, item 9).
+#: conversation cannot be fetched - measured in a real authoring session.
 GENERATED = {
     "keyhac-action-authoring": [
         (ROOT / "doc" / "action-api.md", "references/action-api.md"),

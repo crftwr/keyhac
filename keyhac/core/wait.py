@@ -14,7 +14,7 @@ So: `sleep` in a generated action is a defect, and these are what replace it
 HOW THE WAIT IS SPENT.  A condition that reads UI elements has to run on the
 thread that owns the event loop, which is not the thread calling wait_for -
 the whole point is that the caller is a ThreadedAction.run() worker, because a
-key press must return control immediately (§13).  Each poll therefore hands the
+key press must return control immediately (§12).  Each poll therefore hands the
 condition to keymap.call_on_main_thread and blocks for its answer.  Polling
 starts fast and backs off: a modal that opens in 30 ms is caught in 30 ms,
 while a ten-minute job costs a check every quarter second rather than a
@@ -137,7 +137,7 @@ def _refuse_to_block_the_loop(name: str) -> None:
 
     Reading an element on the loop thread is ordinary and cheap; *waiting*
     there is what would hold the keyboard hook for the length of the wait
-    (§13).  Putting this check on evaluate_on_main_thread instead made every
+    (§12).  Putting this check on evaluate_on_main_thread instead made every
     helper that reads an element unusable from inside a condition, which is
     where half of them get called from.
     """

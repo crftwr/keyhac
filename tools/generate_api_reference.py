@@ -128,15 +128,13 @@ Generated from the docstrings. For how to *write* an action, the authoring
 skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 `examples/actions/` holds working ones.
 
-> **Experimental.** This surface may change in ways a release number normally
-> promises it will not — 2.2.x is the line this feature is being built in, so
-> even a patch release can move it — and an upgrade may require editing
-> actions you have written. The
-> unsettled part is `UINode` itself — how an element is identified, and how
-> long a node you are holding stays valid — which is the shape everything
-> below is built on. The rest of Keyhac's API is not affected; see
-> [AI Integration](ai-integration.md) for what this covers and what it
-> would take to settle it.
+> **A `UINode` is a snapshot.** It records what an element was when it was read;
+> the screen then moves on and the node does not notice. `reread()` refreshes
+> one deliberately, and `StaleElement` is raised when a node you are still
+> holding refers to something that no longer exists — which is the signal to
+> re-find it, as distinct from `FillFailed`, which means the selector was
+> wrong. Address elements by `identifier` where there is one, then by role plus
+> name or text.
 
 **Cross-platform by shape, not by data.** Every method here exists and behaves
 the same on Windows and macOS. What differs is the tree it reads: roles are

@@ -30,45 +30,23 @@ list.
 you do: the endpoint reads the accessibility tree of every application you have
 open and can run the actions you register. See [Security](#security).
 
-> ### Experimental
+> ### Upgrading from 2.2.0 or 2.2.1
 >
-> This feature — the MCP endpoint, the [action API](action-api.md), the
-> authoring skill — is **experimental**, and the rest of Keyhac is not. Key
-> tables, clipboard history, macros and window control keep the stability you
-> expect from a 2.x release; this does not.
+> Two calls were removed while this feature was being built. A `config.py` that
+> still makes either fails to load — loudly, with your previous configuration
+> staying active until you fix it.
 >
-> **What that means in practice:** an upgrade may require editing actions you
-> have already written. The usual rule that a minor release only *adds* does
-> not apply here. In particular the shape of a `UINode` — how an element is
-> identified, and how long a node you are holding stays valid — is not
-> settled, and it is the shape everything else is built on.
->
-> **And it is not only minor releases. The 2.2.x line is where this feature is
-> being built**, so a *patch* release in it can change the AI surface too —
-> 2.2.1 removed `keymap.enable_mcp_server()` and replaced `run_action` with
-> three tools. Read these notes before upgrading if you have turned it on.
-> Everything outside this feature keeps what a patch number promises.
->
-> **`keymap.register_action()` is gone**, after it too: an action class in
-> `~/.keyhac/extensions/` is now reachable by `module.Class` with no
-> registration at all, so the call had nothing left to do. **If your
-> `config.py` calls it, delete those lines** — it will otherwise fail to load,
-> loudly, and the previous configuration stays active until you do. A key
-> binding never went through it and is unaffected:
+> - **`keymap.enable_mcp_server()`** — the endpoint is a checkbox now:
+>   **AI Integration > MCP Server**, below.
+> - **`keymap.register_action()`** — an action class in `~/.keyhac/extensions/`
+>   is reachable as `module.Class` with no registration at all, so the call had
+>   nothing left to do. Delete those lines. A key binding never went through it
+>   and is unaffected:
 >
 > ```python
 > import open_issues
 > kt["Fn-I"] = open_issues.OpenIssues()      # this is all it ever needed
 > ```
->
-> **Why it is shipped anyway:** it is off by default and additive, so it costs
-> nothing to anyone who does not enable it, and the shape will be settled by
-> people writing real actions rather than by more design. If you write some,
-> what broke is the useful report.
->
-> It stops being experimental when that shape stops moving — which needs, at
-> minimum, actions generated against Windows as well as macOS, and by more
-> than one person. Today the evidence is two sessions on one machine.
 
 ## Turning it on
 
@@ -248,13 +226,16 @@ thing to configure.
   user's own windows come back, it worked. If the tool is not there, say so
   plainly instead of guessing at the cause — and if you are unsure of this
   host's config path or schema, ask rather than writing a plausible one.
-- Anything you cannot do from here, ask the user for. Most of it you can.
+- Anything you cannot do from here, ask the user for — and on Claude Desktop
+  that includes the config edit itself, which offers no way to *add* or edit an
+  MCP server entry, only to delete one. Assume the paste is theirs and make it
+  cheap: the absolute bridge path, and the exact JSON ready to drop in.
 
 ## Which clients have been tried
 
 | Client | Transport | Status |
 |---|---|---|
-| Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified** — the actions in `examples/actions/` were authored through it |
+| Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified on macOS and Windows** — the actions in `examples/actions/` were authored through it, and one authored on macOS then ran unchanged on Windows |
 | Claude Code | HTTP directly (`claude mcp add --transport http`) | Should work, **untried** |
 | Anything else with MCP support | HTTP directly | Should work, **untried** |
 

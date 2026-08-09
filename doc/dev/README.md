@@ -15,11 +15,10 @@ people working on Keyhac itself.
 - [packaging.md](packaging.md) — launchers, bundles, release pipeline, data paths.
 - [testing.md](testing.md) — test layers, harness patterns, live verification
   record.
-- [ai-integration.md](ai-integration.md) — design handover for AI integration:
-  agent at authoring time producing plain-Python actions, the UI-mediated ETL
-  workload they target, observation / state-reading / safety layers, the output-side
-  primitives, MCP topologies, and trace privacy.
-- [improvements.md](improvements.md) — friction measured in real authoring
-  sessions, ranked by the round trips it cost; the backlog those sessions feed.
+- [ai-integration.md](ai-integration.md) — the AI integration design: agent at
+  authoring time producing plain-Python actions, the UI-mediated ETL workload
+  they target, the five layers, the output-side primitives, MCP topologies,
+  measured platform behaviour, and trace privacy. Open work on it is tracked in
+  the GitHub issues under the `ai-integration` label.
 
 The project guide for coding agents is [CLAUDE.md](../../CLAUDE.md) at the repo root.

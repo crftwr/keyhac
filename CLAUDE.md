@@ -118,21 +118,28 @@ and the macOS bundle is signed/notarized and verified end-to-end. The live
 verification record — including which passes caught which real bugs — is in
 [doc/dev/testing.md](doc/dev/testing.md).
 
-**AI integration ships as experimental** — the MCP endpoint (`keyhac/mcp/`), the
-action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless the
-user ticks **AI Integration > MCP Server** in the console or tray menu (persisted in
-`settings.json`; there is deliberately no config API), and it is the one part of
-the public surface
-**not** covered by the usual additive-only expectation: `UINode`'s element
-identity and handle lifetime are still open ([doc/dev/ai-integration.md](doc/dev/ai-integration.md)
-§11), and settling them may break actions. Do not treat that surface as frozen,
-and do not extend the experimental marker to anything else.
+**AI integration is officially supported** — the MCP endpoint (`keyhac/mcp/`),
+the action API (`keymap.ui`, `UINode`) and the authoring skill. It is off unless
+the user ticks **AI Integration > MCP Server** in the console or tray menu
+(persisted in `settings.json`; there is deliberately no config API), and it
+carries the same additive-only expectation as the rest of the public surface.
 
-**2.2.x is the line this feature is being built in**, so a patch release may
-break the AI surface - 2.2.1 removed `enable_mcp_server()` and replaced
-`run_action` with three tools. The version number therefore does not carry that
-warning, which means the release notes have to: lead with what breaks, every
-time, for as long as the marker is up.
+Two properties of `UINode` are what that expectation is really about — they are
+the ceiling on action expressiveness, and changing either breaks every action
+already written:
+
+- **Element identity.** Address by `identifier` (DOM id / AutomationId) where
+  there is one, since it survives relabelling and localisation; then by role
+  plus name or text. `identity_key()` is a different thing — the raw platform
+  ref, used only for the DAG dedupe in `get_ui_tree`, and not public shape.
+- **Handle lifetime is snapshot.** A `UINode` records what an element *was*; the
+  screen moves on and the node does not notice. `reread()` refreshes one
+  deliberately. Nodes that quietly re-read themselves were rejected: that hides
+  exactly the change per-step preconditions exist to catch. `StaleElement`
+  distinguishes *the screen moved* (re-findable) from *the selector is wrong*
+  (regenerate the action).
+
+Both are settled. They change only in a major release.
 
 What remains is tracked in the GitHub issues: the deferred features (themes/fonts,
 i18n, migemo, rich clipboard formats, macOS ISO layout, balloon help UI). The

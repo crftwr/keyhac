@@ -1,6 +1,6 @@
 """Cross-system extraction: read two systems that disagree, write one CSV.
 
-The first of the hand-written actions doc/dev/ai-integration.md §10 asks for,
+The first of the hand-written actions in this directory,
 and the shape §2 says the interesting work actually has:
 
     enumerate targets -> for each: navigate, wait, read, accumulate

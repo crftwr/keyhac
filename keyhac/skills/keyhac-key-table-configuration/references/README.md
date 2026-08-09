@@ -20,7 +20,7 @@ remapping and one-shot modifiers - maintained, read by users, and corrected when
 it is wrong. A paraphrase of it living in a skill would be a second copy to
 drift, and a confidently wrong rule costs more than a missing one: that is
 exactly how `keyhac-action-authoring/references/quirks.md` came to ship a false
-statement about identifiers (`doc/dev/improvements.md`, the 2026-08-08 session).
+statement about identifiers (issue #58).
 
 So `SKILL.md` carries only what neither reference does - the loop, the rules for
 editing somebody's live `config.py`, and what can and cannot be checked without

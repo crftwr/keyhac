@@ -4,14 +4,13 @@ Two things live here because they are the same thing seen twice.
 
 **Capture** collects an action's output while it runs - `logger.info`, `print`,
 a library's warnings - so a model can read its own failure instead of the
-operator copying a traceback out of a console window
-(doc/dev/ai-integration.md §15.3).
+operator copying a traceback out of a console window.
 
 **The run record** keeps that output, and how the run ended, per action. An
 action takes minutes; the transport that starts it answers in one message
-(§15.3 again - the endpoint is POST-only JSON-RPC, so there is no channel to
-stream progress over). So starting and collecting are separate steps, and this
-is where the second one looks. It is also, unchanged, what §15.4 asked for: an
+(the endpoint is POST-only JSON-RPC, so there is no channel to stream
+progress over). So starting and collecting are separate steps, and this
+is where the second one looks. That also answers the other half: an
 action that fails at nine in the morning has its traceback here when somebody
 asks about it at noon.
 
