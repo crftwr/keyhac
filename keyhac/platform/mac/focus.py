@@ -34,6 +34,31 @@ class MacFocusProvider(FocusProvider):
         self._system_wide = AS.AXUIElementCreateSystemWide()
         AS.AXUIElementSetMessagingTimeout(self._system_wide, AX_MESSAGING_TIMEOUT)
 
+    def get_focused_element(self) -> "UIElement | None":
+        """Ask the system where focus is, without building a focus path.
+
+        The same AX chain get_focus() walks, stopping at the element. Skipping
+        `_build_path` is worth a method of its own here: that walk is up to 64
+        levels of AXParent with two attribute reads each, all of it cross-
+        process, and an action polling for focus to settle pays it on every
+        turn while reading none of it.
+
+        No `AXFocusedWindow` fallback and no app element, unlike get_focus():
+        those exist so a key table can still match on *something* when the
+        focused control cannot be read, and handing an action the application
+        element as if it were the focus is how issue #44 read on screen. Here,
+        not knowing is an answer worth giving.
+        """
+        focused_app = _ax_get(self._system_wide, "AXFocusedApplication")
+        if focused_app is None:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app is None:
+                return None
+            focused_app = AS.AXUIElementCreateApplication(
+                int(app.processIdentifier()))
+        element = _ax_get(focused_app, "AXFocusedUIElement")
+        return UIElement(element) if element is not None else None
+
     def get_focus(self) -> Focus | None:
 
         app = NSWorkspace.sharedWorkspace().frontmostApplication()

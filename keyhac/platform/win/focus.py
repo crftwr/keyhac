@@ -135,6 +135,23 @@ class WinFocusProvider(FocusProvider):
         self._probe = None      # last cheap Win32 probe
         self._focus = None      # the Focus built for it
 
+    def get_focused_element(self):
+        """UIA's own answer, asked fresh - no probe cache, no path walk.
+
+        get_focus() answers out of `self._focus` while the foreground window,
+        the focused child and the title are unchanged, which is right for key
+        dispatch and wrong for an action: focus moves *within* a window all the
+        time, and the probe cannot see it (issue #44). This is the ~33 ms walk's
+        first level and nothing else.
+        """
+        from keyhac.platform.win.uielement import UIElement
+
+        try:
+            return UIElement.from_focus()
+        except Exception:
+            logger.debug("UIA focus query failed.", exc_info=True)
+            return None
+
     def get_focus(self) -> Focus | None:
 
         foreground = user32.GetForegroundWindow()

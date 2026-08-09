@@ -159,6 +159,64 @@ def test_windows_returns_all_matches(ui):
     assert api.windows(app="Nope") == []
 
 
+# -- focused() asks, it does not remember (issue #44) ------------------------
+#
+# This used to read `keymap.focus`, which is a snapshot taken while a key was
+# being dispatched. An action that closed a window and waited for focus to
+# land somewhere else never saw it move: it kept being handed the destroyed
+# element, or the application that no longer had a window, and polling did not
+# help because polling produces no keystrokes.
+
+def test_focused_asks_the_platform_each_time(ui):
+    api, _element = ui
+    provider = api._keymap._focus_provider
+
+    first, second = FakeElement("AXTextArea", name="Editor", key="e"), \
+        FakeElement("AXTextField", name="Search", key="s")
+    provider.get_focused_element = lambda: provider.element
+
+    provider.element = first
+    assert api.focused().name == "Editor"
+
+    provider.element = second                  # focus moved; no key was typed
+    assert api.focused().name == "Search", \
+        "focused() answered from a snapshot instead of asking"
+
+
+def test_focused_does_not_read_the_keypress_snapshot(ui):
+    """A stale element that fails every attribute read is not an answer.
+
+    None is: the caller can branch on it, and an action waiting for focus to
+    settle keeps waiting instead of driving a window that is gone. So the
+    snapshot is loaded here with exactly what the report saw - the destroyed
+    window still sitting in `keymap.focus` - and focused() must not reach it.
+    """
+    api, _element = ui
+    keymap = api._keymap
+    keymap._focus = keymap._focus_provider.get_focus()
+    keymap._focus.element = FakeElement("AXWindow", name="Destroyed", key="x")
+    keymap._focus_provider.get_focused_element = lambda: None
+
+    assert api.focused() is None
+
+
+def test_the_default_provider_reads_the_live_focus(engine):
+    """Every provider gets this for free; only the cost differs.
+
+    macOS and Windows override it to skip building the focus *path* - a parent
+    walk of cross-process round trips that nothing here reads.
+    """
+    from keyhac.platform.base import Focus, FocusProvider
+
+    element = FakeElement("AXTextArea", name="Body", key="b")
+
+    class Minimal(FocusProvider):
+        def get_focus(self):
+            return Focus(app_name="App", pid=1, element=element)
+
+    assert Minimal().get_focused_element() is element
+
+
 def test_node_wraps_a_platform_element_shallowly(ui):
     api, element = ui
     node = api.node(element)

@@ -85,9 +85,18 @@ Ask a Chromium or Electron application to expose its content.
 focused() → UINode | None
 ```
 
-The element with keyboard focus, as a node. 
+The element with keyboard focus right now, as a node. 
 
 The cheapest root there is: a key binding already told you which application and which field the user meant (design document §3.2). 
+
+**Asked each time, not remembered.** This used to hand back `keymap.focus`, which is a snapshot taken while a key was being dispatched - so an action that closed a window and waited for focus to land somewhere else never saw it move, and kept being handed the destroyed element, or the application that no longer had a window. Polling did not help, because polling produces no keystrokes and only a keystroke refreshed it (issue #44). 
+
+`keymap.focus` stays what it was, on purpose. Deciding which key table applies to a keystroke needs the focus *that keystroke* was aimed at, and re-reading it there would race the key it is dispatching. The two are different questions; this is the one an action is asking. 
+
+
+
+**Returns:**
+  The focused element, or None when nothing has focus or the  platform could not say. None is an answer - a stale element that  fails every attribute read is not. 
 
 ---
 
