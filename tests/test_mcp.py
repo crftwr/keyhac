@@ -1103,6 +1103,60 @@ def test_the_install_we_belong_to_wins_over_path(tmp_path, monkeypatch):
     assert server_module.bridge_command() == str(ours)
 
 
+def test_the_windows_bundle_publishes_the_exe_and_not_the_cmd(tmp_path,
+                                                              monkeypatch):
+    """Both sit at the bundle root - the .cmd only forwards to the .exe now,
+    and is kept for configs written when it was the whole thing. Publishing the
+    real one keeps a freshly-configured client one process shorter."""
+    root = tmp_path / "Keyhac"
+    (root / "app" / "keyhac" / "mcp").mkdir(parents=True)
+    for name in ("keyhac-mcp-bridge.exe", "keyhac-mcp-bridge.cmd"):
+        (root / name).write_text("")
+
+    monkeypatch.setattr(server_module, "__file__",
+                        str(root / "app" / "keyhac" / "mcp" / "server.py"))
+    monkeypatch.setattr(server_module, "running_packaged", lambda: False)
+    assert server_module.bridge_command() == str(root / "keyhac-mcp-bridge.exe")
+
+
+def test_a_packaged_install_publishes_the_alias_not_the_package_copy(tmp_path,
+                                                                     monkeypatch):
+    """The bridge inside C:\\Program Files\\WindowsApps is readable and cannot
+    be executed by anyone - "Access is denied", whatever the ACL says, because
+    a packaged binary starts only with its package's identity. Publishing it
+    gave Claude Desktop a server that died at startup with no output. The app
+    execution alias is the supported way in."""
+    root = tmp_path / "WindowsApps" / "craftware.Keyhac_2.2.3.0_x64__abc"
+    (root / "app" / "keyhac" / "mcp").mkdir(parents=True)
+    (root / "keyhac-mcp-bridge.exe").write_text("")     # present, unusable
+    alias = tmp_path / "Local" / "Microsoft" / "WindowsApps"
+    alias.mkdir(parents=True)
+    (alias / "keyhac-mcp-bridge.exe").write_text("")
+
+    monkeypatch.setattr(server_module, "__file__",
+                        str(root / "app" / "keyhac" / "mcp" / "server.py"))
+    monkeypatch.setattr(server_module, "running_packaged", lambda: True)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    assert server_module.bridge_command() == str(alias / "keyhac-mcp-bridge.exe")
+
+
+def test_a_packaged_install_with_no_alias_publishes_nothing(tmp_path,
+                                                            monkeypatch):
+    """Turning the alias off in Settings > Apps > Advanced app settings is the
+    user's to do. Nothing is then configurable, and saying so beats publishing
+    the package copy - the key's absence already means "no stdio client here"."""
+    root = tmp_path / "WindowsApps" / "craftware.Keyhac_2.2.3.0_x64__abc"
+    (root / "app" / "keyhac" / "mcp").mkdir(parents=True)
+    (root / "keyhac-mcp-bridge.exe").write_text("")
+    (tmp_path / "Local" / "Microsoft" / "WindowsApps").mkdir(parents=True)
+
+    monkeypatch.setattr(server_module, "__file__",
+                        str(root / "app" / "keyhac" / "mcp" / "server.py"))
+    monkeypatch.setattr(server_module, "running_packaged", lambda: True)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    assert server_module.bridge_command() is None
+
+
 def test_stopping_removes_the_published_token(tmp_path, registry):
     server = MCPServer(registry, str(tmp_path / "mcp.json"))
     server.start()
@@ -1176,6 +1230,42 @@ def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
     bridge.main([])
     reply = json.loads(capsys.readouterr().out)
     assert "MCP server" in reply["error"]["message"]
+
+
+def test_the_bridge_reads_its_pipe_as_utf8(tmp_path, monkeypatch):
+    """MCP's stdio transport is UTF-8; Windows gives a pipe the ANSI code page
+    instead - cp1252 on a US install, cp932 on a Japanese one. Every non-ASCII
+    argument a client sent (a window name, a path) reached the daemon as
+    mojibake, and it looked like a Keyhac bug rather than an encoding one."""
+    import io
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+    monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
+
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                          "params": {"arguments": {"name": "メモ帳"}}},
+                         ensure_ascii=False) + "\n"
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(
+        io.BytesIO(request.encode("utf-8")), encoding="cp1252"))
+
+    forwarded = []
+
+    class Reply:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self): return b""
+
+    def capture(prepared, timeout=None):
+        forwarded.append(prepared.data)
+        return Reply()
+
+    monkeypatch.setattr(bridge.urllib.request, "urlopen", capture)
+    bridge.main([])
+
+    sent = json.loads(forwarded[0].decode("utf-8"))
+    assert sent["params"]["arguments"]["name"] == "メモ帳"
 
 
 def test_a_hollow_web_area_points_at_content_access(registry):

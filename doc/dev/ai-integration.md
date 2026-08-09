@@ -294,6 +294,28 @@ The work cannot simply live in the bridge, for three reasons:
 **Keyhac speaks localhost HTTP; the bridge is a stdio↔HTTP shim and nothing else.** No
 tool definitions, no logic — otherwise versions diverge and must be maintained twice.
 
+**How the bridge is *launched* is per-install, and the Store build dictated its
+shape.** `pip install` generates a console script; the zip bundle has no pip, so
+`build.ps1` emits one. That was a `.cmd` setting `PYTHONPATH` and running the
+embedded interpreter — until the MSIX install, where nothing under
+`C:\Program Files\WindowsApps` can be started by a process that is not part of
+the package: every attempt is "Access is denied", whatever the ACL says, and the
+files remain perfectly *readable* the whole time. So the Store build's bridge
+could not be launched by anything, and Claude Desktop's server exited at startup
+with no output to explain it.
+
+The supported way in is an **app execution alias**: the package declares one
+(`windows.appExecutionAlias`), Windows registers a stub on `PATH`, and launching
+it starts the target with package identity — which may then run the packaged
+interpreter. An alias can only name an `.exe` and cannot carry arguments, so
+`-m keyhac.mcp.bridge` had to be baked into a real executable
+(`windows_app/src/bridge.c`); the `.cmd` survives only as a forwarder, for
+configs written against 2.2.0–2.2.2. `bridge_command()` therefore asks Windows
+whether this process has package identity rather than inspecting paths, and a
+packaged Keyhac publishes the alias — or, if the user has turned the alias off,
+publishes nothing. **Existence is not the test on that platform**: the copy
+inside the package exists and can never work.
+
 ### 4.4 Access control is not optional
 
 Listening on localhost means every process on the machine can reach an API that reads the

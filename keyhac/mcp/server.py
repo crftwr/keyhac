@@ -57,6 +57,28 @@ ENDPOINT_FILE = "mcp.json"
 MAX_BODY = 1 << 20
 
 
+#: APPMODEL_ERROR_NO_PACKAGE - what GetCurrentPackageFullName answers when the
+#: calling process has no package identity, i.e. is not running from an MSIX
+#: install.  Any other result means it does.
+_NO_PACKAGE = 15700
+
+
+def running_packaged() -> bool:
+    """Whether this process has MSIX package identity (the Store install).
+
+    Asked of Windows rather than inferred from the path, because it is exactly
+    the condition that matters: a process *with* identity may run the binaries
+    inside its package, and one without may not.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    length = ctypes.c_uint32(0)
+    result = ctypes.windll.kernel32.GetCurrentPackageFullName(
+        ctypes.byref(length), None)
+    return result != _NO_PACKAGE
+
+
 def bridge_command() -> str | None:
     """Absolute path to the stdio bridge, or None when this install has none.
 
@@ -70,7 +92,9 @@ def bridge_command() -> str | None:
     however Keyhac is actually running:
 
     - macOS bundle: ``Contents/Resources/keyhac`` -> ``Resources/bin/...``
-    - Windows bundle: ``<root>/app/keyhac`` -> ``<root>/keyhac-mcp-bridge.cmd``
+    - Windows bundle: ``<root>/app/keyhac`` -> ``<root>/keyhac-mcp-bridge.exe``
+    - Windows MSIX install: the app execution alias, never the copy inside the
+      package - see below
     - venv or pip install: the console script pip generated from
       ``[project.scripts]``, which lands beside the interpreter running us
       (``bin/`` on POSIX, ``Scripts/`` with an ``.exe`` suffix on Windows)
@@ -84,12 +108,35 @@ def bridge_command() -> str | None:
     install still forwards correctly; it just resolves the config directory with
     its own copy of ``keyhac.core.paths``, so the two can disagree about where
     ``mcp.json`` lives.
+
+    **The MSIX install is the exception, and existence is not the test there.**
+    The bridge inside ``C:\\Program Files\\WindowsApps\\...`` is perfectly
+    readable and cannot be *executed* by anybody: every launch attempt from an
+    ordinary process comes back "Access is denied", because a packaged binary
+    may only be started with its package's identity. Publishing that path
+    yielded an MCP client that failed at startup with no output at all. So a
+    packaged Keyhac publishes the app execution alias Windows registers on its
+    behalf (``windows.appExecutionAlias`` in the manifest), which is the
+    supported way in - and if that stub is absent, because the user turned the
+    alias off in Settings, publishes nothing rather than a path that cannot
+    work.
     """
+    if running_packaged():
+        # lexists, not isfile: the alias is a 0-byte reparse point carrying an
+        # app-exec tag, and asking about the link itself avoids depending on
+        # how a given Python resolves a tag it does not know.
+        alias = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft",
+                             "WindowsApps", "keyhac-mcp-bridge.exe")
+        return alias if os.path.lexists(alias) else None
+
     package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     parent = os.path.dirname(package)
+    root = os.path.dirname(parent)
     candidates = [os.path.join(parent, "bin", "keyhac-mcp-bridge"),
-                  os.path.join(os.path.dirname(parent),
-                               "keyhac-mcp-bridge.cmd")]
+                  os.path.join(root, "keyhac-mcp-bridge.exe"),
+                  # 2.2.0-2.2.2 shipped only the .cmd; it now forwards to the
+                  # .exe, but a bundle from one of those still has just this.
+                  os.path.join(root, "keyhac-mcp-bridge.cmd")]
     # sys.executable is empty when the interpreter cannot identify itself (an
     # embedded host); there is simply no scripts directory to look in then.
     if sys.executable:

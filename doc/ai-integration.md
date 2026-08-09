@@ -284,7 +284,8 @@ installed:
 | Install | Path |
 |---|---|
 | macOS app bundle | `/Applications/Keyhac.app/Contents/Resources/bin/keyhac-mcp-bridge` |
-| Windows bundle | `keyhac-mcp-bridge.cmd`, beside `Keyhac.exe` |
+| Windows zip / portable bundle | `keyhac-mcp-bridge.exe`, beside `Keyhac.exe` |
+| Windows Microsoft Store install | `%LOCALAPPDATA%\Microsoft\WindowsApps\keyhac-mcp-bridge.exe` — see below |
 | `pip install keyhac` | `which keyhac-mcp-bridge`, or the virtualenv's `bin/` |
 | Source checkout | `.venv/bin/keyhac-mcp-bridge`, created by `make install` — note it is *not* on `PATH` when Keyhac is started with `make run` |
 
@@ -298,22 +299,33 @@ installed:
 }
 ```
 
-If a client refuses to launch the Windows `.cmd` directly — some spawn
-executables without a shell — point it at the interpreter instead:
+**On the Microsoft Store install, do not point a client inside
+`C:\Program Files\WindowsApps`.** Nothing in there can be started by a program
+that is not part of the package — Windows answers "Access is denied" no matter
+how the path is spelled, and the file is perfectly readable the whole time,
+which makes it look like a Keyhac problem rather than a Windows one. What you
+get is an MCP server that disappears the moment the client starts it, with
+nothing in its log. Use the command Windows registers for the package instead:
 
 ```json
 {
   "mcpServers": {
     "keyhac": {
-      "command": "C:\\Program Files\\Keyhac\\runtime\\python.exe",
-      "args": ["-m", "keyhac.mcp.bridge"],
-      "env": {
-        "PYTHONPATH": "C:\\Program Files\\Keyhac\\app;C:\\Program Files\\Keyhac\\Lib\\site-packages"
-      }
+      "command": "C:\\Users\\<you>\\AppData\\Local\\Microsoft\\WindowsApps\\keyhac-mcp-bridge.exe"
     }
   }
 }
 ```
+
+That directory is on `PATH`, so a client that inherits one can just say
+`keyhac-mcp-bridge`. Either way, `~/.keyhac/mcp.json` publishes the exact path
+for the install you are running — read it from there rather than transcribing
+this. *(Keyhac 2.2.2 and earlier published a path inside the package here, which
+could not work; the fix is in 2.2.3.)*
+
+Older Windows bundles shipped `keyhac-mcp-bridge.cmd` rather than the `.exe`. It
+is still there and still works — it now just forwards — so a config written
+against 2.2.0–2.2.2 needs no change.
 
 The bridge does not have to come from the same install as the daemon — it reads
 the endpoint file and forwards.

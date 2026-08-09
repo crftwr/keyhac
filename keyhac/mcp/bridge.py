@@ -68,6 +68,17 @@ def main(argv: list[str] | None = None) -> int:
                                          "with a non-default one.")
     args = parser.parse_args(argv)
 
+    # MCP's stdio transport is UTF-8. Windows decides a pipe's encoding from the
+    # ANSI code page instead - cp1252 on a US install, cp932 on a Japanese one -
+    # so every non-ASCII argument a client sends (a window name, a path) arrived
+    # as mojibake, and any non-ASCII reply would have failed to encode on the way
+    # back. Guarded rather than assumed: a caller can hand main() a stdin that is
+    # not a TextIOWrapper.
+    for stream in (sys.stdin, sys.stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
+
     path = endpoint_path(args.config)
 
     for line in sys.stdin:
