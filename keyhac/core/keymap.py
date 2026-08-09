@@ -1064,8 +1064,9 @@ class Keymap:
     def start_mcp_server(self, port: int = 0) -> None:
         """Start the AI-integration endpoint on localhost, for a while.
 
-        The switch is the console's **AI Integration** checkbox, or the tray
-        menu's *AI Integration > MCP Server*; this is the mechanism behind it.
+        The switch is the console's **AI Integration: MCP Server** checkbox, or
+        the tray menu's *AI Integration > MCP Server*; this is the mechanism
+        behind it.
         There is deliberately no configuration API: an endpoint that reads every
         window you have open, and that can write and run action code, should be
         visibly on or visibly off, and a line in the middle of a config file

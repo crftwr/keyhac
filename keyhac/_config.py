@@ -303,11 +303,11 @@ def configure(keymap):
     #     kt[f"{LEADER}-I"] = open_issues.OpenIssues()
     #
     # Nothing above is needed to *write* one.  While the MCP endpoint is on
-    # (AI Integration in the tray menu; off until you tick it, and off again an
-    # hour later), an agent saves the module and runs the class straight out of
-    # extensions/, so a fix loop never touches this file.  These two lines are
-    # what makes the result yours: a key of your choosing, working whether or
-    # not anything is connected.
+    # (AI Integration > MCP Server in the tray menu; off until you tick it, and
+    # off again an hour later), an agent saves the module and runs the class
+    # straight out of extensions/, so a fix loop never touches this file.  These
+    # two lines are what makes the result yours: a key of your choosing, working
+    # whether or not anything is connected.
 
     # ==================================================================
     # Multi-stroke key tables

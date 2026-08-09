@@ -68,7 +68,7 @@ open and can run the actions you register. See [Security](#security).
 
 ## Turning it on
 
-Tick **MCP server** under **AI Integration** in the console window, or
+Tick **AI Integration: MCP Server** in the console window, or
 **AI Integration → MCP Server** in the tray / menu bar menu. The console logs
 the port it chose.
 
@@ -403,7 +403,7 @@ don't type passwords or show private material while recording.
 ## Security
 
 - **Off by default**, and the switch is visible. Nothing listens until you tick
-  **AI Integration → MCP server**, and while it is on the checkbox and the menu
+  **AI Integration → MCP Server**, and while it is on the checkbox and the menu
   item both say so — which a line in a config file cannot.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
