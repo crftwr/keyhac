@@ -1,9 +1,10 @@
 # Hand-written actions
 
-Step 4 of [`doc/dev/ai-integration.md`](../../doc/dev/ai-integration.md) §10 —
-the step that says *do not skip*. These are written by hand, against real
-applications, so that the generalisation heuristics in the authoring skill come
-from real failures instead of first principles.
+Written by hand, against real applications, so that the generalisation
+heuristics in the authoring skill come from real failures instead of first
+principles. Doing this before attempting any generation was deliberate, and the
+reasoning is in
+[`doc/dev/ai-integration.md`](../../doc/dev/ai-integration.md).
 
 Each action targets one OS, and says so in its docstring. Five are macOS; the
 sixth is `win/snapshot_settings.py`, the same task as `mac/snapshot_settings.py`

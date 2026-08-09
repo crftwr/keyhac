@@ -1,7 +1,7 @@
 """Walk every tab of a settings window and dump the field values to JSON.
 
 Eval case 8, written against a screen nobody had inspected first - the point
-being to find out what the authoring skill fails to warn about (§10 step 6).
+being to find out what the authoring skill fails to warn about.
 It found two things, both now in references/quirks.md:
 
   - **AppKit identifiers are serial numbers.** `#_NS:746` is a nib ordinal, not

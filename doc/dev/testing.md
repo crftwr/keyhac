@@ -234,7 +234,7 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `HasKeyboardFocus`, `get_selection()` returns the selection, and the modal
   three-beat plus an idempotent `set_checked` run end to end against Notepad's
   Find UI.
-- **The `set_value` measurement `ai-integration.md` §11 asks for**, timed
+- **The `set_value` measurement `ai-integration.md` §10 asks for**, timed
   against a real control: `set_value` 15–33 ms, `paste` 48–95 ms, `keys`
   114–272 ms. All three work; the ordering matches macOS with a wider spread,
   and none of it changes the **paste, then keys** default — speed is not the

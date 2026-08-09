@@ -50,9 +50,8 @@ _MODIFIER_BITS = (
 #: length to whoever is driving the endpoint: a model working every few minutes
 #: - because it was told to by something it read on screen - would keep its own
 #: permission alive indefinitely, which is the one property this is here to
-#: deny.  An hour is longer than the authoring sessions measured so far
-#: (doc/dev/improvements.md), so re-arming should be rare enough not to become
-#: reflexive.
+#: deny.  An hour is longer than the authoring sessions measured so far, so
+#: re-arming should be rare enough not to become reflexive.
 _AUTHORING_WINDOW = 60 * 60
 
 

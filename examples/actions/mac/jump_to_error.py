@@ -1,6 +1,6 @@
 """Jump to the file:line in the last error a terminal printed.
 
-The fourth hand-written action of doc/dev/ai-integration.md §10, and the one
+The fourth of the hand-written actions in this directory, and the one
 that exercises the *text* layer rather than the tree.  A terminal is a single
 AXTextArea holding an undifferentiated blob: there is no element for "the error
 line", so no amount of tree searching finds it (§6).

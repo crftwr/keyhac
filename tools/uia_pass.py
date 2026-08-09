@@ -21,7 +21,7 @@ exercises are:
     IUIAutomationTextRange        ExpandToEnclosingUnit 6 (TextUnit_Line = 3)
     IUIAutomation                 ElementFromPoint 7
 
-It also answers the measurement doc/dev/ai-integration.md §11 asks for - does
+It also answers the measurement doc/dev/ai-integration.md §10 asks for - does
 `set_value` work on the target systems - by timing all three write mechanisms
 against a real control.
 
@@ -402,7 +402,7 @@ def main():
               "focus. Click the scratch tab and rerun.")
         return report()
 
-    section("write side - the §11 measurement")
+    section("write side - the §10 measurement")
     for method in ("set_value", "paste", "keys"):
         text = f"hello-{method}"
         started = time.perf_counter()

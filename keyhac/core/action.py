@@ -203,7 +203,7 @@ class ThreadedAction:
         Both ways of starting an action enter this - `_run_tracked` for a key
         press, and the MCP tool that starts one from a chat window - which is
         what makes both stoppable and both retrievable. A run started by a key
-        this morning is the one §15.4 wants readable at noon, and it lands here
+        this morning is the one somebody asks about at noon, and it lands here
         by taking the same path.
 
         The flag is built here rather than in `__init__` because subclasses
