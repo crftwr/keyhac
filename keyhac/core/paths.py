@@ -70,6 +70,15 @@ def bundle_dir() -> str | None:
     portable mode, and running from source — where ``sys.executable`` is a
     plain (possibly venv) ``python.exe`` — never mistakes the interpreter's
     directory for a bundle root.
+
+    The interpreter's *parent* directory is tried as well, because the bundle
+    runs code from two places and only one of them sits at the root.
+    ``Keyhac.exe`` is at ``<root>``; the MCP bridge runs
+    ``<root>\\runtime\\python.exe``, and asking only about that directory found
+    no ``app\\keyhac`` under it — so portable mode was invisible to the bridge,
+    which then looked for ``mcp.json`` in ``~/.keyhac`` while the daemon two
+    feet away had published it beside the exe. Every stdio client hit that:
+    "Keyhac's MCP endpoint is not available", with Keyhac plainly running.
     """
     if sys.platform != "win32":
         return None
@@ -77,8 +86,9 @@ def bundle_dir() -> str | None:
     if not executable:
         return None
     root = os.path.dirname(os.path.abspath(executable))
-    if os.path.isdir(os.path.join(root, _BUNDLE_APP_MARKER)):
-        return root
+    for candidate in (root, os.path.dirname(root)):
+        if os.path.isdir(os.path.join(candidate, _BUNDLE_APP_MARKER)):
+            return candidate
     return None
 
 

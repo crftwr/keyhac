@@ -74,6 +74,22 @@ class TestBundleDetection:
         monkeypatch.setattr(sys, "executable", str(renamed))
         assert paths.bundle_dir() == str(tmp_path)
 
+    def test_the_bundled_interpreter_finds_the_root_above_it(self, tmp_path,
+                                                             monkeypatch):
+        """The MCP bridge runs <root>\\runtime\\python.exe, not Keyhac.exe.
+        Looking only at that directory left the bridge outside portable mode
+        while the daemon was inside it: it read ~/.keyhac/mcp.json and the
+        daemon wrote <root>\\mcp.json, so a stdio client got "endpoint is not
+        available" with Keyhac running."""
+        _make_bundle(tmp_path)
+        runtime = tmp_path / "runtime"
+        runtime.mkdir()
+        (runtime / "python.exe").write_text("")
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(sys, "executable", str(runtime / "python.exe"))
+        assert paths.bundle_dir() == str(tmp_path)
+        assert paths.resolve().data_dir == str(tmp_path)
+
     def test_a_plain_interpreter_is_not_a_bundle(self, tmp_path, monkeypatch):
         # `python -m keyhac` from a checkout: sys.executable is a (possibly
         # venv) python.exe whose directory has no app\keyhac in it, so a
