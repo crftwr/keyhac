@@ -632,6 +632,123 @@ def test_an_unchanged_file_keeps_its_instance(writable):
     assert writable._startable("thing.Thing") is writable._startable("thing.Thing")
 
 
+# -- one module, not two (issue #40) -----------------------------------------
+
+STATEFUL = '''\
+import itertools
+
+from keyhac import ThreadedAction
+
+RUNS = itertools.count(1)
+
+
+class Counted(ThreadedAction):
+    def run(self):
+        return next(RUNS)
+'''
+
+
+@pytest.fixture
+def clean_modules():
+    before = set(sys.modules)
+    yield
+    for name in set(sys.modules) - before:
+        del sys.modules[name]
+
+
+def test_it_runs_the_module_the_config_imported(writable, clean_modules):
+    """Issue #40: start_action used to re-import, unconditionally.
+
+    So a class on the operator's key and the same class started from here came
+    from two different module objects. Anything the module held existed twice
+    and neither copy saw the other's writes - which showed up as a run counter
+    going 3, then 2, with the 2 twenty-five seconds later.
+    """
+    write_action(writable, name="counted", source=STATEFUL)
+    directory = str(extensions(writable))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import counted                                    # what config.py does
+    keymap_module.Keymap._stamp_extensions(directory)  # end of configure()
+
+    started = writable._startable("counted.Counted")
+
+    assert type(started) is counted.Counted, "a second copy of the class"
+    assert sys.modules["counted"] is counted
+
+    # The counter is the visible half: two modules would restart it.
+    assert counted.Counted().run() == 1
+    assert started.run() == 2
+
+
+def test_an_edited_helper_wins_over_the_loaded_module(writable, clean_modules):
+    """Sharing must not become the staleness it replaced.
+
+    An action reaches its helper through sys.modules, so reusing a module
+    whose *helper* moved would run the edited half against the previous
+    version of the other and report success - the failure the directory-wide
+    eviction exists to prevent, walked back in through the door #40's fix
+    opened.
+    """
+    directory = extensions(writable)
+    write_action(writable, name="_lib", source="VALUE = 1\n")
+    write_action(writable, name="uses_lib", source=(
+        "from keyhac import ThreadedAction\n"
+        "import _lib\n\n\n"
+        "class Uses(ThreadedAction):\n"
+        "    def run(self):\n"
+        "        return _lib.VALUE\n"))
+
+    keymap_module.Keymap._prepare_extensions(str(directory))
+    import uses_lib                                    # noqa: F401
+    keymap_module.Keymap._stamp_extensions(str(directory))
+
+    (directory / "_lib.py").write_text("VALUE = 2\n")   # only the helper moved
+
+    assert writable._startable("uses_lib.Uses").run() == 2
+
+
+def test_an_unrelated_edit_does_not_split_the_module(writable, clean_modules):
+    """The reason freshness follows the import graph and not the directory.
+
+    In a fix loop some file is nearly always newer than the last configuration
+    load. If any of them forced a re-import, every action but the one being
+    edited would go back to running its own private copy - which is issue #40
+    with extra steps.
+    """
+    directory = extensions(writable)
+    write_action(writable, name="quiet", source=STATEFUL)
+    write_action(writable, name="noisy", source=RUNNABLE.format(version=1))
+
+    keymap_module.Keymap._prepare_extensions(str(directory))
+    import quiet
+    keymap_module.Keymap._stamp_extensions(str(directory))
+
+    (directory / "noisy.py").write_text(RUNNABLE.format(version=2))
+
+    assert type(writable._startable("quiet.Counted")) is quiet.Counted
+
+
+def test_an_edit_still_wins_over_the_loaded_module(writable, clean_modules):
+    """Sharing must not become staleness.
+
+    Until the operator reloads, the class on their key genuinely *is* the
+    previous version - so the moment the file moves, this has to go back to
+    importing its own.
+    """
+    path = write_action(writable, name="moved", source=RUNNABLE.format(version=1))
+    directory = str(extensions(writable))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import moved                                       # noqa: F401
+    keymap_module.Keymap._stamp_extensions(directory)
+
+    path.write_text(RUNNABLE.format(version=2))
+    os.utime(path, (0, 0))
+
+    assert writable._startable("moved.Thing").run() == 2
+
+
 SLOW = '''\
 import time
 

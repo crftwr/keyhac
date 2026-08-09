@@ -27,6 +27,14 @@ file's mtime and re-imports when it moves, so `write_extension` followed by
 - and it evicts the whole directory first, so a helper module the action
 imports is re-read too rather than answering out of `sys.modules`.
 
+**And when it has not moved, what runs is the module `config.py` imported.**
+Re-importing an unchanged file used to be unconditional, which quietly made two
+of every action: the one on the operator's key and the one started from here
+came from different module objects, so anything a module held - a cache, a
+connection, a counter - existed twice and neither copy saw the other's writes
+(issue #40). Sharing the loaded module is the ordinary case; a fresh import is
+what an edit buys.
+
 The marker is `ThreadedAction`. An action that drives a UI has to be one (a key
 press must return immediately), the authoring skill mandates it, and every
 shipped example uses it - so restricting the scan to it keeps the rule legible:
@@ -41,7 +49,6 @@ from __future__ import annotations
 import ast
 import importlib.util
 import os
-import shutil
 import sys
 
 
@@ -264,18 +271,29 @@ class Loader:
         entry = self._instances.get(action.name)
         if entry is not None and entry[0] == stamp:
             return entry[1]
-        directory = os.path.dirname(action.path)
-        # Evict the whole directory, not just this file. Re-importing the
-        # action's own module by path leaves any *helper* it imports resolving
-        # out of sys.modules - so an action split across two files would run
-        # its edited half against the previous version of the other, and report
-        # success. Measured. This is `_prepare_extensions`' own eviction, reused
-        # rather than reimplemented, since getting it subtly different is the
-        # whole hazard.
-        from keyhac.core.keymap import Keymap
-        Keymap._prepare_extensions(directory)
-        _drop_bytecode(directory)
-        module = _import_file(action.module, action.path)
+        # The module `config.py` imported, when it and everything it imports
+        # are still the files on disk. Re-importing an unchanged module is
+        # what split every action in two: the class this ran and the class on
+        # the operator's key came from different module objects, so
+        # module-level caches, connections and counters were duplicated
+        # silently (issue #40). Sharing them is the normal case - an action is
+        # edited far less often than it is run.
+        module = _loaded_and_current(action)
+
+        if module is None:
+            directory = os.path.dirname(action.path)
+            # Evict the whole directory, not just this file. Re-importing the
+            # action's own module by path leaves any *helper* it imports
+            # resolving out of sys.modules - so an action split across two
+            # files would run its edited half against the previous version of
+            # the other, and report success. Measured. This is
+            # `_prepare_extensions`' own eviction, reused rather than
+            # reimplemented, since getting it subtly different is the whole
+            # hazard; it drops the directory's bytecode too, for the same
+            # reason one layer down.
+            from keyhac.core.keymap import Keymap
+            Keymap._prepare_extensions(directory)
+            module = _import_file(action.module, action.path)
         loaded = getattr(module, action.class_name, None)
         if loaded is None:
             raise KeyError(f"{action.path} no longer defines "
@@ -293,21 +311,43 @@ class Loader:
         return instance
 
 
-def _drop_bytecode(directory: str) -> None:
-    """Remove `__pycache__` under `directory`, so a re-import reads the source.
+def _loaded_and_current(action: ActionClass):
+    """The loaded module for `action`, if nothing it rests on has been edited.
 
-    Evicting `sys.modules` is not enough on its own. A cached `.pyc` is
-    validated against the source's mtime **in whole seconds** and its size, so
-    two edits inside one second that happen to leave the file the same length -
-    a model fixing one character, twice - reload the *previous* bytecode and
-    report success. Measured; it is the same silent staleness the eviction
-    exists to prevent, one layer further down.
+    The freshness question covers the *import graph*, not one file. An action
+    split across two files sees its helper through `sys.modules`, so reusing a
+    module whose helper has moved would run the edited half against the
+    previous version of the other and report success - the failure the
+    directory-wide eviction exists to prevent, walked back in through the
+    door this opened.
 
-    Only on this path, not in `_prepare_extensions`: a config reload happens by
-    hand and rarely, while this one runs in a loop that edits every few seconds.
-    Bytecode is regenerable by definition, and these files are small.
+    Scoped to what this action actually imports rather than to the whole
+    directory, which is the difference between sharing modules and not: in a
+    fix loop *some* file is nearly always newer than the last configuration
+    load, and letting an unrelated one force a re-import would put the split
+    of issue #40 back for every action but the one being edited.
     """
-    shutil.rmtree(os.path.join(directory, "__pycache__"), ignore_errors=True)
+    from keyhac.core.keymap import Keymap
+
+    parsed = _parse_directory(os.path.dirname(action.path))
+    if action.module not in parsed:
+        return None
+    for name in _imported_modules(parsed, action.module, set()):
+        if Keymap._loaded_extension(name, parsed[name].path) is None:
+            return None
+    return sys.modules.get(action.module)
+
+
+def _imported_modules(parsed: dict, module: str, seen: set) -> set:
+    """`module` and every module in `extensions/` it imports, transitively."""
+    if module in seen or module not in parsed:
+        return seen
+    seen.add(module)
+    source = parsed[module]
+    for origin in (*source.modules.values(),
+                   *(origin for origin, _name in source.from_imports.values())):
+        _imported_modules(parsed, origin, seen)
+    return seen
 
 
 def _mtime(path: str) -> float:
@@ -328,8 +368,12 @@ def _import_file(module_name: str, path: str):
 
     It is still registered in `sys.modules` under its plain name, so a later
     `import thing` from `config.py` reaches the same object and
-    `_prepare_extensions` evicts it on the next reload like any other.
+    `_prepare_extensions` evicts it on the next reload like any other. And it
+    is stamped on the way out, so the *next* start recognizes it as current and
+    reuses it rather than making a second copy (issue #40).
     """
+    from keyhac.core.keymap import stamp_extension_module
+
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load {path}")
@@ -340,4 +384,5 @@ def _import_file(module_name: str, path: str):
     except BaseException:
         sys.modules.pop(module_name, None)
         raise
+    stamp_extension_module(module_name, path)
     return module

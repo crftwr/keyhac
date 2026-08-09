@@ -85,6 +85,88 @@ def test_a_reload_picks_up_an_edit(extensions):
     assert edited_action.VALUE == "after", "the edit was not picked up"
 
 
+def test_a_reload_picks_up_an_edit_a_pyc_would_hide(extensions):
+    """Issue #41: the same silent staleness, one layer below sys.modules.
+
+    A timestamp .pyc is validated on int(mtime) and size, so an edit inside one
+    whole second that leaves the file the same length reloads the *previous*
+    bytecode through an eviction that did everything else right. Not the corner
+    it sounds like - write_extension replaces whole files, and a one-character
+    fix to a format string is a file of identical length seconds later.
+
+    The mtimes here are pinned rather than raced: the point is the arithmetic
+    the import system does, not whether this machine is fast enough to lose.
+    """
+    write(extensions, "same_length", "VALUE = 'aaa'")
+    path = extensions / "same_length.py"
+    os.utime(path, (1_000_000_000.25, 1_000_000_000.25))
+
+    Keymap._prepare_extensions(str(extensions))
+    import same_length
+    assert same_length.VALUE == "aaa"
+    assert (extensions / "__pycache__").exists(), \
+        "no .pyc was written, so this test is not testing anything"
+
+    write(extensions, "same_length", "VALUE = 'bbb'")     # same byte length
+    os.utime(path, (1_000_000_000.75, 1_000_000_000.75))  # same whole second
+
+    Keymap._prepare_extensions(str(extensions))           # what a reload does
+
+    import same_length
+    assert same_length.VALUE == "bbb", "the edit was hidden by stale bytecode"
+
+
+def test_a_loaded_module_is_recognized_as_current(extensions):
+    """Issue #40's other half: knowing when *not* to re-import.
+
+    Nothing else can answer this. A plain `import` leaves no record of when it
+    read the file, so without the stamp taken after a config load, every reader
+    has to assume the worst and load its own copy - which is exactly what made
+    two of every action.
+    """
+    write(extensions, "shared_state", "VALUE = 'loaded'")
+    path = str(extensions / "shared_state.py")
+
+    Keymap._prepare_extensions(str(extensions))
+    import shared_state
+    Keymap._stamp_extensions(str(extensions))             # end of configure()
+
+    assert Keymap._loaded_extension("shared_state", path) is shared_state
+
+    write(extensions, "shared_state", "VALUE = 'edited'")
+    assert Keymap._loaded_extension("shared_state", path) is None, \
+        "an edited file must not be answered out of sys.modules"
+
+
+def test_an_unstamped_module_is_not_claimed_as_current(extensions):
+    """A module nobody vouched for is not one to reuse."""
+    write(extensions, "unstamped", "VALUE = 1")
+    Keymap._prepare_extensions(str(extensions))
+    import unstamped                                       # noqa: F401
+
+    assert Keymap._loaded_extension(
+        "unstamped", str(extensions / "unstamped.py")) is None
+
+
+def test_a_reload_forgets_what_it_evicted(extensions):
+    """The stamp must not outlive the module it describes.
+
+    Otherwise a reload leaves a stamp pointing at an unchanged file with no
+    module behind it, and the next lookup would claim whatever `sys.modules`
+    happened to hold under that name.
+    """
+    write(extensions, "evicted", "VALUE = 1")
+    path = str(extensions / "evicted.py")
+    Keymap._prepare_extensions(str(extensions))
+    import evicted                                         # noqa: F401
+    Keymap._stamp_extensions(str(extensions))
+
+    Keymap._prepare_extensions(str(extensions))
+    sys.modules["evicted"] = object()                      # someone else's
+
+    assert Keymap._loaded_extension("evicted", path) is None
+
+
 def test_a_reload_leaves_unrelated_modules_alone(extensions):
     """Only modules loaded *from* the directory are dropped."""
     Keymap._prepare_extensions(str(extensions))
