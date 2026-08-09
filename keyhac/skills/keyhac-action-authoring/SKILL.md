@@ -215,6 +215,15 @@ that has never executed is a guess.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
 6. **When it works**, hand them the `configure()` block so they can name it and
    bind a key. Say plainly that this last step is theirs.
+7. **Clean up what the loop left behind.**
+   `delete_extension("wrong_name")` retires a module — it renames it to a
+   `.bak-` beside itself rather than erasing it, so this is reversible. Use it
+   for a module you wrote under a name you then abandoned, or a helper you
+   folded back into the action. **Only for what you created in this
+   conversation**: anything else in `extensions/` is the operator's, and it is
+   theirs to remove. If the reply says `config.py` mentions the module, read
+   that file and offer to take the lines out — leaving them there means their
+   next reload fails and their key bindings stop working.
 
 **The endpoint closes itself an hour after the operator opens it**, and every
 tool then stops answering at once — which reads like a dropped connection and is

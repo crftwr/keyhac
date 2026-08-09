@@ -1154,8 +1154,8 @@ Against the layers in §5 and the sequence in §10:
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
 | Layer 4 — action metadata | **Reduced to what was load-bearing.** The name is now the class's own `module.Class`, discovered rather than declared, so `register_action` went with the registry it fed (§15.2); the MCP tool schemas remain. No argument schema - these are instantiated with no arguments - and the description surface is the class docstring's first line. `list_actions` reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
-| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **every action class there is runnable** as `module.Class` with no `config.py` edit at all - both behind the endpoint's own switch, which now expires (§4.4, §15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` is gone, and what survives in `config.py` is the key binding. Still absent: partial reload (a file re-imports itself on mtime, so nothing has needed it). |
-| Topology A — MCP | **Done.** `keyhac/mcp/`: twelve tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
+| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **every action class there is runnable** as `module.Class` with no `config.py` edit at all - both behind the endpoint's own switch, which now expires (§4.4, §15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` is gone, and what survives in `config.py` is the key binding. `delete_extension` completes it from the other end - a rename into the same `.bak-` scheme, so the directory a fix loop clutters can be tidied without erasing anything (§15.2). Still absent: partial reload (a file re-imports itself on mtime, so nothing has needed it). |
+| Topology A — MCP | **Done.** `keyhac/mcp/`: eighteen tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
 
@@ -1310,6 +1310,29 @@ loop had not been exercised on: maintaining an action from an earlier session.
 Read and write share one fence (`_module_path`), and an oversized file is
 **refused rather than truncated** - half a read feeding a whole-file write is
 how the other half disappears.
+
+**`delete_extension` closes the set, and is a rename.** A loop that writes
+leaves a directory that accumulates: a module named before the shape was known,
+a helper split out and then folded back in, an attempt abandoned under a name
+nothing will ever import. Every one of those was the operator's to sweep up by
+hand, for no reason except that the write half had been built and the other had
+not. What made it easy to add is that the backup scheme was already there: the
+file goes to the same timestamped `.bak-`, under the same five-deep bound, so
+the tool that sounds destructive is the only one here that destroys nothing -
+and it needed no new fence, `_module_path` being the same rule read backwards.
+
+The one hazard is the one this deliberately does **not** handle. `config.py` is
+untouched, so deleting a module the operator has bound to a key stops their file
+loading - a failure that surfaces as key bindings that quietly stopped working,
+well after the call. Editing their file to match would be worse (it is
+`write_config`'s job, with them in the conversation, not a side effect of
+tidying `extensions/`), so the reply carries the warning instead: a loose
+`\bname\b` search of `config.py`, since `import thing`, `from thing import X`
+and a `thing.Action()` on a binding line are one signal and the errors are not
+symmetric - a false positive costs a sentence, a false negative costs a config
+that will not load. Live state is left alone for the same reason: an imported
+class keeps running out of memory, so a run started before the delete stays
+readable and cancellable and the operator's key works until they reload.
 
 **The registration half then landed too** — and the resolution came from
 noticing the note's framing was wrong a second time. It asks whether the

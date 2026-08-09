@@ -523,6 +523,86 @@ def test_backups_are_bounded(writable, monkeypatch):
     assert backups == ["x = 2\n", "x = 3\n"]
 
 
+# -- delete_extension --------------------------------------------------------
+#
+# The property under all of these is that nothing leaves the disk: a delete is a
+# rename into the same `.bak-` scheme a replace already uses, so the tool that
+# sounds destructive is the one that destroys nothing.
+
+def test_deleting_renames_rather_than_unlinking(writable):
+    writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    result = writable.call("delete_extension", {"name": "thing"})
+
+    assert not (extensions(writable) / "thing.py").exists()
+    backups = list(extensions(writable).glob("thing.py.bak-*"))
+    assert [b.read_text() for b in backups] == ["x = 1\n"]
+    assert backups[0].name in result, "and the reply names what to rename back"
+
+
+def test_deleting_prunes_the_backups_like_a_write_does(writable, monkeypatch):
+    monkeypatch.setattr(tools_module, "_BACKUPS_KEPT", 2)
+    for revision in range(4):
+        monkeypatch.setattr(tools_module.time, "strftime",
+                            lambda fmt, r=revision: f".bak-2026080{r}-000000")
+        writable.call("write_extension",
+                      {"name": "thing", "source": f"x = {revision}\n"})
+    monkeypatch.setattr(tools_module.time, "strftime",
+                        lambda fmt: ".bak-20260809-000000")
+    writable.call("delete_extension", {"name": "thing"})
+
+    kept = sorted(p.read_text()
+                  for p in extensions(writable).glob("thing.py.bak-*"))
+    assert kept == ["x = 2\n", "x = 3\n"], "the deleted version is the newest"
+
+
+@pytest.mark.parametrize("name", ["../config", "sub/thing", "thing.py", ".."])
+def test_deleting_is_fenced_by_the_same_module_name_rule(writable, name):
+    write_action(writable, name="present", source="x = 1\n")
+    result = writable.call("delete_extension", {"name": name})
+    assert "cannot be a module name" in result
+    assert (extensions(writable) / "present.py").exists()
+
+
+def test_deleting_something_that_is_not_there_says_what_is(writable):
+    write_action(writable, name="present", source="x = 1\n")
+    result = writable.call("delete_extension", {"name": "absent"})
+    assert "no absent.py" in result and "present" in result
+
+
+def test_deleting_a_module_the_config_imports_says_so(configurable, tmp_path):
+    """The one way a delete can still hurt: config.py is not touched, so a
+    module bound to a key takes the operator's whole file down at the next
+    load - hours later, nowhere near this call."""
+    (tmp_path / "config.py").write_text(
+        "def configure(keymap):\n    import thing\n")
+    write_action(configurable, name="thing", source="x = 1\n")
+    write_action(configurable, name="other", source="x = 1\n")
+
+    assert "config.py mentions thing" in \
+        configurable.call("delete_extension", {"name": "thing"})
+    assert "config.py" not in \
+        configurable.call("delete_extension", {"name": "other"})
+
+
+def test_the_delete_is_announced_on_the_console(writable, caplog):
+    """A file can leave the directory without appearing in the conversation."""
+    write_action(writable, name="thing", source="x = 1\n")
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        writable.call("delete_extension", {"name": "thing"})
+    assert any("Deleted" in r.getMessage() and "thing.py" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_a_deleted_module_stops_being_listed(writable):
+    write_action(writable, name="thing")
+    assert "thing.OpenIssues" in writable.call("list_actions", {})
+
+    writable.call("delete_extension", {"name": "thing"})
+    assert "thing.OpenIssues" not in writable.call("list_actions", {})
+    assert "thing.py" not in writable.call("list_extensions", {}), \
+        "and the backup beside it is not a .py, so nothing importable is left"
+
+
 def test_the_write_is_announced_on_the_console(writable, caplog):
     with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
         writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
