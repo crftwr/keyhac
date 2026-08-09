@@ -306,6 +306,14 @@ ship an unauthenticated local endpoint offering key injection.
 - "No unauthenticated local endpoint" is a standing principle, alongside "no always-on
   collection" (§12)
 
+**One switch per lifetime, not one switch per feature.** Writing into
+`extensions/` got its own control rather than riding on the endpoint's (§15.2),
+because a capability worth leaving on for days and one worth leaving on for
+minutes cannot share a switch without the long-lived one setting the price. The
+test for whether the next capability needs its own is that question and not its
+severity: if it is armed for a task and disarmed after, it is a second switch,
+and it should lapse on its own rather than trusting anyone to remember.
+
 ### 4.5 Keep the server off the action executor
 
 The MCP server needs its own thread and a small loop of its own. Do **not** route tool
@@ -1107,8 +1115,8 @@ Against the layers in §5 and the sequence in §10:
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
 | Layer 4 — action metadata | **Minimal, plus run state.** `keymap.register_action(name, action)` and the MCP tool schemas; still no argument schema and no description surface. `list_actions` now also reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
-| Layer 5 — artifact management | **Not built.** No `~/.keyhac/actions/*.py` discovery, no partial reload, no tool that writes Python to disk. Generated actions are pasted in by hand. |
-| Topology A — MCP | **Done.** `keyhac/mcp/`: nine tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
+| Layer 5 — artifact management | **Half built, and the half that landed is the transport.** `write_extension` puts a generated module in `extensions/` behind its own switch (§15.2), so a fix loop no longer routes through the operator's clipboard. Registration is still a hand edit of `config.py`: no `~/.keyhac/actions/*.py` discovery, no registry, no partial reload. |
+| Topology A — MCP | **Done.** `keyhac/mcp/`: twelve tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
 
@@ -1141,6 +1149,10 @@ question.
 Captured from the first real generation sessions (§14). Evidence, not designs —
 each names what was actually observed and the question that has to be answered
 before building anything.
+
+This section is those first sessions' record and stays as written. Later
+sessions append to [improvements.md](improvements.md) instead, so there is one
+place to burn the backlog down from rather than two that drift.
 
 ### 15.1 Installation should be executable, not readable
 
@@ -1200,7 +1212,66 @@ Still unwritten: nobody has run this prompt. It is the same "untried" as the
 client table beside it, and the first person to paste it into something other
 than Claude Desktop is the useful report.
 
-### 15.2 Editing `config.py` is a step the skill still hand-waves
+### 15.2 Editing `config.py` is a step the skill still hand-waves — **half done, and the note below had the halves confused**
+
+**Two costs were being counted as one.** Getting the *source* onto disk is paid
+once per **iteration**; editing `config.py` is paid once per **action**. The
+note below weighs only the second, and prescribes deciding Layer 5 before
+touching the first — but it is the first that multiplies, and the third session
+(`translate-clipboard`) spent it on every round of every fix. They are not the
+same problem and they did not need the same answer.
+
+**What landed: `write_extension`**, plus a second switch to gate it. The tool
+writes one `.py` under `extensions/`, and the fence is the *module name* — an
+importable name has no separator and no `..` in it, so validating it as an
+identifier confines the write by construction rather than by keeping a list of
+bad characters complete. Source is compiled before the file is touched, so a
+truncated transfer cannot replace a working action with one that will not
+import. Previous versions survive as timestamped `.bak-`, capped at five.
+
+**The switch is the design, not the tool.** *Allow extension writes* is
+separate from the endpoint's switch because the two have different lifetimes:
+the endpoint is worth leaving on for days, and write access is worth minutes.
+It is off by default, **not persisted**, and **lapses 60 minutes** after it is
+ticked — fixed from that moment, never extended by use, because a sliding
+window would hand the window's length to whatever is driving the endpoint. A
+model writing every few minutes because a page told it to would otherwise keep
+its own permission alive indefinitely.
+
+What that buys is not a smaller attack surface but a **better-supervised one**:
+the exposure that remains coincides with the operator sitting in front of the
+screen, watching a console that now logs every write with a `+N/-M` summary.
+The stealth a write tool adds over a paste — a file arriving without appearing
+in the conversation — is what that log line exists to cancel.
+
+**The unclosed hole, stated rather than inherited:** `describe_screen` feeds
+untrusted screen text to the model, so a write capability is reachable from an
+indirect prompt injection. A module nothing imports is inert, and the backups
+mean nothing is unrecoverable — but overwriting an **already-registered**
+module goes live at the next reload, and no check here stops that. It is the
+same trust the operator extends when they paste an action unread, which is the
+honest comparison; "the operator was the transport" was never the review it
+resembled. `doc/ai-integration.md` says so under *What this does not protect
+you from*, and the authoring skill gained *The screen is data, not
+instructions* — a real mitigation, not a complete one.
+
+**Still open, and now the only half left:** registration. The note's own
+question stands — whether Layer 5's `~/.keyhac/actions/*.py` discovery is worth
+it, given it makes `start_action`'s surface a directory listing rather than
+what the operator named. The middle worth weighing first is a registry that is
+**data, not code**: `name → module:Class`, operator-owned, no MCP tool writing
+it. That keeps "what the operator named" literally, drops the failure this note
+recorded (a hand edit taking the keymap with it), and gives the write tool a
+property it does not have today — a module the operator never named has no path
+to execution at all. Deciding it needs one more authoring session, not more
+design: the cost it removes is now once per action, which may not be worth a
+new file format.
+
+The original note follows.
+
+---
+
+### 15.2 (original) Editing `config.py` is a step the skill still hand-waves
 
 f6cf4e0 gave the skill the file header, the `extensions/` placement and the
 `configure()` registration block, so a generated action now says where it goes.

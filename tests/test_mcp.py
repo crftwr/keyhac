@@ -8,8 +8,11 @@ the result so the model can read it.
 """
 
 import json
+import logging
+import pathlib
 import sys
 import os
+import shutil
 import stat
 import subprocess
 import time
@@ -18,6 +21,9 @@ import urllib.request
 
 import pytest
 
+import keyhac.core.keymap as keymap_module
+import keyhac.mcp.server as server_module
+import keyhac.mcp.tools as tools_module
 from keyhac.mcp.server import Dispatcher, MCPServer, PROTOCOL_VERSION
 from keyhac.mcp.tools import ToolRegistry
 
@@ -79,13 +85,16 @@ class FakeWindow:
 
 
 class FakeKeymap:
-    def __init__(self):
+    def __init__(self, extensions_dir=""):
         self.node = FakeNode()
         self.ui = FakeUI(self.node)
         self.registered_actions = {}
         self.focus = type("F", (), {"app_name": "TestApp", "window_title": "Main",
                                     "path": "/App/Window"})()
         self.reloaded = 0
+        self.extensions_dir = extensions_dir
+        self.extension_writes_allowed = False
+        self.extension_writes_lapsed = False
 
     def list_windows(self):
         return [FakeWindow("TestApp", "Main")]
@@ -97,6 +106,14 @@ class FakeKeymap:
 @pytest.fixture
 def registry():
     return ToolRegistry(FakeKeymap())
+
+
+@pytest.fixture
+def writable(tmp_path):
+    """A registry whose keymap has the extension-write window open."""
+    keymap = FakeKeymap(extensions_dir=str(tmp_path / "extensions"))
+    keymap.extension_writes_allowed = True
+    return ToolRegistry(keymap)
 
 
 @pytest.fixture
@@ -204,6 +221,134 @@ def test_enable_content_access_is_reversible(registry):
     assert registry.keymap.ui.content_access == [False]
 
 
+# -- write_extension --------------------------------------------------------
+#
+# The fence, not the happy path, is what these pin: this is the one tool that
+# puts bytes on disk, and every refusal below is a property the design argument
+# in doc/dev/ai-integration.md depends on holding.
+
+def extensions(registry):
+    return pathlib.Path(registry.keymap.extensions_dir)
+
+
+def test_a_write_is_refused_while_the_switch_is_off(registry, tmp_path):
+    registry.keymap.extensions_dir = str(tmp_path / "extensions")
+    result = registry.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    assert "switched off" in result
+    assert not (tmp_path / "extensions").exists()
+
+
+def test_a_lapsed_window_says_so_rather_than_reading_as_broken(registry, tmp_path):
+    """The timeout's whole cost is a refusal the operator cannot act on."""
+    registry.keymap.extensions_dir = str(tmp_path / "extensions")
+    registry.keymap.extension_writes_lapsed = True
+    result = registry.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    assert "run out" in result and "60 minutes" in result
+
+
+@pytest.mark.parametrize("name", [
+    "../config", "sub/thing", "thing.py", "", "2legit", "import", "a b",
+    "/etc/passwd", "..",
+])
+def test_only_a_module_name_gets_through(writable, name):
+    result = writable.call("write_extension", {"name": name, "source": "x = 1\n"})
+    assert "cannot be a module name" in result
+    assert not extensions(writable).exists()
+
+
+def test_source_that_does_not_parse_never_reaches_the_disk(writable):
+    """A truncated transfer must not replace a working action."""
+    writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    good = extensions(writable) / "thing.py"
+
+    result = writable.call("write_extension",
+                           {"name": "thing", "source": "def broken(:\n"})
+    assert "does not parse" in result and "line 1" in result
+    assert good.read_text() == "x = 1\n"
+
+
+def test_it_writes_and_says_what_to_do_next(writable):
+    result = writable.call("write_extension",
+                           {"name": "open_issues", "source": "x = 1\n"})
+    assert (extensions(writable) / "open_issues.py").read_text() == "x = 1\n"
+    assert "reload_config" in result
+
+
+def test_replacing_keeps_the_previous_version(writable):
+    writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+    writable.call("write_extension", {"name": "thing", "source": "x = 2\n"})
+
+    assert (extensions(writable) / "thing.py").read_text() == "x = 2\n"
+    backups = list(extensions(writable).glob("thing.py.bak-*"))
+    assert [b.read_text() for b in backups] == ["x = 1\n"]
+
+
+def test_backups_are_bounded(writable, monkeypatch):
+    monkeypatch.setattr(tools_module, "_BACKUPS_KEPT", 2)
+    # Distinct timestamps: the suffix has one-second resolution, and the prune
+    # sorts by it.
+    for revision in range(5):
+        monkeypatch.setattr(tools_module.time, "strftime",
+                            lambda fmt, r=revision: f".bak-2026080{r}-000000")
+        writable.call("write_extension",
+                      {"name": "thing", "source": f"x = {revision}\n"})
+
+    backups = sorted(p.read_text() for p in extensions(writable).glob("thing.py.bak-*"))
+    assert backups == ["x = 2\n", "x = 3\n"]
+
+
+def test_the_write_is_announced_on_the_console(writable, caplog):
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})
+        writable.call("write_extension", {"name": "thing", "source": "x = 1\ny = 2\n"})
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("thing.py (new, 1 lines)" in m for m in messages)
+    assert any("thing.py (+1/-0 lines)" in m for m in messages)
+
+
+# -- the extension-write switch ---------------------------------------------
+
+def test_the_write_switch_is_off_until_asked(engine):
+    keymap = engine(lambda keymap: None).keymap
+    assert keymap.extension_writes_allowed is False
+    assert keymap.extension_writes_lapsed is False
+
+
+def test_the_window_lapses_on_its_own(engine, monkeypatch):
+    keymap = engine(lambda keymap: None).keymap
+    monkeypatch.setattr(keymap_module, "_EXTENSION_WRITE_WINDOW", 0.05)
+
+    keymap.set_extension_writes_allowed(True)
+    assert keymap.extension_writes_allowed is True
+
+    time.sleep(0.1)
+    assert keymap.extension_writes_allowed is False
+    # Distinguishable from "never switched on", which is a different thing for
+    # the operator to do something about.
+    assert keymap.extension_writes_lapsed is True
+
+
+def test_using_it_does_not_extend_it(engine, monkeypatch):
+    """A fixed window, so a model that keeps writing cannot keep its own
+    permission alive."""
+    keymap = engine(lambda keymap: None).keymap
+    monkeypatch.setattr(keymap_module, "_EXTENSION_WRITE_WINDOW", 0.15)
+
+    keymap.set_extension_writes_allowed(True)
+    for _ in range(3):
+        time.sleep(0.06)
+        keymap.extension_writes_allowed          # a write would read this
+    assert keymap.extension_writes_allowed is False
+
+
+def test_stopping_the_endpoint_closes_the_window(engine):
+    keymap = engine(lambda keymap: None).keymap
+    keymap.set_extension_writes_allowed(True)
+    keymap.stop_mcp_server()
+    assert keymap.extension_writes_allowed is False
+
+
 # -- the two security properties --------------------------------------------
 
 @pytest.fixture
@@ -280,6 +425,83 @@ def test_the_endpoint_file_is_private_and_complete(server):
     published = json.loads(open(path).read())
     assert published["port"] == server.port
     assert published["token"] == server.token
+
+
+def test_the_bridge_path_is_published_when_there_is_one(tmp_path, registry,
+                                                        monkeypatch):
+    """A stdio-only client needs an absolute path, and inside an app bundle that
+    path is four levels deep. Publishing it beside the port is what lets a client
+    be configured from the endpoint file alone rather than by hand."""
+    fake = tmp_path / "bin" / "keyhac-mcp-bridge"
+    fake.parent.mkdir()
+    fake.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(server_module, "bridge_command", lambda: str(fake))
+
+    served = MCPServer(registry, str(tmp_path / "mcp.json"))
+    served.start()
+    try:
+        assert json.loads(open(served.endpoint_path).read())["bridge"] == str(fake)
+    finally:
+        served.stop()
+
+
+def test_no_bridge_key_when_the_install_generated_no_script(tmp_path, registry,
+                                                            monkeypatch):
+    """Absent, not null: a reader treats the key's presence as "a stdio client
+    is configurable", so a null would have to be special-cased everywhere."""
+    monkeypatch.setattr(server_module, "bridge_command", lambda: None)
+
+    served = MCPServer(registry, str(tmp_path / "mcp.json"))
+    served.start()
+    try:
+        assert "bridge" not in json.loads(open(served.endpoint_path).read())
+    finally:
+        served.stop()
+
+
+def test_the_bundled_bridge_is_found_beside_the_package(tmp_path, monkeypatch):
+    """The macOS bundle layout: Contents/Resources/keyhac, with the console
+    script build.sh writes at Contents/Resources/bin. Resolved from the module's
+    own location, so it is right however Keyhac is running."""
+    resources = tmp_path / "Contents" / "Resources"
+    (resources / "keyhac" / "mcp").mkdir(parents=True)
+    (resources / "bin").mkdir()
+    script = resources / "bin" / "keyhac-mcp-bridge"
+    script.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(server_module, "__file__",
+                        str(resources / "keyhac" / "mcp" / "server.py"))
+    assert server_module.bridge_command() == str(script)
+
+
+def test_the_venv_script_is_found_without_being_on_path(tmp_path, monkeypatch):
+    """`make run` is `.venv/bin/python -m keyhac`, which never puts .venv/bin on
+    PATH - so a PATH-only search misses the console script pip generated for the
+    very install doing the publishing, and reports either nothing or some other
+    Keyhac's bridge. Found the hard way: deleting an unrelated bridge from
+    ~/.local/bin left a running checkout with no bridge at all."""
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    script = venv_bin / "keyhac-mcp-bridge"
+    script.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))
+    monkeypatch.setattr(shutil, "which", lambda _: None)   # nothing on PATH
+    assert server_module.bridge_command() == str(script)
+
+
+def test_the_install_we_belong_to_wins_over_path(tmp_path, monkeypatch):
+    """A bridge from an unrelated install forwards fine but resolves the config
+    directory with its own keyhac.core.paths, so the two can disagree about
+    where mcp.json lives. Prefer ours whenever there is one."""
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    ours = venv_bin / "keyhac-mcp-bridge"
+    ours.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))
+    monkeypatch.setattr(shutil, "which", lambda _: "/somewhere/else/keyhac-mcp-bridge")
+    assert server_module.bridge_command() == str(ours)
 
 
 def test_stopping_removes_the_published_token(tmp_path, registry):

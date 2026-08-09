@@ -11,11 +11,18 @@ transport for every error message: they run the action, copy the traceback,
 paste it back. With it the generate-verify loop closes, and loop iteration rate
 is what the whole authoring approach lives or dies on.
 
-There is deliberately no tool that writes files or types text. Reading a tree
-and pressing a button in an application the operator is looking at is one thing;
-a tool that lets a remote model put arbitrary Python on disk is another, and it
-wants its own decision rather than arriving as a side effect of this one.
-Generated actions are pasted in by the operator until Layer 5 exists.
+`write_extension` is the only tool that writes, and it is fenced rather than
+free: inside `extensions/` only, over a module-shaped name only, and only during
+the hour the operator's second switch lasts. It exists because the operator was
+otherwise the transport for every iteration of every fix - and because the
+manual step it replaces was never the review it resembled; nobody reads what
+they paste.
+
+What it does not do is decide what *runs*. A module no `configure()` imports is
+inert on disk. A module one does import goes live at the next reload, and that
+residual is real: it is the same trust the operator extended when they
+registered it, not a new one this tool invents. Nothing here types text or
+presses a key.
 
 THREADS. Element access is main-thread-only and these run on the MCP server's
 threads, so every tool that touches the UI goes through `ui.on_main_thread` -
@@ -25,9 +32,14 @@ directly, or through the node methods, which dispatch themselves.
 from __future__ import annotations
 
 import contextlib
+import difflib
+import keyword
 import logging
+import os
+import shutil
 import sys
 import threading
+import time
 import traceback
 
 from keyhac.core import capture, log
@@ -213,6 +225,24 @@ class ToolRegistry:
                               "Name from list_actions."}},
                   "required": ["name"]},
                  self.cancel_action),
+            Tool("write_extension",
+                 "Save an action module into ~/.keyhac/extensions/ - the whole "
+                 "file, replacing whatever is there and keeping a backup. This "
+                 "is how you close the loop yourself: write, reload_config, "
+                 "start_action, get_action_result, write again. It needs the "
+                 "operator to have switched **AI Integration > Allow extension "
+                 "writes** on - off by default, lapsing an hour later, and not "
+                 "something you can turn on; if this refuses, tell them what "
+                 "it said and ask. Registering the action in config.py stays "
+                 "theirs to do, once.",
+                 {"type": "object", "properties": {
+                     "name": {**string, "description": "Module name, with no "
+                              "path and no .py suffix: \"open_issues\"."},
+                     "source": {**string, "description": "The complete file. "
+                                "Partial content replaces the whole module, "
+                                "so send all of it every time."}},
+                  "required": ["name", "source"]},
+                 self.write_extension),
             Tool("reload_config",
                  "Reload ~/.keyhac/config.py, so an edited or newly added "
                  "action is picked up without restarting Keyhac. Reports the "
@@ -442,6 +472,73 @@ class ToolRegistry:
         return (f"asked {name} to stop. It unwinds at its next wait, so "
                 f"get_action_result for how far it got.")
 
+    def write_extension(self, name: str, source: str) -> str:
+        """Save a module into ``extensions/``, while the window is open.
+
+        **The module name is the fence.** An importable name has no separator
+        and no ``..`` in it, so validating it as a Python identifier confines
+        the write by construction - there is no list of dangerous characters to
+        keep complete, and no path to normalise and re-check.
+
+        **Syntax is checked before the file is touched.** A truncated transfer
+        would otherwise replace a working action with one that cannot be
+        imported, and the operator would meet it as a config that stopped
+        loading. Refusing costs the model one retry and costs them nothing.
+        """
+        from keyhac.core.keymap import _EXTENSION_WRITE_WINDOW
+
+        keymap = self.keymap
+        if not keymap.extension_writes_allowed:
+            if keymap.extension_writes_lapsed:
+                return (f"nothing written: the extension-write window has run "
+                        f"out - it lasts {_EXTENSION_WRITE_WINDOW // 60} "
+                        f"minutes from when it is switched on. Ask the "
+                        f"operator to tick AI Integration > Allow extension "
+                        f"writes again, then call this again.")
+            return ("nothing written: extension writes are switched off. Ask "
+                    "the operator to tick AI Integration > Allow extension "
+                    "writes, in the tray menu or the console window. It is off "
+                    "by default and only they can turn it on.")
+
+        if not isinstance(name, str) or not name.isidentifier() \
+                or keyword.iskeyword(name):
+            return (f"nothing written: {name!r} cannot be a module name. Pass "
+                    f"the bare name - no directory, no .py - and make it "
+                    f"importable: letters, digits and underscores, not "
+                    f"starting with a digit.")
+
+        directory = keymap.extensions_dir
+        path = os.path.join(directory, name + ".py")
+
+        try:
+            compile(source, path, "exec")
+        except SyntaxError as error:
+            return (f"nothing written: that source does not parse - "
+                    f"{error.msg}, line {error.lineno}. The file on disk is "
+                    f"untouched; send the whole module again.")
+
+        try:
+            os.makedirs(directory, exist_ok=True)
+            previous = None
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as handle:
+                    previous = handle.read()
+                shutil.copyfile(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
+                _prune_backups(path)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+        except OSError as error:
+            return f"nothing written: {error}"
+
+        # The console line is the audit trail, and it is the answer to the one
+        # thing this tool adds that pasting did not: a file can now arrive
+        # without appearing in the conversation.  An operator who sees a module
+        # they did not ask for scroll past has been told.
+        summary = _change_summary(previous, source)
+        logger.info(f"Wrote {path} ({summary}).")
+        return (f"wrote {path} ({summary}). It is not loaded yet - "
+                f"reload_config, then start_action.")
+
     def reload_config(self) -> str:
         def reload():
             self.keymap.configure()
@@ -451,6 +548,49 @@ class ToolRegistry:
             self.ui.on_main_thread(reload)
         output = captured.getvalue().strip()
         return output or "config reloaded"
+
+
+#: Timestamped backups kept per module.  Enough to walk back through a fix loop
+#: that went wrong, few enough that `extensions/` stays readable - they land in
+#: the directory the operator opens to read their own actions.  Not a `.py`, so
+#: nothing importable is being left behind.
+_BACKUPS_KEPT = 5
+
+
+def _prune_backups(path: str) -> None:
+    """Drop all but the newest :data:`_BACKUPS_KEPT` backups of one module.
+
+    Sorted by name, which is chronological: the suffix is a fixed-width
+    timestamp.  Deleting our own backups only - the glob is anchored to this
+    module's path.
+    """
+    prefix = os.path.basename(path) + ".bak-"
+    directory = os.path.dirname(path)
+    try:
+        backups = sorted(entry for entry in os.listdir(directory)
+                         if entry.startswith(prefix))
+        for stale in backups[:-_BACKUPS_KEPT]:
+            os.remove(os.path.join(directory, stale))
+    except OSError:
+        # Housekeeping: a backup that will not delete is not a reason to fail
+        # the write that has already succeeded.
+        pass
+
+
+def _change_summary(previous: str | None, source: str) -> str:
+    """What the console reports about a write: new, unchanged, or +N/-M."""
+    if previous is None:
+        return f"new, {len(source.splitlines())} lines"
+    if previous == source:
+        return "unchanged"
+    added = removed = 0
+    for line in difflib.unified_diff(previous.splitlines(), source.splitlines(),
+                                     n=0, lineterm=""):
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return f"+{added}/-{removed} lines"
 
 
 def _subprocess_detail(error: BaseException) -> str:

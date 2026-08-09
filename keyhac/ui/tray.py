@@ -57,6 +57,11 @@ def install_tray(console, keymap, hook) -> None:
         console._mcp_checkbox.checked = keymap.mcp_server_running
         console.panel.render()
 
+    def toggle_extension_writes():
+        console._on_extension_write_toggle(not keymap.extension_writes_allowed)
+        console._write_checkbox.checked = keymap.extension_writes_allowed
+        console.panel.render()
+
     menu = Menu(
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
@@ -71,6 +76,11 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("AI Integration", submenu=Menu(
             MenuItem("MCP Server", on_select=toggle_mcp,
                      checked=lambda: keymap.mcp_server_running),
+            # Its own row rather than something the server switch implies. The
+            # tick is evaluated when the menu opens, so a window that has since
+            # run out reads as off without anything having to push it.
+            MenuItem("Allow extension writes", on_select=toggle_extension_writes,
+                     checked=lambda: keymap.extension_writes_allowed),
             SEPARATOR,
             # The setup instructions are the thing you hand to an agent, so
             # what this really provides is the URL - the page's first line

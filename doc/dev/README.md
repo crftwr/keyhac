@@ -19,5 +19,7 @@ people working on Keyhac itself.
   agent at authoring time producing plain-Python actions, the UI-mediated ETL
   workload they target, observation / state-reading / safety layers, the output-side
   primitives, MCP topologies, and trace privacy.
+- [improvements.md](improvements.md) — friction measured in real authoring
+  sessions, ranked by the round trips it cost; the backlog those sessions feed.
 
 The project guide for coding agents is [CLAUDE.md](../../CLAUDE.md) at the repo root.

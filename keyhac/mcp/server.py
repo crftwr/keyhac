@@ -33,6 +33,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -53,6 +55,51 @@ ENDPOINT_FILE = "mcp.json"
 #: Largest request body accepted.  Tool arguments are small; a body this size
 #: is a mistake or an attack, and reading it would be the damage.
 MAX_BODY = 1 << 20
+
+
+def bridge_command() -> str | None:
+    """Absolute path to the stdio bridge, or None when this install has none.
+
+    Published in the endpoint file so a client that can only spawn a subprocess
+    is configurable from the same place as one that speaks HTTP.  Without it the
+    path has to be found by hand - it is four levels inside an application
+    bundle - or guessed, and a GUI client needs it absolute because it inherits
+    no shell PATH.
+
+    Derived from this file rather than from a platform check, so it is right for
+    however Keyhac is actually running:
+
+    - macOS bundle: ``Contents/Resources/keyhac`` -> ``Resources/bin/...``
+    - Windows bundle: ``<root>/app/keyhac`` -> ``<root>/keyhac-mcp-bridge.cmd``
+    - venv or pip install: the console script pip generated from
+      ``[project.scripts]``, which lands beside the interpreter running us
+      (``bin/`` on POSIX, ``Scripts/`` with an ``.exe`` suffix on Windows)
+    - anything else: whatever is on PATH, or None.
+
+    The order is "this install first, PATH last", deliberately. A checkout run
+    as ``.venv/bin/python -m keyhac`` never has its own ``bin/`` on PATH, so a
+    PATH-first search finds some *other* Keyhac's bridge while ignoring the one
+    that belongs to the daemon doing the publishing - which is how this was
+    found. PATH remains the last resort because a bridge from an unrelated
+    install still forwards correctly; it just resolves the config directory with
+    its own copy of ``keyhac.core.paths``, so the two can disagree about where
+    ``mcp.json`` lives.
+    """
+    package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    parent = os.path.dirname(package)
+    candidates = [os.path.join(parent, "bin", "keyhac-mcp-bridge"),
+                  os.path.join(os.path.dirname(parent),
+                               "keyhac-mcp-bridge.cmd")]
+    # sys.executable is empty when the interpreter cannot identify itself (an
+    # embedded host); there is simply no scripts directory to look in then.
+    if sys.executable:
+        scripts = os.path.dirname(sys.executable)
+        candidates += [os.path.join(scripts, "keyhac-mcp-bridge"),
+                       os.path.join(scripts, "keyhac-mcp-bridge.exe")]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return shutil.which("keyhac-mcp-bridge")
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -212,6 +259,7 @@ class MCPServer:
         self.registry = registry
         self.endpoint_path = endpoint_path
         self.token = secrets.token_urlsafe(32)
+        self.bridge = bridge_command()
         self._server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
         self._server.dispatcher = Dispatcher(registry)
         self._server.token = self.token
@@ -229,6 +277,10 @@ class MCPServer:
         self._thread.start()
         logger.info(f"MCP server listening on 127.0.0.1:{self.port} "
                     f"({len(self.registry.describe())} tools)")
+        # The console is where a user looks when wiring up a client, and the
+        # bundled path is long enough that nobody should be retyping it.
+        if self.bridge:
+            logger.info(f"stdio bridge: {self.bridge}")
 
     def stop(self) -> None:
         self._server.shutdown()
@@ -249,8 +301,14 @@ class MCPServer:
         directory = os.path.dirname(self.endpoint_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
+        published = {"port": self.port, "token": self.token, "pid": os.getpid()}
+        # Omitted rather than null when this install generated no console
+        # script: a reader can then treat the key's presence as "a stdio client
+        # is configurable", with no separate existence check.
+        if self.bridge:
+            published["bridge"] = self.bridge
+
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
         descriptor = os.open(self.endpoint_path, flags, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump({"port": self.port, "token": self.token,
-                       "pid": os.getpid()}, handle)
+            json.dump(published, handle)

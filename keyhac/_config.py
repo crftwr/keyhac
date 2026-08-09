@@ -312,6 +312,10 @@ def configure(keymap):
     #     action = open_issues.OpenIssues()
     #     keymap.register_action("open-issues", action)
     #     kt[f"{LEADER}-I"] = action                    # optional
+    #
+    # The agent can save the module itself while "Allow extension writes" is
+    # ticked, but these lines stay yours: writing a file and deciding it may
+    # run are separate, and only the first one is delegated.
 
     # ==================================================================
     # Multi-stroke key tables

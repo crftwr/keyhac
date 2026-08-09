@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 import traceback
 from typing import Callable
 
@@ -33,6 +34,19 @@ _MODIFIER_BITS = (
     ("User0", MODKEY_USER0), ("User1", MODKEY_USER1),
     ("User2", MODKEY_USER2), ("User3", MODKEY_USER3),
 )
+
+
+#: How long *Allow extension writes* stays on, in seconds.
+#:
+#: Fixed from the moment it is switched on, never extended by use.  A sliding
+#: window would be kinder to a long authoring session and would also hand the
+#: window's length to whoever is driving the endpoint: a model writing every few
+#: minutes - because it was told to by something it read on screen - would keep
+#: its own permission alive indefinitely, which is the one property this is here
+#: to deny.  An hour is longer than the authoring sessions measured so far
+#: (doc/dev/improvements.md), so re-arming should be rare enough not to become
+#: reflexive.
+_EXTENSION_WRITE_WINDOW = 60 * 60
 
 
 def _collapse_planes(mod: int) -> int:
@@ -111,6 +125,8 @@ class Keymap:
         self._clipboard_history = None      # core ClipboardHistory
         self._registered_actions = {}       # name -> action, for MCP
         self._mcp_server = None             # MCPServer while enabled
+        self._extension_write_deadline = None   # monotonic, while writes allowed
+        self._extension_write_lapsed = False    # a window ran out, vs never armed
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self._main_thread_dispatcher = None  # callable(callback) - see below
@@ -160,7 +176,7 @@ class Keymap:
 
             logger.info("Loading configuration script.")
 
-            extensions_dir = os.path.join(os.path.dirname(self._config_path), "extensions")
+            extensions_dir = self.extensions_dir
             try:
                 os.makedirs(extensions_dir, exist_ok=True)
             except OSError as e:
@@ -887,6 +903,72 @@ class Keymap:
         server, self._mcp_server = self._mcp_server, None
         if server is not None:
             server.stop()
+        # The endpoint is the only thing that can write, so an armed window
+        # outliving it is state with no consumer - and one that would still be
+        # counting down if the switch went back on a minute later.
+        self.set_extension_writes_allowed(False)
+
+    @property
+    def extensions_dir(self) -> str:
+        """``extensions/`` beside config.py: on sys.path, and re-imported on
+        every reload.
+
+        lazydocs: ignore
+        """
+        return os.path.join(
+            os.path.dirname(self._config_path or ""), "extensions")
+
+    @property
+    def extension_writes_allowed(self) -> bool:
+        """Whether the endpoint may write into ``extensions/`` right now.
+
+        Off unless the operator switched it on, off again when the window in
+        :data:`_EXTENSION_WRITE_WINDOW` runs out, and off after a restart -
+        deliberately not persisted, because forgetting to switch it back off is
+        the failure this is shaped around.
+
+        The deadline *is* the state: expiry is decided here rather than by a
+        timer thread, so a headless run with nothing polling still refuses a
+        late write, and there is no timer to cancel at shutdown.
+
+        lazydocs: ignore
+        """
+        if self._extension_write_deadline is None:
+            return False
+        if time.monotonic() < self._extension_write_deadline:
+            return True
+        self._extension_write_deadline = None
+        self._extension_write_lapsed = True
+        logger.info(f"Extension writes disabled "
+                    f"({_EXTENSION_WRITE_WINDOW // 60} minute timeout).")
+        return False
+
+    @property
+    def extension_writes_lapsed(self) -> bool:
+        """Whether a write window ran out, as opposed to never being opened.
+
+        One refusal at the endpoint, two different things for the operator to
+        do about it - so the tool that refuses says which one happened.  A
+        timeout that reads as "this feature does not work" is the cost this
+        exists to avoid.
+
+        lazydocs: ignore
+        """
+        return self._extension_write_lapsed
+
+    def set_extension_writes_allowed(self, allowed: bool) -> None:
+        """The *AI Integration > Allow extension writes* switch.
+
+        Like the endpoint's own switch there is no configuration API for this,
+        and for the same reason: a capability this size should be visibly on or
+        visibly off, and a line in a config file records what was asked for once
+        rather than what is true now.
+
+        lazydocs: ignore
+        """
+        self._extension_write_deadline = (
+            time.monotonic() + _EXTENSION_WRITE_WINDOW if allowed else None)
+        self._extension_write_lapsed = False
 
     @property
     def ui(self):

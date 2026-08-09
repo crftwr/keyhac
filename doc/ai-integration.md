@@ -68,6 +68,26 @@ governs the keyboard hook, which has always been a checkbox rather than a
 setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
 delete the line from your `config.py` and use the switch.)*
 
+### Allow extension writes
+
+The second switch, beside the first, lets the agent save action modules into
+`~/.keyhac/extensions/` itself — which is what turns a three-round fix into
+three tool calls instead of three trips through your clipboard.
+
+It is a separate switch because the two have different natural lifetimes. The
+endpoint is worth leaving on; **write access is worth minutes**, while you are
+actually authoring something. So this one is off by default, is **not**
+remembered across restarts, and **lapses on its own 60 minutes** after you tick
+it. Re-tick it when you need it again.
+
+The timeout is fixed from when you switch it on and is not extended by use.
+That is deliberate: a sliding window would let whatever is driving the endpoint
+keep its own permission alive by writing periodically, which is the one thing
+this is here to prevent.
+
+Registering an action is still yours — see [The loop](#the-loop). Writing a file
+and deciding it may run are different decisions, and only the first one moved.
+
 ## Setting it up
 
 **This section is addressed to the AI agent.** If you are a person reading it,
@@ -110,6 +130,10 @@ Then:
 - That file holds a `port` and a `token`. The endpoint is
   `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every request
   needs an `Authorization: Bearer <token>` header.
+- It also holds `bridge`: the absolute path to the stdio shim, for a host that
+  cannot speak HTTP. The key is **absent** when this install generated no
+  console script (a source checkout), so its presence is the test for whether a
+  stdio client can be configured at all.
 - **The port changes every time Keyhac restarts.** Point the client at the file
   if it can read one. If it can only take a fixed value, say so — that is a
   real limitation, not something to work around by pinning today's port.
@@ -169,16 +193,47 @@ Register it — Settings → Developer → Edit Config, or
 }
 ```
 
-Restart Claude Desktop. **An absolute path is usually required**: GUI apps do
-not inherit a shell PATH, and the console script only exists in whichever
-environment Keyhac was pip-installed into — running the daemon straight from a
-source checkout (`python -m keyhac`) does not create one at all. Find it with
-`which keyhac-mcp-bridge`, or point at a virtualenv's copy:
+Restart Claude Desktop — fully quit it (⌘Q); closing the window does not reload
+the config.
+
+**An absolute path is usually required**, because GUI apps do not inherit a
+shell `PATH`.
+
+The path is published as `bridge` in `~/.keyhac/mcp.json`, so read it from there
+rather than transcribing it — and the Keyhac console prints it at startup on the
+line after "MCP server listening". Failing both, it depends on how Keyhac was
+installed:
+
+| Install | Path |
+|---|---|
+| macOS app bundle | `/Applications/Keyhac.app/Contents/Resources/bin/keyhac-mcp-bridge` |
+| Windows bundle | `keyhac-mcp-bridge.cmd`, beside `Keyhac.exe` |
+| `pip install keyhac` | `which keyhac-mcp-bridge`, or the virtualenv's `bin/` |
+| Source checkout | `.venv/bin/keyhac-mcp-bridge`, created by `make install` — note it is *not* on `PATH` when Keyhac is started with `make run` |
 
 ```json
 {
   "mcpServers": {
-    "keyhac": { "command": "/path/to/.venv/bin/keyhac-mcp-bridge" }
+    "keyhac": {
+      "command": "/Applications/Keyhac.app/Contents/Resources/bin/keyhac-mcp-bridge"
+    }
+  }
+}
+```
+
+If a client refuses to launch the Windows `.cmd` directly — some spawn
+executables without a shell — point it at the interpreter instead:
+
+```json
+{
+  "mcpServers": {
+    "keyhac": {
+      "command": "C:\\Program Files\\Keyhac\\runtime\\python.exe",
+      "args": ["-m", "keyhac.mcp.bridge"],
+      "env": {
+        "PYTHONPATH": "C:\\Program Files\\Keyhac\\app;C:\\Program Files\\Keyhac\\Lib\\site-packages"
+      }
+    }
   }
 }
 ```
@@ -236,6 +291,7 @@ screen coordinates.
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
 | `list_actions` | what is registered, what is running, how each last ended |
 | `start_action`, `get_action_result`, `cancel_action` | start a registered action, collect what it logged, stop it |
+| `write_extension` | save a module into `extensions/` — only while [the write switch](#allow-extension-writes) is on |
 | `reload_config` | pick up an edited action without restarting |
 
 `start_action` only runs actions you have registered by name:
@@ -254,11 +310,18 @@ run this" and "the agent can run anything the config defines".
    output is useful; naming an API is not — if you find yourself typing
    `find_element`, tell us, because that means the skill is failing.
 3. The agent reads the screen and writes the action.
-4. Paste it into `config.py` (or an imported module), register it, and ask it
-   to reload and run it.
-5. It reads the failure itself and fixes it.
+4. It saves the module itself, if you have ticked
+   [Allow extension writes](#allow-extension-writes) — otherwise you paste it
+   into `~/.keyhac/extensions/`.
+5. **You register it, once**: paste the `configure()` block it hands you into
+   `config.py`. Then ask it to reload and run.
+6. It reads the failure itself, fixes it, and saves again. Step 5 does not
+   repeat — the name is already registered, so every round after the first is
+   the agent's alone.
 
-Step 4 is manual for now: no tool writes Python to your disk, deliberately.
+Step 5 is the manual one, and it is the decision worth keeping manual: naming
+an action in your `config.py` is what makes it runnable at all, and that is a
+line you draw rather than one the agent draws for itself.
 
 **Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
 not Keyhac's own modules — a new version of the tools is only picked up by a
@@ -297,10 +360,38 @@ don't type passwords or show private material while recording.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
   another process on the machine cannot use the endpoint without it.
-- **No tool writes files or types text.** Reading trees and pressing buttons in
-  an app you are looking at is one thing; letting a remote model put Python on
-  your disk is another decision, and it has not been made.
+- **Writing is a second switch**, off by default, gone after a restart, and
+  lapsing 60 minutes after you tick it. `write_extension` is the only tool that
+  puts anything on disk, and it can only write a `.py` under
+  `~/.keyhac/extensions/` — the name has to be an importable module name, which
+  is what rules out paths and traversal. It replaces nothing silently: the
+  previous version is kept as a `.bak-<timestamp>` beside it, and every write
+  is logged to the console with a `+N/-M` line count.
+- **Nothing types text or presses keys.** Reading trees is one thing; driving
+  your keyboard from a chat window is a decision that has not been made.
 - **`start_action` is limited to registered actions**, by name, and
   `cancel_action` can only stop what it started.
 - Turn it off with the same switch; the token file is deleted then, and when
-  Keyhac stops.
+  Keyhac stops. Stopping the endpoint closes the write window too.
+
+### What this does not protect you from
+
+Worth knowing before you tick either switch.
+
+`describe_screen` and `read_text` put the contents of your windows — including
+web pages — into the model's context. That text is untrusted: a page can
+contain something written to be read *by an agent* rather than by you. The
+authoring skill tells the agent that screen content is data and never an
+instruction, and that is a real mitigation rather than a complete one.
+
+What it means concretely: **while the write switch is on, a page you happen to
+have open is part of the trusted input**. The fences above bound the damage — a
+module nothing imports never runs, and the backup means nothing is
+unrecoverable — but a module that *is* already registered goes live at the next
+reload, and there is no check that stops that. That is the same trust you extend
+when you paste an action you did not read, which is what everyone does; it is
+stated here rather than left implicit.
+
+The practical answer is the one the design already points at: turn writing on
+while you are authoring, and let it lapse. That way the window when it matters
+is the window you are watching.
