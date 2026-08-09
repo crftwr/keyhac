@@ -10,11 +10,15 @@
 > Keyhac's tray menu has the link: **AI Integration → Setup Guide**, pinned to
 > the version you are running.
 
-Keyhac can expose its element tools over MCP, so you can ask for an action in a
-chat window and have the agent inspect the actual screen, write it, run it,
-read the error, and fix it — instead of guessing at selectors and handing you
-code to debug. The action it writes is plain Python on a key binding: no model
-runs when you later press the key.
+Keyhac can expose its tools over MCP, so you can ask for what you want in a chat
+window and have the agent carry it out against the running Keyhac. Two kinds of
+thing: **changing what a key does** — it reads your key tables and your
+`config.py`, writes the change back, and reloads it — and **writing an action**,
+where it inspects the actual screen, writes the code, runs it, reads the error,
+and fixes it, instead of guessing at selectors and handing you code to debug.
+
+What it leaves behind is plain Python in your own files. No model runs when you
+later press the key.
 
 MCP is an open protocol and nothing here is specific to one vendor: Keyhac
 serves ordinary JSON-RPC over loopback HTTP with a bearer token, which is a
@@ -101,21 +105,33 @@ Beyond reading your screens:
 - **save action modules** into `~/.keyhac/extensions/`, instead of handing you
   source to copy on every round;
 - **run any action class it finds there**, addressed as `module.Class`, with no
-  entry in your `config.py` at all.
+  entry in your `config.py` at all;
+- **edit your `config.py`**: read it, write it back with the change in it, and
+  reload it. A remap, a per-application key table, the two lines that put an
+  action on a key — you ask for it and it lands in the file, rather than coming
+  back as something to paste.
 
-There is nothing more to it than that: an action is a `ThreadedAction` subclass
-in a file under `extensions/`, and the agent can list and start every one of
-them. No registration, no separate category, nothing to keep in step.
+An action is a `ThreadedAction` subclass in a file under `extensions/`, and the
+agent can list and start every one of them. No registration, no separate
+category, nothing to keep in step.
+
+`config.py` is written whole, never patched, so the agent is told to read it
+first and change as little as it can. **Keyhac keeps the version it replaced**
+as a `.bak-<timestamp>` beside it and logs every write to the console with a
+`+N/-M` line count — a rewrite you did not want is visible and undoable, not
+silent.
 
 **Listing does not run anything.** Keyhac finds those classes by parsing the
 files, never by importing them, so a directory of half-finished experiments
 stays inert until something names one. That is the property `extensions/` has
 always had: a module your `config.py` does not import does not execute.
 
-**The key binding is still yours.** While the endpoint is open, an action class
-is runnable from a chat window and bound to nothing; it gets a key of your
-choosing — and goes on working with nothing connected at all — only when you put
-it in `config.py`. That edit moved to the end of the loop rather than away.
+**The key binding is still yours — you no longer have to type it.** While the
+endpoint is open, an action class is runnable from a chat window and bound to
+nothing. What `config.py` adds is a key of your choosing that goes on working
+with nothing connected at all, and either of you can write that line: ask for
+the two lines and paste them, or ask for the binding and let the agent put it
+there. The key is the one you named, in your file, either way.
 
 ## Setting it up
 
@@ -355,6 +371,12 @@ which the agent may run; the switch does, and the switch expires.
 
 ## The loop
 
+This is the loop for *writing an action*, which is the long one. **Changing what
+a key does is shorter**: ask for it, and the agent reads your `config.py` and
+your key tables, writes the change back, reloads it, reports what the reload
+said, and asks you to press the key. Nothing has to be discovered from the
+screen, so there is no round trip through it.
+
 1. Open the screen the action will work against.
 2. Ask for what you want, in your own words. Naming the application and the
    output is useful; naming an API is not — if you find yourself typing
@@ -362,14 +384,20 @@ which the agent may run; the switch does, and the switch expires.
 3. The agent reads the screen, writes the action, and saves it into
    `extensions/`. It runs it, reads its own failure, fixes it, and runs it
    again. **You are not in this part**, however many rounds it takes.
-4. **When it works, you install it**: paste the `configure()` block it hands you
-   into `config.py` — two lines, an `import` and a key binding.
+4. **When it works, it gets a key.** Name the key and the agent writes the two
+   lines into `config.py` — an `import` and the binding — then reloads the file
+   and tells you what the reload said. If you would rather do it yourself, ask
+   for the lines instead; it is the same sentence either way. Then **press the
+   key**: whether it does the right thing is the one thing nobody else can
+   check for you.
 
-Step 4 is the manual one, and it stays manual deliberately. Everything before it
-is reachable only from a chat window, and only until the endpoint closes. The key
-binding is what makes the action *yours*: a key you chose, working when the
-agent is not connected at all. That is a line worth drawing yourself, and now
-you draw it around something you have seen work rather than around a guess.
+Step 4 is the only part that outlives the hour. Everything before it is reachable
+only from a chat window and only while the endpoint is open, and stops mattering
+when it closes; the binding keeps working with nothing connected at all, which is
+the point of putting it in your file rather than leaving it in a conversation.
+So it is the step worth looking at — and Keyhac makes that possible rather than
+asking you to trust it: the file it replaced is kept beside it, and the write is
+on the console with its line count.
 
 **Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
 not Keyhac's own modules — a new version of the tools is only picked up by a
@@ -444,10 +472,15 @@ feature, not a gap in it. Registering an action in `config.py` used to be a
 human step between "the agent wrote code" and "the code ran"; it is not any
 more, for as long as the endpoint is open.
 
-What still holds: the write can only land in `extensions/`, under a module name,
-with the previous version kept and the write logged to the console. Nothing
-executes unless it is named. And **when the hour is up it all stops**, including
-the screen reading — only the key bindings in your `config.py` survive it.
+And `config.py` is writable too, which is the one write meant to outlast the
+hour — so a change there is the one to actually read afterwards.
+
+What still holds: a write lands in one of exactly two places, `extensions/` under
+a module name or `config.py`, and neither is silent — the previous version is
+kept beside it and the write is logged with its line count. Nothing in
+`extensions/` executes unless it is named. And **when the hour is up it all
+stops**, including the screen reading; what survives is your `config.py`, doing
+what it says it does.
 
 The practical answer is therefore built in rather than left to you: the exposure
 coincides with you sitting in front of the screen, watching a console that
