@@ -294,6 +294,10 @@ if ($Sign) {
 
 if (-not (Test-Path $PayloadSource))              { throw "Payload source not found: $PayloadSource. Run 'make windows-app' first." }
 if (-not (Test-Path "$PayloadSource\Keyhac.exe")) { throw "Keyhac.exe not found in payload source $PayloadSource. Run 'make windows-app' first." }
+# Checked here rather than left to makeappx: the manifest below declares an app
+# execution alias on this file, and a missing alias target is reported as an
+# opaque manifest validation error rather than as a stale bundle.
+if (-not (Test-Path "$PayloadSource\keyhac-mcp-bridge.exe")) { throw "keyhac-mcp-bridge.exe not found in payload source $PayloadSource (bundle predates the MCP alias). Run 'make windows-app' first." }
 
 # ---- 1. Check the committed Store tile assets ------------------------------
 # Rendered from art/icon.svg by tools/make_icons.py and committed, like every
@@ -330,14 +334,27 @@ Copy-Item -Recurse -Force $assetsSrc "$staging\Assets"
 # shell:startup shortcut doc/installation.md describes for the zip install.
 # For a packaged desktop app it is enabled by default; the user can toggle it
 # in Settings > Apps > Startup (or Task Manager's Startup tab).
+#
+# windows.appExecutionAlias: the ONLY way anything in this package can be
+# started by a process that is not part of it. Everything under
+# C:\Program Files\WindowsApps refuses CreateProcess from an ordinary process
+# with "Access is denied", so the keyhac-mcp-bridge.exe sitting in the payload
+# is unreachable to an MCP client - Claude Desktop's server died at startup
+# with no output, which is how this was found. The alias puts a stub in
+# %LOCALAPPDATA%\Microsoft\WindowsApps (on PATH) that launches the bridge with
+# this package's identity, which is then allowed to run the bundled
+# interpreter. It is what mcp.json publishes on a packaged install; see
+# keyhac/mcp/server.py's bridge_command(). The alias name must match the file
+# name, and the target must be an .exe - which is why the bridge is one.
 $manifest = @"
 <?xml version="1.0" encoding="utf-8"?>
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap desktop rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
 
   <Identity
     Name="$IdentityName"
@@ -387,6 +404,14 @@ $manifest = @"
             Enabled="true"
             DisplayName="Keyhac" />
         </desktop:Extension>
+        <uap3:Extension
+          Category="windows.appExecutionAlias"
+          Executable="keyhac-mcp-bridge.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="keyhac-mcp-bridge.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>
