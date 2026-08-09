@@ -17,6 +17,12 @@ because the operator was otherwise the transport for every iteration of every
 fix - and because the manual step it replaces was never the review it
 resembled; nobody reads what they paste.
 
+`delete_extension` is that same fence, run in reverse, and it is a **rename**
+rather than an unlink: a module leaves `extensions/` as a timestamped `.bak-`
+beside itself. So the one tool here that sounds destructive destroys nothing,
+and the directory a fix loop leaves cluttered can be tidied without the operator
+being the transport for that either.
+
 `keyhac/mcp/extensions.py` is the other half of that: an action class in
 `extensions/` is runnable by `module.Class` without any `config.py` edit, and
 those classes are the whole of the action surface. There is no registry of named
@@ -31,8 +37,8 @@ switch was tried and undone - it left reading every open window as the
 long-lived half and writing as the short-lived one, which is backwards, since
 `describe_screen` is by far the larger exposure. So the statement of what a
 running endpoint grants is short and whole: while it is open, code the operator
-has not read can be written and run, and every window they have open can be
-read. Nothing types text or presses a key.
+has not read can be written, run and taken back out again, and every window they
+have open can be read. Nothing types text or presses a key.
 
 THREADS. Element access is main-thread-only and these run on the MCP server's
 threads, so every tool that touches the UI goes through `ui.on_main_thread` -
@@ -45,6 +51,7 @@ import difflib
 import keyword
 import logging
 import os
+import re
 import shutil
 import sys
 import threading
@@ -336,6 +343,20 @@ class ToolRegistry:
                                 "so send all of it every time."}},
                   "required": ["name", "source"]},
                  self.write_extension),
+            Tool("delete_extension",
+                 "Remove a module from ~/.keyhac/extensions/ - **renamed to a "
+                 "timestamped .bak- beside it rather than unlinked**, so the "
+                 "operator can put it back. For what an authoring session "
+                 "leaves behind: a module written under the wrong name, a "
+                 "helper that got folded back into the action. It does not "
+                 "touch config.py - so if that file imports the module, the "
+                 "reply says so, and taking those lines out is the next thing "
+                 "to offer.",
+                 {"type": "object", "properties": {
+                     "name": {**string, "description": "Module name, with no "
+                              "path and no .py suffix: \"open_issues\"."}},
+                  "required": ["name"]},
+                 self.delete_extension),
             Tool("reload_config",
                  "Reload ~/.keyhac/config.py and report what it said - use it "
                  "**after the operator edits that file**, to check their paste "
@@ -726,13 +747,22 @@ class ToolRegistry:
         """
         path = self._module_path(name)
         if not os.path.exists(path):
-            modules = sorted(
-                entry[:-3] for entry in _listdir(self.keymap.extensions_dir)
-                if entry.endswith(".py"))
-            return (f"no {name}.py in {self.keymap.extensions_dir}"
-                    + (f". There is: {', '.join(modules)}" if modules
-                       else " - the directory is empty."))
+            return self._no_module(name)
         return self._read_file(path)
+
+    def _no_module(self, name: str) -> str:
+        """What a tool says about a module that is not there.
+
+        With the directory listed, because the near-misses are what this is
+        usually hit by: a module addressed by its class name, or by the name it
+        had before it was rewritten.
+        """
+        modules = sorted(
+            entry[:-3] for entry in _listdir(self.keymap.extensions_dir)
+            if entry.endswith(".py"))
+        return (f"no {name}.py in {self.keymap.extensions_dir}"
+                + (f". There is: {', '.join(modules)}" if modules
+                   else " - the directory is empty."))
 
     def write_extension(self, name: str, source: str) -> str:
         """Save a module into ``extensions/``, while the window is open.
@@ -761,6 +791,80 @@ class ToolRegistry:
             return result[:-1] + " - start_action picks it up as soon as it "\
                                  "is named, no reload needed."
         return result
+
+    def delete_extension(self, name: str) -> str:
+        """Retire a module from `extensions/` - by renaming, never unlinking.
+
+        **The same move `write_extension` already makes on every replace**,
+        applied to the last version instead of a superseded one: the file goes
+        to a timestamped `.bak-` beside itself, under the same five-deep bound.
+        The argument for keeping backups there holds harder here - a replaced
+        module at least leaves its successor to read the intent off, and a
+        deleted one leaves nothing - so this must not be the single operation
+        that cannot be walked back.
+
+        **`config.py` is untouched, and that is where a delete can still
+        hurt.** A module the operator has bound to a key is imported by their
+        file at every load, so removing it stops that file loading - and the
+        failure surfaces as key bindings that quietly stopped working, well
+        after this call and nowhere near it. Doing it anyway and *saying so* is
+        the right shape: their file is edited by `write_config`, with them in
+        the conversation, not as a side effect of tidying `extensions/`.
+
+        **Live state is deliberately left alone.** A class already imported
+        keeps running out of memory, so an action started before this stays
+        readable through `get_action_result` and stoppable through
+        `cancel_action`, and the operator's key goes on working until they
+        reload. Nothing here is trying to make the deletion take effect faster
+        than the file system says it did.
+        """
+        try:
+            path = self._module_path(name)
+        except ValueError as error:
+            return f"nothing deleted: {error}"
+        if not os.path.exists(path):
+            return self._no_module(name)
+
+        backup = path + time.strftime(".bak-%Y%m%d-%H%M%S")
+        try:
+            # replace() rather than rename(): the suffix has one-second
+            # resolution, so writing a module and deleting it inside the same
+            # second collides - and on Windows rename() would raise there,
+            # turning a bounded loss (one backup of two, holding versions a
+            # second apart) into a refusal.
+            os.replace(path, backup)
+        except OSError as error:
+            return f"nothing deleted: {error}"
+        _prune_backups(path)
+
+        # Same reason write_extension logs: a file can leave the directory
+        # without appearing in the conversation, and the console line is what
+        # tells the operator watching it that one did.
+        logger.info(f"Deleted {path} (kept {os.path.basename(backup)}).")
+        return (f"deleted {name}.py - kept as {os.path.basename(backup)} "
+                f"beside it, so renaming that back undoes this."
+                + self._config_mentions(name))
+
+    def _config_mentions(self, name: str) -> str:
+        """A warning to hang off a delete when `config.py` names the module.
+
+        Searched rather than parsed, and deliberately loose: `import thing`,
+        `from thing import Action` and a `thing.Action()` on a binding line are
+        all the same signal, and the two errors are not symmetric. A false
+        positive costs a sentence the model reads and drops; a false negative
+        costs the operator a `config.py` that stops loading, hours later.
+        """
+        try:
+            with open(self.keymap.config_path, encoding="utf-8") as handle:
+                source = handle.read()
+        except OSError:
+            return ""
+        if not re.search(rf"\b{re.escape(name)}\b", source):
+            return ""
+        return (f" NOTE: config.py mentions {name}, so it is probably importing "
+                f"what is no longer there - the operator's next reload would "
+                f"fail and take their key bindings with it. Read it and offer "
+                f"to take those lines out.")
 
     def reload_config(self) -> str:
         # Cached instances are deliberately *not* dropped here. Staleness is

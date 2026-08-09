@@ -420,6 +420,7 @@ coordinates, or bindings it never checked.
 | `list_extensions` | the files in `extensions/`, including helpers with no action class |
 | `read_extension` | read a module as it is on disk |
 | `write_extension` | save a module — the whole file |
+| `delete_extension` | retire a module — renamed to a backup beside it, not erased |
 | `reload_config` | re-read your `config.py` after you edit it, and report any error |
 
 None of these has a permission of its own, and that is the design rather than
@@ -508,7 +509,9 @@ don't type passwords or show private material while recording.
   is what rules out paths and traversal — and `config.py` itself. Neither is
   replaced silently: the previous version is kept as a `.bak-<timestamp>`
   beside it, and every write is logged to the console with a `+N/-M` line
-  count.
+  count. **Nothing is erased**, either: `delete_extension` retires a module by
+  renaming it to the same `.bak-<timestamp>`, so tidying up after a session is
+  undone by renaming it back.
 - **`write_config` is the one thing that outlives the hour.** Everything else
   an agent does here expires when the endpoint closes; a key binding written
   into `config.py` keeps working, which is the point of writing it. It is a
