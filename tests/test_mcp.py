@@ -469,6 +469,104 @@ def test_underscore_files_are_helpers_not_actions(writable):
     assert "OpenIssues" not in writable.call("list_actions", {})
 
 
+# -- inheritance, without importing (issue #43) ------------------------------
+#
+# Reusing an action by subclassing it is the natural thing to write, and it was
+# the one way to write one this could not see: matching a *direct* base spelled
+# ThreadedAction meant `class B(A)` vanished while `class B(A, ThreadedAction)`
+# - identical MRO, the base named twice - appeared. The workaround was a line
+# of code written to satisfy a scanner.
+
+INHERITED = '''\
+from keyhac import ThreadedAction
+
+
+class TranslateClipboard(ThreadedAction):
+    """Translate the clipboard."""
+
+    def run(self):
+        return "clipboard"
+
+
+class TranslateSelection(TranslateClipboard):
+    """Translate the selection."""
+
+    def run(self):
+        return "selection"
+'''
+
+
+def test_a_subclass_of_an_action_is_an_action(writable):
+    write_action(writable, source=INHERITED)
+    result = writable.call("list_actions", {})
+    assert "thing.TranslateSelection: Translate the selection." in result
+
+
+def test_it_follows_a_base_class_into_another_module(writable):
+    """An action's base often lives in the helper file beside it."""
+    write_action(writable, name="_base", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Base(ThreadedAction):\n"
+        "    def run(self): ...\n"))
+    write_action(writable, name="derived", source=(
+        "from _base import Base\n\n\n"
+        "class Derived(Base):\n"
+        '    """Built on the helper."""\n'
+        "    def run(self): ...\n"))
+
+    result = writable.call("list_actions", {})
+    assert "derived.Derived: Built on the helper." in result
+    assert "_base.Base" not in result, "a helper file is still not offered"
+
+
+def test_it_follows_a_base_reached_through_a_module(writable):
+    write_action(writable, name="_base", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Base(ThreadedAction):\n"
+        "    def run(self): ...\n"))
+    write_action(writable, name="dotted", source=(
+        "import _base\n\n\n"
+        "class Dotted(_base.Base):\n"
+        '    """Reached through the module."""\n'
+        "    def run(self): ...\n"))
+
+    assert "dotted.Dotted: Reached through the module." in \
+        writable.call("list_actions", {})
+
+
+def test_a_class_inheriting_something_else_is_still_not_an_action(writable):
+    """The walk must widen what is found, not stop discriminating."""
+    write_action(writable, source=(
+        "class Helper:\n    pass\n\n\n"
+        "class Plain(Helper):\n    pass\n"))
+    assert "Plain" not in writable.call("list_actions", {})
+
+
+def test_a_base_cycle_does_not_hang_the_listing(writable):
+    """Half a file is not a finding, and a file being edited can say this.
+
+    Reaching the assertion at all is most of the test: an unguarded walk
+    recurses until the interpreter stops it.
+    """
+    write_action(writable, source=(
+        "class A(B):\n    pass\n\n\n"
+        "class B(A):\n    pass\n"))
+    result = writable.call("list_actions", {})
+    assert "thing.A" not in result and "thing.B" not in result
+
+
+def test_inheritance_is_resolved_without_importing(writable):
+    """The property the whole AST scan exists for still holds."""
+    write_action(writable, name="explodes", source=(
+        "from keyhac import ThreadedAction\n"
+        "raise AssertionError('imported')\n\n\n"
+        "class Base(ThreadedAction):\n    pass\n\n\n"
+        "class Derived(Base):\n    pass\n"))
+
+    assert "explodes.Derived" in writable.call("list_actions", {})
+    assert "explodes" not in sys.modules
+
+
 # -- loading one -------------------------------------------------------------
 
 RUNNABLE = '''\

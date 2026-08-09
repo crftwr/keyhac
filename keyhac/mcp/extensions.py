@@ -72,55 +72,140 @@ class ActionClass:
 def discover(extensions_dir: str) -> list[ActionClass]:
     """Every action class under `extensions_dir`, found without importing.
 
-    Files whose names start with `_` are skipped: an extension named that way
-    is a helper the operator split out, not something to offer as runnable.
+    Files whose names start with `_` are skipped **as candidates**: an
+    extension named that way is a helper the operator split out, not something
+    to offer as runnable. They are still parsed, because a helper is exactly
+    where a shared base class lives and a subclass of one is an action.
     A file that does not parse is skipped rather than reported - it is being
     edited, and half a file is not a finding.
     """
+    parsed = _parse_directory(extensions_dir)
     found: list[ActionClass] = []
+    for module in sorted(parsed):
+        if module.startswith("_"):
+            continue
+        source = parsed[module]
+        for name, classdef in source.classes.items():
+            if not _is_action(parsed, module, name, set()):
+                continue
+            found.append(ActionClass(module, name, source.path,
+                                     _required_arguments(classdef),
+                                     _first_line(ast.get_docstring(classdef))))
+    return found
+
+
+class _Parsed:
+    """One file's top-level classes, and where its names came from."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.classes: dict[str, ast.ClassDef] = {}   # in file order
+        self.from_imports: dict[str, tuple[str, str]] = {}
+        self.modules: dict[str, str] = {}
+
+
+def _parse_directory(extensions_dir: str) -> dict[str, _Parsed]:
+    parsed: dict[str, _Parsed] = {}
     try:
         entries = sorted(os.listdir(extensions_dir))
     except OSError:
-        return found
+        return parsed
     for entry in entries:
-        if not entry.endswith(".py") or entry.startswith("_"):
+        if not entry.endswith(".py"):
             continue
         path = os.path.join(extensions_dir, entry)
         try:
             with open(path, encoding="utf-8") as handle:
-                source = handle.read()
-        except OSError:
+                tree = ast.parse(handle.read(), path)
+        except (OSError, SyntaxError):
             continue
-        for cls, required, summary in _action_classes(source, path):
-            found.append(ActionClass(entry[:-3], cls, path, required, summary))
-    return found
+        parsed[entry[:-3]] = _read_module(tree, path)
+    return parsed
 
 
-def _action_classes(source: str, path: str):
-    try:
-        tree = ast.parse(source, path)
-    except SyntaxError:
-        return []
-    found = []
+def _read_module(tree, path: str) -> _Parsed:
+    source = _Parsed(path)
     for node in tree.body:
-        if isinstance(node, ast.ClassDef) and any(
-                _is_threaded_action(base) for base in node.bases):
-            found.append((node.name, _required_arguments(node),
-                          _first_line(ast.get_docstring(node))))
-    return found
+        if isinstance(node, ast.ClassDef):
+            source.classes[node.name] = node
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                source.modules[alias.asname or root] = root
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            origin = (node.module or "").split(".")[0]
+            for alias in node.names:
+                source.from_imports[alias.asname or alias.name] = (origin,
+                                                                   alias.name)
+    return source
 
 
-def _is_threaded_action(base) -> bool:
-    # Both spellings the skill's import header can produce: `ThreadedAction`
-    # from `from keyhac import ...`, and a dotted one if it was reached through
-    # the package. Matching on the trailing name is deliberately loose - the
-    # cost of a false positive is one row in a list, and the cost of a false
-    # negative is an action the model cannot see.
-    if isinstance(base, ast.Name):
-        return base.id == "ThreadedAction"
-    if isinstance(base, ast.Attribute):
-        return base.attr == "ThreadedAction"
+def _is_action(parsed: dict[str, _Parsed], module: str, class_name: str,
+               seen: set) -> bool:
+    """Whether `module.class_name` reaches `ThreadedAction` through its bases.
+
+    **Transitively, and across files.** Matching only a *direct* base spelled
+    `ThreadedAction` made the natural way to reuse an action - subclass it -
+    the one way to write one this cannot see, so `start_action` could not run
+    it while a key binding ran it perfectly (issue #43). The workaround was to
+    name `ThreadedAction` a second time among the bases, which is a line of
+    code written to satisfy a scanner.
+
+    Still no import: reading a directory must not execute it, which is the
+    property this whole module is built around. So the graph is the one the
+    files describe - classes defined here, and names they imported from each
+    other - and a base that leads out of `extensions/` simply ends the walk.
+
+    `seen` breaks the cycle a file being edited can describe (`class A(B)` and
+    `class B(A)`), which is unrunnable but must not hang a listing.
+    """
+    key = (module, class_name)
+    if key in seen:
+        return False
+    seen.add(key)
+
+    source = parsed.get(module)
+    if source is None:
+        return False
+    classdef = source.classes.get(class_name)
+    if classdef is None:
+        return False
+
+    for base in classdef.bases:
+        # Both spellings the skill's import header can produce:
+        # `ThreadedAction` from `from keyhac import ...`, and a dotted one if
+        # it was reached through the package. Matching on the trailing name is
+        # deliberately loose - the cost of a false positive is one row in a
+        # list, and the cost of a false negative is an action nobody can see.
+        if _base_name(base) == "ThreadedAction":
+            return True
+        target = _base_target(source, module, base)
+        if target is not None and _is_action(parsed, *target, seen):
+            return True
     return False
+
+
+def _base_name(base) -> str | None:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
+def _base_target(source: _Parsed, module: str, base) -> tuple[str, str] | None:
+    """Which `(module, class)` in `extensions/` a base expression names."""
+    # `helpers.Base` - a module imported here, addressed by attribute.
+    if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+        origin = source.modules.get(base.value.id)
+        return (origin, base.attr) if origin else None
+    if not isinstance(base, ast.Name):
+        return None
+    # `Base` - defined in this file, or imported by name from another.
+    if base.id in source.classes:
+        return (module, base.id)
+    imported = source.from_imports.get(base.id)
+    return imported if imported else None
 
 
 def _required_arguments(classdef) -> list[str]:
