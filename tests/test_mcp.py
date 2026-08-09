@@ -15,6 +15,7 @@ import os
 import shutil
 import stat
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -22,6 +23,7 @@ import urllib.request
 import pytest
 
 import keyhac.core.keymap as keymap_module
+from keyhac.core import capture
 import keyhac.mcp.server as server_module
 import keyhac.mcp.tools as tools_module
 from keyhac.mcp.server import Dispatcher, MCPServer, PROTOCOL_VERSION
@@ -747,6 +749,88 @@ def test_an_edit_still_wins_over_the_loaded_module(writable, clean_modules):
     os.utime(path, (0, 0))
 
     assert writable._startable("moved.Thing").run() == 2
+
+
+# -- both ways of starting one answer to one name (issue #42) ----------------
+#
+# get_action_result returned only what start_action had run. Press the key the
+# action is bound to and it handed back the *previous* MCP run, unchanged -
+# same text, same counter - while list_actions said "not run yet" about an
+# action the operator had just run. The two paths filed their records under
+# different keys: repr(self) for a key press, module.Class for the tool. It
+# cost one wrong conclusion ("the key press is not reaching the hook") about a
+# hook that was working.
+
+def _run_as_a_key_press(action):
+    """What ThreadedAction._run_tracked does: cancellable() with no name.
+
+    The cancellation is swallowed the way the pool swallows it - it lands in
+    the future, and _finish logs it - rather than being left to surface out of
+    a bare thread.
+    """
+    from keyhac.core.action import ActionCancelled
+
+    try:
+        with action.cancellable():
+            return action.run()
+    except ActionCancelled:
+        return None
+
+
+def test_a_key_press_run_is_readable_by_name(engine, tmp_path, clean_modules):
+    keymap = engine(lambda keymap: None).keymap
+    directory = keymap.extensions_dir
+    os.makedirs(directory, exist_ok=True)
+    pathlib.Path(directory, "pressed.py").write_text(RUNNABLE.format(version=7))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import pressed
+    _run_as_a_key_press(pressed.Thing())          # the operator's own binding
+
+    registry = ToolRegistry(keymap)
+    result = registry.call("get_action_result",
+                           {"name": "pressed.Thing", "wait": 0})
+    assert "finished" in result, result
+    assert "has not been run" not in result
+    assert "last run: finished" in registry.call("list_actions", {})
+
+
+def test_a_key_press_run_is_cancellable_by_name(engine, tmp_path, clean_modules):
+    """The other half: cancel_action reaches instances it did not create."""
+    keymap = engine(lambda keymap: None).keymap
+    directory = keymap.extensions_dir
+    os.makedirs(directory, exist_ok=True)
+    pathlib.Path(directory, "held.py").write_text(SLOW.replace("Slow", "Held"))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import held
+    action = held.Held()
+    thread = threading.Thread(target=_run_as_a_key_press, args=(action,),
+                              daemon=True)
+    thread.start()
+
+    registry = ToolRegistry(keymap)
+    deadline = time.monotonic() + 5
+    while capture.get_run("held.Held") is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    registry.call("cancel_action", {"name": "held.Held"})
+    thread.join(timeout=5)
+    assert "cancelled" in registry.call("get_action_result",
+                                        {"name": "held.Held", "wait": 5})
+
+
+def test_an_action_outside_extensions_keeps_its_repr(engine):
+    """`LaunchApplication("Terminal.app")` says which application.
+
+    `keyhac.core.action.LaunchApplication` says neither that nor which of two
+    bindings ran, so the class-derived name is for `extensions/` only.
+    """
+    engine(lambda keymap: None)
+    from keyhac.core.action import LaunchApplication
+
+    action = LaunchApplication("Terminal.app")
+    assert action._run_name() == 'LaunchApplication("Terminal.app")'
 
 
 SLOW = '''\

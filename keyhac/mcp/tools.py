@@ -88,6 +88,25 @@ def _listdir(directory: str) -> list[str]:
         return []
 
 
+def _running_action(name: str):
+    """A running action filed under `name`, whoever started it.
+
+    `ThreadedAction._running` is the set Esc reaches, so it holds key-started
+    actions the loader has never seen. Matched on the same name the run record
+    was filed under, which is what makes the two ways of starting an action
+    answer to one name at all.
+    """
+    from keyhac.core.action import ThreadedAction
+
+    with ThreadedAction._running_lock:
+        running = tuple(ThreadedAction._running)
+    for action in running:
+        if getattr(action, "_run_record", None) is not None \
+                and action._run_record.name == name:
+            return action
+    return None
+
+
 class Tool:
     """One callable, its JSON Schema, and the description Claude reads."""
 
@@ -482,8 +501,17 @@ class ToolRegistry:
         Deliberately ungated and import-free: a run that started while the
         window was open must stay readable after it closes, or the model loses
         the traceback for the thing it just ran.
+
+        Two places to look, because there are two ways to start one. The
+        loader's cache holds what `start_action` made; a run the operator
+        triggered with a key was made by their `config.py` and is reachable
+        only while it is running, through the set the Esc key uses. Without the
+        second, `cancel_action` could not stop an action the operator started -
+        which is the half of issue #42 that survived naming the runs alike.
         """
         action = self._loader.cached(name)
+        if action is None:
+            action = _running_action(name)
         if action is None:
             raise KeyError(f"{name!r} has not been started; call list_actions")
         return action
