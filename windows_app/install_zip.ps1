@@ -54,7 +54,24 @@ $projectRoot = Split-Path -Parent $ScriptDir
 
 # Resolved before anything else so -Uninstall never needs a zip: deleting an
 # install must work long after the build directory is gone.
-if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\Keyhac' }
+#
+# Asked of Windows rather than read from $env:LOCALAPPDATA, because the variable
+# is not there when this runs the way it is meant to: Git Bash/MSYS make hands a
+# PowerShell child a stripped environment - 17 variables, with LOCALAPPDATA,
+# APPDATA, TEMP and USERPROFILE all missing - so `make install-windows-zip` died
+# on "Cannot bind argument to parameter 'Path' because it is null" while running
+# the script by hand worked. build.ps1 and build_msix.ps1 meet the same mangling
+# in PATHEXT and TEMP; this is the third face of it.
+if (-not $InstallDir) {
+    $localAppData = $env:LOCALAPPDATA
+    if (-not $localAppData) {
+        $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+    }
+    if (-not $localAppData) {
+        Fail "Could not locate the local application data folder. Pass -InstallDir explicitly (or set WINDOWS_INSTALL_DIR for make)."
+    }
+    $InstallDir = Join-Path $localAppData 'Programs\Keyhac'
+}
 
 function Remove-Install {
     try {
