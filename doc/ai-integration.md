@@ -146,8 +146,12 @@ skill, everything appears to work and you will write actions containing `sleep`
 and screen coordinates, which break on a different machine.
 
 How your host installs an MCP server or a skill is **your** knowledge, and this
-page deliberately does not guess at it. What follows is only what Keyhac knows
-and you cannot.
+page mostly does not guess at it. What follows is what Keyhac knows and you
+cannot — plus, where a host is common enough to be worth naming, what is true
+for it today: Claude Desktop's config file is in
+[The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients), and
+Claude's skill uploader in [Add the skills](#add-the-skills). Both sections are
+below this one, and both are for you as much as for the user.
 
 ### 1. The skill
 
@@ -159,28 +163,40 @@ There are two, and which you need depends on what the user asked for:
   drives another application's UI, for automation with no API behind it.
 
 Most people want the first. Take both if you do not know yet. They are on the
-release matching the running version — the tag is in the URL you fetched this
-page from:
+release matching the running version — the tag is the segment after `blob/` in
+the URL you fetched this page from, and it already carries its own `v`:
 
 ```
-https://github.com/crftwr/keyhac/releases/tag/v<version>
+https://github.com/crftwr/keyhac/releases/tag/<tag>
 ```
 
-Install them however this host takes a skill. Each documents *that version's*
-API, so a mismatch is worth mentioning to the user rather than working
-around.
+Install them however this host takes a skill — but expect that to be **a step
+only the user can take**. On most hosts a skill arrives by uploading a file
+through a settings UI, with no tool behind it, so do not spend the round trying
+to do it yourself. Give them the link and the steps, say what it buys, and go on
+with what you can do. [Add the skills](#add-the-skills) has the path for Claude,
+including the setting that has to be on first.
+
+Each bundle documents *that version's* API, so a mismatch is worth mentioning to
+the user rather than working around.
 
 ### 2. The connection
 
 Ask the user to switch the endpoint on first: **AI Integration → MCP Server**
-in Keyhac's tray menu, or the **AI Integration** checkbox in its console
-window. It is off by default and you cannot turn it on yourself.
+in Keyhac's tray menu, or the **AI Integration: MCP Server** checkbox in its
+console window. It is off by default and you cannot turn it on yourself.
 
-Then:
+Then settle which transport this host has, because it decides everything below.
+A client that can open an HTTP connection itself uses the endpoint; a client
+that can only launch a server as a child process uses the bridge. **Claude
+Desktop is the second kind**, so if that is where you are, the endpoint details
+are background and [the bridge](#the-bridge-for-stdio-only-clients) is the
+thing to configure.
 
 - Keyhac publishes the connection details as `mcp.json` beside the user's
-  `config.py` — `~/.keyhac/mcp.json` unless Keyhac's console reported a
-  different config directory at startup.
+  `config.py` — `~/.keyhac/mcp.json` unless Keyhac was started against a
+  different config directory. You cannot read Keyhac's console, so if the file
+  is not there, ask the user what it printed at startup rather than hunting.
 - That file holds a `port` and a `token`. The endpoint is
   `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every request
   needs an `Authorization: Bearer <token>` header.
@@ -194,19 +210,26 @@ Then:
 - If this host can only launch an MCP server as a subprocess over stdio, use
   the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes no
   arguments and finds that file itself. A GUI client usually needs its absolute
-  path, since it does not inherit a shell `PATH`.
+  path, since it does not inherit a shell `PATH` —
+  [The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients) has
+  the config snippets and where that path is for each kind of install.
 
 ### 3. How to go about it
 
 - **Back up** any other application's config file before editing it, and show
-  the user the change.
+  the user the change. **If you have no way to write files at all** — which is
+  ordinary, not a failure — print the exact path and the exact JSON, and ask
+  them to paste it in. Say whether the file is being created or merged into.
 - **Do not quit or restart another application.** Ask, and say what they should
   see afterwards.
-- **Verify rather than assume.** Once the client is restarted, call
-  `list_windows`. If the user's own windows come back, it worked. If the tool
-  is not there, say so plainly instead of guessing at the cause — and if you
-  are unsure of this host's config path or schema, ask rather than writing a
-  plausible one.
+- **If the client to restart is the one you are running inside**, restarting it
+  ends this conversation — quitting Claude Desktop quits you with it. Say so
+  *before* they do it, and leave them what to do next: open a new chat and ask
+  for `list_windows`, which is where the check below now happens.
+- **Verify rather than assume.** After the restart, call `list_windows`. If the
+  user's own windows come back, it worked. If the tool is not there, say so
+  plainly instead of guessing at the cause — and if you are unsure of this
+  host's config path or schema, ask rather than writing a plausible one.
 - Anything you cannot do from here, ask the user for. Most of it you can.
 
 ## Which clients have been tried
@@ -314,19 +337,27 @@ Most people want the first. Take both if you are not sure.
 **Get them from the release**:
 
 ```
-https://github.com/crftwr/keyhac/releases/tag/v<your version>
+https://github.com/crftwr/keyhac/releases/tag/<tag>
 ```
 
-Match the version you are running — Keyhac's console prints it at startup, and
-the release for it is the one whose API the skills describe. Each bundle
-carries that version stamped inside, so a mismatch is visible after the fact
-rather than silent.
+`<tag>` is `v` followed by the version Keyhac's console prints at startup —
+`v2.2.1`, for instance. Match the version you are running: that release is the
+one whose API the skills describe. Each bundle carries the version stamped
+inside, so a mismatch is visible after the fact rather than silent.
 
-Skills are a Claude feature, so the packaged bundle is shaped for Claude
-Desktop: Settings → カスタマイズ / Customize → Skills → Add → **Upload skill**.
-The uploader states two requirements and the bundle meets both — a `SKILL.md`
-at the archive root, carrying its name and description as YAML frontmatter.
-Uploads go through a security scan that takes a minute or two.
+The bundle is shaped for Claude's skill uploader, whose two requirements it
+meets — a `SKILL.md` at the archive root, carrying its name and description as
+YAML frontmatter. In Claude today that is **Customize → Skills → + → Create
+skill → Upload a skill**, then pick the zip. Menus move between releases; if
+that path is not what you see, look for **Skills** in the settings rather than
+trusting this line.
+
+**Turn on "Code execution and file creation" first** — Settings → Capabilities,
+or for a Team or Enterprise plan an administrator enables it for the
+organization. Skills run on it, and while it is off they will not appear at all,
+which looks like a plan restriction and is not one. This is the usual reason an
+upload seems to go nowhere. On an Enterprise organization with skill scanning
+enabled, an uploaded skill is also scanned before it can run — a minute or two.
 
 The *content* is not Claude-specific. Unzipped it is Markdown, and any agent
 that can be handed documents can be handed these. What that does not buy is the
