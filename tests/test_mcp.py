@@ -270,7 +270,10 @@ def test_it_writes_and_says_what_to_do_next(writable):
     result = writable.call("write_extension",
                            {"name": "open_issues", "source": "x = 1\n"})
     assert (extensions(writable) / "open_issues.py").read_text() == "x = 1\n"
-    assert "reload_config" in result
+    # It must not send the model to reload_config: the file is picked up by
+    # being named, and a reload between rounds rebuilds live key bindings for
+    # nothing.
+    assert "start_action" in result and "no reload needed" in result
 
 
 def test_replacing_keeps_the_previous_version(writable):
@@ -306,13 +309,13 @@ def test_the_write_is_announced_on_the_console(writable, caplog):
     assert any("thing.py (+1/-0 lines)" in m for m in messages)
 
 
-# -- drafts in extensions/ ---------------------------------------------------
+# -- the action classes in extensions/ ---------------------------------------
 #
 # The property worth guarding hardest is that listing does not execute: the
 # whole point of the AST scan is that a directory of half-finished actions
 # stays inert until something names one.
 
-DRAFT = '''\
+SAMPLE = '''\
 from keyhac import ThreadedAction
 
 RAN_AT_IMPORT.append("yes")          # NameError unless someone injected it
@@ -335,16 +338,16 @@ class NotAnAction:
 '''
 
 
-def write_draft(registry, name="thing", source=DRAFT):
+def write_action(registry, name="thing", source=SAMPLE):
     directory = extensions(registry)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{name}.py").write_text(source)
     return directory / f"{name}.py"
 
 
-def test_listing_drafts_does_not_import_them(writable):
+def test_listing_does_not_import_anything(writable):
     """The module raises at import; listing it must still work."""
-    write_draft(writable)
+    write_action(writable)
     result = writable.call("list_actions", {})
 
     assert "thing.OpenIssues: Opens the issue list." in result
@@ -352,54 +355,54 @@ def test_listing_drafts_does_not_import_them(writable):
 
 
 def test_a_class_that_is_not_an_action_is_not_listed(writable):
-    write_draft(writable)
+    write_action(writable)
     assert "NotAnAction" not in writable.call("list_actions", {})
 
 
-def test_a_draft_needing_arguments_says_so_instead_of_offering_itself(writable):
-    write_draft(writable)
+def test_one_needing_arguments_says_so_instead_of_offering_itself(writable):
+    write_action(writable)
     result = writable.call("list_actions", {})
     assert "thing.NeedsArgs: needs constructor arguments (target)" in result
 
 
 def test_starting_one_that_needs_arguments_is_refused(writable):
-    write_draft(writable)
+    write_action(writable)
     with pytest.raises(KeyError, match="constructor arguments.*target"):
         writable.call("start_action", {"name": "thing.NeedsArgs"})
 
 
-def test_drafts_are_invisible_and_unstartable_while_the_window_is_shut(registry,
+def test_nothing_is_visible_or_startable_while_the_window_is_shut(registry,
                                                                       tmp_path):
     registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    write_draft(registry)
+    write_action(registry)
 
     assert "OpenIssues" not in registry.call("list_actions", {})
     with pytest.raises(KeyError, match="Allow action authoring"):
         registry.call("start_action", {"name": "thing.OpenIssues"})
 
 
-def test_a_lapsed_window_refuses_a_draft_by_saying_it_lapsed(registry, tmp_path):
+def test_a_lapsed_window_refuses_by_saying_it_lapsed(registry, tmp_path):
     registry.keymap.extensions_dir = str(tmp_path / "extensions")
     registry.keymap.action_authoring_lapsed = True
-    write_draft(registry)
+    write_action(registry)
 
     with pytest.raises(KeyError, match="run out"):
         registry.call("start_action", {"name": "thing.OpenIssues"})
 
 
 def test_a_file_that_does_not_parse_is_skipped_not_reported(writable):
-    write_draft(writable, name="broken", source="def nope(:\n")
-    write_draft(writable, name="good")
+    write_action(writable, name="broken", source="def nope(:\n")
+    write_action(writable, name="good")
     result = writable.call("list_actions", {})
     assert "good.OpenIssues" in result and "broken" not in result
 
 
-def test_underscore_files_are_helpers_not_drafts(writable):
-    write_draft(writable, name="_helpers")
+def test_underscore_files_are_helpers_not_actions(writable):
+    write_action(writable, name="_helpers")
     assert "OpenIssues" not in writable.call("list_actions", {})
 
 
-# -- loading a draft ---------------------------------------------------------
+# -- loading one -------------------------------------------------------------
 
 RUNNABLE = '''\
 from keyhac import ThreadedAction
@@ -413,17 +416,17 @@ class Thing(ThreadedAction):
 '''
 
 
-def test_a_draft_runs_without_any_config_edit(writable):
-    write_draft(writable, source=RUNNABLE.format(version=1))
+def test_it_runs_without_any_config_edit(writable):
+    write_action(writable, source=RUNNABLE.format(version=1))
     writable.call("start_action", {"name": "thing.Thing"})
     result = writable.call("get_action_result", {"name": "thing.Thing", "wait": 5})
     assert "finished" in result
     assert writable.keymap.reloaded == 0        # no reload_config needed
 
 
-def test_an_edited_draft_is_reimported_without_a_reload(writable):
+def test_an_edited_file_is_reimported_without_a_reload(writable):
     """Round two of a fix loop must not run round one's code."""
-    path = write_draft(writable, source=RUNNABLE.format(version=1))
+    path = write_action(writable, source=RUNNABLE.format(version=1))
     first = writable._startable("thing.Thing")
 
     # A distinct mtime: the cache is keyed on it, and a fast test can land
@@ -436,9 +439,31 @@ def test_an_edited_draft_is_reimported_without_a_reload(writable):
     assert sys.modules["thing"].VERSION == 2
 
 
-def test_an_unchanged_draft_keeps_its_instance(writable):
+def test_an_edited_helper_is_reimported_too(writable):
+    """An action split across two files must not run half of round two.
+
+    The action's own module comes back by path; anything it imports by name
+    would answer out of sys.modules, so the helper is where staleness hides -
+    and it hides silently, reporting success against the previous version.
+    """
+    directory = extensions(writable)
+    write_action(writable, name="shared", source="VALUE = 1\n")
+    write_action(writable, name="act", source=(
+        "from keyhac import ThreadedAction\n"
+        "import shared\n\n\n"
+        "class Act(ThreadedAction):\n"
+        "    def run(self):\n"
+        "        return shared.VALUE\n"))
+    assert writable._startable("act.Act").run() == 1
+
+    (directory / "shared.py").write_text("VALUE = 2\n")
+    os.utime(directory / "act.py", (0, 0))
+    assert writable._startable("act.Act").run() == 2
+
+
+def test_an_unchanged_file_keeps_its_instance(writable):
     """cancel_action reaches the running object by looking it up again."""
-    write_draft(writable, source=RUNNABLE.format(version=1))
+    write_action(writable, source=RUNNABLE.format(version=1))
     assert writable._startable("thing.Thing") is writable._startable("thing.Thing")
 
 
@@ -460,9 +485,9 @@ class Slow(ThreadedAction):
 '''
 
 
-def test_a_draft_is_asynchronous_and_reports_what_it_logged(writable):
-    """The authoring loop's three calls, on a draft: start, collect, read."""
-    write_draft(writable, source=SLOW)
+def test_an_action_is_asynchronous_and_reports_what_it_logged(writable):
+    """The authoring loop's three calls: start, collect, read."""
+    write_action(writable, source=SLOW)
 
     started = writable.call("start_action", {"name": "thing.Slow"})
     assert "started" in started
@@ -478,8 +503,8 @@ def test_a_draft_is_asynchronous_and_reports_what_it_logged(writable):
     assert "started" in result           # what it logged comes back too
 
 
-def test_a_draft_that_raises_hands_back_its_traceback(writable):
-    write_draft(writable, source=(
+def test_one_that_raises_hands_back_its_traceback(writable):
+    write_action(writable, source=(
         "from keyhac import ThreadedAction\n\n\n"
         "class Boom(ThreadedAction):\n"
         "    def run(self):\n"
@@ -492,9 +517,9 @@ def test_a_draft_that_raises_hands_back_its_traceback(writable):
     assert "Traceback" in result
 
 
-def test_a_started_draft_stays_readable_after_the_window_shuts(writable):
+def test_a_started_run_stays_readable_after_the_window_shuts(writable):
     """The run already happened; its traceback must not become unreachable."""
-    write_draft(writable, source=RUNNABLE.format(version=1))
+    write_action(writable, source=RUNNABLE.format(version=1))
     writable.call("start_action", {"name": "thing.Thing"})
     writable.keymap.action_authoring_allowed = False
 
@@ -502,12 +527,17 @@ def test_a_started_draft_stays_readable_after_the_window_shuts(writable):
     assert "finished" in result
 
 
-def test_reloading_the_config_drops_cached_drafts(writable):
-    write_draft(writable, source=RUNNABLE.format(version=1))
+def test_reloading_the_config_keeps_a_run_cancellable(writable):
+    """A reload must not cost the operator the stop button.
+
+    cancel_action reaches a running action by looking its name up again,
+    so dropping the cache here would strand whatever is mid-run. Staleness
+    is handled by mtime instead, which covers a hand edit too.
+    """
+    write_action(writable, source=RUNNABLE.format(version=1))
     first = writable._startable("thing.Thing")
     writable.call("reload_config", {})
-    assert writable._drafts.cached("thing.Thing") is None
-    assert writable._startable("thing.Thing") is not first
+    assert writable._loader.cached("thing.Thing") is first
 
 
 # -- the action-authoring switch ---------------------------------------------
@@ -840,7 +870,7 @@ class Probe(ThreadedAction):
 
 
 def _register(writable, run, name="probe"):
-    """Run the test's callable as a draft, and collect what it produced.
+    """Run the test's callable as an action class, and collect what it produced.
 
     Actions reach the endpoint only as classes in `extensions/` now, so the
     body has to arrive through a file. Importing it first and installing the
@@ -848,7 +878,7 @@ def _register(writable, run, name="probe"):
     state - `_startable` hands back the cached instance the second time,
     because the file has not moved.
     """
-    write_draft(writable, name=name, source=PROBE)
+    write_action(writable, name=name, source=PROBE)
     writable._startable(f"{name}.Probe")
     sys.modules[name].RUN = run
     writable.call("start_action", {"name": f"{name}.Probe"})
@@ -976,8 +1006,8 @@ class Slow(ThreadedAction):
 
 
 def _slow_action(writable, name="slow"):
-    """A draft that blocks until the returned event is set."""
-    write_draft(writable, name=name, source=GATED)
+    """An action class that blocks until the returned event is set."""
+    write_action(writable, name=name, source=GATED)
     writable._startable(f"{name}.Slow")
     return sys.modules[name].GATE
 
@@ -1040,11 +1070,11 @@ def test_cancel_action_stops_it(writable):
     """The model can stop what it started - refusing that while allowing
     starting would be the odd asymmetry.
 
-    Also pins that cancel reaches the *running* object: it looks the draft up
-    again, and a fresh instance per start would hand it a flag nobody is
+    Also pins that cancel reaches the *running* object: it looks the action
+    up again, and a fresh instance per start would hand it a flag nobody is
     waiting on.
     """
-    write_draft(writable, name="slow2", source=CANCELLABLE)
+    write_action(writable, name="slow2", source=CANCELLABLE)
     writable._startable("slow2.Slow")
     writable.call("start_action", {"name": "slow2.Slow"})
 
@@ -1055,7 +1085,7 @@ def test_cancel_action_stops_it(writable):
 
 
 def test_collecting_an_action_that_never_ran(writable):
-    write_draft(writable, name="idle", source=RUNNABLE.format(version=1))
+    write_action(writable, name="idle", source=RUNNABLE.format(version=1))
     assert "has not been run" in writable.call("get_action_result",
                                                {"name": "idle.Thing", "wait": 0})
     assert "not run yet" in writable.call("list_actions", {})

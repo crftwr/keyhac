@@ -831,9 +831,9 @@ class Keymap:
     # The MCP endpoint
     #
     # There is no registry of named actions here any more. A model reaches an
-    # action by finding the class in `extensions/` (keyhac/mcp/drafts.py), which
-    # needs no `config.py` line at all - so `register_action`, whose whole job
-    # was to add that line, was removed rather than kept as a second way in.
+    # action by finding the class in `extensions/` (keyhac/mcp/extensions.py),
+    # which needs no `config.py` line at all - so `register_action`, whose whole
+    # job was to add that line, was removed rather than kept as a second way in.
     # What a `config.py` still does is bind a key, and a key binding was never
     # what registration bought.
 

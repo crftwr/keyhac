@@ -161,12 +161,12 @@ logger = getLogger("OpenIssues")     # there is no importable `logger`
 the argument to `configure()` - so anything reaching for it beside the class
 raises `NameError` the moment the module is imported.
 
-**You need no `config.py` edit to run it.** A class in `extensions/` is a
-**draft**: `list_actions` finds it by reading the file, and `start_action`
-addresses it as `module.Class` - `open_issues.OpenIssues`. That is the whole
-test loop. The operator's edit comes at the *end*, when the action works and
-they want it on a key. Hand them this then, not before, and keep it to two
-lines:
+**You need no `config.py` edit to run it.** Every action class in
+`extensions/` is already reachable: `list_actions` finds it by reading the
+file, and `start_action` addresses it as `module.Class` -
+`open_issues.OpenIssues`. That is the whole test loop. The operator's edit
+comes at the *end*, when the action works and they want it on a key. Hand them
+this then, not before, and keep it to two lines:
 
 ```python
 def configure(keymap):
@@ -176,18 +176,19 @@ def configure(keymap):
 
 Two consequences worth writing for:
 
-- **Give every constructor argument a default.** A draft is instantiated with
-  none, so `def __init__(self, target)` cannot be run as one - `list_actions`
-  will say so instead of offering it. Defaults keep it testable and lose you
-  nothing; the operator can still pass values when they register it.
-- **Drafts are only listed while action authoring is on**, and the class must
-  subclass `ThreadedAction` to be found at all.
+- **Give every constructor argument a default.** `start_action` instantiates
+  with none, so `def __init__(self, target)` cannot be run at all -
+  `list_actions` says so instead of offering it. Defaults keep it testable and
+  lose you nothing; the operator can still pass other values on the line that
+  binds the key.
+- **The class must subclass `ThreadedAction`** to be found, and it is listed
+  only while action authoring is on.
 
 ## Running it
 
 Do not hand over an action you have not run. The point of the tools is that
 you read your own failure rather than the operator relaying it, and an action
-that has never executed is a draft.
+that has never executed is a guess.
 
 1. **`write_extension("open_issues", source)`** saves
    `~/.keyhac/extensions/open_issues.py`, replacing what is there and keeping a
@@ -195,15 +196,14 @@ that has never executed is a draft.
    authoring** switched on — off by default, and it lapses 60 minutes after
    they switch it on. If it refuses, tell them what it said and ask; never
    route around it.
-2. **`list_actions`** — your class should be there as a draft, named
+2. **`list_actions`** — your class should be there, named
    `open_issues.OpenIssues`. If it is not: the file does not parse, the class
    does not subclass `ThreadedAction`, or the switch is off. The message says
    which.
 3. **`start_action("open_issues.OpenIssues")`** — **returns immediately, and
    the action is not finished.** These drive real applications and can take
-   minutes. A draft is re-imported when its file has changed, so **no
-   `reload_config` between rounds** — that is only for actions `config.py`
-   imports.
+   minutes. The file is re-imported whenever it has changed, so **no
+   `reload_config` between rounds** — that is only for `config.py` itself.
 4. **`get_action_result("open_issues.OpenIssues")`** — waits for it and hands
    back everything it logged or printed, with the traceback if it raised. This
    is the step that tells you what happened; skipping it means you did not

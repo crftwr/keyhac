@@ -218,7 +218,7 @@ class ThreadedAction:
             ThreadedAction._running.add(self)
 
         # `name` when the caller has one - the MCP tool, which was handed the
-        # draft's `module.Class` to look this up by. A key press has no name to
+        # class's `module.Class` to look this up by. A key press has no name to
         # give, so the record is filed under the repr; it is still reachable by
         # Esc and still reports itself to the console, which is what a key-press
         # run needs.

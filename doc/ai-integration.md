@@ -87,14 +87,18 @@ rather than yours. While it is on:
 
 - **it can save action modules** into `~/.keyhac/extensions/` itself, instead of
   handing you source to copy on every round;
-- **it can run a class it finds there**, addressed as `module.Class`, without
-  that action being registered in your `config.py`. These are **drafts** — see
-  [The loop](#the-loop).
+- **it can run any action class it finds there**, addressed as `module.Class`,
+  with no entry in your `config.py` at all.
 
-Listing drafts does **not** run them. Keyhac finds them by parsing the files,
-never by importing them, so a directory of half-finished experiments stays inert
-until something names one. That is the same property `extensions/` has always
-had: a module your `config.py` does not import does not execute.
+There is nothing more to it than that: an action is a `ThreadedAction` subclass
+in a file under `extensions/`, and the agent can list and start every one of
+them while this is on. No registration, no separate category, nothing to keep
+in step.
+
+**Listing does not run anything.** Keyhac finds those classes by parsing the
+files, never by importing them, so a directory of half-finished experiments
+stays inert until something names one. That is the property `extensions/` has
+always had: a module your `config.py` does not import does not execute.
 
 It is a separate switch because the two have different natural lifetimes. The
 endpoint is worth leaving on; **authoring is worth minutes**, while you are
@@ -107,10 +111,11 @@ That is deliberate: a sliding window would let whatever is driving the endpoint
 keep its own permission alive by working periodically, which is the one thing
 this is here to prevent.
 
-**Registering an action is still yours.** A draft is runnable from a chat window
-and bound to no key; it becomes a real action — with a name you chose, on a key
-you chose, working when the switch is off — only when you put it in `config.py`.
-That edit moved to the end of the loop rather than away.
+**The key binding is still yours.** While this switch is on, an action class is
+runnable from a chat window and bound to nothing; it gets a key of your
+choosing — and goes on working when the switch is off, and when nothing is
+connected at all — only when you put it in `config.py`. That edit moved to the
+end of the loop rather than away.
 
 ## Setting it up
 
@@ -313,10 +318,10 @@ screen coordinates.
 | `find_elements` | targeted search by role / name / identifier / text |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
-| `list_actions` | what is registered, what is running, how each last ended — plus [drafts](#allow-action-authoring) while authoring is on |
+| `list_actions` | the action classes in `extensions/`, what is running, how each last ended — [while authoring is on](#allow-action-authoring) |
 | `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
 | `write_extension` | save a module into `extensions/` — only while [authoring](#allow-action-authoring) is on |
-| `reload_config` | pick up an edited action without restarting |
+| `reload_config` | re-read your `config.py` after you edit it, and report any error |
 
 With the authoring switch **off**, `start_action` reaches **nothing**: the
 action surface is exactly the classes in `extensions/`, and those are visible
@@ -336,18 +341,16 @@ decides which the agent may run, because that is now the switch's job.
    `find_element`, tell us, because that means the skill is failing.
 3. The agent reads the screen, writes the action, and saves it into
    `extensions/` — with [Allow action authoring](#allow-action-authoring)
-   ticked. It runs it as a draft, reads its own failure, fixes it, and runs it
-   again. **You are not in this part**, however many rounds it takes.
+   ticked. It runs it, reads its own failure, fixes it, and runs it again.
+   **You are not in this part**, however many rounds it takes.
 4. **When it works, you install it**: paste the `configure()` block it hands you
-   into `config.py` — two lines, an `import` and a key binding. That is what
-   makes it yours: it works whether or not anything is connected.
+   into `config.py` — two lines, an `import` and a key binding.
 
-Step 4 is the manual one, and it stays manual deliberately. A draft is
-throwaway — runnable from a chat window, gone when the switch lapses. Putting it
-in `config.py` is what makes it *yours*: a name you chose, a key you chose,
-working when the agent is not connected at all. That is a line worth drawing
-yourself, and now you draw it around something you have seen work rather than
-around a guess.
+Step 4 is the manual one, and it stays manual deliberately. Everything before it
+is reachable only from a chat window, and only until the switch lapses. The key
+binding is what makes the action *yours*: a key you chose, working when the
+agent is not connected at all. That is a line worth drawing yourself, and now
+you draw it around something you have seen work rather than around a guess.
 
 **Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
 not Keyhac's own modules — a new version of the tools is only picked up by a
@@ -396,10 +399,10 @@ don't type passwords or show private material while recording.
 - **Nothing types text or presses keys.** Reading trees is one thing; driving
   your keyboard from a chat window is a decision that has not been made.
 - **With authoring off, `start_action` is limited to registered actions**, by
-  name; `cancel_action` can only stop what it started. Draft classes in
+  name; `cancel_action` can only stop what it started. Action classes in
   `extensions/` are neither listed nor runnable.
-- **Listing drafts never imports them.** The catalogue is parsed out of the
-  files, so nothing in `extensions/` executes until something names it.
+- **Listing never imports.** The catalogue is parsed out of the files, so
+  nothing in `extensions/` executes until something names it.
 - Turn it off with the same switch; the token file is deleted then, and when
   Keyhac stops. Stopping the endpoint closes the authoring window too.
 
@@ -416,14 +419,15 @@ instruction, and that is a real mitigation rather than a complete one.
 
 So state it plainly: **while authoring is on, code you have not read can be
 written into `extensions/` and run.** That is what the switch grants — it is the
-feature, not a gap in it. Before drafts existed, registering an action in
-`config.py` was a human step between "the agent wrote code" and "the code ran";
-it is not any more, for the duration of the window.
+feature, not a gap in it. Registering an action in `config.py` used to be a
+human step between "the agent wrote code" and "the code ran"; it is not any
+more, for the duration of the window.
 
 What still holds: the write can only land in `extensions/`, under a module name,
 with the previous version kept and the write logged to the console. Nothing
-executes unless it is named. And **when the window lapses, the drafts stop being
-runnable** — only what you registered survives it.
+executes unless it is named. And **when the window lapses, none of it is
+runnable from a chat window any more** — only the key bindings in your
+`config.py` survive it.
 
 The practical answer is the one the design points at: tick it while you are
 authoring, and let it lapse. The exposure then coincides with you sitting in

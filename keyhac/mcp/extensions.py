@@ -1,27 +1,31 @@
-"""Action classes sitting in `extensions/` that no `config.py` has registered.
+"""The action classes in `extensions/`, as the MCP endpoint sees them.
 
-The authoring loop's first round used to need a `config.py` edit before the
-model could run anything at all: three lines, in the middle of a working
-several-hundred-line file, for an action nobody yet knows works. Drafts move
-that edit to the *end* - you register what has been shown to work, rather than
-editing to find out.
+This is the whole of what `list_actions` and `start_action` reach. There is no
+second kind of action and no registry beside it: an action is a
+`ThreadedAction` subclass in a file under `~/.keyhac/extensions/`, addressed by
+`module.Class`, and a `config.py` decides only which of them get a key.
 
-**Listing does not import.** The catalogue comes from `ast.parse`, so a file in
-`extensions/` is read and never executed to find out what is in it. That
-preserves the property the directory has always had: a module no `config.py`
-imports is inert on disk. Importing a directory's worth of half-finished drafts
-to enumerate them would have created exactly the auto-execution that Keyhac has
-never done - see `Keymap._prepare_extensions`, which puts the directory on
-`sys.path` and evicts stale modules, and imports nothing.
+That is what removed the `config.py` edit from the front of the authoring loop,
+where it used to sit as three lines in the middle of a working
+several-hundred-line file, written for an action nobody yet knew worked.
 
-So a draft executes at exactly one moment: when something names it. That is
-`start_action("module.Class")`, one module, by name, and only while the
+**Listing does not import.** The catalogue comes from `ast.parse`, so a file is
+read and never executed to find out what is in it. That preserves the property
+the directory has always had: a module no `config.py` imports is inert on disk.
+Importing a directory's worth of half-written files to enumerate them would have
+created exactly the auto-execution Keyhac has never done - see
+`Keymap._prepare_extensions`, which puts the directory on `sys.path`, evicts
+stale modules, and imports nothing.
+
+So a class here executes at exactly one moment: when something names it. That is
+`start_action("module.Class")` - one module, by name, and only while the
 operator has action authoring switched on.
 
-**A draft is always the current file.** The loader keys its instances on the
+**What runs is always the current file.** `Loader` keys its instances on the
 file's mtime and re-imports when it moves, so `write_extension` followed by
-`start_action` runs what was just written - no `reload_config` in between.
-Registered actions still need one, because those come from `config.py`.
+`start_action` runs what was just written, with no `reload_config` between them
+- and it evicts the whole directory first, so a helper module the action
+imports is re-read too rather than answering out of `sys.modules`.
 
 The marker is `ThreadedAction`. An action that drives a UI has to be one (a key
 press must return immediately), the authoring skill mandates it, and every
@@ -37,21 +41,21 @@ from __future__ import annotations
 import ast
 import importlib.util
 import os
+import shutil
 import sys
 
 
-class Draft:
+class ActionClass:
     """One `class X(ThreadedAction)` found in a file, not yet imported."""
 
-    def __init__(self, module: str, cls: str, path: str,
+    def __init__(self, module: str, class_name: str, path: str,
                  required: list[str], summary: str | None):
-        #: How start_action addresses it. The dot keeps it from colliding with
-        #: the operator's own names, which are theirs to choose freely.
-        self.name = f"{module}.{cls}"
+        #: How start_action addresses it: `translate_clipboard.Translate`.
+        self.name = f"{module}.{class_name}"
         self.module = module
-        self.cls = cls
+        self.class_name = class_name
         self.path = path
-        #: Constructor parameters with no default. A draft is instantiated with
+        #: Constructor parameters with no default. These are instantiated with
         #: no arguments, so a class needing any cannot be run from here - and
         #: saying which ones up front beats a TypeError at start time.
         self.required = required
@@ -60,12 +64,12 @@ class Draft:
     def describe(self) -> str:
         if self.required:
             return (f"{self.name}: needs constructor arguments "
-                    f"({', '.join(self.required)}) - register it in config.py "
-                    f"to pass them")
+                    f"({', '.join(self.required)}) - give them defaults to run "
+                    f"it from here")
         return f"{self.name}: {self.summary or 'no docstring'}"
 
 
-def discover(extensions_dir: str) -> list[Draft]:
+def discover(extensions_dir: str) -> list[ActionClass]:
     """Every action class under `extensions_dir`, found without importing.
 
     Files whose names start with `_` are skipped: an extension named that way
@@ -73,11 +77,11 @@ def discover(extensions_dir: str) -> list[Draft]:
     A file that does not parse is skipped rather than reported - it is being
     edited, and half a file is not a finding.
     """
-    drafts: list[Draft] = []
+    found: list[ActionClass] = []
     try:
         entries = sorted(os.listdir(extensions_dir))
     except OSError:
-        return drafts
+        return found
     for entry in entries:
         if not entry.endswith(".py") or entry.startswith("_"):
             continue
@@ -88,8 +92,8 @@ def discover(extensions_dir: str) -> list[Draft]:
         except OSError:
             continue
         for cls, required, summary in _action_classes(source, path):
-            drafts.append(Draft(entry[:-3], cls, path, required, summary))
-    return drafts
+            found.append(ActionClass(entry[:-3], cls, path, required, summary))
+    return found
 
 
 def _action_classes(source: str, path: str):
@@ -144,11 +148,11 @@ def _first_line(docstring: str | None) -> str | None:
     return docstring.strip().splitlines()[0]
 
 
-class DraftLoader:
-    """Imports a draft's module when something asks to run it, not before.
+class Loader:
+    """Imports a module when something asks to run a class in it, not before.
 
     Instances are cached per name and invalidated by the file's mtime, so an
-    edited draft is re-imported on its next run. Without that the second run of
+    edited file is re-imported on its next run. Without that the second run of
     a fix loop would execute the first version - the same silent staleness
     `_prepare_extensions` exists to prevent for `config.py`'s own imports.
 
@@ -170,30 +174,55 @@ class DraftLoader:
         entry = self._instances.get(name)
         return None if entry is None else entry[1]
 
-    def instantiate(self, draft: Draft):
-        stamp = _mtime(draft.path)
-        entry = self._instances.get(draft.name)
+    def instantiate(self, action: ActionClass):
+        stamp = _mtime(action.path)
+        entry = self._instances.get(action.name)
         if entry is not None and entry[0] == stamp:
             return entry[1]
-        module = _import_file(draft.module, draft.path)
-        action_class = getattr(module, draft.cls, None)
-        if action_class is None:
-            raise KeyError(f"{draft.path} no longer defines {draft.cls}")
-        instance = action_class()
+        directory = os.path.dirname(action.path)
+        # Evict the whole directory, not just this file. Re-importing the
+        # action's own module by path leaves any *helper* it imports resolving
+        # out of sys.modules - so an action split across two files would run
+        # its edited half against the previous version of the other, and report
+        # success. Measured. This is `_prepare_extensions`' own eviction, reused
+        # rather than reimplemented, since getting it subtly different is the
+        # whole hazard.
+        from keyhac.core.keymap import Keymap
+        Keymap._prepare_extensions(directory)
+        _drop_bytecode(directory)
+        module = _import_file(action.module, action.path)
+        loaded = getattr(module, action.class_name, None)
+        if loaded is None:
+            raise KeyError(f"{action.path} no longer defines "
+                           f"{action.class_name}")
+        instance = loaded()
         # The scan matched a base *named* ThreadedAction; this is where that
         # becomes a fact. Shadowing the name is far-fetched, but the caller
         # relies on the real base's cancellable() and would otherwise fail with
         # an AttributeError on a thread nobody is watching.
         from keyhac.core.action import ThreadedAction
         if not isinstance(instance, ThreadedAction):
-            raise KeyError(f"{draft.name} does not subclass keyhac's "
+            raise KeyError(f"{action.name} does not subclass keyhac's "
                            f"ThreadedAction, so it cannot be run from here")
-        self._instances[draft.name] = (stamp, instance)
+        self._instances[action.name] = (stamp, instance)
         return instance
 
-    def forget(self) -> None:
-        """Drop every cached instance - a config reload rebuilt the world."""
-        self._instances.clear()
+
+def _drop_bytecode(directory: str) -> None:
+    """Remove `__pycache__` under `directory`, so a re-import reads the source.
+
+    Evicting `sys.modules` is not enough on its own. A cached `.pyc` is
+    validated against the source's mtime **in whole seconds** and its size, so
+    two edits inside one second that happen to leave the file the same length -
+    a model fixing one character, twice - reload the *previous* bytecode and
+    report success. Measured; it is the same silent staleness the eviction
+    exists to prevent, one layer further down.
+
+    Only on this path, not in `_prepare_extensions`: a config reload happens by
+    hand and rarely, while this one runs in a loop that edits every few seconds.
+    Bytecode is regenerable by definition, and these files are small.
+    """
+    shutil.rmtree(os.path.join(directory, "__pycache__"), ignore_errors=True)
 
 
 def _mtime(path: str) -> float:

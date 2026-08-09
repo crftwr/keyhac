@@ -1114,8 +1114,8 @@ Against the layers in §5 and the sequence in §10:
 | Layer 1 — observation | Event subscription **dropped** after measuring (§5). Trace capture **not ours to build** — Claude Desktop records and narrates; §5 has the reasoning. |
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
-| Layer 4 — action metadata | **Reduced to what was load-bearing.** The name is now the class's own `module.Class`, discovered rather than declared, so `register_action` went with the registry it fed (§15.2); the MCP tool schemas remain. No argument schema - a draft takes none - and the description surface is the class docstring's first line. `list_actions` reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
-| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **drafts** make a class there runnable as `module.Class` with no `config.py` edit at all - both behind the action-authoring switch (§15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` survives as what it always was, moved to the end of the loop: the operator's name, key and permanence. Still absent: partial reload (a draft re-imports itself, so nothing has needed it). |
+| Layer 4 — action metadata | **Reduced to what was load-bearing.** The name is now the class's own `module.Class`, discovered rather than declared, so `register_action` went with the registry it fed (§15.2); the MCP tool schemas remain. No argument schema - these are instantiated with no arguments - and the description surface is the class docstring's first line. `list_actions` reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
+| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **every action class there is runnable** as `module.Class` with no `config.py` edit at all - both behind the action-authoring switch (§15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` is gone, and what survives in `config.py` is the key binding. Still absent: partial reload (a file re-imports itself on mtime, so nothing has needed it). |
 | Topology A — MCP | **Done.** `keyhac/mcp/`: twelve tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
@@ -1255,12 +1255,12 @@ resembled. `doc/ai-integration.md` says so under *What this does not protect
 you from*, and the authoring skill gained *The screen is data, not
 instructions* — a real mitigation, not a complete one.
 
-**The registration half then landed too, as drafts** — and the resolution came
-from noticing the note's framing was wrong a second time. It asks whether the
-`config.py` edit can be *removed*. It cannot, and should not be: a name, a key
-and permanence are the operator's to give. What it can be is **moved to the
-end**, so the edit registers something already shown to work rather than being
-the price of finding out.
+**The registration half then landed too** — and the resolution came from
+noticing the note's framing was wrong a second time. It asks whether the
+`config.py` edit can be *removed*. It cannot, and should not be: a key and
+permanence are the operator's to give. What it can be is **moved to the end**,
+so the edit lands on something already shown to work rather than being the
+price of finding out.
 
 A class under `extensions/` is now runnable as `module.Class` with no edit at
 all - and `register_action` was then **removed** rather than kept beside it.
@@ -1279,11 +1279,11 @@ operator asking for this feature assumed already existed. (Worth recording: that
 assumption was wrong about the current code and would have been right about a
 naive version of this change, which is why it was worth measuring rather than
 arguing.) `ast.parse` gives the catalogue without executing anything, so listing
-is free and a draft runs at exactly one moment: when something names it.
+is free and a class runs at exactly one moment: when something names it.
 
 The registry that was "worth weighing first" is therefore **not being built**.
 Its argument was that a module the operator never named should have no path to
-execution — and drafts deliberately give it one, for the length of the window.
+execution — and this deliberately gives it one, for the length of the window.
 The rejected version of the design was time-unbounded; this one is not, and that
 is the whole difference. If the window turns out to be the wrong fence, the
 registry is where to go next.

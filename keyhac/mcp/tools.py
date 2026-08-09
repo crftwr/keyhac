@@ -18,16 +18,16 @@ otherwise the transport for every iteration of every fix - and because the
 manual step it replaces was never the review it resembled; nobody reads what
 they paste.
 
-Drafts (`keyhac/mcp/drafts.py`) are the other half of that: a class in
-`extensions/` is runnable by `module.Class` without any `config.py` edit. It is
-the same switch, because the two are one activity, and because "the agent may
-put code here" and "the agent may run the code it put here" are not usefully
-separated once both are true.
+`keyhac/mcp/extensions.py` is the other half of that: an action class in
+`extensions/` is runnable by `module.Class` without any `config.py` edit. It
+sits behind the same switch, because the two are one activity, and because "the
+agent may put code here" and "the agent may run the code it put here" are not
+usefully separated once both are true.
 
-**Drafts are the whole of the action surface.** There is no registry of named
-actions to consult first - `register_action` existed to add a `config.py` line
-that nothing needs any more, and keeping it would have left two ways in, one of
-them permanent. So the honest statement of what the switch grants is also
+**Those classes are the whole of the action surface.** There is no registry of
+named actions to consult first - `register_action` existed to add a `config.py`
+line that nothing needs any more, and keeping it would have left two ways in,
+one of them permanent. So the honest statement of what the switch grants is also
 unusually short: while the window is open, code the operator has not read can be
 written and run; while it is shut, **nothing here can start anything at all**.
 Listing never imports, and nothing types text or presses a key.
@@ -49,7 +49,7 @@ import threading
 import time
 
 from keyhac.core import capture, log
-from keyhac.mcp import drafts
+from keyhac.mcp import extensions
 
 logger = log.getLogger("MCP")
 
@@ -93,7 +93,7 @@ class ToolRegistry:
 
     def __init__(self, keymap):
         self.keymap = keymap
-        self._drafts = drafts.DraftLoader()
+        self._loader = extensions.Loader()
         self.tools = {t.name: t for t in self._build()}
 
     def describe(self) -> list[dict]:
@@ -254,9 +254,13 @@ class ToolRegistry:
                   "required": ["name", "source"]},
                  self.write_extension),
             Tool("reload_config",
-                 "Reload ~/.keyhac/config.py, so an edited or newly added "
-                 "action is picked up without restarting Keyhac. Reports the "
-                 "error instead of applying it if the config fails to load.",
+                 "Reload ~/.keyhac/config.py and report what it said - use it "
+                 "**after the operator edits that file**, to check their paste "
+                 "still loads and to hand back the error if it does not. "
+                 "**Not part of the authoring loop**: an action class in "
+                 "extensions/ is re-read whenever its file changes, so calling "
+                 "this between rounds only rebuilds the operator's live key "
+                 "bindings for nothing.",
                  {"type": "object", "properties": {}},
                  self.reload_config),
         ]
@@ -397,8 +401,8 @@ class ToolRegistry:
             return self._shut("there is nothing to list")
 
         # Read out of the files, never imported, so this costs nothing and
-        # executes nothing - see keyhac/mcp/drafts.py.
-        found = drafts.discover(self.keymap.extensions_dir)
+        # executes nothing - see keyhac/mcp/extensions.py.
+        found = extensions.discover(self.keymap.extensions_dir)
         if not found:
             return (f"no action classes in {self.keymap.extensions_dir}. "
                     f"write_extension puts one there; it needs to subclass "
@@ -406,9 +410,9 @@ class ToolRegistry:
         running = capture.running_names()
         lines = ["action classes in extensions/, runnable by the name below "
                  "while action authoring is on:"]
-        for draft in found:
-            lines.append(f"{draft.describe()} - "
-                         f"{self._state(draft.name, running)}")
+        for action in found:
+            lines.append(f"{action.describe()} - "
+                         f"{self._state(action.name, running)}")
         return "\n".join(lines)
 
     def _shut(self, consequence: str) -> str:
@@ -434,7 +438,7 @@ class ToolRegistry:
         window was open must stay readable after it closes, or the model loses
         the traceback for the thing it just ran.
         """
-        action = self._drafts.cached(name)
+        action = self._loader.cached(name)
         if action is None:
             raise KeyError(f"{name!r} has not been started; call list_actions")
         return action
@@ -444,21 +448,21 @@ class ToolRegistry:
         if not self.keymap.action_authoring_allowed:
             raise KeyError(self._shut(f"{name!r} cannot be started"))
 
-        found = {draft.name: draft
-                 for draft in drafts.discover(self.keymap.extensions_dir)}
-        draft = found.get(name)
-        if draft is None:
+        found = {action.name: action
+                 for action in extensions.discover(self.keymap.extensions_dir)}
+        action = found.get(name)
+        if action is None:
             raise KeyError(f"no action class named {name!r}; call list_actions")
-        if draft.required:
+        if action.required:
             raise KeyError(
                 f"{name} takes constructor arguments with no default "
-                f"({', '.join(draft.required)}), so it cannot be started from "
+                f"({', '.join(action.required)}), so it cannot be started from "
                 f"here. Give them defaults - the operator can still pass other "
                 f"values where they bind it to a key.")
         # Re-imports when the file has moved, so write_extension followed by
         # start_action runs what was just written, with no reload_config
         # between them.
-        return self._drafts.instantiate(draft)
+        return self._loader.instantiate(action)
 
     def start_action(self, name: str) -> str:
         """Start it and get out of the way.
@@ -583,17 +587,18 @@ class ToolRegistry:
         # they did not ask for scroll past has been told.
         summary = _change_summary(previous, source)
         logger.info(f"Wrote {path} ({summary}).")
-        return (f"wrote {path} ({summary}). It is not loaded yet - "
-                f"reload_config, then start_action.")
+        return (f"wrote {path} ({summary}). start_action picks it up as "
+                f"soon as it is named - no reload needed.")
 
     def reload_config(self) -> str:
+        # Cached instances are deliberately *not* dropped here. Staleness is
+        # already handled a better way - the loader re-imports whenever the
+        # file's mtime moves, which covers a hand edit as well as a
+        # write_extension - and dropping them would take a *running* action out
+        # of cancel_action's reach, since that reaches it by looking the name up
+        # again. A reload should not cost the operator the stop button.
         def reload():
             self.keymap.configure()
-            # configure() evicts every extensions/ module from sys.modules, so
-            # a cached draft instance now belongs to a class no import would
-            # produce again. Drop them rather than leave the next start_action
-            # running the pre-reload code.
-            self._drafts.forget()
             return "reloaded"
 
         with _captured_log() as captured:

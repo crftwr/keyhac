@@ -74,12 +74,13 @@ The write side stays open and is recorded as measurement, not proposal: with
 the remaining manual step in every fix loop.
 
 **What happened:** the write side was reopened and `write_extension` landed,
-behind its own switch, followed by **drafts** — a class in `extensions/` is
-runnable as `module.Class` with no `config.py` edit at all.
+behind its own switch, followed by **class discovery** — every action class in
+`extensions/` is runnable as `module.Class` with no `config.py` edit at all,
+and `register_action` was removed once nothing needed it.
 [ai-integration.md §15.2](ai-integration.md) carries both, and the hole they do
 not close. **No step of the fix loop is manual now**; the `config.py` edit
-survives only as installation — a key, and a name that outlives the authoring
-window — and happens once, after the action is known to work.
+survives only as installation — a key binding — and happens once, after the
+action is known to work.
 
 That takes most of the read half's motivation with it: the agent now writes the
 file and gets back the path and a `+N/-M` summary, so "is the fix on disk?" is
