@@ -36,14 +36,21 @@ _MODIFIER_BITS = (
 )
 
 
-#: How long *Allow action authoring* stays on, in seconds.
+#: How long the MCP endpoint stays open once switched on, in seconds.
+#:
+#: One switch with a deadline rather than a switch you remember to turn off.
+#: The feature is an authoring-time one - a model helps you *write* an action,
+#: and the action then runs with no model involved - so an endpoint still
+#: listening the next day is serving nothing, while still being able to read
+#: every window you open.  That is the larger of the two exposures here, and it
+#: is the one a forgotten switch leaves armed.
 #:
 #: Fixed from the moment it is switched on, never extended by use.  A sliding
-#: window would be kinder to a long authoring session and would also hand the
-#: window's length to whoever is driving the endpoint: a model writing every few
-#: minutes - because it was told to by something it read on screen - would keep
-#: its own permission alive indefinitely, which is the one property this is here
-#: to deny.  An hour is longer than the authoring sessions measured so far
+#: window would be kinder to a long session and would also hand the window's
+#: length to whoever is driving the endpoint: a model working every few minutes
+#: - because it was told to by something it read on screen - would keep its own
+#: permission alive indefinitely, which is the one property this is here to
+#: deny.  An hour is longer than the authoring sessions measured so far
 #: (doc/dev/improvements.md), so re-arming should be rare enough not to become
 #: reflexive.
 _AUTHORING_WINDOW = 60 * 60
@@ -124,8 +131,7 @@ class Keymap:
         self.window_provider = None         # platform WindowProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
         self._mcp_server = None             # MCPServer while enabled
-        self._authoring_deadline = None     # monotonic, while authoring allowed
-        self._authoring_lapsed = False      # a window ran out, vs never armed
+        self._mcp_timer = None              # closes the window on its own
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self._main_thread_dispatcher = None  # callable(callback) - see below
@@ -846,20 +852,32 @@ class Keymap:
         return self._mcp_server is not None
 
     def start_mcp_server(self, port: int = 0) -> None:
-        """Start the action-authoring endpoint on localhost.
+        """Start the AI-integration endpoint on localhost, for a while.
 
         The switch is the console's **AI Integration** checkbox, or the tray
         menu's *AI Integration > MCP Server*; this is the mechanism behind it.
         There is deliberately no configuration API: an endpoint that reads every
-        window
-        and can run registered actions should be visibly on or visibly off,
-        and a line in the middle of a config file tells you what was asked for
-        once, never what is true now.
+        window you have open, and that can write and run action code, should be
+        visibly on or visibly off, and a line in the middle of a config file
+        tells you what was asked for once, never what is true now.
+
+        **It stops itself after :data:`_AUTHORING_WINDOW`**, and is not
+        remembered across restarts. Both follow from what the feature is for:
+        an agent is used *while writing* an action, and the action it produces
+        then runs with no model involved (doc/dev/ai-integration.md §1). So an
+        endpoint still listening a day later is not serving anything - it is
+        only still reading every window you open, which is the larger of the
+        two exposures here and the one least worth leaving armed.
+
+        Fixed from the moment it is switched on rather than extended by use, so
+        that whatever is driving the endpoint cannot hold its own permission
+        open by working periodically.
 
         Off until something asks. The endpoint binds to 127.0.0.1 only and
         every request carries a token published - readable by this user alone -
-        beside the configuration. `keyhac-mcp-bridge` reads that file; nothing
-        else needs to know the port.
+        beside the configuration. `keyhac-mcp-bridge` reads that file on every
+        request, so a window that closes and is reopened on a new port needs no
+        configuration change.
 
         Args:
             port: TCP port, or 0 to let the OS choose (the default - clients
@@ -878,18 +896,37 @@ class Keymap:
         self._mcp_server = MCPServer(ToolRegistry(self), endpoint, port=port)
         self._mcp_server.start()
 
+        # A timer rather than a deadline checked at each request: what expiry
+        # has to do here is *stop listening*, and nothing arrives to trigger a
+        # lazy check once the conversation has moved on - which is exactly the
+        # state this exists to end. One timer, cancelled by stop_mcp_server.
+        self._mcp_timer = threading.Timer(_AUTHORING_WINDOW, self._mcp_expired)
+        self._mcp_timer.daemon = True
+        self._mcp_timer.start()
+
+    def _mcp_expired(self) -> None:
+        """The window ran out. Say so, then close it.
+
+        Named rather than a lambda so the console line reads as a timeout and
+        not as something the operator did - a switch that turns itself off with
+        no explanation is the cost this design accepts, and one log line is what
+        pays it back.
+        """
+        logger.info(f"MCP server stopped ({_AUTHORING_WINDOW // 60} minute "
+                    f"timeout). Tick AI Integration again to reopen it.")
+        self.stop_mcp_server()
+
     def stop_mcp_server(self) -> None:
         """Stop the endpoint and remove its published token.
 
         lazydocs: ignore
         """
+        timer, self._mcp_timer = self._mcp_timer, None
+        if timer is not None:
+            timer.cancel()
         server, self._mcp_server = self._mcp_server, None
         if server is not None:
             server.stop()
-        # The endpoint is the only thing that can write, so an armed window
-        # outliving it is state with no consumer - and one that would still be
-        # counting down if the switch went back on a minute later.
-        self.set_action_authoring_allowed(False)
 
     @property
     def extensions_dir(self) -> str:
@@ -900,58 +937,6 @@ class Keymap:
         """
         return os.path.join(
             os.path.dirname(self._config_path or ""), "extensions")
-
-    @property
-    def action_authoring_allowed(self) -> bool:
-        """Whether the endpoint may write into ``extensions/`` right now.
-
-        Off unless the operator switched it on, off again when the window in
-        :data:`_AUTHORING_WINDOW` runs out, and off after a restart -
-        deliberately not persisted, because forgetting to switch it back off is
-        the failure this is shaped around.
-
-        The deadline *is* the state: expiry is decided here rather than by a
-        timer thread, so a headless run with nothing polling still refuses a
-        late write, and there is no timer to cancel at shutdown.
-
-        lazydocs: ignore
-        """
-        if self._authoring_deadline is None:
-            return False
-        if time.monotonic() < self._authoring_deadline:
-            return True
-        self._authoring_deadline = None
-        self._authoring_lapsed = True
-        logger.info(f"Action authoring disabled "
-                    f"({_AUTHORING_WINDOW // 60} minute timeout).")
-        return False
-
-    @property
-    def action_authoring_lapsed(self) -> bool:
-        """Whether a write window ran out, as opposed to never being opened.
-
-        One refusal at the endpoint, two different things for the operator to
-        do about it - so the tool that refuses says which one happened.  A
-        timeout that reads as "this feature does not work" is the cost this
-        exists to avoid.
-
-        lazydocs: ignore
-        """
-        return self._authoring_lapsed
-
-    def set_action_authoring_allowed(self, allowed: bool) -> None:
-        """The *AI Integration > Allow action authoring* switch.
-
-        Like the endpoint's own switch there is no configuration API for this,
-        and for the same reason: a capability this size should be visibly on or
-        visibly off, and a line in a config file records what was asked for once
-        rather than what is true now.
-
-        lazydocs: ignore
-        """
-        self._authoring_deadline = (
-            time.monotonic() + _AUTHORING_WINDOW if allowed else None)
-        self._authoring_lapsed = False
 
     @property
     def ui(self):

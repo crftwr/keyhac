@@ -181,8 +181,7 @@ Two consequences worth writing for:
   `list_actions` says so instead of offering it. Defaults keep it testable and
   lose you nothing; the operator can still pass other values on the line that
   binds the key.
-- **The class must subclass `ThreadedAction`** to be found, and it is listed
-  only while action authoring is on.
+- **The class must subclass `ThreadedAction`** to be found at all.
 
 ## Running it
 
@@ -192,14 +191,10 @@ that has never executed is a guess.
 
 1. **`write_extension("open_issues", source)`** saves
    `~/.keyhac/extensions/open_issues.py`, replacing what is there and keeping a
-   backup. It works only while the operator has **AI Integration → Allow action
-   authoring** switched on — off by default, and it lapses 60 minutes after
-   they switch it on. If it refuses, tell them what it said and ask; never
-   route around it.
+   backup.
 2. **`list_actions`** — your class should be there, named
-   `open_issues.OpenIssues`. If it is not: the file does not parse, the class
-   does not subclass `ThreadedAction`, or the switch is off. The message says
-   which.
+   `open_issues.OpenIssues`. If it is not, the file does not parse or the class
+   does not subclass `ThreadedAction`.
 3. **`start_action("open_issues.OpenIssues")`** — **returns immediately, and
    the action is not finished.** These drive real applications and can take
    minutes. The file is re-imported whenever it has changed, so **no
@@ -211,6 +206,12 @@ that has never executed is a guess.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
 6. **When it works**, hand them the `configure()` block so they can name it and
    bind a key. Say plainly that this last step is theirs.
+
+**The endpoint closes itself an hour after the operator opens it**, and every
+tool then stops answering at once — which reads like a dropped connection and is
+not one. If that happens mid-task, say so plainly and ask them to tick
+**AI Integration → MCP Server** again; you cannot do it yourself. Pick up where
+you left off: whatever you had written is still in `extensions/`.
 
 `cancel_action("name")` stops a run doing the wrong thing — the same as the
 operator pressing Esc. Prefer it to waiting one out: an action that is filling

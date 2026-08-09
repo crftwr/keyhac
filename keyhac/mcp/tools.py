@@ -12,25 +12,27 @@ paste it back. With it the generate-verify loop closes, and loop iteration rate
 is what the whole authoring approach lives or dies on.
 
 `write_extension` is the only tool that writes, and it is fenced rather than
-free: inside `extensions/` only, over a module-shaped name only, and only during
-the hour the operator's second switch lasts. It exists because the operator was
-otherwise the transport for every iteration of every fix - and because the
-manual step it replaces was never the review it resembled; nobody reads what
-they paste.
+free: inside `extensions/` only, and over a module-shaped name only. It exists
+because the operator was otherwise the transport for every iteration of every
+fix - and because the manual step it replaces was never the review it
+resembled; nobody reads what they paste.
 
 `keyhac/mcp/extensions.py` is the other half of that: an action class in
-`extensions/` is runnable by `module.Class` without any `config.py` edit. It
-sits behind the same switch, because the two are one activity, and because "the
-agent may put code here" and "the agent may run the code it put here" are not
-usefully separated once both are true.
+`extensions/` is runnable by `module.Class` without any `config.py` edit, and
+those classes are the whole of the action surface. There is no registry of named
+actions to consult first - `register_action` existed to add a `config.py` line
+that nothing needs any more.
 
-**Those classes are the whole of the action surface.** There is no registry of
-named actions to consult first - `register_action` existed to add a `config.py`
-line that nothing needs any more, and keeping it would have left two ways in,
-one of them permanent. So the honest statement of what the switch grants is also
-unusually short: while the window is open, code the operator has not read can be
-written and run; while it is shut, **nothing here can start anything at all**.
-Listing never imports, and nothing types text or presses a key.
+**Nothing here checks a permission**, and that is deliberate rather than
+missing. The endpoint being reachable *is* the permission: it listens only
+while the operator's switch is on, and that switch closes itself an hour after
+they tick it (`Keymap.start_mcp_server`). Splitting it into a second, finer
+switch was tried and undone - it left reading every open window as the
+long-lived half and writing as the short-lived one, which is backwards, since
+`describe_screen` is by far the larger exposure. So the statement of what a
+running endpoint grants is short and whole: while it is open, code the operator
+has not read can be written and run, and every window they have open can be
+read. Nothing types text or presses a key.
 
 THREADS. Element access is main-thread-only and these run on the MCP server's
 threads, so every tool that touches the UI goes through `ui.on_main_thread` -
@@ -196,7 +198,7 @@ class ToolRegistry:
                  "of each ended. They need no config.py entry to be listed or "
                  "run; the operator's edit comes later, to put a working one "
                  "on a key. Found by reading the files, so listing never "
-                 "executes them. Needs action authoring switched on.",
+                 "executes them.",
                  {"type": "object", "properties": {}},
                  self.list_actions),
             Tool("start_action",
@@ -241,10 +243,7 @@ class ToolRegistry:
                  "file, replacing whatever is there and keeping a backup. This "
                  "is how you close the loop yourself: write, start_action, "
                  "get_action_result, write again - no config.py edit and no "
-                 "reload in between. It needs the operator to have switched "
-                 "**AI Integration > Allow action authoring** on - off by "
-                 "default, lapsing an hour later, and not something you can "
-                 "turn on; if this refuses, tell them what it said and ask.",
+                 "reload in between.",
                  {"type": "object", "properties": {
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."},
@@ -397,9 +396,7 @@ class ToolRegistry:
         return "not run yet"
 
     def list_actions(self) -> str:
-        if not self.keymap.action_authoring_allowed:
-            return self._shut("there is nothing to list")
-
+        """What is in `extensions/`."""
         # Read out of the files, never imported, so this costs nothing and
         # executes nothing - see keyhac/mcp/extensions.py.
         found = extensions.discover(self.keymap.extensions_dir)
@@ -408,28 +405,11 @@ class ToolRegistry:
                     f"write_extension puts one there; it needs to subclass "
                     f"ThreadedAction to be found.")
         running = capture.running_names()
-        lines = ["action classes in extensions/, runnable by the name below "
-                 "while action authoring is on:"]
+        lines = ["action classes in extensions/:"]
         for action in found:
             lines.append(f"{action.describe()} - "
                          f"{self._state(action.name, running)}")
         return "\n".join(lines)
-
-    def _shut(self, consequence: str) -> str:
-        """What to say when the authoring window is not open.
-
-        Two different things for the operator to do, so they read differently -
-        a timeout that looks like a broken feature is the cost the window is
-        otherwise paying for itself.
-        """
-        if self.keymap.action_authoring_lapsed:
-            return (f"the action-authoring window has run out, so "
-                    f"{consequence}. Ask the operator to tick AI Integration > "
-                    f"Allow action authoring again.")
-        return (f"action authoring is switched off, so {consequence}. Ask the "
-                f"operator to tick AI Integration > Allow action authoring - "
-                f"in the tray menu or the console window. It is off by default "
-                f"and only they can turn it on.")
 
     def _action(self, name: str):
         """Resolve a name for *reading* - results, cancellation.
@@ -444,10 +424,12 @@ class ToolRegistry:
         return action
 
     def _startable(self, name: str):
-        """Resolve a name for *running*, which is where the gate belongs."""
-        if not self.keymap.action_authoring_allowed:
-            raise KeyError(self._shut(f"{name!r} cannot be started"))
+        """Resolve a name for *running*.
 
+        No permission check: the endpoint being reachable at all is the
+        permission. It listens only while the operator's switch is on, and the
+        switch closes itself - see `Keymap.start_mcp_server`.
+        """
         found = {action.name: action
                  for action in extensions.discover(self.keymap.extensions_dir)}
         action = found.get(name)
@@ -536,21 +518,7 @@ class ToolRegistry:
         imported, and the operator would meet it as a config that stopped
         loading. Refusing costs the model one retry and costs them nothing.
         """
-        from keyhac.core.keymap import _AUTHORING_WINDOW
-
         keymap = self.keymap
-        if not keymap.action_authoring_allowed:
-            if keymap.action_authoring_lapsed:
-                return (f"nothing written: the action-authoring window has run "
-                        f"out - it lasts {_AUTHORING_WINDOW // 60} "
-                        f"minutes from when it is switched on. Ask the "
-                        f"operator to tick AI Integration > Allow extension "
-                        f"writes again, then call this again.")
-            return ("nothing written: action authoring is switched off. Ask "
-                    "the operator to tick AI Integration > Allow extension "
-                    "writes, in the tray menu or the console window. It is off "
-                    "by default and only they can turn it on.")
-
         if not isinstance(name, str) or not name.isidentifier() \
                 or keyword.iskeyword(name):
             return (f"nothing written: {name!r} cannot be a module name. Pass "

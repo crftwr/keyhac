@@ -70,52 +70,52 @@ open and can run the actions you register. See [Security](#security).
 
 Tick **MCP server** under **AI Integration** in the console window, or
 **AI Integration → MCP Server** in the tray / menu bar menu. The console logs
-the port it chose, and the choice is remembered across restarts.
+the port it chose.
+
+**It turns itself off after 60 minutes**, and it is not remembered across
+restarts. Tick it again when you need it — that is the intended rhythm, not an
+inconvenience to work around.
+
+The reason is what the feature is: an agent helps you *write* an action, and
+the action then runs with no model involved. An endpoint still listening the
+next morning is serving nothing — while still able to read every window you
+have open, which is the largest thing it can do. A switch you have to remember
+to turn off is one you will not.
+
+The timeout is fixed from when you tick it and is not extended by use, so
+whatever is driving the endpoint cannot hold its own permission open by working
+periodically.
 
 There is deliberately no configuration API for this. An endpoint that reads
-every window and can run your actions should be visibly on or visibly off; a
-line in the middle of a several-hundred-line `config.py` tells you what was
-asked for once, and nothing about what is true now. The same reasoning already
-governs the keyboard hook, which has always been a checkbox rather than a
-setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this. It is gone —
-delete the line from your `config.py` and use the switch.)*
+every window, and that can write and run action code, should be visibly on or
+visibly off; a line in the middle of a several-hundred-line `config.py` tells
+you what was asked for once, and nothing about what is true now. The same
+reasoning already governs the keyboard hook, which has always been a checkbox
+rather than a setting. *(2.2.0 had a `keymap.enable_mcp_server()` call for this.
+It is gone — delete the line from your `config.py` and use the switch.)*
 
-### Allow action authoring
+### What being on lets the agent do
 
-The second switch, beside the first, is what makes the fix loop the agent's
-rather than yours. While it is on:
+Beyond reading your screens:
 
-- **it can save action modules** into `~/.keyhac/extensions/` itself, instead of
-  handing you source to copy on every round;
-- **it can run any action class it finds there**, addressed as `module.Class`,
-  with no entry in your `config.py` at all.
+- **save action modules** into `~/.keyhac/extensions/`, instead of handing you
+  source to copy on every round;
+- **run any action class it finds there**, addressed as `module.Class`, with no
+  entry in your `config.py` at all.
 
 There is nothing more to it than that: an action is a `ThreadedAction` subclass
 in a file under `extensions/`, and the agent can list and start every one of
-them while this is on. No registration, no separate category, nothing to keep
-in step.
+them. No registration, no separate category, nothing to keep in step.
 
 **Listing does not run anything.** Keyhac finds those classes by parsing the
 files, never by importing them, so a directory of half-finished experiments
 stays inert until something names one. That is the property `extensions/` has
 always had: a module your `config.py` does not import does not execute.
 
-It is a separate switch because the two have different natural lifetimes. The
-endpoint is worth leaving on; **authoring is worth minutes**, while you are
-actually writing something. So this one is off by default, is **not** remembered
-across restarts, and **lapses on its own 60 minutes** after you tick it. Re-tick
-it when you need it again.
-
-The timeout is fixed from when you switch it on and is not extended by use.
-That is deliberate: a sliding window would let whatever is driving the endpoint
-keep its own permission alive by working periodically, which is the one thing
-this is here to prevent.
-
-**The key binding is still yours.** While this switch is on, an action class is
-runnable from a chat window and bound to nothing; it gets a key of your
-choosing — and goes on working when the switch is off, and when nothing is
-connected at all — only when you put it in `config.py`. That edit moved to the
-end of the loop rather than away.
+**The key binding is still yours.** While the endpoint is open, an action class
+is runnable from a chat window and bound to nothing; it gets a key of your
+choosing — and goes on working with nothing connected at all — only when you put
+it in `config.py`. That edit moved to the end of the loop rather than away.
 
 ## Setting it up
 
@@ -318,20 +318,18 @@ screen coordinates.
 | `find_elements` | targeted search by role / name / identifier / text |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
-| `list_actions` | the action classes in `extensions/`, what is running, how each last ended — [while authoring is on](#allow-action-authoring) |
+| `list_actions` | the action classes in `extensions/`, what is running, how each last ended |
 | `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
-| `write_extension` | save a module into `extensions/` — only while [authoring](#allow-action-authoring) is on |
+| `write_extension` | save a module into `extensions/` |
 | `reload_config` | re-read your `config.py` after you edit it, and report any error |
 
-With the authoring switch **off**, `start_action` reaches **nothing**: the
-action surface is exactly the classes in `extensions/`, and those are visible
-only while the switch is on. That is the whole line, and it is a simpler one
-than Keyhac had before — there is no list of names to audit, because the switch
-being off *is* the answer.
+None of these has a permission of its own, and that is the design rather than
+an omission: **the endpoint being open is the permission**, and it is open only
+while you have ticked the switch, for an hour. There is no list of names to
+audit and nothing half-enabled — the switch being off *is* the answer.
 
-With it on, every action class under `extensions/` is startable by
-`module.Class`. Your `config.py` decides which of them get a key; it no longer
-decides which the agent may run, because that is now the switch's job.
+Your `config.py` decides which action classes get a key. It no longer decides
+which the agent may run; the switch does, and the switch expires.
 
 ## The loop
 
@@ -340,14 +338,13 @@ decides which the agent may run, because that is now the switch's job.
    output is useful; naming an API is not — if you find yourself typing
    `find_element`, tell us, because that means the skill is failing.
 3. The agent reads the screen, writes the action, and saves it into
-   `extensions/` — with [Allow action authoring](#allow-action-authoring)
-   ticked. It runs it, reads its own failure, fixes it, and runs it again.
-   **You are not in this part**, however many rounds it takes.
+   `extensions/`. It runs it, reads its own failure, fixes it, and runs it
+   again. **You are not in this part**, however many rounds it takes.
 4. **When it works, you install it**: paste the `configure()` block it hands you
    into `config.py` — two lines, an `import` and a key binding.
 
 Step 4 is the manual one, and it stays manual deliberately. Everything before it
-is reachable only from a chat window, and only until the switch lapses. The key
+is reachable only from a chat window, and only until the endpoint closes. The key
 binding is what makes the action *yours*: a key you chose, working when the
 agent is not connected at all. That is a line worth drawing yourself, and now
 you draw it around something you have seen work rather than around a guess.
@@ -389,27 +386,24 @@ don't type passwords or show private material while recording.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
   another process on the machine cannot use the endpoint without it.
-- **Writing is a second switch**, off by default, gone after a restart, and
-  lapsing 60 minutes after you tick it. `write_extension` is the only tool that
-  puts anything on disk, and it can only write a `.py` under
-  `~/.keyhac/extensions/` — the name has to be an importable module name, which
-  is what rules out paths and traversal. It replaces nothing silently: the
-  previous version is kept as a `.bak-<timestamp>` beside it, and every write
-  is logged to the console with a `+N/-M` line count.
+- **It closes itself after 60 minutes**, and is never restored at startup, so
+  the exposure lasts as long as the work rather than as long as you forget.
+- **`write_extension` is the only tool that puts anything on disk**, and it can
+  only write a `.py` under `~/.keyhac/extensions/` — the name has to be an
+  importable module name, which is what rules out paths and traversal. It
+  replaces nothing silently: the previous version is kept as a
+  `.bak-<timestamp>` beside it, and every write is logged to the console with a
+  `+N/-M` line count.
 - **Nothing types text or presses keys.** Reading trees is one thing; driving
   your keyboard from a chat window is a decision that has not been made.
-- **With authoring off, `start_action` is limited to registered actions**, by
-  name; `cancel_action` can only stop what it started. Action classes in
-  `extensions/` are neither listed nor runnable.
 - **Listing never imports.** The catalogue is parsed out of the files, so
   nothing in `extensions/` executes until something names it.
 - Turn it off with the same switch; the token file is deleted then, and when
-  Keyhac stops. Stopping the endpoint closes the authoring window too.
+  Keyhac stops.
 
 ### What this does not protect you from
 
-Worth knowing before you tick the authoring switch, which is the one that
-matters here.
+Worth knowing before you tick it.
 
 `describe_screen` and `read_text` put the contents of your windows — including
 web pages — into the model's context. That text is untrusted: a page can
@@ -417,19 +411,18 @@ contain something written to be read *by an agent* rather than by you. The
 authoring skill tells the agent that screen content is data and never an
 instruction, and that is a real mitigation rather than a complete one.
 
-So state it plainly: **while authoring is on, code you have not read can be
+So state it plainly: **while the endpoint is open, code you have not read can be
 written into `extensions/` and run.** That is what the switch grants — it is the
 feature, not a gap in it. Registering an action in `config.py` used to be a
 human step between "the agent wrote code" and "the code ran"; it is not any
-more, for the duration of the window.
+more, for as long as the endpoint is open.
 
 What still holds: the write can only land in `extensions/`, under a module name,
 with the previous version kept and the write logged to the console. Nothing
-executes unless it is named. And **when the window lapses, none of it is
-runnable from a chat window any more** — only the key bindings in your
-`config.py` survive it.
+executes unless it is named. And **when the hour is up it all stops**, including
+the screen reading — only the key bindings in your `config.py` survive it.
 
-The practical answer is the one the design points at: tick it while you are
-authoring, and let it lapse. The exposure then coincides with you sitting in
-front of the screen, watching a console that reports every write — which is
-worth more than a gate nobody reads.
+The practical answer is therefore built in rather than left to you: the exposure
+coincides with you sitting in front of the screen, watching a console that
+reports every write, and it ends by itself. Which is worth more than a gate
+nobody reads.

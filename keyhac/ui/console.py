@@ -121,31 +121,25 @@ class ConsoleWindow:
 
         self._hook_checkbox = Checkbox(
             "Keyboard hook", checked=hook.installed, on_change=self._on_hook_toggle)
-        # Both AI switches carry a bare name and get their category from the
-        # "AI Integration:" label leading their row.
+        # Beside the hook checkbox on purpose: both switch a capability the
+        # user is entitled to see the state of, and the endpoint being visibly
+        # off is most of the answer to "is this thing watching me".
         #
-        # Which reverses an earlier decision, on the observation that forced
-        # it: with one AI checkbox in a flat row beside "Keyboard hook", a
-        # standalone "AI Integration:" sat *between* two checkboxes and read as
-        # a third peer - a checkbox draws its box left and its label right, so
-        # a lone caption in that run only looks like a heading if you already
-        # know it is one. Folding the category into the label was the fix.
-        # A row of its own removes what made that true: the caption now starts
-        # the row and everything after it is inside the group, which is the
-        # hierarchy the tray menu gets from nesting.
+        # The category is folded into the label rather than standing beside it
+        # as its own text. A checkbox draws its box on the left and its label
+        # on the right, so a separate "AI Integration:" landed between the two
+        # checkboxes and read as a third peer in the row - it appeared to label
+        # the box that followed it only if you already knew that was the
+        # intent. A menu gets hierarchy from nesting; a flat row has to spell
+        # it, and this spells the same path the menu shows.
+        #
+        # It said "(60 min)" for a while, since the switch turns itself off.
+        # Dropped: the console logs both the arming and the timeout with the
+        # duration in them, which says it once at the moment it matters instead
+        # of every time the eye passes the toolbar.
         self._mcp_checkbox = Checkbox(
-            "MCP server", checked=keymap.mcp_server_running,
+            "AI Integration: MCP server", checked=keymap.mcp_server_running,
             on_change=self._on_mcp_toggle)
-        # A second switch rather than a capability the first one carries: the
-        # endpoint is worth leaving on for days, and writing into extensions/
-        # is worth minutes. Folding them together would price the long-lived
-        # half at the short-lived half's risk. The wording is the tray menu's,
-        # the guide's and the skill's, so what the operator is told to look for
-        # is what is written here.
-        self._authoring_checkbox = Checkbox(
-            "Allow action authoring",
-            checked=keymap.action_authoring_allowed,
-            on_change=self._on_authoring_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
             selected=initial_level_index,
@@ -167,37 +161,17 @@ class ConsoleWindow:
         # The flexible spacer absorbs the middle, so the only visible gaps in
         # these rows are label <-> control; keep those tight.
         #
-        # Two rows rather than one. Three checkboxes and a dropdown on a single
-        # line left nothing between the groups but the flexible spacer, which
-        # is the first thing to collapse as the window narrows - and the row
-        # then reads as one run of switches with no telling which belong
-        # together. Giving AI Integration its own row makes the grouping
-        # structural rather than something the spacing has to keep claiming.
-        top_row = HSplit(
+        # The fixed spacer is not decoration: at the shared 0.3 gap "Keyboard
+        # hook" and the next group read as one run of text, and the checkbox
+        # that belongs to which label becomes a guess. It buys the separation
+        # the grouping is claiming.
+        toolbar = HSplit(
             Item(self._hook_checkbox, size="content", align="center"),
+            Item(Label(""), size=3),
+            Item(self._mcp_checkbox, size="content", align="center"),
             Item(Label(""), weight=1),
             Item(Label("Log level:"), size="content", align="center"),
             Item(self._level_dropdown, size="content", align="center"),
-            gap=0.3,
-        )
-        # The fixed spacer between the two switches is not decoration: at the
-        # shared 0.3 gap one checkbox's label runs straight into the next box,
-        # and which label owns which box becomes a guess.
-        ai_row = HSplit(
-            Item(Label("AI Integration:"), size="content", align="center"),
-            # The shared 0.3 gap is a fraction of a base unit and rounds away
-            # on a character grid, leaving "AI Integration:[ ] MCP server".
-            # A caption needs to be visibly separate from the box it governs.
-            Item(Label(""), size=1),
-            Item(self._mcp_checkbox, size="content", align="center"),
-            Item(Label(""), size=2),
-            Item(self._authoring_checkbox, size="content", align="center"),
-            Item(Label(""), weight=1),
-            gap=0.3,
-        )
-        toolbar = VSplit(
-            Item(top_row, size="content"),
-            Item(ai_row, size="content"),
             gap=0.3,
         )
         log_pane = Frame(VSplit(Item(self._log_view, weight=1)), margin_px=6)
@@ -291,14 +265,12 @@ class ConsoleWindow:
             self._focus_path_label.text = focus_path
             changed = True
 
-        # Polled for the same reason the visibility below is: the write window
+        # Polled for the same reason the visibility below is: the endpoint
         # closes on a deadline rather than on an event, and a checkbox still
-        # reading "on" over a window that has run out is the one state this
-        # switch must not show. Reading the property is also what makes the
-        # timeout happen and log itself, so nothing else has to tick it.
-        writes_allowed = self._keymap.action_authoring_allowed
-        if writes_allowed != self._authoring_checkbox.checked:
-            self._authoring_checkbox.checked = writes_allowed
+        # reading "on" over a socket that has shut is the one state this switch
+        # must not show.
+        if self._keymap.mcp_server_running != self._mcp_checkbox.checked:
+            self._mcp_checkbox.checked = self._keymap.mcp_server_running
             changed = True
 
         now = time.monotonic()
@@ -353,36 +325,22 @@ class ConsoleWindow:
             self._hook.uninstall()
 
     def _on_mcp_toggle(self, checked: bool) -> None:
-        # Persisted before it is acted on, so a start that throws still leaves
-        # the setting matching what the user asked for - and reverted with it
-        # if the start fails, because a checkbox that says "on" over a socket
-        # that never bound is the one state this switch must not reach.
-        if self._settings is not None:
-            self._settings.set("mcp_server", checked)
+        # Deliberately not persisted, unlike the console's visibility. The
+        # endpoint closes itself after an hour, so remembering it across a
+        # restart would be the one way back to a switch nobody turned off -
+        # which is what the timeout exists to prevent.
         try:
             if checked:
                 self._keymap.start_mcp_server()
-                logger.info("MCP server enabled.")
+                logger.info(f"MCP server enabled for "
+                            f"{_AUTHORING_WINDOW // 60} minutes.")
             else:
                 self._keymap.stop_mcp_server()
                 logger.info("MCP server disabled.")
         except Exception as e:
             logger.error(f"Could not {'start' if checked else 'stop'} "
                          f"the MCP server: {e}")
-            if self._settings is not None:
-                self._settings.set("mcp_server", not checked)
             self._mcp_checkbox.checked = self._keymap.mcp_server_running
-
-    def _on_authoring_toggle(self, checked: bool) -> None:
-        # Not persisted, unlike the endpoint's switch: this one is armed for a
-        # task and forgetting to disarm it is the failure it is shaped around,
-        # so a restart is one more thing that closes it.
-        self._keymap.set_action_authoring_allowed(checked)
-        if checked:
-            logger.info(f"Action authoring enabled for "
-                        f"{_AUTHORING_WINDOW // 60} minutes.")
-        else:
-            logger.info("Action authoring disabled.")
 
     def _on_level_change(self, index: int, name: str) -> None:
         self._console.log_level = _LEVELS[index][1]

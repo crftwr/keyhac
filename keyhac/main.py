@@ -110,14 +110,17 @@ def main() -> int:
 
     keymap.configure()
 
-    # Settings in both modes, because the MCP endpoint's on/off lives here now
-    # and headless has no menu to set it from. --no-ui cannot *change* the
-    # switch; it honours what the UI last set, which keeps one source of truth
-    # rather than growing a second one for a mode that has no UI.
+    # The MCP endpoint is deliberately *not* restored here. It closes itself an
+    # hour after it is switched on, and a start-up that reopened it would be the
+    # one way back to an endpoint nobody remembers arming - which is the state
+    # the timeout exists to end. It is ticked per session, in the console window
+    # or the tray menu.
+    #
+    # Which does leave --no-ui unable to open it, having no menu to tick. That
+    # is the honest shape rather than a gap: this is an authoring-time feature,
+    # and authoring happens where the operator can see the switch.
     from keyhac.core.settings import Settings
     settings = Settings(app_paths.state_file("settings.json"))
-    if settings.get("mcp_server", False):
-        keymap.start_mcp_server()
 
     if args.no_ui:
         return _run_headless(keymap, hook, native_loop, platform_name,

@@ -306,13 +306,30 @@ ship an unauthenticated local endpoint offering key injection.
 - "No unauthenticated local endpoint" is a standing principle, alongside "no always-on
   collection" (§12)
 
-**One switch per lifetime, not one switch per feature.** Writing into
-`extensions/` got its own control rather than riding on the endpoint's (§15.2),
-because a capability worth leaving on for days and one worth leaving on for
-minutes cannot share a switch without the long-lived one setting the price. The
-test for whether the next capability needs its own is that question and not its
-severity: if it is armed for a task and disarmed after, it is a second switch,
-and it should lapse on its own rather than trusting anyone to remember.
+**One switch, and it expires.** Writing into `extensions/` briefly had a control
+of its own, on the argument that a capability worth leaving on for days and one
+worth leaving on for minutes cannot share a switch without the long-lived one
+setting the price. **The sizes in that argument were backwards, and it is
+withdrawn.** The endpoint is not worth leaving on for days: §1 is explicit that
+the model is used at *authoring* time and the action then runs without one, so
+an endpoint still listening the next morning is serving nothing — while still
+able to read every window that is open, which is the largest exposure here and
+was the one with no deadline on it. Splitting also produced a state nobody
+wanted, where the agent could read screens but not do the thing it is for.
+
+So the deadline belongs on the endpoint itself: ticking the switch opens it for
+:data:`_AUTHORING_WINDOW`, after which it stops listening and deletes its token.
+Nothing below it checks a permission, because being reachable *is* the
+permission. The rule this leaves for the next capability is simpler than the one
+it replaces: **do not add a second switch — ask whether the first one should be
+open at all when this capability is not wanted.** If the answer is no, it
+belongs inside the same window.
+
+It is deliberately not persisted, for the same reason. A restart is one more
+thing that closes it, and restoring it at start-up would be the one path back to
+an endpoint nobody remembers arming. That does leave `--no-ui` unable to open it
+at all, which is the honest shape rather than a gap: authoring happens where the
+operator can see the switch.
 
 ### 4.5 Keep the server off the action executor
 
@@ -1115,7 +1132,7 @@ Against the layers in §5 and the sequence in §10:
 | Layer 2 — state reading | **Done**, both platforms. `keymap.ui` + `UINode`, the text layer, verified live on macOS and Windows. |
 | Layer 3 — execution safety | **Partial, and less so.** Waiting, read-back, **`Esc` cancellation** and **the executor** are in; the `max_workers=1` bug §2.1 named is gone. Per-step preconditions, checkpointing and idempotency remain *patterns the actions follow*, not framework: `Action.preconditions()` and dry-run/preview are **not built**. |
 | Layer 4 — action metadata | **Reduced to what was load-bearing.** The name is now the class's own `module.Class`, discovered rather than declared, so `register_action` went with the registry it fed (§15.2); the MCP tool schemas remain. No argument schema - these are instantiated with no arguments - and the description surface is the class docstring's first line. `list_actions` reports what is running and how each last ended, and `get_action_result` serves the run itself (§15.4). |
-| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **every action class there is runnable** as `module.Class` with no `config.py` edit at all - both behind the action-authoring switch (§15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` is gone, and what survives in `config.py` is the key binding. Still absent: partial reload (a file re-imports itself on mtime, so nothing has needed it). |
+| Layer 5 — artifact management | **Built, in a shape §5 did not anticipate.** `write_extension` puts a generated module in `extensions/`, and **every action class there is runnable** as `module.Class` with no `config.py` edit at all - both behind the endpoint's own switch, which now expires (§4.4, §15.2). Discovery is an **AST scan**, so listing never imports; that is what let it land without becoming the auto-execution `extensions/` has never done. `register_action` is gone, and what survives in `config.py` is the key binding. Still absent: partial reload (a file re-imports itself on mtime, so nothing has needed it). |
 | Topology A — MCP | **Done.** `keyhac/mcp/`: twelve tools over loopback HTTP with a per-start token, off unless the config asks; `keyhac-mcp-bridge` for Claude Desktop. See `doc/ai-integration.md`. |
 | Topology B — agent host | **Not built, and probably unnecessary** (§3.4). Nothing has needed runtime inference. |
 | `LLMAction` | **Still undecided, and the evidence is in.** Six actions, none needed inference. §3.4 said decide after hand-writing; the honest next step is deleting it. |
@@ -1221,7 +1238,9 @@ touching the first — but it is the first that multiplies, and the third sessio
 (`translate-clipboard`) spent it on every round of every fix. They are not the
 same problem and they did not need the same answer.
 
-**What landed: `write_extension`**, plus a second switch to gate it. The tool
+**What landed: `write_extension`**, behind a switch with a deadline. (It was a
+*second* switch at first; §4.4 records why that was wrong and how it merged back
+into the endpoint's own.) The tool
 writes one `.py` under `extensions/`, and the fence is the *module name* — an
 importable name has no separator and no `..` in it, so validating it as an
 identifier confines the write by construction rather than by keeping a list of
@@ -1229,14 +1248,12 @@ bad characters complete. Source is compiled before the file is touched, so a
 truncated transfer cannot replace a working action with one that will not
 import. Previous versions survive as timestamped `.bak-`, capped at five.
 
-**The switch is the design, not the tool.** *Allow action authoring* is
-separate from the endpoint's switch because the two have different lifetimes:
-the endpoint is worth leaving on for days, and write access is worth minutes.
-It is off by default, **not persisted**, and **lapses 60 minutes** after it is
-ticked — fixed from that moment, never extended by use, because a sliding
-window would hand the window's length to whatever is driving the endpoint. A
-model writing every few minutes because a page told it to would otherwise keep
-its own permission alive indefinitely.
+**The switch is the design, not the tool.** It is off by default, **not
+persisted**, and **lapses 60 minutes** after it is ticked — fixed from that
+moment, never extended by use, because a sliding window would hand the window's
+length to whatever is driving the endpoint. A model working every few minutes
+because a page told it to would otherwise keep its own permission alive
+indefinitely.
 
 What that buys is not a smaller attack surface but a **better-supervised one**:
 the exposure that remains coincides with the operator sitting in front of the

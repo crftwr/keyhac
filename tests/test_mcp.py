@@ -92,8 +92,6 @@ class FakeKeymap:
                                     "path": "/App/Window"})()
         self.reloaded = 0
         self.extensions_dir = extensions_dir
-        self.action_authoring_allowed = False
-        self.action_authoring_lapsed = False
 
     def list_windows(self):
         return [FakeWindow("TestApp", "Main")]
@@ -109,10 +107,8 @@ def registry():
 
 @pytest.fixture
 def writable(tmp_path):
-    """A registry whose keymap has the action-authoring window open."""
-    keymap = FakeKeymap(extensions_dir=str(tmp_path / "extensions"))
-    keymap.action_authoring_allowed = True
-    return ToolRegistry(keymap)
+    """A registry whose keymap has an extensions/ directory to work in."""
+    return ToolRegistry(FakeKeymap(extensions_dir=str(tmp_path / "extensions")))
 
 
 @pytest.fixture
@@ -228,21 +224,6 @@ def test_enable_content_access_is_reversible(registry):
 
 def extensions(registry):
     return pathlib.Path(registry.keymap.extensions_dir)
-
-
-def test_a_write_is_refused_while_the_switch_is_off(registry, tmp_path):
-    registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    result = registry.call("write_extension", {"name": "thing", "source": "x = 1\n"})
-    assert "switched off" in result
-    assert not (tmp_path / "extensions").exists()
-
-
-def test_a_lapsed_window_says_so_rather_than_reading_as_broken(registry, tmp_path):
-    """The timeout's whole cost is a refusal the operator cannot act on."""
-    registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    registry.keymap.action_authoring_lapsed = True
-    result = registry.call("write_extension", {"name": "thing", "source": "x = 1\n"})
-    assert "run out" in result and "60 minutes" in result
 
 
 @pytest.mark.parametrize("name", [
@@ -369,25 +350,6 @@ def test_starting_one_that_needs_arguments_is_refused(writable):
     write_action(writable)
     with pytest.raises(KeyError, match="constructor arguments.*target"):
         writable.call("start_action", {"name": "thing.NeedsArgs"})
-
-
-def test_nothing_is_visible_or_startable_while_the_window_is_shut(registry,
-                                                                      tmp_path):
-    registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    write_action(registry)
-
-    assert "OpenIssues" not in registry.call("list_actions", {})
-    with pytest.raises(KeyError, match="Allow action authoring"):
-        registry.call("start_action", {"name": "thing.OpenIssues"})
-
-
-def test_a_lapsed_window_refuses_by_saying_it_lapsed(registry, tmp_path):
-    registry.keymap.extensions_dir = str(tmp_path / "extensions")
-    registry.keymap.action_authoring_lapsed = True
-    write_action(registry)
-
-    with pytest.raises(KeyError, match="run out"):
-        registry.call("start_action", {"name": "thing.OpenIssues"})
 
 
 def test_a_file_that_does_not_parse_is_skipped_not_reported(writable):
@@ -540,46 +502,46 @@ def test_reloading_the_config_keeps_a_run_cancellable(writable):
     assert writable._loader.cached("thing.Thing") is first
 
 
-# -- the action-authoring switch ---------------------------------------------
+# -- the endpoint closes itself ---------------------------------------------
+#
+# One switch with a deadline, rather than two switches one of which nobody
+# turns off. What lapses is the whole endpoint, so these drive a real Keymap.
 
-def test_the_write_switch_is_off_until_asked(engine):
+def test_the_endpoint_is_off_until_asked(engine):
+    assert engine(lambda keymap: None).keymap.mcp_server_running is False
+
+
+def test_it_closes_itself(engine, monkeypatch):
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
     keymap = engine(lambda keymap: None).keymap
-    assert keymap.action_authoring_allowed is False
-    assert keymap.action_authoring_lapsed is False
+    keymap.start_mcp_server()
+    assert keymap.mcp_server_running is True
+
+    deadline = time.monotonic() + 5
+    while keymap.mcp_server_running and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert keymap.mcp_server_running is False, "the window never closed"
 
 
-def test_the_window_lapses_on_its_own(engine, monkeypatch):
+def test_reopening_after_a_manual_stop_gets_a_whole_window(engine, monkeypatch):
+    """A cancelled timer must not close the *next* window.
+
+    The failure this guards is quiet and confusing: the operator turns the
+    endpoint off and straight back on, and it dies seconds later because the
+    first window's timer was still counting.
+    """
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.2)
     keymap = engine(lambda keymap: None).keymap
-    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.05)
-
-    keymap.set_action_authoring_allowed(True)
-    assert keymap.action_authoring_allowed is True
-
-    time.sleep(0.1)
-    assert keymap.action_authoring_allowed is False
-    # Distinguishable from "never switched on", which is a different thing for
-    # the operator to do something about.
-    assert keymap.action_authoring_lapsed is True
-
-
-def test_using_it_does_not_extend_it(engine, monkeypatch):
-    """A fixed window, so a model that keeps writing cannot keep its own
-    permission alive."""
-    keymap = engine(lambda keymap: None).keymap
-    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.15)
-
-    keymap.set_action_authoring_allowed(True)
-    for _ in range(3):
-        time.sleep(0.06)
-        keymap.action_authoring_allowed          # a write would read this
-    assert keymap.action_authoring_allowed is False
-
-
-def test_stopping_the_endpoint_closes_the_window(engine):
-    keymap = engine(lambda keymap: None).keymap
-    keymap.set_action_authoring_allowed(True)
+    keymap.start_mcp_server()
     keymap.stop_mcp_server()
-    assert keymap.action_authoring_allowed is False
+
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 30)
+    keymap.start_mcp_server()
+    try:
+        time.sleep(0.5)                   # the first timer would have fired
+        assert keymap.mcp_server_running is True
+    finally:
+        keymap.stop_mcp_server()
 
 
 # -- the two security properties --------------------------------------------

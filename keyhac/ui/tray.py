@@ -57,11 +57,6 @@ def install_tray(console, keymap, hook) -> None:
         console._mcp_checkbox.checked = keymap.mcp_server_running
         console.panel.render()
 
-    def toggle_authoring():
-        console._on_authoring_toggle(not keymap.action_authoring_allowed)
-        console._authoring_checkbox.checked = keymap.action_authoring_allowed
-        console.panel.render()
-
     menu = Menu(
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
@@ -74,13 +69,10 @@ def install_tray(console, keymap, hook) -> None:
         # "AI Integration" says what the whole branch is for, and anyone who
         # needs the protocol's name finds it one level in.
         MenuItem("AI Integration", submenu=Menu(
+            # The tick is evaluated when the menu opens, so an endpoint that
+            # has since timed out reads as off without anything pushing it.
             MenuItem("MCP Server", on_select=toggle_mcp,
                      checked=lambda: keymap.mcp_server_running),
-            # Its own row rather than something the server switch implies. The
-            # tick is evaluated when the menu opens, so a window that has since
-            # run out reads as off without anything having to push it.
-            MenuItem("Allow action authoring", on_select=toggle_authoring,
-                     checked=lambda: keymap.action_authoring_allowed),
             SEPARATOR,
             # The setup instructions are the thing you hand to an agent, so
             # what this really provides is the URL - the page's first line

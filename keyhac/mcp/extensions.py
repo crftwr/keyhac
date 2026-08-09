@@ -17,9 +17,9 @@ created exactly the auto-execution Keyhac has never done - see
 `Keymap._prepare_extensions`, which puts the directory on `sys.path`, evicts
 stale modules, and imports nothing.
 
-So a class here executes at exactly one moment: when something names it. That is
-`start_action("module.Class")` - one module, by name, and only while the
-operator has action authoring switched on.
+So a class here executes at exactly one moment: when something names it. That
+is `start_action("module.Class")` - one module, by name, and only while the
+endpoint is open, which is for an hour after the operator ticks the switch.
 
 **What runs is always the current file.** `Loader` keys its instances on the
 file's mtime and re-imports when it moves, so `write_extension` followed by
