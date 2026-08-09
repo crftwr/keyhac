@@ -138,7 +138,7 @@ class ConsoleWindow:
         # duration in them, which says it once at the moment it matters instead
         # of every time the eye passes the toolbar.
         self._mcp_checkbox = Checkbox(
-            "AI Integration: MCP server", checked=keymap.mcp_server_running,
+            "AI Integration: MCP Server", checked=keymap.mcp_server_running,
             on_change=self._on_mcp_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],

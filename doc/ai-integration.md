@@ -10,11 +10,15 @@
 > Keyhac's tray menu has the link: **AI Integration → Setup Guide**, pinned to
 > the version you are running.
 
-Keyhac can expose its element tools over MCP, so you can ask for an action in a
-chat window and have the agent inspect the actual screen, write it, run it,
-read the error, and fix it — instead of guessing at selectors and handing you
-code to debug. The action it writes is plain Python on a key binding: no model
-runs when you later press the key.
+Keyhac can expose its tools over MCP, so you can ask for what you want in a chat
+window and have the agent carry it out against the running Keyhac. Two kinds of
+thing: **changing what a key does** — it reads your key tables and your
+`config.py`, writes the change back, and reloads it — and **writing an action**,
+where it inspects the actual screen, writes the code, runs it, reads the error,
+and fixes it, instead of guessing at selectors and handing you code to debug.
+
+What it leaves behind is plain Python in your own files. No model runs when you
+later press the key.
 
 MCP is an open protocol and nothing here is specific to one vendor: Keyhac
 serves ordinary JSON-RPC over loopback HTTP with a bearer token, which is a
@@ -68,7 +72,7 @@ open and can run the actions you register. See [Security](#security).
 
 ## Turning it on
 
-Tick **MCP server** under **AI Integration** in the console window, or
+Tick **AI Integration: MCP Server** in the console window, or
 **AI Integration → MCP Server** in the tray / menu bar menu. The console logs
 the port it chose.
 
@@ -101,21 +105,33 @@ Beyond reading your screens:
 - **save action modules** into `~/.keyhac/extensions/`, instead of handing you
   source to copy on every round;
 - **run any action class it finds there**, addressed as `module.Class`, with no
-  entry in your `config.py` at all.
+  entry in your `config.py` at all;
+- **edit your `config.py`**: read it, write it back with the change in it, and
+  reload it. A remap, a per-application key table, the two lines that put an
+  action on a key — you ask for it and it lands in the file, rather than coming
+  back as something to paste.
 
-There is nothing more to it than that: an action is a `ThreadedAction` subclass
-in a file under `extensions/`, and the agent can list and start every one of
-them. No registration, no separate category, nothing to keep in step.
+An action is a `ThreadedAction` subclass in a file under `extensions/`, and the
+agent can list and start every one of them. No registration, no separate
+category, nothing to keep in step.
+
+`config.py` is written whole, never patched, so the agent is told to read it
+first and change as little as it can. **Keyhac keeps the version it replaced**
+as a `.bak-<timestamp>` beside it and logs every write to the console with a
+`+N/-M` line count — a rewrite you did not want is visible and undoable, not
+silent.
 
 **Listing does not run anything.** Keyhac finds those classes by parsing the
 files, never by importing them, so a directory of half-finished experiments
 stays inert until something names one. That is the property `extensions/` has
 always had: a module your `config.py` does not import does not execute.
 
-**The key binding is still yours.** While the endpoint is open, an action class
-is runnable from a chat window and bound to nothing; it gets a key of your
-choosing — and goes on working with nothing connected at all — only when you put
-it in `config.py`. That edit moved to the end of the loop rather than away.
+**The key binding is still yours — you no longer have to type it.** While the
+endpoint is open, an action class is runnable from a chat window and bound to
+nothing. What `config.py` adds is a key of your choosing that goes on working
+with nothing connected at all, and either of you can write that line: ask for
+the two lines and paste them, or ask for the binding and let the agent put it
+there. The key is the one you named, in your file, either way.
 
 ## Setting it up
 
@@ -130,8 +146,12 @@ skill, everything appears to work and you will write actions containing `sleep`
 and screen coordinates, which break on a different machine.
 
 How your host installs an MCP server or a skill is **your** knowledge, and this
-page deliberately does not guess at it. What follows is only what Keyhac knows
-and you cannot.
+page mostly does not guess at it. What follows is what Keyhac knows and you
+cannot — plus, where a host is common enough to be worth naming, what is true
+for it today: Claude Desktop's config file is in
+[The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients), and
+Claude's skill uploader in [Add the skills](#add-the-skills). Both sections are
+below this one, and both are for you as much as for the user.
 
 ### 1. The skill
 
@@ -143,28 +163,40 @@ There are two, and which you need depends on what the user asked for:
   drives another application's UI, for automation with no API behind it.
 
 Most people want the first. Take both if you do not know yet. They are on the
-release matching the running version — the tag is in the URL you fetched this
-page from:
+release matching the running version — the tag is the segment after `blob/` in
+the URL you fetched this page from, and it already carries its own `v`:
 
 ```
-https://github.com/crftwr/keyhac/releases/tag/v<version>
+https://github.com/crftwr/keyhac/releases/tag/<tag>
 ```
 
-Install them however this host takes a skill. Each documents *that version's*
-API, so a mismatch is worth mentioning to the user rather than working
-around.
+Install them however this host takes a skill — but expect that to be **a step
+only the user can take**. On most hosts a skill arrives by uploading a file
+through a settings UI, with no tool behind it, so do not spend the round trying
+to do it yourself. Give them the link and the steps, say what it buys, and go on
+with what you can do. [Add the skills](#add-the-skills) has the path for Claude,
+including the setting that has to be on first.
+
+Each bundle documents *that version's* API, so a mismatch is worth mentioning to
+the user rather than working around.
 
 ### 2. The connection
 
 Ask the user to switch the endpoint on first: **AI Integration → MCP Server**
-in Keyhac's tray menu, or the **AI Integration** checkbox in its console
-window. It is off by default and you cannot turn it on yourself.
+in Keyhac's tray menu, or the **AI Integration: MCP Server** checkbox in its
+console window. It is off by default and you cannot turn it on yourself.
 
-Then:
+Then settle which transport this host has, because it decides everything below.
+A client that can open an HTTP connection itself uses the endpoint; a client
+that can only launch a server as a child process uses the bridge. **Claude
+Desktop is the second kind**, so if that is where you are, the endpoint details
+are background and [the bridge](#the-bridge-for-stdio-only-clients) is the
+thing to configure.
 
 - Keyhac publishes the connection details as `mcp.json` beside the user's
-  `config.py` — `~/.keyhac/mcp.json` unless Keyhac's console reported a
-  different config directory at startup.
+  `config.py` — `~/.keyhac/mcp.json` unless Keyhac was started against a
+  different config directory. You cannot read Keyhac's console, so if the file
+  is not there, ask the user what it printed at startup rather than hunting.
 - That file holds a `port` and a `token`. The endpoint is
   `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every request
   needs an `Authorization: Bearer <token>` header.
@@ -178,19 +210,26 @@ Then:
 - If this host can only launch an MCP server as a subprocess over stdio, use
   the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes no
   arguments and finds that file itself. A GUI client usually needs its absolute
-  path, since it does not inherit a shell `PATH`.
+  path, since it does not inherit a shell `PATH` —
+  [The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients) has
+  the config snippets and where that path is for each kind of install.
 
 ### 3. How to go about it
 
 - **Back up** any other application's config file before editing it, and show
-  the user the change.
+  the user the change. **If you have no way to write files at all** — which is
+  ordinary, not a failure — print the exact path and the exact JSON, and ask
+  them to paste it in. Say whether the file is being created or merged into.
 - **Do not quit or restart another application.** Ask, and say what they should
   see afterwards.
-- **Verify rather than assume.** Once the client is restarted, call
-  `list_windows`. If the user's own windows come back, it worked. If the tool
-  is not there, say so plainly instead of guessing at the cause — and if you
-  are unsure of this host's config path or schema, ask rather than writing a
-  plausible one.
+- **If the client to restart is the one you are running inside**, restarting it
+  ends this conversation — quitting Claude Desktop quits you with it. Say so
+  *before* they do it, and leave them what to do next: open a new chat and ask
+  for `list_windows`, which is where the check below now happens.
+- **Verify rather than assume.** After the restart, call `list_windows`. If the
+  user's own windows come back, it worked. If the tool is not there, say so
+  plainly instead of guessing at the cause — and if you are unsure of this
+  host's config path or schema, ask rather than writing a plausible one.
 - Anything you cannot do from here, ask the user for. Most of it you can.
 
 ## Which clients have been tried
@@ -298,19 +337,27 @@ Most people want the first. Take both if you are not sure.
 **Get them from the release**:
 
 ```
-https://github.com/crftwr/keyhac/releases/tag/v<your version>
+https://github.com/crftwr/keyhac/releases/tag/<tag>
 ```
 
-Match the version you are running — Keyhac's console prints it at startup, and
-the release for it is the one whose API the skills describe. Each bundle
-carries that version stamped inside, so a mismatch is visible after the fact
-rather than silent.
+`<tag>` is `v` followed by the version Keyhac's console prints at startup —
+`v2.2.1`, for instance. Match the version you are running: that release is the
+one whose API the skills describe. Each bundle carries the version stamped
+inside, so a mismatch is visible after the fact rather than silent.
 
-Skills are a Claude feature, so the packaged bundle is shaped for Claude
-Desktop: Settings → カスタマイズ / Customize → Skills → Add → **Upload skill**.
-The uploader states two requirements and the bundle meets both — a `SKILL.md`
-at the archive root, carrying its name and description as YAML frontmatter.
-Uploads go through a security scan that takes a minute or two.
+The bundle is shaped for Claude's skill uploader, whose two requirements it
+meets — a `SKILL.md` at the archive root, carrying its name and description as
+YAML frontmatter. In Claude today that is **Customize → Skills → + → Create
+skill → Upload a skill**, then pick the zip. Menus move between releases; if
+that path is not what you see, look for **Skills** in the settings rather than
+trusting this line.
+
+**Turn on "Code execution and file creation" first** — Settings → Capabilities,
+or for a Team or Enterprise plan an administrator enables it for the
+organization. Skills run on it, and while it is off they will not appear at all,
+which looks like a plan restriction and is not one. This is the usual reason an
+upload seems to go nowhere. On an Enterprise organization with skill scanning
+enabled, an uploaded skill is also scanned before it can run — a minute or two.
 
 The *content* is not Claude-specific. Unzipped it is Markdown, and any agent
 that can be handed documents can be handed these. What that does not buy is the
@@ -355,6 +402,12 @@ which the agent may run; the switch does, and the switch expires.
 
 ## The loop
 
+This is the loop for *writing an action*, which is the long one. **Changing what
+a key does is shorter**: ask for it, and the agent reads your `config.py` and
+your key tables, writes the change back, reloads it, reports what the reload
+said, and asks you to press the key. Nothing has to be discovered from the
+screen, so there is no round trip through it.
+
 1. Open the screen the action will work against.
 2. Ask for what you want, in your own words. Naming the application and the
    output is useful; naming an API is not — if you find yourself typing
@@ -362,14 +415,20 @@ which the agent may run; the switch does, and the switch expires.
 3. The agent reads the screen, writes the action, and saves it into
    `extensions/`. It runs it, reads its own failure, fixes it, and runs it
    again. **You are not in this part**, however many rounds it takes.
-4. **When it works, you install it**: paste the `configure()` block it hands you
-   into `config.py` — two lines, an `import` and a key binding.
+4. **When it works, it gets a key.** Name the key and the agent writes the two
+   lines into `config.py` — an `import` and the binding — then reloads the file
+   and tells you what the reload said. If you would rather do it yourself, ask
+   for the lines instead; it is the same sentence either way. Then **press the
+   key**: whether it does the right thing is the one thing nobody else can
+   check for you.
 
-Step 4 is the manual one, and it stays manual deliberately. Everything before it
-is reachable only from a chat window, and only until the endpoint closes. The key
-binding is what makes the action *yours*: a key you chose, working when the
-agent is not connected at all. That is a line worth drawing yourself, and now
-you draw it around something you have seen work rather than around a guess.
+Step 4 is the only part that outlives the hour. Everything before it is reachable
+only from a chat window and only while the endpoint is open, and stops mattering
+when it closes; the binding keeps working with nothing connected at all, which is
+the point of putting it in your file rather than leaving it in a conversation.
+So it is the step worth looking at — and Keyhac makes that possible rather than
+asking you to trust it: the file it replaced is kept beside it, and the write is
+on the console with its line count.
 
 **Restart Keyhac after upgrading it.** `reload_config` reloads your `config.py`,
 not Keyhac's own modules — a new version of the tools is only picked up by a
@@ -403,7 +462,7 @@ don't type passwords or show private material while recording.
 ## Security
 
 - **Off by default**, and the switch is visible. Nothing listens until you tick
-  **AI Integration → MCP server**, and while it is on the checkbox and the menu
+  **AI Integration → MCP Server**, and while it is on the checkbox and the menu
   item both say so — which a line in a config file cannot.
 - **Loopback only**, with a token generated at each start and published in
   `mcp.json` beside your config, readable only by you. The bridge reads it;
@@ -444,10 +503,15 @@ feature, not a gap in it. Registering an action in `config.py` used to be a
 human step between "the agent wrote code" and "the code ran"; it is not any
 more, for as long as the endpoint is open.
 
-What still holds: the write can only land in `extensions/`, under a module name,
-with the previous version kept and the write logged to the console. Nothing
-executes unless it is named. And **when the hour is up it all stops**, including
-the screen reading — only the key bindings in your `config.py` survive it.
+And `config.py` is writable too, which is the one write meant to outlast the
+hour — so a change there is the one to actually read afterwards.
+
+What still holds: a write lands in one of exactly two places, `extensions/` under
+a module name or `config.py`, and neither is silent — the previous version is
+kept beside it and the write is logged with its line count. Nothing in
+`extensions/` executes unless it is named. And **when the hour is up it all
+stops**, including the screen reading; what survives is your `config.py`, doing
+what it says it does.
 
 The practical answer is therefore built in rather than left to you: the exposure
 coincides with you sitting in front of the screen, watching a console that
