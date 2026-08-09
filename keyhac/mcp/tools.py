@@ -951,6 +951,12 @@ class _captured_log:
         self.handler = _Capture(self.buffer)
         self.handler.setFormatter(
             logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+
+        # Our own access log is not part of what the reload said, and a call
+        # arriving on another connection while this one runs would otherwise
+        # come back as if it were.
+        self.handler.addFilter(lambda record: record.name != logger.name)
+
         # Both, and it is not belt-and-braces. `keyhac` is configured with
         # propagate=False (core/log.py), so a record from the documented
         # getLogger() never reaches root - attaching only there captured
