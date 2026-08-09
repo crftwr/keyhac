@@ -365,17 +365,19 @@ def configure(keymap):
     # custom_condition_func receives the portable Focus object: app_name,
     # window_title, class_name (Windows), path, and element - the focused
     # element in the OS's own vocabulary.
+    #
+    # Name the applications.  The tempting shortcut - "a terminal is whatever
+    # focuses a text area" - is wrong in both directions, and was shipped here
+    # for a while: on macOS an editor pane and a chat box are AXTextArea too,
+    # while VS Code's own integrated terminal is an AXTextField.  So the
+    # binding below took over every text box on the machine and did nothing in
+    # a real terminal.  A control's role says how it behaves, never what it is
+    # for; if you do reach for focus.element, check what your terminal
+    # actually reports in the console's "Focus path" field first.
     def is_terminal(focus):
-        if focus.app_name in ("Terminal", "iTerm2", "WindowsTerminal", "cmd",
-                              "powershell", "pwsh"):
-            return True
-        # Element attributes differ per OS: AX names on macOS, UI Automation
-        # names on Windows.  An unknown name simply reads back as None.
-        element = focus.element
-        if element is None:
-            return False
-        role = element.get_attribute_value("AXRole" if mac else "ControlType")
-        return role in ("AXTextArea", "Document")
+        return focus.app_name in ("Terminal", "iTerm2", "WezTerm", "Alacritty",
+                                  "kitty", "WindowsTerminal", "cmd",
+                                  "powershell", "pwsh")
 
     kt_terminal = keymap.define_keytable(custom_condition_func=is_terminal)
     kt_terminal[f"{LEADER}-K"] = "Ctrl-K"     # clear, rather than "Down"

@@ -164,6 +164,24 @@ class FocusProvider(ABC):
     @abstractmethod
     def get_focus(self) -> Focus | None: ...
 
+    def get_focused_element(self):
+        """The element with keyboard focus *now*, or None.
+
+        Separate from ``get_focus()`` because the two are asked for different
+        reasons and only one of them is a snapshot.  ``get_focus()`` runs
+        inside the keyboard hook and its answer is deliberately frozen with the
+        key being dispatched -- the whole point is to decide which key table
+        applies to *that* keystroke.  This one is asked by an action, minutes
+        later, when what it needs is the truth right now (issue #44).
+
+        The default builds the whole Focus and takes its element, which is
+        correct everywhere.  A platform overrides it to skip the part it does
+        not need: constructing the focus *path* costs a parent walk of AX or
+        UIA round trips, and nothing here reads the path.
+        """
+        focus = self.get_focus()
+        return getattr(focus, "element", None) if focus else None
+
 
 class EventLoop(ABC):
     """The main-thread native event loop (CFRunLoop / GetMessage pump)."""

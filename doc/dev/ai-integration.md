@@ -1443,8 +1443,20 @@ rather than being the return value of the call that started it.
 Which is what this section asked for. Once that store exists, the entry point
 that fills it is `ThreadedAction.cancellable()` — the same seam Esc uses — so a
 run started by a **key press** records itself identically. "The PDF one failed
-this morning" is now `get_action_result("print-tabs")`, with the traceback, the
-subprocess stderr, and how far it got.
+this morning" is now
+`get_action_result("save_pages_as_pdf.SavePagesAsPdf")`, with the traceback,
+the subprocess stderr, and how far it got.
+
+"Identically" took a second pass to become true. Both paths went through
+`cancellable()`, but only one of them was *given* a name: the MCP tool passed
+`module.Class` and a key press fell back to `repr(self)`, so the records landed
+in the same dictionary under two keys and a lookup by name never found the
+operator's run — it returned the previous MCP one, unchanged, while
+`list_actions` said "not run yet" about an action they had just pressed
+(issue #42). The name is derived from the class now, which lands on the same
+string for anything in `extensions/`; `cancel_action` looks in
+`ThreadedAction._running` as well as the loader's cache, so the stop button
+reaches an action it did not start.
 
 The open questions answered themselves, mostly conservatively:
 

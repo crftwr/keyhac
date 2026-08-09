@@ -180,7 +180,11 @@ Two consequences worth writing for:
   `list_actions` says so instead of offering it. Defaults keep it testable and
   lose you nothing; the operator can still pass other values on the line that
   binds the key.
-- **The class must subclass `ThreadedAction`** to be found at all.
+- **The class must subclass `ThreadedAction`** to be found at all. Any
+  distance does: subclassing another action, or a shared base you split into a
+  `_helpers.py` beside it, is found the same way. Never name `ThreadedAction` a
+  second time among the bases to make a class appear - that was a workaround
+  for a scanner that only read direct bases, and the scanner was fixed.
 
 ## Running it
 

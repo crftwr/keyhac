@@ -24,28 +24,6 @@ One Keymap exists per Keyhac process.  The configuration file receives it as ``c
 
 ---
 
-#### <kbd>property</kbd> Keymap.action_authoring_allowed
-
-Whether the endpoint may write into ``extensions/`` right now. 
-
-Off unless the operator switched it on, off again when the window in :data:`_AUTHORING_WINDOW` runs out, and off after a restart - deliberately not persisted, because forgetting to switch it back off is the failure this is shaped around. 
-
-The deadline *is* the state: expiry is decided here rather than by a timer thread, so a headless run with nothing polling still refuses a late write, and there is no timer to cancel at shutdown. 
-
-lazydocs: ignore 
-
----
-
-#### <kbd>property</kbd> Keymap.action_authoring_lapsed
-
-Whether a write window ran out, as opposed to never being opened. 
-
-One refusal at the endpoint, two different things for the operator to do about it - so the tool that refuses says which one happened.  A timeout that reads as "this feature does not work" is the cost this exists to avoid. 
-
-lazydocs: ignore 
-
----
-
 #### <kbd>property</kbd> Keymap.clipboard
 
 The OS clipboard - get_text() / set_text(), or None if unwired. 
@@ -57,6 +35,14 @@ The history's provider, exposed directly because actions that paste need to read
 #### <kbd>property</kbd> Keymap.clipboard_history
 
 The ClipboardHistory object (None while running without one, e.g. under --no-ui). 
+
+---
+
+#### <kbd>property</kbd> Keymap.config_path
+
+The configuration script this run loads. 
+
+lazydocs: ignore 
 
 ---
 

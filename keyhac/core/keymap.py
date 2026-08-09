@@ -56,6 +56,56 @@ _MODIFIER_BITS = (
 _AUTHORING_WINDOW = 60 * 60
 
 
+#: ``{module name: (real path, source mtime)}`` for every module loaded out of
+#: ``extensions/``.  Process-wide rather than per-Keymap because ``sys.modules``
+#: is, and the question this answers is about that one dictionary: is the copy
+#: in it still the file on disk?  Written by ``_stamp_extensions`` after a
+#: configuration load and by the loader that imports a module to run it; read by
+#: ``_loaded_extension``.
+_extension_stamps: dict[str, tuple[str, int]] = {}
+
+
+def _source_mtime(path: str) -> int:
+    """A file's mtime in nanoseconds, or -1 when it cannot be read.
+
+    Nanoseconds because the whole-second resolution of a ``.pyc`` header is
+    what made issue #41 possible; nothing here should repeat that.
+    """
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:
+        return -1
+
+
+def _extension_files(extensions_dir: str):
+    """``(module name, real path)`` for each loaded module under the directory.
+
+    lazydocs: ignore
+    """
+    prefix = os.path.realpath(extensions_dir) + os.sep
+    for name, module in list(sys.modules.items()):
+        path = getattr(module, "__file__", None)
+        if not path:
+            continue
+        path = os.path.realpath(path)
+        if path.startswith(prefix):
+            yield name, path
+
+
+def stamp_extension_module(module_name: str, path: str) -> None:
+    """Record that `module_name` was just loaded from `path`.
+
+    For the one importer that is not a plain ``import``: `start_action` loads a
+    module by file location, and what it leaves in ``sys.modules`` has to be
+    recognizable as current afterwards, or the next start re-imports it and
+    splits the module in two again (issue #40).
+
+    lazydocs: ignore
+    """
+    _extension_stamps[module_name] = (os.path.realpath(path),
+                                      _source_mtime(path))
+
+
 def _key_text(key: KeyCondition) -> str:
     """A KeyCondition spelled the way a `config.py` would write it.
 
@@ -229,6 +279,11 @@ class Keymap:
                 print()
                 logger.error(f"Loading configuration script failed:\n{traceback.format_exc()}")
                 return
+            finally:
+                # In `finally` because a config that raised half way through
+                # still imported everything above the line that raised, and
+                # those modules are in sys.modules either way.
+                self._stamp_extensions(extensions_dir)
 
             self._warn_unreachable_modifiers()
 
@@ -236,7 +291,7 @@ class Keymap:
     def _prepare_extensions(extensions_dir: str) -> None:
         """Make ``~/.keyhac/extensions`` importable, and re-importable.
 
-        Two things, and the second is the one that bites.
+        Three things, and only the first is obvious.
 
         **On sys.path**, so a config can be split into modules -- which is what
         the directory is created for, and what doc/configuration.md has always
@@ -252,6 +307,20 @@ class Keymap:
         read, and the run reports success against stale code.  That failure is
         silent by construction, and it lands squarely on the edit-reload-run
         loop this directory exists to serve.
+
+        **And its bytecode dropped with it**, which is the same failure one
+        layer down and was missed the first time (issue #41).  A timestamp
+        ``.pyc`` is validated against the source's mtime **in whole seconds**
+        and its size, so an edit landing in the same second that leaves the
+        file the same length reloads the *previous* bytecode -- through an
+        eviction that did everything else right.  That is not the corner it
+        sounds like: ``write_extension`` replaces whole files, and a model
+        fixing one character in a format string sends back a file of identical
+        length, seconds later.  Measured, twice: once on the ``start_action``
+        path, where the fix landed, and again here through ``reload_config``,
+        where the reasoning for leaving it out ("a config reload happens by
+        hand and rarely") stopped being true the moment an agent started
+        calling it in a loop.
         """
         resolved = os.path.realpath(extensions_dir)
 
@@ -264,6 +333,53 @@ class Keymap:
             path = getattr(module, "__file__", None)
             if path and os.path.realpath(path).startswith(prefix):
                 del sys.modules[name]
+                _extension_stamps.pop(name, None)
+
+        shutil.rmtree(os.path.join(resolved, "__pycache__"), ignore_errors=True)
+
+    @staticmethod
+    def _stamp_extensions(extensions_dir: str) -> None:
+        """Record which file, at which mtime, each loaded extension came from.
+
+        Called once the configuration script has finished importing, which is
+        the only moment anything knows: a plain ``import`` leaves no trace of
+        *when* it read the file, and there is no import hook here to add one.
+
+        What it buys is that something else can ask whether the copy in
+        ``sys.modules`` is still the file on disk -- see
+        :meth:`_loaded_extension`, and issue #40 for what happened without it.
+        """
+        for name, path in _extension_files(extensions_dir):
+            _extension_stamps[name] = (path, _source_mtime(path))
+
+    @staticmethod
+    def _loaded_extension(module_name: str, path: str):
+        """The module already loaded from `path`, or None if it is not current.
+
+        The whole of the answer to issue #40.  ``start_action`` used to evict
+        and re-import unconditionally, so a class it ran and the *same* class
+        bound to a key came from two different module objects and shared no
+        module-level state at all -- two caches, two connections, two counters,
+        numbered independently.  A module that has not changed since it was
+        loaded is the one to run.
+
+        When the file *has* changed, this returns None and the caller
+        re-imports: the divergence then lasts exactly as long as it is correct,
+        because until the operator reloads, the class on their key genuinely is
+        the previous version.
+        """
+        module = sys.modules.get(module_name)
+        if module is None:
+            return None
+        stamp = _extension_stamps.get(module_name)
+        if stamp is None:
+            return None
+        stamped_path, stamped_mtime = stamp
+        if stamped_path != os.path.realpath(path):
+            return None
+        if stamped_mtime != _source_mtime(path):
+            return None
+        return module
 
     def reload_config(self) -> None:
         """Reload the configuration file.

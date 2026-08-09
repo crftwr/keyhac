@@ -11,6 +11,8 @@ come back for it (keyhac/core/capture.py).
 """
 
 import contextlib
+import os
+import sys
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -218,11 +220,10 @@ class ThreadedAction:
             ThreadedAction._running.add(self)
 
         # `name` when the caller has one - the MCP tool, which was handed the
-        # class's `module.Class` to look this up by. A key press has no name to
-        # give, so the record is filed under the repr; it is still reachable by
-        # Esc and still reports itself to the console, which is what a key-press
-        # run needs.
-        self._run_record = capture.start_run(name or repr(self))
+        # class's `module.Class` to look this up by. A key press has none to
+        # give, so it is derived from the class, which lands on the same string
+        # for anything defined in `extensions/`.
+        self._run_record = capture.start_run(name or self._run_name())
         try:
             with capture.capture(self._run_record.output):
                 yield self
@@ -241,6 +242,44 @@ class ThreadedAction:
             _current.action = None
             with ThreadedAction._running_lock:
                 ThreadedAction._running.discard(self)
+
+    def _run_name(self) -> str:
+        """What to file this action's run under when nobody named it.
+
+        `module.Class` for anything defined in `extensions/` - the same string
+        `start_action` was handed and the same one `get_action_result` and
+        `list_actions` look up. They used to disagree: a key press filed its
+        run under `repr(self)` and the MCP tool under `module.Class`, so a run
+        the operator had just triggered read back as "not run yet" and the
+        previous MCP result was returned in its place, unchanged (issue #42).
+        Nothing was wrong with the key, the hook or the permissions, which is
+        what made it expensive to chase.
+
+        Everything else keeps its repr, which carries what a bare class name
+        cannot: `LaunchApplication("Terminal.app")` says which application, and
+        two bindings differing only in their arguments stay two records.
+        `keyhac.core.action.LaunchApplication` would say neither.
+
+        lazydocs: ignore
+        """
+        cls = type(self)
+        module = sys.modules.get(cls.__module__)
+        path = getattr(module, "__file__", None)
+        if not path:
+            return repr(self)
+        from keyhac.core.keymap import Keymap
+        keymap = Keymap.get_instance()
+        # None in library and test use, where there is no configuration
+        # directory to be inside of.
+        directory = getattr(keymap, "extensions_dir", None) if keymap else None
+        if not directory:
+            return repr(self)
+        try:
+            prefix = os.path.realpath(directory) + os.sep
+            inside = os.path.realpath(path).startswith(prefix)
+        except OSError:
+            return repr(self)
+        return f"{cls.__module__}.{cls.__qualname__}" if inside else repr(self)
 
     def _done_callback(self, future):
         # add_done_callback fires on the pool thread; hand finished() back to

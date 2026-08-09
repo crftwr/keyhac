@@ -15,6 +15,7 @@ import os
 import shutil
 import stat
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -22,6 +23,7 @@ import urllib.request
 import pytest
 
 import keyhac.core.keymap as keymap_module
+from keyhac.core import capture
 import keyhac.mcp.server as server_module
 import keyhac.mcp.tools as tools_module
 from keyhac.mcp.server import Dispatcher, MCPServer, PROTOCOL_VERSION
@@ -469,6 +471,104 @@ def test_underscore_files_are_helpers_not_actions(writable):
     assert "OpenIssues" not in writable.call("list_actions", {})
 
 
+# -- inheritance, without importing (issue #43) ------------------------------
+#
+# Reusing an action by subclassing it is the natural thing to write, and it was
+# the one way to write one this could not see: matching a *direct* base spelled
+# ThreadedAction meant `class B(A)` vanished while `class B(A, ThreadedAction)`
+# - identical MRO, the base named twice - appeared. The workaround was a line
+# of code written to satisfy a scanner.
+
+INHERITED = '''\
+from keyhac import ThreadedAction
+
+
+class TranslateClipboard(ThreadedAction):
+    """Translate the clipboard."""
+
+    def run(self):
+        return "clipboard"
+
+
+class TranslateSelection(TranslateClipboard):
+    """Translate the selection."""
+
+    def run(self):
+        return "selection"
+'''
+
+
+def test_a_subclass_of_an_action_is_an_action(writable):
+    write_action(writable, source=INHERITED)
+    result = writable.call("list_actions", {})
+    assert "thing.TranslateSelection: Translate the selection." in result
+
+
+def test_it_follows_a_base_class_into_another_module(writable):
+    """An action's base often lives in the helper file beside it."""
+    write_action(writable, name="_base", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Base(ThreadedAction):\n"
+        "    def run(self): ...\n"))
+    write_action(writable, name="derived", source=(
+        "from _base import Base\n\n\n"
+        "class Derived(Base):\n"
+        '    """Built on the helper."""\n'
+        "    def run(self): ...\n"))
+
+    result = writable.call("list_actions", {})
+    assert "derived.Derived: Built on the helper." in result
+    assert "_base.Base" not in result, "a helper file is still not offered"
+
+
+def test_it_follows_a_base_reached_through_a_module(writable):
+    write_action(writable, name="_base", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Base(ThreadedAction):\n"
+        "    def run(self): ...\n"))
+    write_action(writable, name="dotted", source=(
+        "import _base\n\n\n"
+        "class Dotted(_base.Base):\n"
+        '    """Reached through the module."""\n'
+        "    def run(self): ...\n"))
+
+    assert "dotted.Dotted: Reached through the module." in \
+        writable.call("list_actions", {})
+
+
+def test_a_class_inheriting_something_else_is_still_not_an_action(writable):
+    """The walk must widen what is found, not stop discriminating."""
+    write_action(writable, source=(
+        "class Helper:\n    pass\n\n\n"
+        "class Plain(Helper):\n    pass\n"))
+    assert "Plain" not in writable.call("list_actions", {})
+
+
+def test_a_base_cycle_does_not_hang_the_listing(writable):
+    """Half a file is not a finding, and a file being edited can say this.
+
+    Reaching the assertion at all is most of the test: an unguarded walk
+    recurses until the interpreter stops it.
+    """
+    write_action(writable, source=(
+        "class A(B):\n    pass\n\n\n"
+        "class B(A):\n    pass\n"))
+    result = writable.call("list_actions", {})
+    assert "thing.A" not in result and "thing.B" not in result
+
+
+def test_inheritance_is_resolved_without_importing(writable):
+    """The property the whole AST scan exists for still holds."""
+    write_action(writable, name="explodes", source=(
+        "from keyhac import ThreadedAction\n"
+        "raise AssertionError('imported')\n\n\n"
+        "class Base(ThreadedAction):\n    pass\n\n\n"
+        "class Derived(Base):\n    pass\n"))
+
+    assert "explodes.Derived" in writable.call("list_actions", {})
+    assert "explodes" not in sys.modules
+
+
 # -- loading one -------------------------------------------------------------
 
 RUNNABLE = '''\
@@ -532,6 +632,205 @@ def test_an_unchanged_file_keeps_its_instance(writable):
     """cancel_action reaches the running object by looking it up again."""
     write_action(writable, source=RUNNABLE.format(version=1))
     assert writable._startable("thing.Thing") is writable._startable("thing.Thing")
+
+
+# -- one module, not two (issue #40) -----------------------------------------
+
+STATEFUL = '''\
+import itertools
+
+from keyhac import ThreadedAction
+
+RUNS = itertools.count(1)
+
+
+class Counted(ThreadedAction):
+    def run(self):
+        return next(RUNS)
+'''
+
+
+@pytest.fixture
+def clean_modules():
+    before = set(sys.modules)
+    yield
+    for name in set(sys.modules) - before:
+        del sys.modules[name]
+
+
+def test_it_runs_the_module_the_config_imported(writable, clean_modules):
+    """Issue #40: start_action used to re-import, unconditionally.
+
+    So a class on the operator's key and the same class started from here came
+    from two different module objects. Anything the module held existed twice
+    and neither copy saw the other's writes - which showed up as a run counter
+    going 3, then 2, with the 2 twenty-five seconds later.
+    """
+    write_action(writable, name="counted", source=STATEFUL)
+    directory = str(extensions(writable))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import counted                                    # what config.py does
+    keymap_module.Keymap._stamp_extensions(directory)  # end of configure()
+
+    started = writable._startable("counted.Counted")
+
+    assert type(started) is counted.Counted, "a second copy of the class"
+    assert sys.modules["counted"] is counted
+
+    # The counter is the visible half: two modules would restart it.
+    assert counted.Counted().run() == 1
+    assert started.run() == 2
+
+
+def test_an_edited_helper_wins_over_the_loaded_module(writable, clean_modules):
+    """Sharing must not become the staleness it replaced.
+
+    An action reaches its helper through sys.modules, so reusing a module
+    whose *helper* moved would run the edited half against the previous
+    version of the other and report success - the failure the directory-wide
+    eviction exists to prevent, walked back in through the door #40's fix
+    opened.
+    """
+    directory = extensions(writable)
+    write_action(writable, name="_lib", source="VALUE = 1\n")
+    write_action(writable, name="uses_lib", source=(
+        "from keyhac import ThreadedAction\n"
+        "import _lib\n\n\n"
+        "class Uses(ThreadedAction):\n"
+        "    def run(self):\n"
+        "        return _lib.VALUE\n"))
+
+    keymap_module.Keymap._prepare_extensions(str(directory))
+    import uses_lib                                    # noqa: F401
+    keymap_module.Keymap._stamp_extensions(str(directory))
+
+    (directory / "_lib.py").write_text("VALUE = 2\n")   # only the helper moved
+
+    assert writable._startable("uses_lib.Uses").run() == 2
+
+
+def test_an_unrelated_edit_does_not_split_the_module(writable, clean_modules):
+    """The reason freshness follows the import graph and not the directory.
+
+    In a fix loop some file is nearly always newer than the last configuration
+    load. If any of them forced a re-import, every action but the one being
+    edited would go back to running its own private copy - which is issue #40
+    with extra steps.
+    """
+    directory = extensions(writable)
+    write_action(writable, name="quiet", source=STATEFUL)
+    write_action(writable, name="noisy", source=RUNNABLE.format(version=1))
+
+    keymap_module.Keymap._prepare_extensions(str(directory))
+    import quiet
+    keymap_module.Keymap._stamp_extensions(str(directory))
+
+    (directory / "noisy.py").write_text(RUNNABLE.format(version=2))
+
+    assert type(writable._startable("quiet.Counted")) is quiet.Counted
+
+
+def test_an_edit_still_wins_over_the_loaded_module(writable, clean_modules):
+    """Sharing must not become staleness.
+
+    Until the operator reloads, the class on their key genuinely *is* the
+    previous version - so the moment the file moves, this has to go back to
+    importing its own.
+    """
+    path = write_action(writable, name="moved", source=RUNNABLE.format(version=1))
+    directory = str(extensions(writable))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import moved                                       # noqa: F401
+    keymap_module.Keymap._stamp_extensions(directory)
+
+    path.write_text(RUNNABLE.format(version=2))
+    os.utime(path, (0, 0))
+
+    assert writable._startable("moved.Thing").run() == 2
+
+
+# -- both ways of starting one answer to one name (issue #42) ----------------
+#
+# get_action_result returned only what start_action had run. Press the key the
+# action is bound to and it handed back the *previous* MCP run, unchanged -
+# same text, same counter - while list_actions said "not run yet" about an
+# action the operator had just run. The two paths filed their records under
+# different keys: repr(self) for a key press, module.Class for the tool. It
+# cost one wrong conclusion ("the key press is not reaching the hook") about a
+# hook that was working.
+
+def _run_as_a_key_press(action):
+    """What ThreadedAction._run_tracked does: cancellable() with no name.
+
+    The cancellation is swallowed the way the pool swallows it - it lands in
+    the future, and _finish logs it - rather than being left to surface out of
+    a bare thread.
+    """
+    from keyhac.core.action import ActionCancelled
+
+    try:
+        with action.cancellable():
+            return action.run()
+    except ActionCancelled:
+        return None
+
+
+def test_a_key_press_run_is_readable_by_name(engine, tmp_path, clean_modules):
+    keymap = engine(lambda keymap: None).keymap
+    directory = keymap.extensions_dir
+    os.makedirs(directory, exist_ok=True)
+    pathlib.Path(directory, "pressed.py").write_text(RUNNABLE.format(version=7))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import pressed
+    _run_as_a_key_press(pressed.Thing())          # the operator's own binding
+
+    registry = ToolRegistry(keymap)
+    result = registry.call("get_action_result",
+                           {"name": "pressed.Thing", "wait": 0})
+    assert "finished" in result, result
+    assert "has not been run" not in result
+    assert "last run: finished" in registry.call("list_actions", {})
+
+
+def test_a_key_press_run_is_cancellable_by_name(engine, tmp_path, clean_modules):
+    """The other half: cancel_action reaches instances it did not create."""
+    keymap = engine(lambda keymap: None).keymap
+    directory = keymap.extensions_dir
+    os.makedirs(directory, exist_ok=True)
+    pathlib.Path(directory, "held.py").write_text(SLOW.replace("Slow", "Held"))
+
+    keymap_module.Keymap._prepare_extensions(directory)
+    import held
+    action = held.Held()
+    thread = threading.Thread(target=_run_as_a_key_press, args=(action,),
+                              daemon=True)
+    thread.start()
+
+    registry = ToolRegistry(keymap)
+    deadline = time.monotonic() + 5
+    while capture.get_run("held.Held") is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    registry.call("cancel_action", {"name": "held.Held"})
+    thread.join(timeout=5)
+    assert "cancelled" in registry.call("get_action_result",
+                                        {"name": "held.Held", "wait": 5})
+
+
+def test_an_action_outside_extensions_keeps_its_repr(engine):
+    """`LaunchApplication("Terminal.app")` says which application.
+
+    `keyhac.core.action.LaunchApplication` says neither that nor which of two
+    bindings ran, so the class-derived name is for `extensions/` only.
+    """
+    engine(lambda keymap: None)
+    from keyhac.core.action import LaunchApplication
+
+    action = LaunchApplication("Terminal.app")
+    assert action._run_name() == 'LaunchApplication("Terminal.app")'
 
 
 SLOW = '''\

@@ -27,6 +27,14 @@ file's mtime and re-imports when it moves, so `write_extension` followed by
 - and it evicts the whole directory first, so a helper module the action
 imports is re-read too rather than answering out of `sys.modules`.
 
+**And when it has not moved, what runs is the module `config.py` imported.**
+Re-importing an unchanged file used to be unconditional, which quietly made two
+of every action: the one on the operator's key and the one started from here
+came from different module objects, so anything a module held - a cache, a
+connection, a counter - existed twice and neither copy saw the other's writes
+(issue #40). Sharing the loaded module is the ordinary case; a fresh import is
+what an edit buys.
+
 The marker is `ThreadedAction`. An action that drives a UI has to be one (a key
 press must return immediately), the authoring skill mandates it, and every
 shipped example uses it - so restricting the scan to it keeps the rule legible:
@@ -41,7 +49,6 @@ from __future__ import annotations
 import ast
 import importlib.util
 import os
-import shutil
 import sys
 
 
@@ -72,55 +79,140 @@ class ActionClass:
 def discover(extensions_dir: str) -> list[ActionClass]:
     """Every action class under `extensions_dir`, found without importing.
 
-    Files whose names start with `_` are skipped: an extension named that way
-    is a helper the operator split out, not something to offer as runnable.
+    Files whose names start with `_` are skipped **as candidates**: an
+    extension named that way is a helper the operator split out, not something
+    to offer as runnable. They are still parsed, because a helper is exactly
+    where a shared base class lives and a subclass of one is an action.
     A file that does not parse is skipped rather than reported - it is being
     edited, and half a file is not a finding.
     """
+    parsed = _parse_directory(extensions_dir)
     found: list[ActionClass] = []
+    for module in sorted(parsed):
+        if module.startswith("_"):
+            continue
+        source = parsed[module]
+        for name, classdef in source.classes.items():
+            if not _is_action(parsed, module, name, set()):
+                continue
+            found.append(ActionClass(module, name, source.path,
+                                     _required_arguments(classdef),
+                                     _first_line(ast.get_docstring(classdef))))
+    return found
+
+
+class _Parsed:
+    """One file's top-level classes, and where its names came from."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.classes: dict[str, ast.ClassDef] = {}   # in file order
+        self.from_imports: dict[str, tuple[str, str]] = {}
+        self.modules: dict[str, str] = {}
+
+
+def _parse_directory(extensions_dir: str) -> dict[str, _Parsed]:
+    parsed: dict[str, _Parsed] = {}
     try:
         entries = sorted(os.listdir(extensions_dir))
     except OSError:
-        return found
+        return parsed
     for entry in entries:
-        if not entry.endswith(".py") or entry.startswith("_"):
+        if not entry.endswith(".py"):
             continue
         path = os.path.join(extensions_dir, entry)
         try:
             with open(path, encoding="utf-8") as handle:
-                source = handle.read()
-        except OSError:
+                tree = ast.parse(handle.read(), path)
+        except (OSError, SyntaxError):
             continue
-        for cls, required, summary in _action_classes(source, path):
-            found.append(ActionClass(entry[:-3], cls, path, required, summary))
-    return found
+        parsed[entry[:-3]] = _read_module(tree, path)
+    return parsed
 
 
-def _action_classes(source: str, path: str):
-    try:
-        tree = ast.parse(source, path)
-    except SyntaxError:
-        return []
-    found = []
+def _read_module(tree, path: str) -> _Parsed:
+    source = _Parsed(path)
     for node in tree.body:
-        if isinstance(node, ast.ClassDef) and any(
-                _is_threaded_action(base) for base in node.bases):
-            found.append((node.name, _required_arguments(node),
-                          _first_line(ast.get_docstring(node))))
-    return found
+        if isinstance(node, ast.ClassDef):
+            source.classes[node.name] = node
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                source.modules[alias.asname or root] = root
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            origin = (node.module or "").split(".")[0]
+            for alias in node.names:
+                source.from_imports[alias.asname or alias.name] = (origin,
+                                                                   alias.name)
+    return source
 
 
-def _is_threaded_action(base) -> bool:
-    # Both spellings the skill's import header can produce: `ThreadedAction`
-    # from `from keyhac import ...`, and a dotted one if it was reached through
-    # the package. Matching on the trailing name is deliberately loose - the
-    # cost of a false positive is one row in a list, and the cost of a false
-    # negative is an action the model cannot see.
-    if isinstance(base, ast.Name):
-        return base.id == "ThreadedAction"
-    if isinstance(base, ast.Attribute):
-        return base.attr == "ThreadedAction"
+def _is_action(parsed: dict[str, _Parsed], module: str, class_name: str,
+               seen: set) -> bool:
+    """Whether `module.class_name` reaches `ThreadedAction` through its bases.
+
+    **Transitively, and across files.** Matching only a *direct* base spelled
+    `ThreadedAction` made the natural way to reuse an action - subclass it -
+    the one way to write one this cannot see, so `start_action` could not run
+    it while a key binding ran it perfectly (issue #43). The workaround was to
+    name `ThreadedAction` a second time among the bases, which is a line of
+    code written to satisfy a scanner.
+
+    Still no import: reading a directory must not execute it, which is the
+    property this whole module is built around. So the graph is the one the
+    files describe - classes defined here, and names they imported from each
+    other - and a base that leads out of `extensions/` simply ends the walk.
+
+    `seen` breaks the cycle a file being edited can describe (`class A(B)` and
+    `class B(A)`), which is unrunnable but must not hang a listing.
+    """
+    key = (module, class_name)
+    if key in seen:
+        return False
+    seen.add(key)
+
+    source = parsed.get(module)
+    if source is None:
+        return False
+    classdef = source.classes.get(class_name)
+    if classdef is None:
+        return False
+
+    for base in classdef.bases:
+        # Both spellings the skill's import header can produce:
+        # `ThreadedAction` from `from keyhac import ...`, and a dotted one if
+        # it was reached through the package. Matching on the trailing name is
+        # deliberately loose - the cost of a false positive is one row in a
+        # list, and the cost of a false negative is an action nobody can see.
+        if _base_name(base) == "ThreadedAction":
+            return True
+        target = _base_target(source, module, base)
+        if target is not None and _is_action(parsed, *target, seen):
+            return True
     return False
+
+
+def _base_name(base) -> str | None:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
+def _base_target(source: _Parsed, module: str, base) -> tuple[str, str] | None:
+    """Which `(module, class)` in `extensions/` a base expression names."""
+    # `helpers.Base` - a module imported here, addressed by attribute.
+    if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+        origin = source.modules.get(base.value.id)
+        return (origin, base.attr) if origin else None
+    if not isinstance(base, ast.Name):
+        return None
+    # `Base` - defined in this file, or imported by name from another.
+    if base.id in source.classes:
+        return (module, base.id)
+    imported = source.from_imports.get(base.id)
+    return imported if imported else None
 
 
 def _required_arguments(classdef) -> list[str]:
@@ -179,18 +271,29 @@ class Loader:
         entry = self._instances.get(action.name)
         if entry is not None and entry[0] == stamp:
             return entry[1]
-        directory = os.path.dirname(action.path)
-        # Evict the whole directory, not just this file. Re-importing the
-        # action's own module by path leaves any *helper* it imports resolving
-        # out of sys.modules - so an action split across two files would run
-        # its edited half against the previous version of the other, and report
-        # success. Measured. This is `_prepare_extensions`' own eviction, reused
-        # rather than reimplemented, since getting it subtly different is the
-        # whole hazard.
-        from keyhac.core.keymap import Keymap
-        Keymap._prepare_extensions(directory)
-        _drop_bytecode(directory)
-        module = _import_file(action.module, action.path)
+        # The module `config.py` imported, when it and everything it imports
+        # are still the files on disk. Re-importing an unchanged module is
+        # what split every action in two: the class this ran and the class on
+        # the operator's key came from different module objects, so
+        # module-level caches, connections and counters were duplicated
+        # silently (issue #40). Sharing them is the normal case - an action is
+        # edited far less often than it is run.
+        module = _loaded_and_current(action)
+
+        if module is None:
+            directory = os.path.dirname(action.path)
+            # Evict the whole directory, not just this file. Re-importing the
+            # action's own module by path leaves any *helper* it imports
+            # resolving out of sys.modules - so an action split across two
+            # files would run its edited half against the previous version of
+            # the other, and report success. Measured. This is
+            # `_prepare_extensions`' own eviction, reused rather than
+            # reimplemented, since getting it subtly different is the whole
+            # hazard; it drops the directory's bytecode too, for the same
+            # reason one layer down.
+            from keyhac.core.keymap import Keymap
+            Keymap._prepare_extensions(directory)
+            module = _import_file(action.module, action.path)
         loaded = getattr(module, action.class_name, None)
         if loaded is None:
             raise KeyError(f"{action.path} no longer defines "
@@ -208,21 +311,43 @@ class Loader:
         return instance
 
 
-def _drop_bytecode(directory: str) -> None:
-    """Remove `__pycache__` under `directory`, so a re-import reads the source.
+def _loaded_and_current(action: ActionClass):
+    """The loaded module for `action`, if nothing it rests on has been edited.
 
-    Evicting `sys.modules` is not enough on its own. A cached `.pyc` is
-    validated against the source's mtime **in whole seconds** and its size, so
-    two edits inside one second that happen to leave the file the same length -
-    a model fixing one character, twice - reload the *previous* bytecode and
-    report success. Measured; it is the same silent staleness the eviction
-    exists to prevent, one layer further down.
+    The freshness question covers the *import graph*, not one file. An action
+    split across two files sees its helper through `sys.modules`, so reusing a
+    module whose helper has moved would run the edited half against the
+    previous version of the other and report success - the failure the
+    directory-wide eviction exists to prevent, walked back in through the
+    door this opened.
 
-    Only on this path, not in `_prepare_extensions`: a config reload happens by
-    hand and rarely, while this one runs in a loop that edits every few seconds.
-    Bytecode is regenerable by definition, and these files are small.
+    Scoped to what this action actually imports rather than to the whole
+    directory, which is the difference between sharing modules and not: in a
+    fix loop *some* file is nearly always newer than the last configuration
+    load, and letting an unrelated one force a re-import would put the split
+    of issue #40 back for every action but the one being edited.
     """
-    shutil.rmtree(os.path.join(directory, "__pycache__"), ignore_errors=True)
+    from keyhac.core.keymap import Keymap
+
+    parsed = _parse_directory(os.path.dirname(action.path))
+    if action.module not in parsed:
+        return None
+    for name in _imported_modules(parsed, action.module, set()):
+        if Keymap._loaded_extension(name, parsed[name].path) is None:
+            return None
+    return sys.modules.get(action.module)
+
+
+def _imported_modules(parsed: dict, module: str, seen: set) -> set:
+    """`module` and every module in `extensions/` it imports, transitively."""
+    if module in seen or module not in parsed:
+        return seen
+    seen.add(module)
+    source = parsed[module]
+    for origin in (*source.modules.values(),
+                   *(origin for origin, _name in source.from_imports.values())):
+        _imported_modules(parsed, origin, seen)
+    return seen
 
 
 def _mtime(path: str) -> float:
@@ -243,8 +368,12 @@ def _import_file(module_name: str, path: str):
 
     It is still registered in `sys.modules` under its plain name, so a later
     `import thing` from `config.py` reaches the same object and
-    `_prepare_extensions` evicts it on the next reload like any other.
+    `_prepare_extensions` evicts it on the next reload like any other. And it
+    is stamped on the way out, so the *next* start recognizes it as current and
+    reuses it rather than making a second copy (issue #40).
     """
+    from keyhac.core.keymap import stamp_extension_module
+
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load {path}")
@@ -255,4 +384,5 @@ def _import_file(module_name: str, path: str):
     except BaseException:
         sys.modules.pop(module_name, None)
         raise
+    stamp_extension_module(module_name, path)
     return module
