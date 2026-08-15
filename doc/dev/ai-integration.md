@@ -873,14 +873,24 @@ while *writing* one. These have different security properties and should be desi
 separately from the runtime tools:
 
 ```
-run_action(name)          → execute and return output/errors
+start_action(name)        → start it, return at once
+get_action_result(name)   → wait up to a bound, return output/errors
+cancel_action(name)       → stop it, as the operator's Esc does
 get_recent_trace(...)     → only after explicit recording and human approval (§9)
 reload / partial reload
 ```
 
-`run_action` closes the generate-verify loop. Without it the human manually runs each
-attempt and pastes the error back, and loop iteration rate — which partial reload
+Running an action closes the generate-verify loop. Without it the human manually runs
+each attempt and pastes the error back, and loop iteration rate — which partial reload
 protects — is dominated by that manual step instead.
+
+Running is asynchronous by design, not as a fallback. §2's actions run for minutes, the
+endpoint answers one JSON message per request with no stream to push progress over, and
+the bridge caps a call at 60 seconds — a single synchronous run-and-return call would
+answer with a transport error for exactly the class of work it exists to serve, while
+the action carried on invisibly. Blocking briefly and degrading to polling is worse
+still: two reply shapes whose selection hinges on how fast the action happened to be,
+the least predictable thing available.
 
 ### 8.4 The authoring skill
 

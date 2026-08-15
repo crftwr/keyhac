@@ -6,10 +6,12 @@ and only then anything more expensive. `describe_screen` is rung 1 and the tool
 everything else depends on - an action written without looking at the tree is
 written against a remembered screen.
 
-`run_action` is the other load-bearing one (§8.3). Without it the human is the
-transport for every error message: they run the action, copy the traceback,
-paste it back. With it the generate-verify loop closes, and loop iteration rate
-is what the whole authoring approach lives or dies on.
+`start_action`/`get_action_result` are the other load-bearing pair (§8.3) -
+two calls rather than one because an action runs for minutes and this
+transport answers in one message. Without them the human is the transport for
+every error message: they run the action, copy the traceback, paste it back.
+With them the generate-verify loop closes, and loop iteration rate is what the
+whole authoring approach lives or dies on.
 
 `write_extension` is the only tool that writes, and it is fenced rather than
 free: inside `extensions/` only, and over a module-shaped name only. It exists
@@ -1082,28 +1084,6 @@ def _change_summary(previous: str | None, source: str) -> str:
     return f"+{added}/-{removed} lines"
 
 
-def _subprocess_detail(error: BaseException) -> str:
-    """What a failed subprocess said, which the stream capture cannot see.
-
-    A child process writes to the real file descriptor, not to Python's
-    `sys.stderr`, so no wrapper installed here observes it. The only place it
-    survives is on the exception - and only when the action asked for it, which
-    is why the skill says to shell out with `capture_output=True`. Saying so
-    when it did not is worth more than silence: "returned 1" with no reason is
-    where the loop stalls.
-    """
-    output = getattr(error, "stderr", None) or getattr(error, "output", None)
-    if isinstance(output, bytes):
-        output = output.decode("utf-8", "replace")
-    if output:
-        return f"\nthe subprocess wrote to stderr:\n{output.strip()}\n"
-    if getattr(error, "returncode", None) is not None:
-        return ("\n(the subprocess left no stderr here - it was run without "
-                "capture_output=True, so what it said went to the terminal "
-                "Keyhac was started from and nowhere this can reach)\n")
-    return ""
-
-
 #: Ceiling on what one run hands back. A run that logs a line per row over
 #: hundreds of rows would otherwise fill a context window with the middle of
 #: its own progress bar; the tail is where the failure is, so that is the end
@@ -1185,25 +1165,26 @@ class _Tee:
 
 
 class _captured_log:
-    """Collect what an action produced, to hand back to the model.
+    """Collect what a config reload produced, to hand back to the model.
 
-    The point of run_action is that the model reads its own failure; a tool
-    returning "ok"/"failed" leaves the operator copying tracebacks, which is
-    the manual step it exists to remove. Three things used to reach the
-    console window and not the model, and the first two now do:
+    The reload twin of `keyhac.core.capture`, which does the same collecting
+    for action runs and files the result in a run record; a reload is
+    synchronous and leaves no record, so this hands the buffer straight back
+    to the one call that asked. The reason is the same: a tool answering
+    "reloaded"/"failed" leaves the operator copying tracebacks out of the
+    console window, which is the manual step it exists to remove.
 
     - **print()**, which the shipped config.py template teaches on the same
       line as the logger. Collected by teeing sys.stdout/sys.stderr rather
       than redirecting them, so it still reaches the console as well.
     - **Loggers outside the `keyhac` tree** - what `getLogger(__name__)` in a
-      module under `extensions/` produces. The handler sits on the root logger
-      now. That does sweep in every library the action imports, which is the
-      intended trade: a urllib retry storm is part of what went wrong.
-    - **Subprocess stderr** is the one this cannot reach. A child process
-      writes to the real file descriptor, not to Python's `sys.stderr`, so no
-      stream wrapper sees it. `run_action` surfaces it from
-      CalledProcessError instead, and the skill tells actions to shell out
-      with capture_output=True so there is something to surface.
+      module under `extensions/` produces. The handler sits on the root
+      logger. That does sweep in every library the reload imports, which is
+      the intended trade: a urllib retry storm is part of what went wrong.
+    - **Subprocess stderr** is out of reach here as everywhere: a child
+      process writes to the real file descriptor, not to Python's
+      `sys.stderr`, so no stream wrapper sees it. On the action-run side
+      `keyhac.core.capture.subprocess_detail` surfaces it from the exception.
     """
 
     def __enter__(self) -> "_Bounded":
