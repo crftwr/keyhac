@@ -206,7 +206,9 @@ def wait_for(condition: Callable[[], Any],
 
 
 def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
-                     message: str | None = None, **criteria) -> UINode:
+                     message: str | None = None,
+                     max_depth: int | None = None,
+                     max_nodes: int | None = None, **criteria) -> UINode:
     """Wait until an element matching `criteria` exists, and return it.
 
     The first beat of the three that every menu and modal needs: wait for it to
@@ -219,29 +221,48 @@ def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
         message: What was being waited for, for the timeout error.  Defaults to
             the criteria, which names the element but not the step - say what
             the step was when an operator will read it.
+        max_depth: Depth bound for each read.  Every poll walks the tree
+            again, so this is a cost bound as much as a reach bound.
+        max_nodes: Node bound for each read.
         **criteria: As `find_element` - role, name, value, identifier, text,
             predicate.
 
     Raises:
         WaitTimeout: Nothing matched in time.
     """
+    bounds = {}
+    if max_depth is not None:
+        bounds["max_depth"] = max_depth
+    if max_nodes is not None:
+        bounds["max_nodes"] = max_nodes
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
-    return wait_for(lambda: find_element(root, **criteria), timeout=timeout,
+    return wait_for(lambda: find_element(root, **bounds, **criteria),
+                    timeout=timeout,
                     message=message or f"an element matching {described}")
 
 
 def wait_until_gone(root, timeout: float = DEFAULT_TIMEOUT,
-                    message: str | None = None, **criteria) -> None:
+                    message: str | None = None,
+                    max_depth: int | None = None,
+                    max_nodes: int | None = None, **criteria) -> None:
     """Wait until no element matches `criteria`.
 
     The third beat, and the one that actually breaks iteration when it is left
     out: without it the next cycle starts while the previous modal is still on
     screen, and clicks land in it.
 
-    Takes the same arguments as `wait_for_element`.
+    Takes the same arguments as `wait_for_element`.  A bound makes "gone" mean
+    "not found within the bounds": an element deeper than `max_depth` counts
+    as gone.
     """
+    bounds = {}
+    if max_depth is not None:
+        bounds["max_depth"] = max_depth
+    if max_nodes is not None:
+        bounds["max_nodes"] = max_nodes
     described = ", ".join(f"{k}={v!r}" for k, v in criteria.items())
-    wait_for(lambda: find_element(root, **criteria) is None, timeout=timeout,
+    wait_for(lambda: find_element(root, **bounds, **criteria) is None,
+             timeout=timeout,
              message=message or f"no element matching {described}")
 
 

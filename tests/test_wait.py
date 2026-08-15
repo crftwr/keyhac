@@ -138,6 +138,36 @@ def test_wait_until_gone():
     assert root.kids == []
 
 
+def test_wait_for_element_takes_the_walk_bounds():
+    button = Fake("AXButton", identifier="save", key="s")
+    group = Fake("AXGroup", key="g", children=[button])
+    root = Fake("Window", children=[group], key="w")
+    node = wait_for_element(root, identifier="save", max_depth=5, timeout=1)
+    assert node.identifier == "save"
+    with pytest.raises(WaitTimeout):
+        wait_for_element(root, identifier="save", max_depth=1, timeout=0.2)
+
+
+def test_the_walk_bounds_stay_out_of_the_timeout_message():
+    """The bounds are how far to look, not what was being looked for - an
+    operator reading the error needs the criteria, not the walk budget."""
+    root = Fake("Window", key="w")
+    with pytest.raises(WaitTimeout) as err:
+        wait_for_element(root, identifier="nope", max_depth=3, timeout=0.2)
+    assert "identifier='nope'" in str(err.value)
+    assert "max_depth" not in str(err.value)
+
+
+def test_wait_until_gone_within_bounds_counts_a_deep_element_gone():
+    """A bound makes "gone" mean "not found within the bounds"."""
+    modal = Fake("AXSheet", identifier="modal", key="m")
+    group = Fake("AXGroup", key="g", children=[modal])
+    root = Fake("Window", children=[group], key="w")
+    wait_until_gone(root, identifier="modal", max_depth=1, timeout=2)
+    with pytest.raises(WaitTimeout):
+        wait_until_gone(root, identifier="modal", timeout=0.2)
+
+
 def test_wait_until_gone_times_out_while_it_is_still_there():
     root = Fake("Window", children=[Fake("AXSheet", identifier="modal", key="m")],
                 key="w")

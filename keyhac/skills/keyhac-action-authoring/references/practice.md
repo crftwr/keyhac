@@ -48,9 +48,10 @@ for node in tree.walk(): ...
 ```
 
 **Criteria** — `role`, `name`, `value`, `identifier`, `text`, `predicate`, plus
-`max_depth` / `max_nodes` on `find_all` and `reread`. Role patterns accept the
-macOS names with or without the `AX` prefix, but the prefix is stripped from
-the *role*, not the pattern: `role="AXTable"` matches nothing on Windows.
+`max_depth` / `max_nodes` on `find`, `find_all`, `reread` and the waits. Role
+patterns accept the macOS names with or without the `AX` prefix, but the prefix
+is stripped from the *role*, not the pattern: `role="AXTable"` matches nothing
+on Windows.
 
 **A node is a snapshot.** `find`/`find_all` read the live UI each time; the
 node they return does not update. Re-`find` after the screen changes.

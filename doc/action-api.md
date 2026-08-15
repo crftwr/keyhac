@@ -260,24 +260,48 @@ Prints the snapshot as held: a node from `ui.window()` or `ui.node()` has read n
 ### <kbd>method</kbd> `UINode.find`
 
 ```python
-find(**criteria) → 'UINode | None'
+find(
+    max_depth: 'int' = 14,
+    max_nodes: 'int' = 1000,
+    **criteria
+) → 'UINode | None'
 ```
 
 The first element below this one matching `criteria`, or None. 
 
-Reads the live UI at call time - this node's captured `children` play no part, so an old window node finds what is on screen *now*. Criteria are `role`, `name`, `value`, `identifier`, `text` and `predicate`; patterns are case-insensitive fnmatch with "|" alternation.  None rather than an exception, because only the caller knows whether a missing element is a failed precondition or an expected absence - `wait_for` is the one that insists. 
+Reads the live UI at call time - this node's captured `children` play no part, so an old window node finds what is on screen *now*. None rather than an exception, because only the caller knows whether a missing element is a failed precondition or an expected absence - `wait_for` is the one that insists. 
+
+
+
+**Args:**
+ 
+ - <b>`max_depth`</b>:  Depth bound for the underlying walk.  Web content can  nest controls deeper than the default; raise this before  concluding an element is not there. 
+ - <b>`max_nodes`</b>:  Node budget for the underlying walk. 
+ - <b>`**criteria`</b>:  `role`, `name`, `value`, `identifier`, `text` and  `predicate`; patterns are case-insensitive fnmatch with "|"  alternation. 
 
 ---
 
 ### <kbd>method</kbd> `UINode.find_all`
 
 ```python
-find_all(**criteria) → list['UINode']
+find_all(
+    max_depth: 'int' = 14,
+    max_nodes: 'int' = 1000,
+    **criteria
+) → list['UINode']
 ```
 
 Every element below this one matching `criteria`, in tree order. 
 
 The same live read as `find` - the snapshot is not consulted. 
+
+
+
+**Args:**
+ 
+ - <b>`max_depth`</b>:  Depth bound for the underlying walk. 
+ - <b>`max_nodes`</b>:  Node budget for the underlying walk. 
+ - <b>`**criteria`</b>:  As `find`. 
 
 ---
 
@@ -378,11 +402,23 @@ Returns the mechanism that worked; raises `FillFailed` when none did. Takes the 
 wait_for(
     timeout: 'float' = 10.0,
     message: 'str | None' = None,
+    max_depth: 'int' = 14,
+    max_nodes: 'int' = 1000,
     **criteria
 ) → 'UINode'
 ```
 
 Wait until an element matching `criteria` exists below this one. 
+
+
+
+**Args:**
+ 
+ - <b>`timeout`</b>:  Seconds before giving up. 
+ - <b>`message`</b>:  What was being waited for, for the timeout error. 
+ - <b>`max_depth`</b>:  Depth bound for the walk.  Every poll walks the tree  again, so this is a cost bound as much as a reach bound. 
+ - <b>`max_nodes`</b>:  Node budget for the walk. 
+ - <b>`**criteria`</b>:  As `find`. 
 
 ---
 
@@ -392,11 +428,25 @@ Wait until an element matching `criteria` exists below this one.
 wait_until_gone(
     timeout: 'float' = 10.0,
     message: 'str | None' = None,
+    max_depth: 'int' = 14,
+    max_nodes: 'int' = 1000,
     **criteria
 ) → None
 ```
 
 Wait until nothing below this one matches `criteria`. 
+
+A bound makes "gone" mean "not found within the bounds": an element deeper than `max_depth` counts as gone. 
+
+
+
+**Args:**
+ 
+ - <b>`timeout`</b>:  Seconds before giving up. 
+ - <b>`message`</b>:  What was being waited for, for the timeout error. 
+ - <b>`max_depth`</b>:  Depth bound for the walk. 
+ - <b>`max_nodes`</b>:  Node budget for the walk. 
+ - <b>`**criteria`</b>:  As `find`. 
 
 ---
 
