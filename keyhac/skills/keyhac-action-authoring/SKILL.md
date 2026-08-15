@@ -104,7 +104,7 @@ one run, not the branch they would have taken on a different item. Turn those
 into questions first — demonstration → clarifying questions → generation, never
 demonstration → generation.
 
-## The seven hard rules
+## The eight hard rules
 
 Each of these was a real failure, not a preference. Breaking one produces code
 that looks correct and is not.
@@ -144,6 +144,14 @@ that looks correct and is not.
    which is exactly the failure this class of action exists to avoid.
 7. **Bound every loop that follows a link.** A "Next" that links to itself
    otherwise runs until the operator gives up.
+8. **Close only what you can identify as yours.** With a pre-existing tab of
+   the same site already open, "close the tab" is ambiguous - and pressing a
+   close button on a guess has the operator's work on the other side. The
+   same holds for windows, temporary files, records you created. Record an
+   identity for what you open - a title you set, a value only you would have
+   written - and clean up only what matches it. An action that cannot
+   identify the resource it created must not clean up: stop and say so
+   instead, before anything is closed.
 
 ## Where the file goes
 
@@ -303,6 +311,7 @@ Check the generated action against this list, and fix rather than explain:
 - [ ] Results accumulate outside the failing scope, and are written per item
 - [ ] A second run does not duplicate the first
 - [ ] Loops are bounded
+- [ ] Cleanup closes only what the action itself opened, identified as its own
 - [ ] It says what to redo when it stops
 
 ## What belongs in the user's prompt, not in your questions
