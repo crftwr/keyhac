@@ -57,7 +57,7 @@ import sys
 import threading
 import time
 
-from keyhac.core import capture, log
+from keyhac.core import capture, log, uitree
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.mcp import extensions
 
@@ -94,6 +94,28 @@ def _listdir(directory: str) -> list[str]:
         return os.listdir(directory)
     except OSError:
         return []
+
+
+def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
+    """The shape of what a bounded walk cut off, so the next call can be
+    sized instead of guessed (issue #54).
+
+    Which bound did the cutting is readable off each cut point: a node
+    truncated at `max_depth` was cut by the depth bound, anywhere shallower
+    by the node budget.  The walker already knew all of these numbers; this
+    just stops discarding them.
+    """
+    cut = [node for node in nodes if node.truncated]
+    by_depth = sum(1 for node in cut if node.depth >= max_depth)
+    by_budget = len(cut) - by_depth
+    bounds = []
+    if by_depth:
+        bounds.append(f"{by_depth} by max_depth={max_depth}")
+    if by_budget:
+        bounds.append(f"{by_budget} by the max_nodes={max_nodes} budget")
+    return (f"reported {len(nodes)} node(s), cut off at {len(cut)} point(s) "
+            f"({', '.join(bounds)}); deepest level reached: "
+            f"{max(node.depth for node in nodes)}")
 
 
 def _running_action(name: str):
@@ -203,7 +225,15 @@ class ToolRegistry:
                      "text": {**string, "description":
                               "Matches label and content together."},
                      "limit": {**integer, "description": "Maximum matches "
-                               "to report (default 20)."}}},
+                               "to report (default 20)."},
+                     "max_depth": {**integer, "description": "How deep to "
+                                   f"search (default {uitree.DEFAULT_MAX_DEPTH}"
+                                   "). Web content can nest controls 30+ "
+                                   "levels down; a no-match reply says when "
+                                   "this bound cut the search short."},
+                     "max_nodes": {**integer, "description": "Node budget for "
+                                   "the search (default "
+                                   f"{uitree.DEFAULT_MAX_NODES})."}}},
                  self.find_elements),
             Tool("read_text",
                  "Read an element's whole text content - a terminal's "
@@ -265,7 +295,15 @@ class ToolRegistry:
                               "module.Class, from list_actions."},
                      "wait": {**integer, "description":
                               "Seconds to wait for it to finish (default 30, "
-                              "0 to look without waiting)."}},
+                              "0 to look without waiting)."},
+                     "level": {**string, "description":
+                               "Lowest log severity to return: DEBUG, INFO, "
+                               "WARNING or ERROR (default INFO, which hides "
+                               "the per-keystroke DEBUG stream; print() "
+                               "output always comes through)."},
+                     "tail": {**integer, "description":
+                              "Only the last N lines of the output (default: "
+                              "all of it)."}},
                   "required": ["name"]},
                  self.get_action_result),
             Tool("cancel_action",
@@ -432,8 +470,9 @@ class ToolRegistry:
 
     def describe_screen(self, app=None, title=None, max_depth=14,
                         max_nodes=DEFAULT_MAX_NODES, roles=None) -> str:
+        max_depth, max_nodes = int(max_depth), int(max_nodes)
         window = self._window(app, title)
-        tree = window.reread(max_depth=int(max_depth), max_nodes=int(max_nodes),
+        tree = window.reread(max_depth=max_depth, max_nodes=max_nodes,
                              roles=roles)
         nodes = list(tree.walk())
         text = tree.dump()
@@ -461,25 +500,58 @@ class ToolRegistry:
                      f"essentially nothing. Check list_windows for a better "
                      f"target.]")
         elif any(node.truncated for node in nodes):
-            text += ("\n\n[truncated: raise max_nodes/max_depth, or narrow "
-                     "with roles=, before concluding this is the whole screen]")
+            # With the shape of the cut, not just the fact of one (issue #54):
+            # "raise max_nodes" without saying from what left the next value a
+            # guess, and a measured session guessed twice.
+            text += (f"\n\n[truncated: "
+                     f"{_truncation_shape(nodes, max_depth, max_nodes)}. "
+                     f"Raise the bound that did the cutting, or narrow with "
+                     f"roles=, before concluding this is the whole screen]")
         return text
 
-    def find_elements(self, app=None, title=None, limit=20, **criteria) -> str:
+    def find_elements(self, app=None, title=None, limit=20, max_depth=None,
+                      max_nodes=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
         if not criteria:
             raise ValueError("give at least one of role/name/value/"
                              "identifier/text")
         window = self._window(app, title)
-        matches = window.find_all(**criteria)
+        bounds = {}
+        if max_depth is not None:
+            bounds["max_depth"] = int(max_depth)
+        if max_nodes is not None:
+            bounds["max_nodes"] = int(max_nodes)
+        matches = window.find_all(**criteria, **bounds)
         if not matches:
-            return f"no element matching {criteria}"
+            return self._no_match(window, criteria, bounds)
         lines = [f"{len(matches)} match(es):"]
         for node in matches[:int(limit)]:
             lines.append(f"  {node!r} value={node.value!r} rect={node.rect}")
         if len(matches) > int(limit):
             lines.append(f"  ... and {len(matches) - int(limit)} more")
         return "\n".join(lines)
+
+    def _no_match(self, window, criteria: dict, bounds: dict) -> str:
+        """Whether "no match" means "not there" or "not within the bounds".
+
+        Issue #68: a control nested past the depth bound read as absent - "no
+        element matching" is what a genuinely missing element says too, and
+        nothing distinguished them. So an empty result walks the tree once
+        more, at the same bounds the search used, to ask the one question the
+        search result cannot answer: did the walk see the whole window? One
+        extra walk, spent only on the path where the caller was otherwise
+        about to trust a false "not there".
+        """
+        head = f"no element matching {criteria}"
+        nodes = list(window.reread(**bounds).walk())
+        if not any(node.truncated for node in nodes):
+            return head
+        max_depth = bounds.get("max_depth", uitree.DEFAULT_MAX_DEPTH)
+        max_nodes = bounds.get("max_nodes", uitree.DEFAULT_MAX_NODES)
+        return (f"{head} within max_depth={max_depth}/max_nodes={max_nodes} - "
+                f"but the search did not see the whole window: "
+                f"{_truncation_shape(nodes, max_depth, max_nodes)}. Raise the "
+                f"bound that cut before concluding the element is not there.")
 
     def read_text(self, app=None, title=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
@@ -607,7 +679,8 @@ class ToolRegistry:
         threading.Thread(target=body, name=f"mcp-{name}", daemon=True).start()
         return (f"{name} started. Call get_action_result to see what it did.")
 
-    def get_action_result(self, name: str, wait: int = 30) -> str:
+    def get_action_result(self, name: str, wait: int = 30,
+                          level: str = "INFO", tail=None) -> str:
         # No name resolution first: the run record is the whole answer, and a
         # class that has been listed but never started should read as "not run"
         # rather than as an unknown name. It also keeps a result readable after
@@ -616,7 +689,12 @@ class ToolRegistry:
         if run is None:
             return (f"{name} has not been run since Keyhac started. "
                     f"start_action runs it.")
-        return run.report()
+        # INFO by default (issue #71): an action typing its way through a form
+        # leaves thousands of keymap DEBUG lines around the two INFO lines
+        # that carry the result, and the model reading this pays for all of
+        # them. The cut announces itself, so the DEBUG stream is one call away.
+        return run.report(level=level,
+                          tail=int(tail) if tail is not None else None)
 
     def cancel_action(self, name: str) -> str:
         action = self._action(name)

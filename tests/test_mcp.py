@@ -31,14 +31,16 @@ from keyhac.mcp.tools import ToolRegistry
 
 
 class FakeNode:
-    def __init__(self, name="Main", children=()):
+    def __init__(self, name="Main", children=(), depth=0):
         self.name = name
         self.role = "AXWindow"
         self.value = None
         self.identifier = None
         self.rect = (0, 0, 100, 100)
+        self.depth = depth
         self.truncated = False
         self.children = list(children)
+        self.searched = None             # what find_all was last asked
 
     def walk(self):
         yield self
@@ -52,6 +54,7 @@ class FakeNode:
         return f"{self.role} {self.name!r}"
 
     def find_all(self, **criteria):
+        self.searched = criteria
         return [self]
 
     def find(self, **criteria):
@@ -341,6 +344,43 @@ def test_a_missing_window_says_what_to_do_next(registry):
 def test_find_elements_requires_a_criterion(registry):
     with pytest.raises(ValueError, match="at least one"):
         registry.call("find_elements", {})
+
+
+def test_find_elements_passes_the_walk_bounds_through(registry):
+    """Issue #68: controls in web content sit 30+ levels down, and the tool
+    offered no way to reach past the default depth - find_all had the
+    parameters all along."""
+    registry.call("find_elements",
+                  {"role": "PopUpButton", "max_depth": 45, "max_nodes": 6000})
+    assert registry.keymap.node.searched == {
+        "role": "PopUpButton", "max_depth": 45, "max_nodes": 6000}
+
+
+def test_the_bounds_alone_are_not_a_criterion(registry):
+    with pytest.raises(ValueError, match="at least one"):
+        registry.call("find_elements", {"max_depth": 45})
+
+
+def test_a_no_match_on_a_cut_walk_says_so(registry):
+    """Issue #68, the silent trap: "no element matching" read as "the control
+    is not there" when it meant "not within the default depth"."""
+    root = registry.keymap.node
+    root.find_all = lambda **criteria: []
+    root.truncated = True
+    text = registry.call("find_elements", {"role": "PopUpButton"})
+    assert "no element matching" in text
+    assert "did not see the whole window" in text
+    assert "max_depth=14" in text, "the bound it searched within, by name"
+
+
+def test_a_no_match_on_a_complete_walk_stays_plain(registry):
+    """When the walk really saw everything, "not there" is the whole truth and
+    a truncation warning would send the caller chasing bounds for nothing."""
+    root = registry.keymap.node
+    root.find_all = lambda **criteria: []
+    text = registry.call("find_elements", {"role": "PopUpButton"})
+    assert "no element matching" in text
+    assert "whole window" not in text
 
 
 def test_an_action_reports_what_it_logged(writable):
@@ -1645,7 +1685,7 @@ def test_a_hollow_web_area_points_at_content_access(registry):
     text = registry.call("describe_screen", {})
     assert "enable_content_access" in text
     assert "Raising max_nodes will not help" in text
-    assert "raise max_nodes/max_depth" not in text, "the misleading advice won"
+    assert "[truncated:" not in text, "the misleading advice won"
 
 
 def test_a_populated_web_area_does_not(registry):
@@ -1667,8 +1707,29 @@ def test_a_native_window_keeps_the_truncation_note(registry):
     root.children = [FakeNode(f"child{i}") for i in range(EMPTY_WINDOW + 5)]
     root.truncated = True
     text = registry.call("describe_screen", {})
-    assert "raise max_nodes/max_depth" in text
+    assert "[truncated:" in text
     assert "enable_content_access" not in text
+
+
+def test_the_truncation_note_reports_the_shape_of_the_cut(registry):
+    """Issue #54: "raise max_nodes/max_depth" without saying from what left
+    the next value a guess, and a measured session guessed twice. The walker
+    knew the numbers all along."""
+    from keyhac.mcp.tools import EMPTY_WINDOW
+
+    root = registry.keymap.node
+    root.children = [FakeNode(f"child{i}", depth=1)
+                     for i in range(EMPTY_WINDOW + 5)]
+    root.children[0].truncated = True     # a budget cut, shallow
+    root.children[0].depth = 3
+    root.children[1].truncated = True     # a depth cut, at the bound
+    root.children[1].depth = 14
+    text = registry.call("describe_screen", {})
+    assert f"reported {EMPTY_WINDOW + 6} node(s)" in text
+    assert "cut off at 2 point(s)" in text
+    assert "1 by max_depth=14" in text
+    assert "1 by the max_nodes=400 budget" in text
+    assert "deepest level reached: 14" in text
 
 
 # -- what an action hands back ----------------------------------------------
@@ -1801,6 +1862,58 @@ def test_a_long_run_is_bounded_and_says_it_was_truncated(writable):
     assert len(output) < MAX_CAPTURE * 1.5
     assert "characters dropped" in output
     assert "THE LAST LINE" in output, "the tail is where the failure is"
+
+
+def _noisy_run(name):
+    """A finished run whose output is the shape issue #71 measured: the two
+    INFO lines that carry the result, buried in keymap DEBUG keystrokes."""
+    run = capture.start_run(name)
+    for index in range(50):
+        run.output.write(f"DEBUG [keyhac.Keymap] D-Return {index}\n")
+        run.output.write(f"DEBUG [keyhac.Keymap] PASSTHRU : U-Return {index}\n")
+    run.output.write("INFO [keyhac.Probe] OK: 63 AZ x 2 row -> 126 rows\n")
+    run.output.write("printed: DONE\n")
+    run.finish("finished")
+    return run
+
+
+def test_the_keystroke_stream_is_hidden_by_default(registry):
+    """Issue #71: thousands of keymap DEBUG lines buried the INFO lines that
+    carried the result. INFO is the default, and the cut announces itself."""
+    _noisy_run("noisy.Filtered")
+    out = registry.call("get_action_result",
+                        {"name": "noisy.Filtered", "wait": 0})
+    assert "PASSTHRU" not in out
+    assert "OK: 63 AZ x 2 row -> 126 rows" in out
+    assert "printed: DONE" in out, "print() is not a log line to filter"
+    assert "100 log line(s) below INFO hidden" in out
+
+
+def test_the_keystroke_stream_is_one_call_away(registry):
+    _noisy_run("noisy.Filtered")
+    out = registry.call("get_action_result",
+                        {"name": "noisy.Filtered", "wait": 0,
+                         "level": "DEBUG"})
+    assert "PASSTHRU : U-Return 49" in out
+    assert "hidden" not in out
+
+
+def test_tail_keeps_the_end_and_says_what_it_dropped(registry):
+    _noisy_run("noisy.Tailed")
+    out = registry.call("get_action_result",
+                        {"name": "noisy.Tailed", "wait": 0,
+                         "level": "DEBUG", "tail": 2})
+    assert "showing the last 2 of 102 lines" in out
+    assert "OK: 63" in out and "printed: DONE" in out
+    assert "PASSTHRU" not in out, "the middle of the progress bar is gone"
+
+
+def test_a_wrong_level_is_told_its_choices(registry):
+    _noisy_run("noisy.Filtered")
+    with pytest.raises(ValueError, match="DEBUG, INFO, WARNING"):
+        registry.call("get_action_result",
+                      {"name": "noisy.Filtered", "wait": 0,
+                       "level": "VERBOSE"})
 
 
 # -- the asynchronous shape --------------------------------------------------
