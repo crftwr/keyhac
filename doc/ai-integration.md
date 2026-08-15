@@ -511,7 +511,7 @@ coordinates, or bindings it never checked.
 |---|---|
 | `list_windows`, `get_focus` | what is open, what is focused |
 | `describe_screen` | a window's element tree as indented text |
-| `find_elements` | targeted search by role / name / identifier / text |
+| `find_elements` | targeted search by role / name / identifier / text, each match placed by its ancestor path |
 | `read_text` | an element's whole text — terminal scrollback, editor buffer |
 | `enable_content_access` | make a Chromium/Electron app expose its content (macOS) |
 | `describe_keymap` | the key tables, which match the current focus, and what each binds |
