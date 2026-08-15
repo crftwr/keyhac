@@ -8,14 +8,21 @@ keyhac-mac behavior). Up/Down navigate, Enter chooses, Escape cancels.
 from puikit import Panel, WindowStyle
 from puikit.event import EventType
 from puikit.layout import HSplit, Item, VSplit
-from puikit.widgets import Label, ListView, TextEdit
+from puikit.widgets import Label, LayoutView, ListView, TextEdit
 
 from keyhac.core.const import (
     MODKEY_ALT, MODKEY_CMD, MODKEY_CTRL, MODKEY_SHIFT, MODKEY_WIN,
 )
 from keyhac.core import log
+from keyhac.ui.frame import Frame
 
 logger = log.getLogger("Chooser")
+
+# The window's inner margin, shared by the magnifier<->field spacer so the
+# magnifier sits the same distance from the window edge and the field; and
+# the list frame's interior inset. Both collapse on a character grid.
+_MARGIN_PX = 5
+_LIST_PAD_PX = 3
 
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
@@ -49,20 +56,31 @@ class ChooserWindow:
         self.window.on_event = self._on_event
         self.window.on_close = self._on_user_close
 
-        self._edit = TextEdit(text="", on_change=self._on_filter_change, width=60)
+        # width is a cap, not a request: TextEdit draws at most `width` base
+        # units of its flex slot, so pass the full window width to let the
+        # field fill whatever the layout resolves (the window is not resizable).
+        self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
         self._list = ListView(self._labels(), ellipsis="…", elide_where="end")
 
         self.panel = Panel(backend, window=self.window)
-        self.panel.set_layout(VSplit(
+        # align="center" sits the magnifier on the field's text line (the field
+        # box is taller than one text line on pixel backends); the page margin
+        # and the search-row/list gap collapse to nothing on a character grid.
+        page = VSplit(
             Item(HSplit(
-                Item(Label("🔍"), size="content"),
+                Item(Label("🔍"), size="content", align="center"),
+                Item(Label(""), size_px=_MARGIN_PX),
                 Item(self._edit, weight=1),
-                gap=1,
+                gap=0,
             ), size="content"),
-            Item(self._list, weight=1),
-            gap=0,
-        ))
-        self.panel.focus(self._edit)
+            Item(Frame(VSplit(Item(self._list, weight=1)), margin_px=_LIST_PAD_PX),
+                 weight=1),
+            gap=0.3,
+        )
+        self._page = LayoutView(page, margin_px=_MARGIN_PX)
+        self.panel.set_layout(VSplit(Item(self._page, weight=1)))
+        self.panel.focus(self._page)
+        self._page.set_focused(self._edit)
         self.panel.render()
 
     def _center_on(self, rect, clamp_to) -> None:
