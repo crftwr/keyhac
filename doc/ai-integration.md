@@ -20,11 +20,12 @@ and fixes it, instead of guessing at selectors and handing you code to debug.
 What it leaves behind is plain Python in your own files. No model runs when you
 later press the key.
 
-MCP is an open protocol and nothing here is specific to one vendor: Keyhac
-serves ordinary JSON-RPC over loopback HTTP with a bearer token, which is a
-plain Streamable HTTP endpoint. Any client that can reach one should work.
-[Which clients have been tried](#which-clients-have-been-tried) is a shorter
-list.
+MCP is an open protocol and nothing here is specific to one vendor. Every client
+connects the same way, through the `keyhac-mcp-bridge` command — as a stdio MCP
+server where the client can register one, or [run directly from a
+shell](#a-client-with-a-shell-but-no-mcp-transport) where it cannot. Anything
+that can do either should work; [which clients have been
+tried](#which-clients-have-been-tried) is a shorter list.
 
 **This is off unless you turn it on**, and it is worth understanding why before
 you do: the endpoint reads the accessibility tree of every application you have
@@ -189,39 +190,29 @@ Ask the user to switch the endpoint on first: **AI Integration → MCP Server**
 in Keyhac's tray menu, or the **AI Integration: MCP Server** checkbox in its
 console window. It is off by default and you cannot turn it on yourself.
 
-Then settle which transport this host has, because it decides everything below.
-A client that can only launch a server as a child process uses the bridge, and
-**Claude Desktop is that kind** — so if that is where you are, the endpoint
-details are background and [the bridge](#the-bridge-for-stdio-only-clients) is
-the thing to configure.
+Then settle how this host runs the bridge, which is the one thing that varies.
+A client that can launch an MCP server as a child process registers
+`keyhac-mcp-bridge` as a stdio server, and **Claude Desktop is that kind** — so
+if that is where you are, [the bridge](#the-bridge-for-stdio-only-clients) is
+the thing to configure. A client that cannot register a server at all, but can
+run commands, [runs the same bridge a call at a
+time](#a-client-with-a-shell-but-no-mcp-transport).
 
-A client that *can* open an HTTP connection has a choice, and the bridge is
-usually still the better half of it. The question is not which transports the
-host speaks, but whether the entry it stores can re-read `mcp.json`: a saved
-HTTP entry pins today's port and token, and Keyhac picks new ones every time it
-starts, so it goes stale the next time the user quits Keyhac. The bridge reads
-that file per request and therefore never needs pointing again. Claude Code is
-the worked example — it takes either, and the stdio registration is the one that
-survives a restart.
-
+- **Connect through the bridge, not the HTTP port.** Keyhac's endpoint is
+  loopback HTTP underneath, and the bridge is a thin shim over it, but pointing
+  a client at that port directly is not a supported setup: the port and token
+  change every time Keyhac restarts, so a stored HTTP entry goes stale the next
+  time the user quits Keyhac, and the token has to be carried around to be used.
+  The bridge re-reads them per request and therefore never needs pointing again.
 - Keyhac publishes the connection details as `mcp.json` beside the user's
   `config.py` — `~/.keyhac/mcp.json` unless Keyhac was started against a
   different config directory. You cannot read Keyhac's console, so if the file
   is not there, ask the user what it printed at startup rather than hunting.
-- That file holds a `port` and a `token`. The endpoint is
-  `http://127.0.0.1:<port>/`, one JSON-RPC request per POST, and every request
-  needs an `Authorization: Bearer <token>` header.
-- It also holds `bridge`: the absolute path to the stdio shim, for a host that
-  cannot speak HTTP. The key is **absent** when this install generated no
-  console script (a source checkout), so its presence is the test for whether a
-  stdio client can be configured at all.
-- **The port changes every time Keyhac restarts.** Point the client at the file
-  if it can read one. If it can only take a fixed value, say so — that is a
-  real limitation, not something to work around by pinning today's port.
-- If this host can only launch an MCP server as a subprocess over stdio, use
-  the command `keyhac-mcp-bridge` instead of the HTTP endpoint. It takes no
-  arguments and finds that file itself. A GUI client usually needs its absolute
-  path, since it does not inherit a shell `PATH` —
+- The key that matters in it is `bridge`: the absolute path to the shim. It is
+  **absent** when this install generated no console script (a source checkout),
+  so its presence is the test for whether a client can be configured at all.
+- The bridge takes no arguments and finds that file itself. A GUI client usually
+  needs its absolute path, since it does not inherit a shell `PATH` —
   [The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients) has
   the config snippets and where that path is for each kind of install.
 
@@ -251,27 +242,32 @@ survives a restart.
 | Client | Transport | Status |
 |---|---|---|
 | Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified on macOS and Windows** — the actions in `examples/actions/` were authored through it, and one authored on macOS then ran unchanged on Windows |
-| Claude Code | stdio → [the bridge](#the-bridge-for-stdio-only-clients), registered with `claude mcp add` | **Verified on macOS** — set up from this page's URL and nothing else; its own health check reaches the daemon. Calling the tools from inside a conversation is **untried** |
+| Claude Code | stdio → [the bridge](#the-bridge-for-stdio-only-clients), registered with `claude mcp add` | **Verified on macOS** — set up from this page's URL and nothing else, and the tools answer inside a conversation |
 | VS Code Copilot | stdio → [the bridge](#the-bridge-for-stdio-only-clients) via [`.vscode/mcp.json`](#vs-code-copilot-integration) | **Verified on macOS** — tools discoverable and usable in chat; no UI needed beyond JSON config file in workspace |
-| Anything else with MCP support | HTTP directly | Should work, **untried** |
+| A client with a shell but no MCP transport | [the bridge, one call at a time](#a-client-with-a-shell-but-no-mcp-transport) | **Mechanics verified on macOS** — `--tools` and a `tools/call` both answer from a shell. No client has been driven through a whole task this way |
+| Anything else with MCP support | [the bridge](#the-bridge-for-stdio-only-clients), as a stdio server | Should work, **untried** |
 
 "Untried" is not scepticism about those clients — nobody has run them against
 this endpoint yet. If you do, whether it worked or not is the useful report.
 
-**What was verified on Claude Code**, since the row above splits: handing it
-this page's URL was the whole of the setup. It installed both skills into
-`~/.claude/skills/` itself — no upload, no user step — registered the bridge at
-user scope, and connected. What has *not* been watched is a live conversation
-calling `list_windows` as a native tool: the session that did the setup was
+**What was verified on Claude Code**: handing it this page's URL was the whole
+of the setup. It installed both skills into `~/.claude/skills/` itself — no
+upload, no user step — registered the bridge at user scope, and connected. A
+later session then called the tools as native tools and got real answers back.
+Note that the second half needed a *new* session: the one that did the setup was
 older than the server it had just registered, which is the ordinary case and the
 reason the last step of [How to go about it](#3-how-to-go-about-it) says to
-verify in a new one.
+verify in a fresh one.
 
-**Connecting over HTTP directly**, for a client that can: the port and token
-are published in `mcp.json` beside your `config.py`, the endpoint is
-`http://127.0.0.1:<port>/`, and every request must carry
-`Authorization: Bearer <token>`. The port is chosen at each start, so read the
-file rather than pinning a number.
+**Connecting to the HTTP port directly is out of scope.** The daemon does serve
+loopback HTTP with a bearer token — that is what the bridge talks to, and
+[Security](#security) describes it — but it is not a setup this page supports or
+has tried. Everything a client needs, the bridge already does: it finds the port
+and token itself on every request, so a Keyhac restart on a new port needs no
+change, and the token never has to be handed to the client or repeated into a
+conversation. A client that can run a command can use it, whether or not it can
+register an MCP server — see
+[A client with a shell but no MCP transport](#a-client-with-a-shell-but-no-mcp-transport).
 
 ### The bridge, for stdio-only clients
 
@@ -394,7 +390,64 @@ started, so a window that was already open will not list the Keyhac tools until
 you restart the server from VS Code's MCP server list — or, failing that, reload
 the window or restart VS Code itself.
 
-The benefit of the bridge approach over HTTP here is identical to Claude Desktop: the bridge reads `~/.keyhac/mcp.json` on each request, so configuration changes automatically when Keyhac restarts and picks a new port. A configuration that pins an HTTP port goes stale after the next Keyhac restart.
+The bridge earns its place here for the same reason it does in Claude Desktop: it reads `~/.keyhac/mcp.json` on each request, so the configuration keeps working when Keyhac restarts and picks a new port. That is the whole reason [the HTTP port is not a setup this page supports](#which-clients-have-been-tried) — anything that pins today's port goes stale the next time Keyhac starts.
+
+### A client with a shell but no MCP transport
+
+Some agents cannot register an MCP server at all but can run commands. The
+bridge works for them too, one call at a time, because the daemon keeps no
+session: each request is answered on its own, so there is no `initialize`
+handshake to perform first. One JSON-RPC line in, one line out.
+
+**Ask what the tools are rather than working from memory of this page:**
+
+```
+keyhac-mcp-bridge --tools
+```
+
+That prints the daemon's own tool list as JSON — names, descriptions and
+argument schemas, about 10KB for the eighteen tools. It is the same list the
+daemon serves an MCP client, fetched live rather than copied, so it cannot
+describe a tool that is not there. It needs Keyhac running with **AI
+Integration > MCP Server** on; without that it explains itself on stderr and
+exits nonzero, leaving stdout empty for whatever is parsing it.
+
+**To call one, write the request to a file and redirect it in:**
+
+```
+cat > /tmp/keyhac-request.json <<'JSON'
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_windows","arguments":{}}}
+JSON
+keyhac-mcp-bridge < /tmp/keyhac-request.json
+```
+
+Inlining the JSON in an `echo` works right up until an argument carries a quote,
+a backslash or a non-ASCII character — which is most window titles and half the
+paths — and then it fails as a shell quoting error that reads like a Keyhac one.
+A file has no quoting rules.
+
+**Keep each request on one line.** The transport is newline-delimited, so a
+request pretty-printed across several lines is several requests, none of them
+valid JSON — and the failure is silent: no output, exit status 0, as though the
+tool had nothing to say. Pass `separators` or `-c` to whatever writes the JSON.
+Several one-line requests in a file are fine, and come back as several replies
+in order.
+
+**Use the bridge even though a shell has `curl`.** Driving the HTTP port
+directly is [out of scope](#which-clients-have-been-tried), and this is the case
+that shows why: `curl` means reading `mcp.json`, parsing the token out, and then
+carrying it — into the conversation, into shell history, into anything that logs
+commands. The token is what stands between any local process and your screen
+contents. Through the bridge it never leaves the machine's filesystem, and a
+Keyhac restart on a new port needs no change to anything.
+
+**Use a real MCP registration when the client supports one.** This path costs
+you the consent surface: as native tools, a client can prompt for
+`write_config`, `write_extension`, `delete_extension` and `start_action`
+individually, which is the whole design of the switch these tools sit behind.
+Run through a shell, all of them are just a command, and a client that gates
+tools individually can no longer tell reading your screen from rewriting your
+configuration.
 
 ## Add the skills
 
