@@ -21,7 +21,10 @@ Documentation:
   [design-notes](doc/dev/design-notes.md), [puikit](doc/dev/puikit.md),
   [packaging](doc/dev/packaging.md), [testing](doc/dev/testing.md).
 - Remaining tasks and open decisions live in the **GitHub issues**
-  (`gh issue list`), not in the docs.
+  (`gh issue list`), not in the docs. One exception:
+  [doc/dev/next-major.md](doc/dev/next-major.md) is the ledger of breaking API
+  changes the additive-only policy defers to the next major release — record
+  such ideas there, not as issues.
 
 ## Sibling repositories (read-only references)
 
