@@ -12,6 +12,13 @@ model sees is served by the daemon, so the two cannot drift apart into a bridge
 that advertises a tool the daemon no longer has. If you find yourself adding a
 branch here for a specific method, it belongs on the other side.
 
+`--tools` is the one exception, and it holds to the same rule: it prints what
+the daemon answers to `tools/list`, verbatim. It knows no tool names, no
+argument shapes, and formats nothing the daemon did not serve, so it cannot
+drift from it either. It exists for a client that has a shell but no MCP
+transport, which would otherwise have to hand-type a JSON-RPC line to find out
+what the tools are. Do not grow it into a per-tool branch.
+
 Register it with Claude Desktop as:
 
     {"mcpServers": {"keyhac": {"command": "keyhac-mcp-bridge"}}}
@@ -62,10 +69,71 @@ def _error(request_id, message: str) -> dict:
             "error": {"code": -32603, "message": message}}
 
 
+def _no_daemon(path: str) -> str:
+    """The likeliest failure by far, so it names the cause rather than leaving
+    the reader with 'connection refused'. Shared by the pump and by --tools:
+    the two reach the same daemon and fail to find it the same way."""
+    return (f"Keyhac's MCP endpoint is not available ({path}). Is Keyhac "
+            f"running, and is its MCP server switch on - the 'AI Integration: "
+            f"MCP Server' checkbox in the console window, or 'AI Integration > "
+            f"MCP Server' in the tray menu?")
+
+
+def _post(endpoint: dict, body: bytes) -> urllib.request.Request:
+    return urllib.request.Request(
+        f"http://127.0.0.1:{endpoint['port']}/",
+        data=body,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {endpoint['token']}"},
+        method="POST")
+
+
+def print_tools(path: str) -> int:
+    """Print the daemon's tool list as JSON. Diagnostics go to stderr so the
+    stdout of a successful run is nothing but the JSON, and a caller can pipe
+    it straight into a parser."""
+    try:
+        endpoint = read_endpoint(path)
+    except (OSError, ValueError):
+        sys.stderr.write(_no_daemon(path) + "\n")
+        return 1
+
+    body = json.dumps({"jsonrpc": "2.0", "id": 1,
+                       "method": "tools/list"}).encode("utf-8")
+    try:
+        with urllib.request.urlopen(_post(endpoint, body), timeout=TIMEOUT) as reply:
+            served = json.loads(reply.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        sys.stderr.write(f"Keyhac returned HTTP {error.code}\n")
+        return 1
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        sys.stderr.write(f"could not reach Keyhac: {error}\n")
+        return 1
+
+    if "error" in served:
+        sys.stderr.write(f"Keyhac returned an error: "
+                         f"{served['error'].get('message')}\n")
+        return 1
+
+    tools = served.get("result", {}).get("tools", [])
+    sys.stdout.write(json.dumps(tools, indent=2, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(
+        description=__doc__.split("\n")[0],
+        epilog="With no options it reads JSON-RPC on stdin and answers on "
+               "stdout, which is what an MCP client wants. --tools is for a "
+               "client that has a shell but no MCP transport, and unlike the "
+               "rest of --help it needs Keyhac running with its MCP server "
+               "switch on, since the daemon is what holds the tool list.")
     parser.add_argument("--config", help="Path to config.py, when Keyhac runs "
                                          "with a non-default one.")
+    parser.add_argument("--tools", action="store_true",
+                        help="Print the daemon's tool schemas as JSON and "
+                             "exit, instead of forwarding stdin.")
     args = parser.parse_args(argv)
 
     # MCP's stdio transport is UTF-8. Windows decides a pipe's encoding from the
@@ -80,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
             reconfigure(encoding="utf-8")
 
     path = endpoint_path(args.config)
+
+    if args.tools:
+        return print_tools(path)
 
     for line in sys.stdin:
         line = line.strip()
@@ -100,20 +171,10 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             if request_id is None:
                 continue
-            _respond(message, _error(
-                request_id,
-                f"Keyhac's MCP endpoint is not available ({path}). Is Keyhac "
-                f"running, and is its MCP server switch on - the 'AI "
-                f"Integration: MCP Server' checkbox in the console window, or "
-                f"'AI Integration > MCP Server' in the tray menu?"))
+            _respond(message, _error(request_id, _no_daemon(path)))
             continue
 
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{endpoint['port']}/",
-            data=line.encode("utf-8"),
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {endpoint['token']}"},
-            method="POST")
+        request = _post(endpoint, line.encode("utf-8"))
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
                 body = reply.read()

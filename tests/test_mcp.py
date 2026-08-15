@@ -1542,6 +1542,79 @@ def test_the_bridge_writes_its_pipe_as_utf8(tmp_path, monkeypatch):
     assert relayed["result"]["text"] == "メモ帳 - 無題"
 
 
+def test_the_bridge_prints_the_tool_list_the_daemon_serves(tmp_path, capsys,
+                                                          monkeypatch):
+    """--tools exists for a client with a shell and no MCP transport. It must
+    print what the daemon answered and nothing of its own: a bridge that
+    reformatted or filtered the schemas could drift from the tools that are
+    actually there, which is the one thing this file may not do."""
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+    monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
+
+    tools = [{"name": "list_windows", "description": "メモ帳 windows",
+              "inputSchema": {"type": "object", "properties": {}}}]
+    served = json.dumps({"jsonrpc": "2.0", "id": 1,
+                         "result": {"tools": tools}}).encode("utf-8")
+
+    class Reply:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self): return served
+
+    monkeypatch.setattr(bridge.urllib.request, "urlopen",
+                        lambda prepared, timeout=None: Reply())
+
+    assert bridge.main(["--tools"]) == 0
+    assert json.loads(capsys.readouterr().out) == tools
+
+
+def test_the_tools_option_never_reads_stdin(tmp_path, monkeypatch):
+    """It is a one-shot query, not a pump. Left reading stdin it would hang a
+    shell that ran it without redirecting one."""
+    import io
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+    monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
+
+    class Exploding(io.StringIO):
+        def __iter__(self): raise AssertionError("--tools read stdin")
+
+    monkeypatch.setattr("sys.stdin", Exploding(""))
+
+    served = json.dumps({"jsonrpc": "2.0", "id": 1,
+                         "result": {"tools": []}}).encode("utf-8")
+
+    class Reply:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self): return served
+
+    monkeypatch.setattr(bridge.urllib.request, "urlopen",
+                        lambda prepared, timeout=None: Reply())
+    assert bridge.main(["--tools"]) == 0
+
+
+def test_the_tools_option_fails_loudly_without_a_daemon(tmp_path, capsys,
+                                                       monkeypatch):
+    """The same missing daemon the pump explains, but a shell caller reads exit
+    codes and pipes stdout: the explanation goes to stderr so a parser on the
+    other end of the pipe is handed empty input rather than prose."""
+    from keyhac.mcp import bridge
+
+    monkeypatch.setattr(bridge, "endpoint_path",
+                        lambda config=None: str(tmp_path / "absent.json"))
+
+    assert bridge.main(["--tools"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "MCP server" in captured.err
+
+
 def test_a_hollow_web_area_points_at_content_access(registry):
     """The shape a Chromium/Electron window really has with content off: the
     web area is present, nearly empty, and its nodes are marked truncated. A
