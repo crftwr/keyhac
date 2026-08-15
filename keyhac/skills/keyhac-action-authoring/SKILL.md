@@ -110,9 +110,12 @@ Each of these was a real failure, not a preference. Breaking one produces code
 that looks correct and is not.
 
 1. **Never `sleep`.** Wait for something specific: an element appearing, a
-   value changing, a page label differing from the one you captured before
-   clicking. `sleep` passes on your machine and fails on a slower one - and on
-   a faster one it fails *silently*, acting on a screen that has not arrived.
+   label reading what the screen *should* now show. Name the target state,
+   never "different from what I captured before clicking" - a transform can
+   be the identity (translating `kt` returns `kt`), and a wait for the value
+   to *change* then never returns even though the screen is already correct.
+   `sleep` passes on your machine and fails on a slower one - and on a faster
+   one it fails *silently*, acting on a screen that has not arrived.
 2. **Never coordinates, and address by structure when names run out.**
    `identifier` first *when it is a real name* - a DOM id or an AutomationId.
    macOS `AXIdentifier` values like `_NS:746` are nib serial numbers: ignore
