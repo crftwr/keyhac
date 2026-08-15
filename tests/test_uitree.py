@@ -122,6 +122,34 @@ def test_roles_filter_keeps_descendants_of_unmatched_parents():
         ["r0c0", "r0c1", "r1c0", "r1c1"]
 
 
+def test_the_walk_records_each_nodes_parent():
+    """Private back-edges for the MCP ancestor path (issue #55): each
+    reported node points at the node it hangs from, the root at nothing, and
+    a deduped shared cell at whichever side the walk reached first."""
+    tree = get_ui_tree(table_with_shared_cells())
+    assert tree._parent is None
+    row = tree.children[0]
+    assert row._parent is tree
+    a_cell = row.children[0]
+    assert a_cell._parent is row            # rows walk first; columns lose
+    assert a_cell.children[0]._parent is a_cell
+
+
+def test_the_roles_filter_reparents_hoisted_children():
+    """A hoisted child's parent is the nearest *reported* ancestor - the
+    chain never names a node the caller cannot see."""
+    tree = get_ui_tree(table_with_shared_cells(), roles="AXStaticText")
+    assert all(n._parent is tree for n in tree.children)
+
+
+def test_find_all_matches_reach_the_searched_root_through_parents():
+    matches = find_elements(table_with_shared_cells(), role="AXStaticText")
+    node = matches[0]
+    while node._parent is not None:
+        node = node._parent
+    assert node.role == "AXTable"
+
+
 # -- the node projection ----------------------------------------------------
 
 def test_text_keeps_falsy_values():

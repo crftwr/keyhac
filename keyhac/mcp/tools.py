@@ -137,6 +137,47 @@ def _portable_role_spelling(pattern: str) -> str | None:
     return "|".join(stripped)
 
 
+#: Ceiling on a name used as a path qualifier - one line per match has to
+#: stay readable, and the qualifier exists to split twins, not to quote them.
+PATH_NAME_CHARS = 30
+
+
+def _path_segment(node) -> str:
+    """One ancestor as role(qualifier) - at most one qualifier.
+
+    The identifier when there is one, else the name, else the bare role:
+    the path exists to tell two same-role containers apart (issue #55),
+    not to re-dump the tree, so one discriminating fact per level is the
+    budget.
+    """
+    role = node.role or "?"
+    if node.identifier:
+        return f"{role}(#{node.identifier})"
+    if node.name:
+        name = str(node.name)
+        if len(name) > PATH_NAME_CHARS:
+            name = name[:PATH_NAME_CHARS] + "…"
+        return f"{role}({name})"
+    return role
+
+
+def _ancestor_path(node) -> str:
+    """A match's ancestors, root-first, slash-joined; "" on the root itself.
+
+    Read off the same walk that found the match - the `_parent` back-edges
+    `get_ui_tree` records - so it describes the searched snapshot, not a
+    second one.  Where the DAG dedupe applies, a shared node's chain is the
+    side the walk reached first, which is the honest description of the
+    reported tree.
+    """
+    segments = []
+    current = getattr(node, "_parent", None)
+    while current is not None:
+        segments.append(_path_segment(current))
+        current = getattr(current, "_parent", None)
+    return "/".join(reversed(segments))
+
+
 def _running_action(name: str):
     """A running action filed under `name`, whoever started it.
 
@@ -230,9 +271,11 @@ class ToolRegistry:
                  self.describe_screen),
             Tool("find_elements",
                  "Search a window for elements matching role / name / value / "
-                 "identifier / text, and report what each one is. Use when a "
-                 "full tree is more than you need, or to check that a "
-                 "selector you are about to write actually matches.",
+                 "identifier / text, and report what each one is, with its "
+                 "ancestor path - which is how to tell two same-role "
+                 "containers apart. Use when a full tree is more than you "
+                 "need, or to check that a selector you are about to write "
+                 "actually matches.",
                  {"type": "object", "properties": {
                      **window_args,
                      "role": {**string, "description": "Role pattern. The AX "
@@ -567,7 +610,11 @@ class ToolRegistry:
             return text
         lines = [f"{len(matches)} match(es):"]
         for node in matches[:int(limit)]:
-            lines.append(f"  {node!r} value={node.value!r} rect={node.rect}")
+            line = f"  {node!r} value={node.value!r} rect={node.rect}"
+            path = _ancestor_path(node)
+            if path:
+                line += f" path={path}"
+            lines.append(line)
         if len(matches) > int(limit):
             lines.append(f"  ... and {len(matches) - int(limit)} more")
         return "\n".join(lines)

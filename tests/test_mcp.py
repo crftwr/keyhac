@@ -410,6 +410,39 @@ def test_a_match_found_with_an_ax_pattern_gets_no_hint(registry):
     assert "portable" not in text
 
 
+def test_find_elements_names_each_matchs_ancestors(registry):
+    """Issue #55: two same-role matches are told apart by their ancestor
+    paths in one call, instead of by three dumps with different filters."""
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="Translate")
+    left = UINode(role="AXTabGroup", identifier="source")
+    right = UINode(role="AXTabGroup", name="Target")
+    button_l = UINode(role="AXButton", name="English")
+    button_r = UINode(role="AXButton", name="English")
+    left._parent = root
+    right._parent = root
+    button_l._parent = left
+    button_r._parent = right
+    registry.keymap.node.find_all = lambda **criteria: [button_l, button_r]
+    text = registry.call("find_elements", {"role": "Button"})
+    assert "path=AXWindow(Translate)/AXTabGroup(#source)" in text
+    assert "path=AXWindow(Translate)/AXTabGroup(Target)" in text
+
+
+def test_a_match_that_is_the_searched_root_carries_no_path(registry):
+    """A parentless match - the searched root itself - gets no empty
+    path= fragment, and the line keeps its established shape."""
+    from keyhac.core.uitree import UINode
+
+    window = UINode(role="AXWindow", name="Main", rect=(0, 0, 100, 100))
+    registry.keymap.node.find_all = lambda **criteria: [window]
+    text = registry.call("find_elements", {"role": "Window"})
+    assert text == ("1 match(es):\n"
+                    "  UINode(AXWindow name='Main') value=None "
+                    "rect=(0, 0, 100, 100)")
+
+
 def test_an_action_reports_what_it_logged(writable):
     from keyhac.core import log
 
