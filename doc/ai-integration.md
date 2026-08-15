@@ -173,6 +173,13 @@ to do it yourself. Give them the link and the steps, say what it buys, and go on
 with what you can do. [Add the skills](#add-the-skills) has the path for Claude,
 including the setting that has to be on first.
 
+**Unless this host keeps its skills as files** — then it is yours to do, and you
+should simply do it rather than handing back instructions. Claude Code reads
+`~/.claude/skills/<name>/SKILL.md`, so unzipping each bundle into a directory of
+its own under there is the entire install. The test is not what the host is
+called but whether you can write where it looks, so check before assuming the
+upload path.
+
 Each bundle documents *that version's* API, so a mismatch is worth mentioning to
 the user rather than working around.
 
@@ -183,11 +190,19 @@ in Keyhac's tray menu, or the **AI Integration: MCP Server** checkbox in its
 console window. It is off by default and you cannot turn it on yourself.
 
 Then settle which transport this host has, because it decides everything below.
-A client that can open an HTTP connection itself uses the endpoint; a client
-that can only launch a server as a child process uses the bridge. **Claude
-Desktop is the second kind**, so if that is where you are, the endpoint details
-are background and [the bridge](#the-bridge-for-stdio-only-clients) is the
-thing to configure.
+A client that can only launch a server as a child process uses the bridge, and
+**Claude Desktop is that kind** — so if that is where you are, the endpoint
+details are background and [the bridge](#the-bridge-for-stdio-only-clients) is
+the thing to configure.
+
+A client that *can* open an HTTP connection has a choice, and the bridge is
+usually still the better half of it. The question is not which transports the
+host speaks, but whether the entry it stores can re-read `mcp.json`: a saved
+HTTP entry pins today's port and token, and Keyhac picks new ones every time it
+starts, so it goes stale the next time the user quits Keyhac. The bridge reads
+that file per request and therefore never needs pointing again. Claude Code is
+the worked example — it takes either, and the stdio registration is the one that
+survives a restart.
 
 - Keyhac publishes the connection details as `mcp.json` beside the user's
   `config.py` — `~/.keyhac/mcp.json` unless Keyhac was started against a
@@ -236,11 +251,20 @@ thing to configure.
 | Client | Transport | Status |
 |---|---|---|
 | Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified on macOS and Windows** — the actions in `examples/actions/` were authored through it, and one authored on macOS then ran unchanged on Windows |
-| Claude Code | HTTP directly (`claude mcp add --transport http`) | Should work, **untried** |
+| Claude Code | stdio → [the bridge](#the-bridge-for-stdio-only-clients), registered with `claude mcp add` | **Verified on macOS** — set up from this page's URL and nothing else; its own health check reaches the daemon. Calling the tools from inside a conversation is **untried** |
 | Anything else with MCP support | HTTP directly | Should work, **untried** |
 
 "Untried" is not scepticism about those clients — nobody has run them against
 this endpoint yet. If you do, whether it worked or not is the useful report.
+
+**What was verified on Claude Code**, since the row above splits: handing it
+this page's URL was the whole of the setup. It installed both skills into
+`~/.claude/skills/` itself — no upload, no user step — registered the bridge at
+user scope, and connected. What has *not* been watched is a live conversation
+calling `list_windows` as a native tool: the session that did the setup was
+older than the server it had just registered, which is the ordinary case and the
+reason the last step of [How to go about it](#3-how-to-go-about-it) says to
+verify in a new one.
 
 **Connecting over HTTP directly**, for a client that can: the port and token
 are published in `mcp.json` beside your `config.py`, the endpoint is
