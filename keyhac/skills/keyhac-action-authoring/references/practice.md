@@ -89,6 +89,15 @@ window.wait_until_gone(identifier="dialog-title")     # 3: gone
 
 Beat 3 is the one that breaks iteration when omitted.
 
+**Wait for the state you expect, not for the old state to change.** "It
+differs from what I captured" and "the result arrived" coincide only when the
+new value happens to differ: a transform can be the identity - a translation
+whose output equals its input - and a wait on *difference* then never returns,
+with the screen already correct the whole time. This is the read-back rule
+aimed at presses: `set_text` verifies by reading back the value it wrote, not
+by noticing the field changed, and a press whose outcome matters is verified
+the same way - state the expected value in the condition.
+
 ## Reading text the tree cannot reach
 
 ```python

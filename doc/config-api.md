@@ -701,7 +701,8 @@ Available as ``keymap.focus``, and passed to every ``custom_condition_func``.
  
  - <b>`app_name`</b>:  Process/exe base name without extension (Windows), or the  localized application name (macOS). 
  - <b>`pid`</b>:  Process id of the focused application. 
- - <b>`window_title`</b>:  Title of the focused window. 
+ - <b>`window_title`</b>:  Title of the focused window.  On macOS it is captured  during the focus-path walk and carries the path's transliteration  of fnmatch special characters ("(" and "[" become "<", ")" and 
+ - <b>`"]" become ">", and "/", "*", "?", "`</b>: " each become "-"); on Windows it is the raw title.  A ``title=`` pattern containing one of those characters must match the escaped spelling on macOS - or use a "*" wildcard across it, which works on both. 
  - <b>`class_name`</b>:  Win32 window class name (Windows only; None on macOS). 
  - <b>`path`</b>:  Focus path string - on macOS the AX focus path  ("/AXApplication(Xcode)/AXWindow(...)..."), on Windows a  synthesized "/{app_name}/{class_name}({title})" (provisional  format). 
  - <b>`element`</b>:  The focused *semantic* element - an AX UIElement (macOS) or a  UI Automation UIElement (Windows).  Same shape on both  (get_attribute_names(), get_attribute_value(), get_action_names(),  perform_action(), parent()), but each uses its own OS's  vocabulary of attribute names, "AXRole" versus "ControlType".  Portable code uses app_name / window_title / class_name and the  focus path instead. 
