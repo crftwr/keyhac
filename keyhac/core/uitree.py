@@ -76,6 +76,12 @@ DEFAULT_MAX_NODES = 1000
 class UINode:
     """One element, projected onto the facts both platforms agree on.
 
+    Every member is one of two kinds.  `find`, `find_all`, `reread`, the
+    waits and the text layer read the live UI each time they are called,
+    dispatching to the event-loop thread themselves; `text`, `all_text`,
+    `children`, `walk` and `dump` are free reads of this snapshot, showing
+    the screen as it was when the node was read.
+
     Attributes:
         role: Control role - "AXTextField" (macOS) or "Edit" (Windows).  The
             OS's own name; match it with `role=` patterns, which accept the
@@ -168,6 +174,8 @@ class UINode:
     def find(self, **criteria) -> "UINode | None":
         """The first element below this one matching `criteria`, or None.
 
+        Reads the live UI at call time - this node's captured `children`
+        play no part, so an old window node finds what is on screen *now*.
         Criteria are `role`, `name`, `value`, `identifier`, `text` and
         `predicate`; patterns are case-insensitive fnmatch with "|"
         alternation.  None rather than an exception, because only the caller
@@ -178,7 +186,10 @@ class UINode:
         return evaluate_on_main_thread(lambda: find_element(self, **criteria))
 
     def find_all(self, **criteria) -> list["UINode"]:
-        """Every element below this one matching `criteria`, in tree order."""
+        """Every element below this one matching `criteria`, in tree order.
+
+        The same live read as `find` - the snapshot is not consulted.
+        """
         from keyhac.core.wait import evaluate_on_main_thread
         return evaluate_on_main_thread(lambda: find_elements(self, **criteria))
 
@@ -195,7 +206,11 @@ class UINode:
             prune=prune))
 
     def dump(self, max_value: int = 60) -> str:
-        """This subtree as indented text - to read, and to hand to an AI agent."""
+        """This subtree as indented text - to read, and to hand to an AI agent.
+
+        Prints the snapshot as held: a node from `ui.window()` or `ui.node()`
+        has read nothing below itself yet, so `reread()` first.
+        """
         return format_tree(self, max_value=max_value)
 
     # -- the text layer ------------------------------------------------------
@@ -273,7 +288,14 @@ class UINode:
 
 
     def walk(self) -> Iterator["UINode"]:
-        """This node and every descendant, depth first."""
+        """This node and every descendant in the snapshot, depth first.
+
+        A walk over what was captured, not what is on screen: it yields the
+        nodes already held, asking the OS nothing.  On a node read with
+        `max_depth=0` - which is what `ui.window()` and `ui.node()` return -
+        that is this node alone.  `find_all()` is the one that searches the
+        live tree; `reread().walk()` traverses a fresh capture.
+        """
         yield self
         for child in self.children:
             yield from child.walk()
