@@ -361,26 +361,22 @@ def test_the_bounds_alone_are_not_a_criterion(registry):
         registry.call("find_elements", {"max_depth": 45})
 
 
-def test_a_no_match_on_a_cut_walk_says_so(registry):
-    """Issue #68, the silent trap: "no element matching" read as "the control
-    is not there" when it meant "not within the default depth"."""
+def test_a_no_match_stays_plain_even_when_the_walk_was_cut(registry):
+    """Deliberate (#68 second thoughts, issue #76): the runtime diagnostic
+    that re-walked the tree on an empty result - to say whether "no match"
+    meant "absent" or "not within the bounds" - was reverted. It cost a
+    second live accessibility walk, and it described a second snapshot the
+    search never saw. The ambiguity is accepted for now: taught statically
+    in the max_depth schema description, with the candidate real fix (a
+    stats out-parameter on find_all) recorded in the issue."""
     root = registry.keymap.node
     root.find_all = lambda **criteria: []
     root.truncated = True
+    reread = []
+    root.reread = lambda **kw: reread.append(kw) or root
     text = registry.call("find_elements", {"role": "PopUpButton"})
-    assert "no element matching" in text
-    assert "did not see the whole window" in text
-    assert "max_depth=14" in text, "the bound it searched within, by name"
-
-
-def test_a_no_match_on_a_complete_walk_stays_plain(registry):
-    """When the walk really saw everything, "not there" is the whole truth and
-    a truncation warning would send the caller chasing bounds for nothing."""
-    root = registry.keymap.node
-    root.find_all = lambda **criteria: []
-    text = registry.call("find_elements", {"role": "PopUpButton"})
-    assert "no element matching" in text
-    assert "whole window" not in text
+    assert text == "no element matching {'role': 'PopUpButton'}"
+    assert reread == [], "and no second walk happened to say more"
 
 
 def test_an_action_reports_what_it_logged(writable):
