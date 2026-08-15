@@ -3,7 +3,7 @@
 Every entry here was found by running against a real application, and each one
 produces code that looks correct and silently is not. Read this before
 debugging something that "should work". Measured on macOS 15 / Safari 18 /
-Chrome, 2026-08-06 and 07, and on Windows 11 Home 10.0.26200 / Notepad,
+Chrome, 2026-08-06 to 08, and on Windows 11 Home 10.0.26200 / Notepad,
 2026-08-07.
 
 Entries prefixed **Windows:** or **Native macOS:** apply to that platform only.
@@ -133,11 +133,29 @@ a single shot.
 
 ## Native macOS: identifiers are serial numbers
 
-`AXDOMIdentifier` in web content is a real name. AppKit's `AXIdentifier` is
-usually `_NS:746` - a nib ordinal that changes when the window is edited and
-means nothing to a reader. **"Prefer identifier" holds for DOM ids and
-AutomationIds, and is actively wrong for `_NS:*`.** Address native controls by
-name, and fall back to structure.
+`AXDOMIdentifier` in web content is usually a real name - though not always;
+see the next entry. AppKit's `AXIdentifier` is usually `_NS:746` - a nib
+ordinal that changes when the window is edited and means nothing to a reader.
+**"Prefer identifier" holds for DOM ids and AutomationIds that name something,
+and is actively wrong for `_NS:*`.** Address native controls by name, and fall
+back to structure.
+
+## A DOM id can be a serial number too
+
+Google Translate's language chips carry ids `#i14`-`#i21`, and the id→language
+mapping is reassigned on every page load, ordered by recently used languages:
+
+```
+load 1:  #i15='英語'    #i16='日本語'
+load 2:  #i15='日本語'  #i16='英語'
+```
+
+So "DOM ids are real names" is a habit of well-built pages, not a property of
+the platform - and a generated id is not marked as generated; `i15` looks no
+more synthetic than `q` looks hand-written. Before an action relies on what an
+id *means*, read the same screen twice - reload between reads - and confirm
+the id→content mapping survived. If it did not, address the element by name or
+visible text and treat the id as noise. Measured twice, 2026-08-08.
 
 ## Native macOS: a field's label is its sibling
 
