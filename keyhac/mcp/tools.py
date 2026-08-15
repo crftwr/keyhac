@@ -229,8 +229,11 @@ class ToolRegistry:
                      "max_depth": {**integer, "description": "How deep to "
                                    f"search (default {uitree.DEFAULT_MAX_DEPTH}"
                                    "). Web content can nest controls 30+ "
-                                   "levels down; a no-match reply says when "
-                                   "this bound cut the search short."},
+                                   "levels down, and a search cut short by "
+                                   "this bound reports the same 'no element "
+                                   "matching' as a genuinely absent element - "
+                                   "raise it before concluding one is not "
+                                   "there."},
                      "max_nodes": {**integer, "description": "Node budget for "
                                    "the search (default "
                                    f"{uitree.DEFAULT_MAX_NODES})."}}},
@@ -523,35 +526,20 @@ class ToolRegistry:
             bounds["max_nodes"] = int(max_nodes)
         matches = window.find_all(**criteria, **bounds)
         if not matches:
-            return self._no_match(window, criteria, bounds)
+            # Deliberately plain. This cannot tell "absent" from "not within
+            # the bounds" - the walked tree and its truncation marks die
+            # inside find_all, and the runtime diagnostic that re-walked the
+            # tree here to recover them was reverted: a second live walk,
+            # describing a second snapshot the search never saw. The
+            # ambiguity is accepted and taught in the max_depth description
+            # instead; issue #76 holds the candidate real fix.
+            return f"no element matching {criteria}"
         lines = [f"{len(matches)} match(es):"]
         for node in matches[:int(limit)]:
             lines.append(f"  {node!r} value={node.value!r} rect={node.rect}")
         if len(matches) > int(limit):
             lines.append(f"  ... and {len(matches) - int(limit)} more")
         return "\n".join(lines)
-
-    def _no_match(self, window, criteria: dict, bounds: dict) -> str:
-        """Whether "no match" means "not there" or "not within the bounds".
-
-        Issue #68: a control nested past the depth bound read as absent - "no
-        element matching" is what a genuinely missing element says too, and
-        nothing distinguished them. So an empty result walks the tree once
-        more, at the same bounds the search used, to ask the one question the
-        search result cannot answer: did the walk see the whole window? One
-        extra walk, spent only on the path where the caller was otherwise
-        about to trust a false "not there".
-        """
-        head = f"no element matching {criteria}"
-        nodes = list(window.reread(**bounds).walk())
-        if not any(node.truncated for node in nodes):
-            return head
-        max_depth = bounds.get("max_depth", uitree.DEFAULT_MAX_DEPTH)
-        max_nodes = bounds.get("max_nodes", uitree.DEFAULT_MAX_NODES)
-        return (f"{head} within max_depth={max_depth}/max_nodes={max_nodes} - "
-                f"but the search did not see the whole window: "
-                f"{_truncation_shape(nodes, max_depth, max_nodes)}. Raise the "
-                f"bound that cut before concluding the element is not there.")
 
     def read_text(self, app=None, title=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
