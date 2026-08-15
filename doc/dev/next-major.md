@@ -41,3 +41,37 @@ docs and skills.
 `tests/test_mcp.py` in the same commit. Keep the authoring-workflow prose
 ("open the screen the action will work against") — it describes operator
 intent, not the tool name.
+
+## `find_all` / `find_elements`: an optional truncation-stats out-parameter
+
+**What.** An optional `stats=` out-parameter on `UINode.find_all` and
+`uitree.find_elements` — a public `TruncationStats` (`reported` / `cut_points`
+/ `by_depth` / `by_budget` / `deepest`) filled from the same walk that produced
+the matches. The MCP `find_elements` no-match reply can then say whether the
+search was cut short by the bounds, instead of today's deliberately plain
+`no element matching ...` (issue #76).
+
+**Why.** An empty result cannot distinguish "absent" from "not within the
+walk's bounds". The runtime diagnostic that re-walked the tree to recover the
+truncation marks was reverted (PR #77): it doubled the AX work on every
+no-match, and it described a second snapshot the search never saw. A stats
+out-parameter has neither defect — one walk, describing the tree that was
+actually searched. `stats=None` keeps every existing caller unchanged, and
+`UINode.find_all` forwards `**criteria`, so it flows through without a
+signature change there.
+
+**Why it waits.** Not breaking — the parameter is additive — but the same
+underlying cost this ledger exists for: publication freezes a public stats
+class whose field meanings (under the DAG dedupe, `roles=` filtering, `prune`)
+settle the moment they are documented, all to serve one MCP error message.
+Until then the ambiguity is taught statically in the `max_depth` schema
+description and pinned by `test_a_no_match_stays_plain_even_when_the_walk_was_cut`.
+Two events would justify building it: a second consumer appearing (actions
+using the deep-search pattern wanting "did my search see everything?" without
+paying their own `reread`), or a major release settling the shape deliberately.
+Issue #76 was closed in favor of this entry.
+
+**Migration.** None — additive. Ship the class and parameter in
+`keyhac/core/uitree.py`, thread them through `UINode.find_all`, and teach the
+MCP no-match branch in `keyhac/mcp/tools.py` to read the stats; the pinning
+test is replaced deliberately in the same change.
