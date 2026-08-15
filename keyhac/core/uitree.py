@@ -171,27 +171,44 @@ class UINode:
     # call site remember that produced a wrapper around nearly every line of
     # the first six actions written against this API.
 
-    def find(self, **criteria) -> "UINode | None":
+    def find(self, max_depth: int = DEFAULT_MAX_DEPTH,
+             max_nodes: int = DEFAULT_MAX_NODES, **criteria) -> "UINode | None":
         """The first element below this one matching `criteria`, or None.
 
         Reads the live UI at call time - this node's captured `children`
         play no part, so an old window node finds what is on screen *now*.
-        Criteria are `role`, `name`, `value`, `identifier`, `text` and
-        `predicate`; patterns are case-insensitive fnmatch with "|"
-        alternation.  None rather than an exception, because only the caller
-        knows whether a missing element is a failed precondition or an
-        expected absence - `wait_for` is the one that insists.
+        None rather than an exception, because only the caller knows whether
+        a missing element is a failed precondition or an expected absence -
+        `wait_for` is the one that insists.
+
+        Args:
+            max_depth: Depth bound for the underlying walk.  Web content can
+                nest controls deeper than the default; raise this before
+                concluding an element is not there.
+            max_nodes: Node budget for the underlying walk.
+            **criteria: `role`, `name`, `value`, `identifier`, `text` and
+                `predicate`; patterns are case-insensitive fnmatch with "|"
+                alternation.
         """
         from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_element(self, **criteria))
+        return evaluate_on_main_thread(lambda: find_element(
+            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
 
-    def find_all(self, **criteria) -> list["UINode"]:
+    def find_all(self, max_depth: int = DEFAULT_MAX_DEPTH,
+                 max_nodes: int = DEFAULT_MAX_NODES,
+                 **criteria) -> list["UINode"]:
         """Every element below this one matching `criteria`, in tree order.
 
         The same live read as `find` - the snapshot is not consulted.
+
+        Args:
+            max_depth: Depth bound for the underlying walk.
+            max_nodes: Node budget for the underlying walk.
+            **criteria: As `find`.
         """
         from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_elements(self, **criteria))
+        return evaluate_on_main_thread(lambda: find_elements(
+            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
 
     def reread(self, max_depth: int = DEFAULT_MAX_DEPTH,
                max_nodes: int = DEFAULT_MAX_NODES,
@@ -261,17 +278,43 @@ class UINode:
     # -- waiting, scoped to this subtree -------------------------------------
 
     def wait_for(self, timeout: float = 10.0, message: str | None = None,
-                 **criteria) -> "UINode":
-        """Wait until an element matching `criteria` exists below this one."""
+                 max_depth: int = DEFAULT_MAX_DEPTH,
+                 max_nodes: int = DEFAULT_MAX_NODES, **criteria) -> "UINode":
+        """Wait until an element matching `criteria` exists below this one.
+
+        Args:
+            timeout: Seconds before giving up.
+            message: What was being waited for, for the timeout error.
+            max_depth: Depth bound for the walk.  Every poll walks the tree
+                again, so this is a cost bound as much as a reach bound.
+            max_nodes: Node budget for the walk.
+            **criteria: As `find`.
+        """
         from keyhac.core.wait import wait_for_element
         return wait_for_element(self, timeout=timeout, message=message,
+                                max_depth=max_depth, max_nodes=max_nodes,
                                 **criteria)
 
     def wait_until_gone(self, timeout: float = 10.0,
-                        message: str | None = None, **criteria) -> None:
-        """Wait until nothing below this one matches `criteria`."""
+                        message: str | None = None,
+                        max_depth: int = DEFAULT_MAX_DEPTH,
+                        max_nodes: int = DEFAULT_MAX_NODES,
+                        **criteria) -> None:
+        """Wait until nothing below this one matches `criteria`.
+
+        A bound makes "gone" mean "not found within the bounds": an element
+        deeper than `max_depth` counts as gone.
+
+        Args:
+            timeout: Seconds before giving up.
+            message: What was being waited for, for the timeout error.
+            max_depth: Depth bound for the walk.
+            max_nodes: Node budget for the walk.
+            **criteria: As `find`.
+        """
         from keyhac.core.wait import wait_until_gone
-        wait_until_gone(self, timeout=timeout, message=message, **criteria)
+        wait_until_gone(self, timeout=timeout, message=message,
+                        max_depth=max_depth, max_nodes=max_nodes, **criteria)
 
     def wait_until_stable(self, quiet: float = 0.3, timeout: float = 10.0,
                           **bounds) -> None:

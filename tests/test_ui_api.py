@@ -12,6 +12,7 @@ import threading
 import pytest
 
 from keyhac.core.uitree import UINode
+from keyhac.core.wait import WaitTimeout
 
 
 class FakeElement:
@@ -234,6 +235,35 @@ def test_find_and_find_all(ui):
     assert window.find(identifier="save").name == "Save"
     assert window.find(identifier="nope") is None
     assert len(window.find_all(role="AXButton|AXCheckBox")) == 2
+
+
+def test_find_takes_the_walk_bounds(ui):
+    api, element = ui
+    element.kids.append(FakeElement("AXGroup", key="g1", children=[
+        FakeElement("AXGroup", key="g2", children=[
+            FakeElement("AXButton", identifier="deep", key="d")])]))
+    window = api.window(app="TestApp")
+    assert window.find(identifier="deep", max_depth=1) is None
+    assert window.find(identifier="deep", max_depth=5).identifier == "deep"
+
+
+def test_find_all_takes_the_walk_bounds(ui):
+    api, _element = ui
+    window = api.window(app="TestApp")
+    everything = window.find_all(role="*")
+    cut = window.find_all(role="*", max_nodes=2)
+    assert 0 < len(cut) < len(everything)
+
+
+def test_wait_for_takes_the_walk_bounds(ui):
+    api, element = ui
+    element.kids.append(FakeElement("AXGroup", key="g", children=[
+        FakeElement("AXSheet", identifier="modal", key="m")]))
+    window = api.window(app="TestApp")
+    assert window.wait_for(identifier="modal", max_depth=5,
+                           timeout=1).role == "AXSheet"
+    with pytest.raises(WaitTimeout):
+        window.wait_for(identifier="modal", max_depth=1, timeout=0.2)
 
 
 def test_reread_gives_a_fresh_snapshot(ui):
