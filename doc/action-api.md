@@ -11,8 +11,11 @@ skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 `examples/actions/` holds working ones.
 
 > **A `UINode` is a snapshot.** It records what an element was when it was read;
-> the screen then moves on and the node does not notice. `reread()` refreshes
-> one deliberately, and `StaleElement` is raised when a node you are still
+> the screen then moves on and the node does not notice. `find`, `find_all` and
+> the waits read the live screen each call regardless of the node's age;
+> `walk`, `dump`, `children` and the text properties show only what was
+> captured. `reread()` refreshes one deliberately, and `StaleElement` is
+> raised when a node you are still
 > holding refers to something that no longer exists — which is the signal to
 > re-find it, as distinct from `FillFailed`, which means the selector was
 > wrong. Address elements by `identifier` where there is one, then by role plus
@@ -203,6 +206,8 @@ For the cases where "the window" is ambiguous - a browser with several windows o
 ## <kbd>class</kbd> `UINode`
 One element, projected onto the facts both platforms agree on. 
 
+Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and the text layer read the live UI each time they are called, dispatching to the event-loop thread themselves; `text`, `all_text`, `children`, `walk` and `dump` are free reads of this snapshot, showing the screen as it was when the node was read. 
+
 
 
 **Attributes:**
@@ -248,6 +253,8 @@ dump(max_value: 'int' = 60) → str
 
 This subtree as indented text - to read, and to hand to an AI agent. 
 
+Prints the snapshot as held: a node from `ui.window()` or `ui.node()` has read nothing below itself yet, so `reread()` first. 
+
 ---
 
 ### <kbd>method</kbd> `UINode.find`
@@ -258,7 +265,7 @@ find(**criteria) → 'UINode | None'
 
 The first element below this one matching `criteria`, or None. 
 
-Criteria are `role`, `name`, `value`, `identifier`, `text` and `predicate`; patterns are case-insensitive fnmatch with "|" alternation.  None rather than an exception, because only the caller knows whether a missing element is a failed precondition or an expected absence - `wait_for` is the one that insists. 
+Reads the live UI at call time - this node's captured `children` play no part, so an old window node finds what is on screen *now*. Criteria are `role`, `name`, `value`, `identifier`, `text` and `predicate`; patterns are case-insensitive fnmatch with "|" alternation.  None rather than an exception, because only the caller knows whether a missing element is a failed precondition or an expected absence - `wait_for` is the one that insists. 
 
 ---
 
@@ -269,6 +276,8 @@ find_all(**criteria) → list['UINode']
 ```
 
 Every element below this one matching `criteria`, in tree order. 
+
+The same live read as `find` - the snapshot is not consulted. 
 
 ---
 
@@ -411,7 +420,9 @@ Wait until this subtree stops changing.
 walk() → Iterator['UINode']
 ```
 
-This node and every descendant, depth first. 
+This node and every descendant in the snapshot, depth first. 
+
+A walk over what was captured, not what is on screen: it yields the nodes already held, asking the OS nothing.  On a node read with `max_depth=0` - which is what `ui.window()` and `ui.node()` return - that is this node alone.  `find_all()` is the one that searches the live tree; `reread().walk()` traverses a fresh capture. 
 
 ---
 

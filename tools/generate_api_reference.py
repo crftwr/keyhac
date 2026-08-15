@@ -129,8 +129,11 @@ skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 `examples/actions/` holds working ones.
 
 > **A `UINode` is a snapshot.** It records what an element was when it was read;
-> the screen then moves on and the node does not notice. `reread()` refreshes
-> one deliberately, and `StaleElement` is raised when a node you are still
+> the screen then moves on and the node does not notice. `find`, `find_all` and
+> the waits read the live screen each call regardless of the node's age;
+> `walk`, `dump`, `children` and the text properties show only what was
+> captured. `reread()` refreshes one deliberately, and `StaleElement` is
+> raised when a node you are still
 > holding refers to something that no longer exists — which is the signal to
 > re-find it, as distinct from `FillFailed`, which means the selector was
 > wrong. Address elements by `identifier` where there is one, then by role plus
