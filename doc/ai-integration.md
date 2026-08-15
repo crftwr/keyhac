@@ -252,6 +252,7 @@ survives a restart.
 |---|---|---|
 | Claude Desktop | stdio → [the bridge](#the-bridge-for-stdio-only-clients) | **Verified on macOS and Windows** — the actions in `examples/actions/` were authored through it, and one authored on macOS then ran unchanged on Windows |
 | Claude Code | stdio → [the bridge](#the-bridge-for-stdio-only-clients), registered with `claude mcp add` | **Verified on macOS** — set up from this page's URL and nothing else; its own health check reaches the daemon. Calling the tools from inside a conversation is **untried** |
+| VS Code Copilot | stdio → [the bridge](#the-bridge-for-stdio-only-clients) via [`.vscode/mcp.json`](#vs-code-copilot-integration) | **Verified on macOS** — tools discoverable and usable in chat; no UI needed beyond JSON config file in workspace |
 | Anything else with MCP support | HTTP directly | Should work, **untried** |
 
 "Untried" is not scepticism about those clients — nobody has run them against
@@ -352,6 +353,48 @@ against 2.2.0–2.2.2 needs no change.
 
 The bridge does not have to come from the same install as the daemon — it reads
 the endpoint file and forwards.
+
+**Whichever client you register it in, restart the client after editing the
+JSON.** An MCP config file is read when the client starts the server, not when
+the file changes, so a client left running keeps the server list it had at
+launch — no `keyhac` tools, no error, nothing in a log to explain it. Some
+clients offer a narrower reload (a *Restart* on the server entry, or a window
+reload); either works. Restarting the whole client always does.
+
+### VS Code Copilot integration
+
+VS Code Copilot uses `.vscode/mcp.json` (workspace) or `~/.copilot/mcp-config.json` (user) to configure MCP servers. The same bridge mechanism works here. 
+
+**Workspace configuration** (checked into source control):
+```json
+{
+  "servers": {
+    "keyhac": {
+      "type": "stdio",
+      "command": "/Applications/Keyhac.app/Contents/Resources/bin/keyhac-mcp-bridge"
+    }
+  }
+}
+```
+
+Place this in `.vscode/mcp.json` at the root of your project. The bridge path will depend on your Keyhac installation:
+
+| Install | Path |
+|---|---|
+| macOS app bundle | `/Applications/Keyhac.app/Contents/Resources/bin/keyhac-mcp-bridge` |
+| Windows (portable or zip) | `C:\path\to\keyhac-mcp-bridge.exe` |
+| Microsoft Store | `C:\Users\<you>\AppData\Local\Microsoft\WindowsApps\keyhac-mcp-bridge.exe` |
+| Linux (pip) | `/path/to/venv/bin/keyhac-mcp-bridge` or just `keyhac-mcp-bridge` |
+
+**User configuration** (for all projects):
+For user-level setup that applies across all VS Code projects, place the same JSON in `~/.copilot/mcp-config.json`. This survives workspace changes and restarts.
+
+**Then reload VS Code.** As with any client, the file is read when the server is
+started, so a window that was already open will not list the Keyhac tools until
+you restart the server from VS Code's MCP server list — or, failing that, reload
+the window or restart VS Code itself.
+
+The benefit of the bridge approach over HTTP here is identical to Claude Desktop: the bridge reads `~/.keyhac/mcp.json` on each request, so configuration changes automatically when Keyhac restarts and picks a new port. A configuration that pins an HTTP port goes stale after the next Keyhac restart.
 
 ## Add the skills
 
