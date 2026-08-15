@@ -1,6 +1,6 @@
 """The MCP endpoint Keyhac serves on localhost.
 
-Claude reaches Keyhac's tools through this: it inspects the screen an action
+The agent reaches Keyhac's tools through this: it inspects the screen an action
 will run against, runs the action, reads what went wrong, and tries again.
 That loop - and not runtime inference - is the whole of the AI integration
 (doc/dev/ai-integration.md §3.1).

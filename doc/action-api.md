@@ -246,7 +246,7 @@ Note `is not None`, not truthiness: an unchecked checkbox's value is 0 and an em
 dump(max_value: 'int' = 60) → str
 ```
 
-This subtree as indented text - to read, and to hand to Claude. 
+This subtree as indented text - to read, and to hand to an AI agent. 
 
 ---
 

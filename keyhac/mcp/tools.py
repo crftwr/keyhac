@@ -1,4 +1,4 @@
-"""The tools Claude gets, and why these ones.
+"""The tools the agent gets, and why these ones.
 
 They follow the escalation ladder in doc/dev/ai-integration.md §8.1: read the
 screen that is already on it, ask the operator to open the state that is not,
@@ -138,7 +138,7 @@ def _running_action(name: str):
 
 
 class Tool:
-    """One callable, its JSON Schema, and the description Claude reads."""
+    """One callable, its JSON Schema, and the description the agent reads."""
 
     def __init__(self, name, description, schema, run):
         self.name = name

@@ -195,7 +195,7 @@ class UINode:
             prune=prune))
 
     def dump(self, max_value: int = 60) -> str:
-        """This subtree as indented text - to read, and to hand to Claude."""
+        """This subtree as indented text - to read, and to hand to an AI agent."""
         return format_tree(self, max_value=max_value)
 
     # -- the text layer ------------------------------------------------------
@@ -421,7 +421,7 @@ def find_element(root, **kwargs) -> UINode | None:
 
 
 def format_tree(node: UINode, indent: int = 0, max_value: int = 60) -> str:
-    """The tree as indented text - for reading, and for handing to Claude.
+    """The tree as indented text - for reading, and for handing to an AI agent.
 
     Deliberately terse: this is what gets pasted into a conversation while an
     action is being written, and a page's worth of it has to stay readable.
