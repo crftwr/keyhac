@@ -244,12 +244,25 @@ class ActionRun:
         with _finished:
             _finished.notify_all()
 
-    def report(self) -> str:
-        """The whole of what a caller came back for."""
+    def report(self, level: str | None = None, tail: int | None = None) -> str:
+        """The whole of what a caller came back for.
+
+        Args:
+            level: Lowest log severity to include - "DEBUG", "INFO", "WARNING",
+                "ERROR" or "CRITICAL".  None keeps everything.  Filters only
+                captured *log* lines (recognised by the "LEVEL [logger]" shape
+                the capture formatter writes); print() output, the status head
+                and the traceback always come through.
+            tail: Only the last `tail` lines of the output.  None keeps all of
+                it.
+
+        Both cuts announce themselves in the output, so a caller reading a
+        filtered report knows there was more and how to get it.
+        """
         head = (f"{self.name}: {self.status} after {self.seconds:.1f}s"
                 if not self.running else
                 f"{self.name}: still running after {self.seconds:.1f}s")
-        body = self.output.getvalue().strip()
+        body = _trimmed(self.output.getvalue().strip(), level, tail)
         parts = [head]
         if body:
             parts.append(body)
@@ -259,6 +272,52 @@ class ActionRun:
             parts.append("(call get_action_result again for the rest, or "
                          "cancel_action to stop it)")
         return "\n\n".join(parts)
+
+
+#: Severities in order, as the capture formatter opens a log line with them
+#: ("DEBUG [keyhac.Keymap] PASSTHRU : ...").  What `report(level=)` names and
+#: what the line filter matches on.
+_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def _trimmed(body: str, level: str | None, tail: int | None) -> str:
+    """`body` with low-severity log lines dropped and only the tail kept.
+
+    Issue #71: a run that types its way through a form leaves thousands of
+    keymap DEBUG lines around the two INFO lines that say what happened, and
+    the model reading the report pays for all of them.  Filtered at read time
+    rather than capture time, so asking again with `level="DEBUG"` can still
+    produce the lines an INFO-level read hid.
+
+    Matched on the "LEVEL [" opening the capture formatter writes.  A
+    multi-line log record loses only its first line - the continuation lines
+    are indistinguishable from print() output, which must never be dropped.
+    """
+    notes = []
+    if level is not None:
+        name = str(level).upper()
+        if name not in _LEVEL_NAMES:
+            raise ValueError(f"level must be one of "
+                             f"{', '.join(_LEVEL_NAMES)}, not {level!r}")
+        drop = tuple(f"{below} [" for below in
+                     _LEVEL_NAMES[:_LEVEL_NAMES.index(name)])
+        if drop and body:
+            lines = body.splitlines()
+            kept = [line for line in lines if not line.startswith(drop)]
+            if len(kept) < len(lines):
+                notes.append(f"[{len(lines) - len(kept)} log line(s) below "
+                             f"{name} hidden - level='DEBUG' returns "
+                             f"everything]")
+                body = "\n".join(kept)
+    if tail is not None:
+        if tail < 1:
+            raise ValueError("tail must be a positive number of lines")
+        lines = body.splitlines()
+        if len(lines) > tail:
+            notes.append(f"[showing the last {tail} of {len(lines)} lines - "
+                         f"omit tail= for all of them]")
+            body = "\n".join(lines[-tail:])
+    return "\n".join(notes + ([body] if body else []))
 
 
 def start_run(name: str) -> ActionRun:
