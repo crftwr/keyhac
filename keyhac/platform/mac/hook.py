@@ -339,7 +339,11 @@ class MacInputHook(InputHook):
                     break
                 changed_flags = _KEYCODE_FLAGS.get(key_code, 0)
                 if changed_flags == 0:
-                    logger.warning(f"Flag changed for unknown reason - vk={key_code}")
+                    # A flagsChanged for a keycode outside the modifier map
+                    # changes no flag this engine tracks, so passing it
+                    # through untouched is the whole handling. macOS does
+                    # emit these - the screenshot UI posts one with vk=0
+                    # (issue #30) - and warning about them was only noise.
                     break
                 down = bool(Quartz.CGEventGetFlags(event) & changed_flags)
             else:
