@@ -30,14 +30,16 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # 1.0.10 is the first release with every puikit API/fix keyhac uses:
+    # 1.0.12 is the first release with every puikit API/fix keyhac uses:
     # set_tray(image=) (PR #82), main-window visibility (PR #84), the LogView
-    # sized-font clip fix the 11pt console log needs (PR #86), and per-window
-    # IME input contexts (PR #90) - without that last one the chooser's filter
+    # sized-font clip fix the 11pt console log needs (PR #86), per-window
+    # IME input contexts (PR #90) - without that one the chooser's filter
     # box accepts ASCII and never composes Japanese, which is issue #20 and is
-    # what doc/dev/testing.md's IME pass verifies. To develop against a local
+    # what doc/dev/testing.md's IME pass verifies - and ListView scrolling an
+    # assigned selection into view (puikit PR #95), which is what keeps the
+    # chooser's highlight on screen (issue #27). To develop against a local
     # checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.0.10",
+    "puikit>=1.0.12",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
