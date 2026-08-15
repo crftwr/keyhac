@@ -76,7 +76,7 @@ _NO_PACKAGE = 15700
 
 
 def running_packaged() -> bool:
-    """Whether this process has MSIX package identity (the Store install).
+    """Whether this process has MSIX package identity (Store or sideloaded).
 
     Asked of Windows rather than inferred from the path, because it is exactly
     the condition that matters: a process *with* identity may run the binaries
