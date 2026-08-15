@@ -58,6 +58,7 @@ import threading
 import time
 
 from keyhac.core import capture, log
+from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.mcp import extensions
 
 logger = log.getLogger("MCP")
@@ -392,12 +393,23 @@ class ToolRegistry:
         return window
 
     def list_windows(self) -> str:
+        # On macOS Focus.window_title is captured off the focus-path walk and
+        # arrives transliterated (FOCUS_PATH_TRANS_TABLE: "(" -> "<", ":" ->
+        # "-", ...); enumerated window titles are raw.  Normalizing both sides
+        # makes the comparison mean "same window" on both OSes - the table
+        # maps onto characters it never maps from, so re-applying it to an
+        # already-escaped title changes nothing.  Issue #73.
+        def normalize(title):
+            return title.translate(FOCUS_PATH_TRANS_TABLE) if title else title
+
         def read():
             focus = self.keymap.focus
-            focused = (focus.app_name, focus.window_title) if focus else (None, None)
+            focused = ((focus.app_name, normalize(focus.window_title))
+                       if focus else (None, None))
             lines = []
             for window in self.keymap.list_windows():
-                mark = "*" if (window.app_name, window.title) == focused else " "
+                mark = ("*" if (window.app_name, normalize(window.title)) == focused
+                        else " ")
                 lines.append(f"{mark} {window.app_name or '?'}: "
                              f"{window.title or '(untitled)'}")
             return lines

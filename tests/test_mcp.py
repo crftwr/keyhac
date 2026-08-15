@@ -312,6 +312,23 @@ def test_list_windows_marks_the_focused_one(registry):
     assert "* TestApp: Main" in registry.call("list_windows", {})
 
 
+def test_the_mark_survives_a_title_the_focus_path_escaped():
+    # On macOS Focus.window_title is transliterated by FOCUS_PATH_TRANS_TABLE
+    # ("(" -> "<", ":" -> "-", ...) while enumerated titles stay raw; the
+    # focused window was never marked when its title contained any of
+    # ( ) [ ] / * ? : - which is most editor and browser titles.  Issue #73.
+    from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
+    raw = "ai-integration.md (Working Tree) — keyhac"
+    keymap = FakeKeymap()
+    keymap.focus.app_name = "Code"
+    keymap.focus.window_title = raw.translate(FOCUS_PATH_TRANS_TABLE)
+    keymap.list_windows = lambda: [FakeWindow("Finder", "(untitled)"),
+                                   FakeWindow("Code", raw)]
+    out = ToolRegistry(keymap).call("list_windows", {})
+    assert f"* Code: {raw}" in out
+    assert "* Finder" not in out
+
+
 def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 

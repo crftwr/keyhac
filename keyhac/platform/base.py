@@ -37,7 +37,13 @@ class Focus:
         app_name: Process/exe base name without extension (Windows), or the
             localized application name (macOS).
         pid: Process id of the focused application.
-        window_title: Title of the focused window.
+        window_title: Title of the focused window.  On macOS it is captured
+            during the focus-path walk and carries the path's transliteration
+            of fnmatch special characters ("(" and "[" become "<", ")" and
+            "]" become ">", and "/", "*", "?", ":" each become "-"); on
+            Windows it is the raw title.  A ``title=`` pattern containing
+            one of those characters must match the escaped spelling on
+            macOS - or use a "*" wildcard across it, which works on both.
         class_name: Win32 window class name (Windows only; None on macOS).
         path: Focus path string - on macOS the AX focus path
             ("/AXApplication(Xcode)/AXWindow(...)..."), on Windows a
