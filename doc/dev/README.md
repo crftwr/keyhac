@@ -15,6 +15,8 @@ people working on Keyhac itself.
 - [packaging.md](packaging.md) — launchers, bundles, release pipeline, data paths.
 - [testing.md](testing.md) — test layers, harness patterns, live verification
   record.
+- [next-major.md](next-major.md) — ledger of breaking API changes deferred to
+  the next major release by the additive-only policy, with reasoning.
 - [ai-integration.md](ai-integration.md) — the AI integration design: agent at
   authoring time producing plain-Python actions, the UI-mediated ETL workload
   they target, the five layers, the output-side primitives, MCP topologies,
