@@ -118,6 +118,25 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
             f"{max(node.depth for node in nodes)}")
 
 
+def _portable_role_spelling(pattern: str) -> str | None:
+    """The unprefixed spelling of an "AX"-prefixed role pattern, or None.
+
+    "AX" is macOS vocabulary: an AX-prefixed pattern matches only macOS
+    roles, while the unprefixed spelling matches the AX name there too, so
+    it is the portable one (issue #69).  Purely syntactic - this reads the
+    pattern, never the tree, so the no-match path stays a single walk
+    (issue #76).  A wildcard-led remainder ("AX*") is left alone: stripping
+    it would turn "every AX-prefixed role" into "everything".
+    """
+    branches = [b.strip() for b in pattern.split("|")]
+    stripped = [b[2:] if (b[:2].lower() == "ax" and len(b) > 2
+                          and b[2] not in "*?[") else b
+                for b in branches]
+    if stripped == branches:
+        return None
+    return "|".join(stripped)
+
+
 def _running_action(name: str):
     """A running action filed under `name`, whoever started it.
 
@@ -216,8 +235,10 @@ class ToolRegistry:
                  "selector you are about to write actually matches.",
                  {"type": "object", "properties": {
                      **window_args,
-                     "role": {**string, "description": "Role pattern. macOS "
-                              "names may drop the AX prefix."},
+                     "role": {**string, "description": "Role pattern. The AX "
+                              "prefix may be dropped in the pattern ('Row' "
+                              "matches AXRow); an AX-prefixed pattern matches "
+                              "only macOS roles."},
                      "name": {**string, "description": "Label pattern."},
                      "value": {**string, "description": "Content pattern."},
                      "identifier": {**string, "description":
@@ -533,7 +554,17 @@ class ToolRegistry:
             # describing a second snapshot the search never saw. The
             # ambiguity is accepted and taught in the max_depth description
             # instead; issue #76 holds the candidate real fix.
-            return f"no element matching {criteria}"
+            text = f"no element matching {criteria}"
+            role = criteria.get("role")
+            suggested = (_portable_role_spelling(role)
+                         if isinstance(role, str) else None)
+            if suggested:
+                text += (f'\n\n[an "AX"-prefixed role pattern only matches '
+                         f'macOS roles - the unprefixed spelling matches the '
+                         f'AX name too and is the portable one: try '
+                         f'role="{suggested}". On macOS, also raise max_depth '
+                         f'before concluding the element is not there]')
+            return text
         lines = [f"{len(matches)} match(es):"]
         for node in matches[:int(limit)]:
             lines.append(f"  {node!r} value={node.value!r} rect={node.rect}")

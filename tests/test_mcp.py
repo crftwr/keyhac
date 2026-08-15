@@ -379,6 +379,37 @@ def test_a_no_match_stays_plain_even_when_the_walk_was_cut(registry):
     assert reread == [], "and no second walk happened to say more"
 
 
+def test_an_ax_prefixed_no_match_names_the_portable_spelling(registry):
+    """Issue #69: "AX" is macOS vocabulary - an AX-prefixed pattern matches
+    only macOS roles, and rediscovering that cost a session several calls.
+    The hint is syntactic, read off the pattern alone, so the no-match path
+    stays a single walk (issue #76)."""
+    root = registry.keymap.node
+    root.find_all = lambda **criteria: []
+    reread = []
+    root.reread = lambda **kw: reread.append(kw) or root
+    text = registry.call("find_elements", {"role": "AXPopUpButton|Cell"})
+    assert text.startswith(
+        "no element matching {'role': 'AXPopUpButton|Cell'}")
+    assert 'role="PopUpButton|Cell"' in text
+    assert reread == [], "the hint is syntactic - no second walk"
+
+
+def test_a_wildcard_ax_pattern_gets_no_suggestion(registry):
+    """Stripping "AX*" would leave "*" - every role - so it is left alone
+    and the no-match reply stays plain."""
+    root = registry.keymap.node
+    root.find_all = lambda **criteria: []
+    text = registry.call("find_elements", {"role": "AX*"})
+    assert text == "no element matching {'role': 'AX*'}"
+
+
+def test_a_match_found_with_an_ax_pattern_gets_no_hint(registry):
+    """The spelling advice is for the no-match path only."""
+    text = registry.call("find_elements", {"role": "AXWindow"})
+    assert "portable" not in text
+
+
 def test_an_action_reports_what_it_logged(writable):
     from keyhac.core import log
 
