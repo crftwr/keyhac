@@ -1,6 +1,6 @@
 ---
 name: keyhac-release
-description: Release a new version of Keyhac — confirm the version bump, run the pre-tag checks and account for the standing interactive pass, cut the tag, publish the GitHub Release with a hand-written note, and attach the macOS DMG, Windows zip, skill bundles, and PyPI wheel. Use when the user says "release Keyhac", "release a patch/minor/major version of Keyhac", or "ship keyhac X.Y.Z".
+description: Release a new version of Keyhac — confirm the version bump, run the pre-tag checks and account for the standing interactive pass, cut the tag, publish the GitHub Release with a hand-written note, and attach the macOS DMG, Windows zip, skill bundles, and PyPI wheel. Use when the user says "release Keyhac", "release a patch/minor/major version of Keyhac", or "ship keyhac X.Y.Z" — and also on the Windows machine afterwards, when they say "finish the Keyhac release on Windows" or "attach the Windows artifacts" (step 6: no new tag, just the Windows targets at the existing one).
 ---
 
 # Releasing Keyhac
@@ -130,3 +130,27 @@ gh release edit vX.Y.Z --notes-file <scratch>/release-note-x.y.z.md
 - List what this machine could not produce (the other OS's artifacts, the
   Store submission) as explicitly remaining, with the commands the other
   session must run.
+
+## 6. Finishing on Windows
+
+The macOS session ends with the Windows artifacts listed as remaining; a later
+session on the Windows machine enters here ("finish the Keyhac release on
+Windows"). There is nothing to bump, tag, or confirm a version for — that all
+happened — but there is still a publish gate: state which release is being
+finished and get a yes before uploading.
+
+1. Find the release being finished: `git fetch`, then `make release-status`
+   on the latest tag (`git describe --tags --abbrev=0 origin/main`) — its
+   missing Windows assets are the work. Confirm with the user.
+2. Put the checkout on that tag's commit: `git pull` when `main` still sits
+   on the release commit, `git checkout vX.Y.Z` when it has moved on. The
+   artifacts must be built from the tagged code, not from whatever `main`
+   has become.
+3. `make release-windows-zip` — builds the bundle and the portable zip, and
+   attaches the zip to the GitHub Release.
+4. Ask whether to also submit to the Microsoft Store this time:
+   `make release-windows-msix`. It is a separate publication with its own
+   asynchronous certification (`msstore submission status`), not a Release
+   asset, so it is a deliberate choice, not a default.
+5. `make release-status` — the release is finished when everything shows:
+   DMG, win64 zip, every skill bundle, sdist + wheel, PyPI published.
