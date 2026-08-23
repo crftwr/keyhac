@@ -2132,3 +2132,34 @@ def test_the_call_log_does_not_land_in_a_running_action(writable):
     assert "[keyhac.MCP]" not in peek
     gate.set()
     writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
+
+
+def test_start_action_files_the_run_before_it_returns(writable, monkeypatch):
+    """The window between start_action returning and its worker opening the
+    run record used to read as the *previous* run of the same name: finished,
+    so get_action_result answered at once with the last run's output as this
+    one's.  A model polling `did it work?` got yes from the run before.
+
+    The worker is stopped from ever starting, so everything below has to have
+    happened in start_action itself - which is exactly the window.
+    """
+    assert "the first run" in _register(
+        writable, lambda: print("the first run"), name="race")
+    finished = capture.get_run("race.Probe")
+
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+    sys.modules["race"].RUN = lambda: print("the second run")
+    writable.call("start_action", {"name": "race.Probe"})
+
+    run = capture.get_run("race.Probe")
+    try:
+        assert run is not finished, "start_action left the previous run on file"
+        assert run.running
+        # And the guard that stops a double start now covers the window too.
+        assert "already running" in writable.call(
+            "start_action", {"name": "race.Probe"})
+        assert "the first run" not in writable.call(
+            "get_action_result", {"name": "race.Probe", "wait": 0})
+    finally:
+        # Nothing else will: this run has no worker to close it.
+        run.finish("cancelled", "the test never let the worker start")

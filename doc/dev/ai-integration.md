@@ -892,6 +892,13 @@ the action carried on invisibly. Blocking briefly and degrading to polling is wo
 still: two reply shapes whose selection hinges on how fast the action happened to be,
 the least predictable thing available.
 
+Returning at once carries one obligation: the run record is opened by `start_action`
+itself, on the calling thread, and handed to the worker — not opened by the worker. A
+model that starts an action and immediately asks how it went would otherwise be answered
+out of the *previous* run of that name, which is finished, so the wait returns instantly
+and a stale success reads as this run's. The pair only means anything if the second call
+describes the run the first one started.
+
 ### 8.4 The authoring skill
 
 A skill is needed for intent (and, at rung 4, trace) → generalised `Action`. Three kinds
