@@ -95,3 +95,51 @@ def test_a_named_terminal_still_matches(shipped):
     assert any(condition.check(terminal)
                for condition in custom_conditions(shipped)), \
         "no sample condition recognises Terminal any more"
+
+
+def shipped_action(keymap, name):
+    """The template's binding whose function has this name, wherever it sits."""
+    for table in keymap._all_keytables:
+        for action in table.table.values():
+            if getattr(action, "__name__", None) == name:
+                return action
+    raise AssertionError(f"the template no longer binds {name}()")
+
+
+def test_the_ime_samples_run(shipped):
+    """The IME samples read a tri-state and drive an input context; only
+    running them says whether they still line up with the API."""
+    from keyhac.platform.fake import FakeImeProvider
+
+    shipped.ime_provider = FakeImeProvider(status=False)
+    toggle = shipped_action(shipped, "toggle_ime")
+
+    toggle()
+    assert shipped.get_ime_status() is True
+    toggle()
+    assert shipped.get_ime_status() is False
+
+
+def test_the_ime_sample_restores_the_state_it_found(shipped):
+    from keyhac.platform.fake import FakeImeProvider
+
+    shipped.ime_provider = FakeImeProvider(status=True)
+    type_git_status = shipped_action(shipped, "type_git_status")
+
+    type_git_status()
+    assert shipped.get_ime_status() is True, "the IME was left off"
+    assert shipped._hook.sent, "no keys reached the hook"
+
+
+def test_the_ime_samples_leave_an_unreadable_ime_alone(shipped, caplog):
+    """None means "could not tell"; neither sample may act on it."""
+    from keyhac.platform.fake import FakeImeProvider
+
+    shipped.ime_provider = FakeImeProvider(status=None)
+
+    with caplog.at_level("WARNING"):
+        shipped_action(shipped, "toggle_ime")()
+    assert "No IME to toggle" in caplog.text
+
+    shipped_action(shipped, "type_git_status")()
+    assert shipped.get_ime_status() is None

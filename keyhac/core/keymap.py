@@ -207,6 +207,7 @@ class Keymap:
         # Wired by main(): platform services + clipboard history + UI hooks
         self.app_control = None             # platform AppControl
         self.window_provider = None         # platform WindowProvider (may be None)
+        self.ime_provider = None            # platform ImeProvider (may be None)
         self._clipboard_history = None      # core ClipboardHistory
         self._mcp_server = None             # MCPServer while enabled
         self._mcp_timer = None              # closes the window on its own
@@ -1031,6 +1032,52 @@ class Keymap:
         if self.window_provider is None:
             return []
         return self.window_provider.window_frames()
+
+    # ------------------------------------------------------------------
+    # IME access (config-facing; see keyhac.platform.base.ImeProvider)
+
+    def get_ime_status(self) -> bool | None:
+        """Get whether the IME is on for whatever holds the input focus.
+
+        There is no window argument on purpose: macOS can only ever address
+        the current input source, so naming a window would mean two different
+        contracts on the two OSes.
+
+        Returns:
+            True when the IME is on, False when it is off, or None when the
+            state cannot be determined - no IME is installed or reachable, or
+            (Windows) a TSF-only IME does not answer the IMM32 query.
+
+        Note:
+            UI-thread only.  On macOS "off" means a plain keyboard layout or
+            an input method's Roman mode is selected, which is close to but
+            not the same thing as Windows' "the IME is closed".
+        """
+        if self.ime_provider is None:
+            return None
+        return self.ime_provider.get_status()
+
+    def set_ime_status(self, on: bool) -> bool:
+        """Turn the IME on or off for whatever holds the input focus.
+
+        Args:
+            on: True to turn the IME on, False to turn it off.
+
+        Returns:
+            Whether the requested state was actually reached - the result is
+            read back rather than assumed, so False means the IME declined or
+            there was none to ask.
+
+        Note:
+            UI-thread only.  Whether the change also affects other
+            applications is the user's OS setting ("Let me use a different
+            input method for each app window" on Windows, "Automatically
+            switch to a document's input source" on macOS), not something
+            Keyhac decides.
+        """
+        if self.ime_provider is None:
+            return False
+        return self.ime_provider.set_status(on)
 
     def app_control_running_apps(self):
         """[(app_name, pid)] via the platform (empty when unavailable).

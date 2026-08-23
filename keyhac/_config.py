@@ -89,7 +89,9 @@ def configure(keymap):
     if mac:
         # The classic macOS setup: tap Left/Right Cmd alone for Eisu/Kana
         # (IME off/on) - a no-op unless a Japanese input source is
-        # installed.  Held, they are still plain Cmd.
+        # installed.  Held, they are still plain Cmd.  Both names work on
+        # Windows too (they reach VK_IME_OFF / VK_IME_ON there), so this
+        # pair is portable if you would rather bind it on both.
         kt["O-LCmd"] = "Eisu"
         kt["O-RCmd"] = "Kana"
     else:
@@ -116,6 +118,37 @@ def configure(keymap):
             ctx.send_key(f"{MOD}-C")
 
     kt[f"{LEADER}-Q"] = wrap_in_quotes
+
+    # ==================================================================
+    # IME
+    # ==================================================================
+
+    # Both calls act on whatever holds the input focus, and neither takes
+    # a window: macOS can only ever address the current input source, so a
+    # window argument would mean two different APIs wearing one name.
+    #
+    # get_ime_status() is tri-state - True, False, or None for "could not
+    # tell" (no IME installed, or on Windows a TSF-only IME that does not
+    # answer).  Treating None as False would silently claim the IME is off.
+    #
+    # For plain toggling, the Eisu / Kana key names above cost nothing and
+    # need no function at all; reach for these when you want the state.
+
+    def toggle_ime():
+        status = keymap.get_ime_status()
+        if status is None:
+            logger.warning("No IME to toggle.")
+            return
+        # set_ime_status() reads the state back, so False here means the
+        # IME declined - not that the call failed to go out.
+        if not keymap.set_ime_status(not status):
+            logger.warning("The IME did not take the change.")
+
+    kt[f"{LEADER}-Space"] = toggle_ime
+
+    # A sample of the state going the other way is in the terminal key
+    # table near the bottom: turning the IME off around a send_key()
+    # sequence, and putting it back the way it was.
 
     # ==================================================================
     # Clipboard
@@ -381,6 +414,29 @@ def configure(keymap):
 
     kt_terminal = keymap.define_keytable(custom_condition_func=is_terminal)
     kt_terminal[f"{LEADER}-K"] = "Ctrl-K"     # clear, rather than "Down"
+
+    # --- sending keys the IME must not eat -------------------------------
+    # send_key() feeds the IME exactly like real typing, so with a Japanese
+    # IME on this would compose instead of arriving.  send_text() and
+    # InputText() are unaffected - they inject the characters directly - so
+    # this dance is only ever needed when you are sending *keys*.
+    #
+    # `was_on` is tri-state, and falsy is the right reading of None: an IME
+    # we cannot see the state of is one to leave alone, in both directions.
+    def type_git_status():
+        was_on = keymap.get_ime_status()
+        if was_on:
+            keymap.set_ime_status(False)
+        try:
+            with keymap.get_input_context() as ctx:
+                for key in ("G", "I", "T", "Space",
+                            "S", "T", "A", "T", "U", "S"):
+                    ctx.send_key(key)
+        finally:
+            if was_on:
+                keymap.set_ime_status(True)
+
+    kt_terminal[f"{LEADER}-G"] = type_git_status
 
     # ==================================================================
     # More to explore

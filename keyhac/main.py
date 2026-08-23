@@ -107,16 +107,20 @@ def main() -> int:
         from keyhac.platform.mac.clipboard import MacClipboardProvider
         from keyhac.platform.mac.apps import MacAppControl
         from keyhac.platform.mac.window import MacWindowProvider
+        from keyhac.platform.mac.ime import MacImeProvider
         clipboard_provider = MacClipboardProvider()
         keymap.app_control = MacAppControl()
         keymap.window_provider = MacWindowProvider()
+        keymap.ime_provider = MacImeProvider()
     else:
         from keyhac.platform.win.clipboard import WinClipboardProvider
         from keyhac.platform.win.apps import WinAppControl
         from keyhac.platform.win.window import WinWindowProvider
+        from keyhac.platform.win.ime import WinImeProvider
         clipboard_provider = WinClipboardProvider()
         keymap.app_control = WinAppControl()
         keymap.window_provider = WinWindowProvider()
+        keymap.ime_provider = WinImeProvider()
     # The state files always sit beside the config, however it resolved: a
     # --config sandbox must not touch the real ~/.keyhac/clipboard.json, and a
     # portable install keeps its history on the stick with its config.
