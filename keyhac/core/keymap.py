@@ -1143,7 +1143,14 @@ class Keymap:
             there was none to ask.
 
         Note:
-            UI-thread only.  The two OSes differ in how far "on" reaches:
+            UI-thread only, and it takes effect **at once** - unlike key
+            output, which `InputContext` only queues for the application.
+            Wrapping a `send_key` batch in "off ... back on" therefore does
+            not work: the restore lands before the keys do and they are
+            composed anyway.  Use `InputContext.send_text` for literal text,
+            which the IME does not intercept.
+
+            The two OSes differ in how far "on" reaches:
             macOS selects a Japanese input source even from a US layout,
             while Windows only opens an IME that the focused window is
             already typing under - asking for "on" while a plain layout like

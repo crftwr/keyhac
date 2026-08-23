@@ -277,6 +277,15 @@ Some caveats worth knowing:
   "Let me use a different input method for each app window" on Windows,
   "Automatically switch to a document's input source" on macOS — not something
   Keyhac decides.
+- **Do not wrap key output in "off … back on".** The state change takes effect at
+  once, while `send_key()` only *queues* its events for the application to pick up
+  later — so the restore lands first and the keys compose anyway (`"git status"`
+  arrives as `"gいt"`). Waiting it out is not the fix either: a key-triggered
+  action runs on the main thread inside the keyboard hook, where sleeping past the
+  hook timeout gets the hook unhooked. For literal text use `ctx.send_text()` or
+  `InputText`, which inject the characters themselves and are unaffected by the
+  IME. If keys must go out with the IME closed, close it and leave it closed — the
+  `Kana` / 半角全角 key is how the user puts it back.
 
 For simply toggling, the key names cost nothing and work on both OSes: `Eisu` is
 IME off and `Kana` is IME on, reaching the macOS keys of those names and Windows'

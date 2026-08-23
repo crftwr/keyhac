@@ -73,6 +73,14 @@ live on each OS.
   harness records every vk the hook was handed for exactly that reason — 100
   taps is 200 events, and fewer means the burst never arrived to be translated,
   which is a skip rather than a translation failure.
+- **An IME that was just closed costs the *next* test's injection its tail.**
+  The same loss, arriving through a neighbour rather than through the test's
+  own burst. `tests/test_win_ime.py` opens the IME; without settling after it
+  closes one again, the Japanese case of `tests/test_win_send_text.py` received
+  `日本語入力` for `日本語入力のテスト` about one run in five, while that module
+  alone passed 8/8 and the pair passed 6/6 with the IME test deselected — which
+  is how it was attributed. A test that changes IME state owns putting it back
+  *and* pumping afterwards.
 - **A guard must not be able to hide the defect the test exists to catch.**
   These skip only on *detected interference* — focus observed to leave the
   probe, or the pointer observed moving while nothing is injecting — never on

@@ -130,17 +130,32 @@ class ImeProbe:
                 user32.DispatchMessageW(msg)
             time.sleep(0.005)
 
+    def require_focus(self) -> None:
+        """A busy desktop can take the probe's focus mid-run, and the injection
+        then lands in somebody else's window.  That is a skip, not a failure -
+        the house rule for the live input tests (doc/dev/testing.md)."""
+        if user32.GetFocus() != self.edit:
+            pytest.skip("keyboard focus left the probe mid-test")
+
+    def clear(self) -> None:
+        user32.SendMessageW(self.edit, WM_SETTEXT, 0, ctypes.c_wchar_p(""))
+
+    def read(self) -> str:
+        buffer = ctypes.create_unicode_buffer(64)
+        user32.SendMessageW(self.edit, WM_GETTEXT, 64, buffer)
+        return buffer.value
+
     def type_and_read(self, vks=(VK_A,)) -> str:
         """Type through the IME, commit, and return what the control kept."""
+        self.require_focus()
         user32.SendMessageW(self.edit, WM_SETTEXT, 0, ctypes.c_wchar_p(""))
         events = []
         for vk in (*vks, VK_RETURN):
             events += [(vk, True), (vk, False)]
         WinInputHook().send(events)
         self.pump(0.6)
-        buffer = ctypes.create_unicode_buffer(64)
-        user32.SendMessageW(self.edit, WM_GETTEXT, 64, buffer)
-        return buffer.value.strip()
+        self.require_focus()
+        return self.read().strip()
 
     def destroy(self) -> None:
         user32.DestroyWindow(self.hwnd)
@@ -175,7 +190,13 @@ def ime_layout(probe):
     user32.ActivateKeyboardLayout(with_ime[0], 0)
     probe.pump(0.3)
     yield probe
+    # Close it *and* let it settle.  An IME that was just closed still costs
+    # the next injection its tail: leaving without the pump made the Japanese
+    # case of tests/test_win_send_text.py drop characters about one run in
+    # five, which is the "injected input is occasionally lost" hazard in
+    # doc/dev/testing.md arriving through a neighbour.
     WinImeProvider().set_status(False)
+    probe.pump(0.3)
 
 
 @pytest.fixture
@@ -232,6 +253,28 @@ class TestUnderAnImeLayout:
         assert plain == "a"
         assert composed and not composed.isascii(), (
             f"IME on produced {composed!r}, expected a composed character")
+
+
+    def test_send_text_goes_through_an_open_ime_untouched(self, ime_layout,
+                                                          provider):
+        """Why the config template types literal text with send_text().
+
+        It injects the characters themselves rather than feeding keys to the
+        IME, so it needs no IME dance - and the dance a config would reach for
+        instead ("off, send, back on") cannot work: the state change is
+        immediate while the keys are only queued for the application.
+        """
+        assert provider.set_status(True) is True
+        ime_layout.pump(0.3)          # let the IME finish opening
+        ime_layout.require_focus()
+        ime_layout.clear()
+        WinInputHook().send_text("git status")
+        ime_layout.pump(0.8)
+        ime_layout.require_focus()
+        text = ime_layout.read()
+        provider.set_status(False)    # this test is the one that opened it
+        ime_layout.pump(0.3)
+        assert text == "git status"
 
 
 class TestUnderALayoutWithNoIme:
