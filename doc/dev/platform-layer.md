@@ -96,9 +96,21 @@ house style for raw-ctypes Win32/COM):
 - **Clipboard**: `AddClipboardFormatListener` on a message-only window →
   `WM_CLIPBOARDUPDATE` (event-driven; keyhac-win moved to this in 1.75). Text via
   `CF_UNICODETEXT`; optionally capture `CF_HTML`/`CF_DIB` payloads for history fidelity.
-- **IME**: `ImmGetDefaultIMEWnd(GetForegroundWindow())` → `WM_IME_CONTROL` with
+- **IME**: `ImmGetDefaultIMEWnd(focused window)` → `WM_IME_CONTROL` with
   `IMC_GETOPENSTATUS`/`IMC_SETOPENSTATUS` — the route pyauto used, and the only one
-  that crosses a process boundary (an `HIMC` is process-local). Sent with
+  that crosses a process boundary (an `HIMC` is process-local). The window is the
+  one `GetGUIThreadInfo(foreground thread).hwndFocus` names, **not** the foreground
+  window: a frame and the control focused inside it hand back *different* default
+  IME windows, and only the focused one carries the live state — the frame's stays
+  frozen, so asking it reads a flag nothing consumes and writing to it changes
+  nothing the user can see. Measured on Windows 11 with Notepad; it is what the
+  first Windows pass corrected (`doc/dev/testing.md`). Both calls are further gated
+  on `ImmGetProperty(hkl, IGP_CONVERSION)` being non-zero, i.e. the layout the
+  focused window types under actually has an IME: IMM32 stores an open status even
+  under en-US, where it composes nothing and is dropped at the next layout switch.
+  `ImmIsIME()` cannot make that distinction — on that machine it answers true for
+  the US layout too — and `ImmGetDescription()`/`ImmGetIMEFileName()` are empty even
+  for Microsoft IME, which is a TSF text service with no IMM32 IME file. Sent with
   `SendMessageTimeout(SMTO_NORMAL | SMTO_ABORTIFHUNG, 100 ms)`, **not**
   `SendMessage`: this runs on the main thread inside the `WH_KEYBOARD_LL` callback,
   and a hung target would stall the hook past `LowLevelHooksTimeout` (300 ms) and

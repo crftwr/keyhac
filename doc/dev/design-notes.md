@@ -214,6 +214,33 @@ before running it.
   Python must not sit in the path of every pointer move). Own output is recognized
   via `dwExtraInfo` / event source and ignored.
 
+## IME on/off
+
+- The two OSes model this at different depths, and the API deliberately stops at
+  the shallower one. macOS has **one** level — the selected input source — so
+  "on" there means *selecting* a Japanese input source, reachable even from a US
+  layout. Windows has **two** — the thread's layout/TIP, and the IME's open status
+  inside it — and `set_ime_status()` only drives the second. Asking for "on" while
+  a plain layout like en-US is active therefore returns `False` instead of
+  switching the input language.
+- That is a decision, not a gap. Switching the input language is user-visible and
+  as heavy as the user's own Win+Space; it is not undone by the matching "off"
+  (which closes the IME and leaves the language switched), so a symmetric
+  implementation would have to remember and restore the previous `HKL`. Both were
+  measured on Windows 11 — the language switch does work through
+  `WM_INPUTLANGCHANGEREQUEST` posted to the *focused* window, so this is a choice
+  about scope rather than about what is possible.
+- The asymmetry only reaches users who run an IME language **and** a non-IME one.
+  On a Japanese-only setup — the classic one, where 半角/全角 opens and closes the
+  only installed IME — every layout satisfies the gate, the two levels collapse
+  into one, and the two OSes behave the same. `tests/test_win_ime.py` accounts for
+  that configuration: its plain-layout half skips when every installed layout has
+  an IME behind it.
+- Two Windows-only outcomes survive any language configuration: a window that has
+  no input context at all (PuiKit's own windows until a text field wants one) can
+  never be turned on, and a TSF-only IME that does not answer IMM32 is the one
+  path to `None`.
+
 ## Data directory and Windows portable mode
 
 `keyhac/core/paths.py` is the single place that decides where `config.py` and the

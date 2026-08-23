@@ -258,11 +258,17 @@ determined: no IME is installed, or on Windows a TSF-only IME that does not answ
 the IMM32 query. `set_ime_status()` reads the state back rather than assuming the
 call took, so its `False` means the IME declined or there was none to ask.
 
-Two caveats worth knowing:
+Some caveats worth knowing:
 
-- On macOS, "off" means a plain keyboard layout or an input method's Roman mode is
-  selected. That is close to, but not the same thing as, Windows' "the IME is
-  closed".
+- "Off" covers two different situations on both OSes: an IME that is installed and
+  closed, and no IME in the picture at all — a plain keyboard layout on Windows, a
+  plain layout or an input method's Roman mode on macOS.
+- **"On" does not reach as far on Windows as on macOS.** macOS selects a Japanese
+  input source even from a US layout; Windows only opens an IME the focused window
+  is *already* typing under, so `set_ime_status(True)` under en-US returns `False`
+  instead of switching the input language. Switching languages stays the user's own
+  Win+Space. A portable config should therefore treat `False` as "the user is not
+  in an IME language right now", not as a failure worth retrying.
 - Turning the IME *on* when it already is leaves the current mode alone, so a
   binding that asserts "on" will not drag a macOS user out of Katakana back into
   Hiragana. With several IMEs installed and the IME off, which one "on" picks is

@@ -1122,9 +1122,10 @@ class Keymap:
             (Windows) a TSF-only IME does not answer the IMM32 query.
 
         Note:
-            UI-thread only.  On macOS "off" means a plain keyboard layout or
-            an input method's Roman mode is selected, which is close to but
-            not the same thing as Windows' "the IME is closed".
+            UI-thread only.  "Off" is the same answer for two different
+            situations, on both OSes: an IME that is installed and closed,
+            and no IME in the picture at all - a plain keyboard layout on
+            Windows, a plain layout or an input method's Roman mode on macOS.
         """
         if self.ime_provider is None:
             return None
@@ -1142,11 +1143,17 @@ class Keymap:
             there was none to ask.
 
         Note:
-            UI-thread only.  Whether the change also affects other
-            applications is the user's OS setting ("Let me use a different
-            input method for each app window" on Windows, "Automatically
-            switch to a document's input source" on macOS), not something
-            Keyhac decides.
+            UI-thread only.  The two OSes differ in how far "on" reaches:
+            macOS selects a Japanese input source even from a US layout,
+            while Windows only opens an IME that the focused window is
+            already typing under - asking for "on" while a plain layout like
+            en-US is active returns False rather than switching the input
+            language, which is the user's own Win+Space to give.
+
+            Whether a change also affects other applications is the user's
+            OS setting ("Let me use a different input method for each app
+            window" on Windows, "Automatically switch to a document's input
+            source" on macOS), not something Keyhac decides.
         """
         if self.ime_provider is None:
             return False
