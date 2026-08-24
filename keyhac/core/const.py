@@ -43,6 +43,10 @@ MODKEY_USER1_R = MODKEY_USER1 << (MODKEY_PLANE_BITS * 2)
 MODKEY_USER2_R = MODKEY_USER2 << (MODKEY_PLANE_BITS * 2)
 MODKEY_USER3_R = MODKEY_USER3 << (MODKEY_PLANE_BITS * 2)
 
+#: The Win key in all three planes - the OS keeps hold of this one whatever
+#: Keyhac does with it, so define_modifier refuses it.
+MODKEY_WIN_ALL = MODKEY_WIN | MODKEY_WIN_L | MODKEY_WIN_R
+
 _MODKEY_USER = MODKEY_USER0 | MODKEY_USER1 | MODKEY_USER2 | MODKEY_USER3
 
 MODKEY_USER_ALL = (

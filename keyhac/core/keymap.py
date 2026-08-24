@@ -36,6 +36,21 @@ _MODIFIER_BITS = (
 )
 
 
+def _modifier_name(mod: int) -> str:
+    """A modifier bit mask as its name, sided when it is one side only."""
+    names = []
+    for name, generic in _MODIFIER_BITS:
+        left = generic << MODKEY_PLANE_BITS
+        right = generic << (MODKEY_PLANE_BITS * 2)
+        if mod & generic or (mod & left and mod & right):
+            names.append(name)
+        elif mod & left:
+            names.append(f"L{name}")
+        elif mod & right:
+            names.append(f"R{name}")
+    return "+".join(names) if names else "(none)"
+
+
 #: How long the MCP endpoint stays open once switched on, in seconds.
 #:
 #: One switch with a deadline rather than a switch you remember to turn off.
@@ -474,6 +489,21 @@ class Keymap:
         User0..User3 modifier is never emitted, so assignments hanging off it
         cannot collide with anything an application understands.
 
+        A Windows key cannot be one, and the call is refused with an error
+        in the log. Defining it does not take the key away from the OS:
+        Keyhac consumes the key-down, so no application ever receives it and
+        the Start menu stays shut, but anything watching the keyboard ahead
+        of Keyhac still sees the physical key held - the Xbox Game Bar opens
+        on Win+G either way, and it swallows that keystroke, including one
+        Keyhac itself injected. A modifier that is invisible to applications
+        but not to the shell is not what this promises, so it is not offered.
+
+        Any other key may be redefined, including one that already is a
+        modifier - ``define_modifier("RAlt", "RUser0")`` works - but prefer a
+        key that is not one: the key stops being Alt (or Ctrl, or Shift) for
+        everything, everywhere, and that is a large thing to give up by
+        accident. Redefining a modifier is noted in the log.
+
         Args:
             key: Key to use as the modifier, as a key name or a virtual key
                 code.
@@ -494,6 +524,27 @@ class Keymap:
         except (ValueError, TypeError):
             logger.error(f"Invalid modifier expression for argument 'mod': {mod}")
             return
+        # keyhac-win refused every key that already was a modifier, and its
+        # sample configuration went through replaceKey to reach the Win key.
+        # Only the Win keys are refused here - the rest of that rule would
+        # break define_modifier("RAlt", "RUser0"), which both the macOS
+        # sample and keyhac-mac configurations have always used. Laundering
+        # the key through replace_key does not help either: what still holds
+        # the Win key is the OS, which never hears about Keyhac's renaming.
+        if self._vk_mod_map.get(key, 0) & MODKEY_WIN_ALL:
+            name = get_key_names().vk_to_str(key)
+            logger.error(f"A Windows key cannot be a user modifier: {name}")
+            return
+        # Redefining a modifier is legitimate, so this is not a warning - but
+        # it is silent about a real loss: that key is not Alt (or Ctrl, or
+        # Shift) for anything, anywhere, any more. Said once, at INFO, which
+        # the console shows by default.
+        if key in self._vk_mod_map:
+            was = _modifier_name(self._vk_mod_map[key])
+            logger.info(
+                f"{get_key_names().vk_to_str(key)} was the {was} modifier and "
+                f"is now {_modifier_name(mod)}; nothing sees {was} from it "
+                f"any more.")
         self._vk_mod_map[key] = mod
 
     def describe_keymap(self, limit: int = 300) -> str:
@@ -844,9 +895,11 @@ class Keymap:
         if callable(action):
             action_name = getattr(action, "__name__", None) or repr(action)
             logger.debug(f"CALL     : {action_name}")
+            self._cancel_oneshot_win_alt()
             action()
 
         elif isinstance(action, KeyTable):
+            self._cancel_oneshot_win_alt()
             self._enter_multi_stroke(action)
 
         else:
@@ -914,6 +967,26 @@ class Keymap:
 
     # ------------------------------------------------------------------
     # Helpers
+
+    def _cancel_oneshot_win_alt(self):
+        """Mark a held lone Win/Alt as used, so releasing it does nothing.
+
+        An action that emits no key output leaves the OS with a Win or Alt
+        that went down and comes back up with nothing in between - the key
+        the user actually pressed was consumed - and Windows reads that as a
+        lone tap: the Start menu opens, or the menu bar takes focus. Injecting
+        a Ctrl tap before the action runs is what keyhac-win did here
+        (_cancelOneshotWinAlt), for the same two cases: a callable, and
+        entering a multi-stroke table.
+
+        Key output does not need this: InputContext.send_modifier_keys emits
+        the same tap while reconciling the modifiers around its batch.
+        """
+        if self.platform != "windows":
+            return
+        if mod_eq(self._modifier, MODKEY_ALT) or mod_eq(self._modifier, MODKEY_WIN):
+            with self.get_input_context() as ctx:
+                ctx.send_modifier_keys(self._modifier | MODKEY_CTRL_L)
 
     def _release_modifier_all(self):
         with self.get_input_context() as ctx:

@@ -165,8 +165,8 @@ typo does not leak a stray keystroke into your app).
 ## Remapping and user modifiers
 
 ```python
-keymap.replace_key("CapsLock", "LCtrl")      # swap a key outright
-keymap.define_modifier("RAlt", "RUser0")     # turn a key into your own modifier
+keymap.replace_key("Insert", "LCtrl")        # swap a key outright
+keymap.define_modifier("Apps", "User0")      # turn a key into your own modifier
 ```
 
 - `replace_key` runs before everything else; the rest of the config only ever sees
@@ -175,6 +175,32 @@ keymap.define_modifier("RAlt", "RUser0")     # turn a key into your own modifier
   application sees. While defined, the key loses its original meaning entirely
   (it is never emitted), so `User0-J` bindings cannot clash with anything an app
   understands.
+- Pick a key that is **not** a modifier already. Naming one works, but that key
+  stops being Alt (or Ctrl, or Shift) for everything, everywhere; the log says so
+  when it happens. Not CapsLock either — it reports its own release immediately, so
+  there is no held state to hang a modifier on.
+- `define_modifier("LWin", …)` is refused: a user modifier promises to be invisible
+  to everything, and a Windows key cannot be. Retiring one does not retire it
+  everywhere:
+  - **Win+L still locks the screen.** Windows reserves that combination, like
+    Ctrl+Alt+Del, and handles it before any keyboard hook runs. No program can stop
+    it.
+  - **Win+G still opens the Game Bar**, and swallows the keystroke that opened it —
+    including one Keyhac injected.
+
+  Everything else does go: Win+I, Win+T and their kind do not fire, and no
+  application receives the key. The sample configuration reaches User0 the way
+  Keyhac for Windows always did, retiring both Windows keys first:
+
+  ```python
+  keymap.replace_key("LWin", 235)     # 235, 255: unassigned key codes
+  keymap.replace_key("RWin", 255)
+  keymap.define_modifier(235, "User0")
+  ```
+
+  That is a deliberate trade — the Windows key is the only key every keyboard can
+  spare — and it does not change the two exceptions above. Do not begin an action
+  bound under that modifier by typing `g`.
 
 **One-shot modifiers** (`O-` prefix) give a modifier key a second life: held with
 another key it modifies as usual; tapped *alone*, it fires the one-shot binding.

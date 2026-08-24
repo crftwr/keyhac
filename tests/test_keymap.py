@@ -143,6 +143,56 @@ class TestOneShot:
         assert "D-Escape" not in e.sent_names()
 
 
+class TestLoneWinAltCancel:
+    """A held Win/Alt whose companion key Keyhac consumed looks like a lone
+    tap to Windows - Start menu, menu bar - so a Ctrl tap marks it used.
+    Port of keyhac-win's cancel_oneshot_win_alt / _cancelOneshotWinAlt."""
+
+    def _configure(self, keymap):
+        kt = keymap.define_keytable(focus_path_pattern="*")
+        kt["Alt-J"] = lambda: None
+        kt["Win-J"] = lambda: None
+        kt["Alt-Ctrl-J"] = lambda: None
+        kt["Alt-M"] = keymap.define_keytable(name="sub")
+
+    def test_callable_under_lone_alt(self, engine):
+        e = engine(self._configure, platform="windows")
+        e.down("LAlt")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl"]
+
+    def test_callable_under_lone_win(self, engine):
+        e = engine(self._configure, platform="windows")
+        e.down("LWin")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl"]
+
+    def test_entering_multi_stroke(self, engine):
+        e = engine(self._configure, platform="windows")
+        e.down("LAlt")
+        e.hook.clear()
+        assert e.down("M") is True
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl"]
+
+    def test_not_a_lone_modifier(self, engine):
+        """Alt+Ctrl released together opens nothing, so nothing to cancel."""
+        e = engine(self._configure, platform="windows")
+        e.down("LAlt")
+        e.down("LCtrl")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.hook.sent == []
+
+    def test_macos_has_nothing_to_cancel(self, engine):
+        e = engine(self._configure)
+        e.down("LAlt")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.hook.sent == []
+
+
 class TestUserModifier:
 
     def _configure(self, keymap):
@@ -162,6 +212,70 @@ class TestUserModifier:
         assert e.down("J") is True
         # user modifier is not reconciled into physical output
         assert e.sent_names() == ["D-Down", "U-Down"]
+
+    def test_windows_key_is_refused(self, engine):
+        """Keyhac can keep the Win key out of every application, but not out
+        of the shell - a Win-based user modifier still opens the Game Bar on
+        Win+G, and the Game Bar swallows that keystroke. Refused, and the key
+        stays the Win modifier it was."""
+        def configure(keymap):
+            keymap.define_modifier("LWin", "LUser0")
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["U0-J"] = "Down"
+            kt["Win-K"] = "Up"
+
+        e = engine(configure, platform="windows")
+        e.down("LWin")
+        assert e.down("J") is False            # U0-J never armed
+        assert e.down("K") is True             # LWin is still Win
+        # ... and being a real modifier, it is released around the output,
+        # each transition fenced by the lone-Win/Alt cancelling Ctrl tap
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl", "U-LWin",
+                                  "D-Up", "U-Up",
+                                  "D-LWin", "D-LCtrl", "U-LCtrl"]
+
+    def test_windows_key_retired_through_replace_key(self, engine, caplog):
+        """The sample configuration's route to User0 on Windows: rename the
+        Win keys to codes Windows has no meaning for, and make one of them
+        the modifier. Not blocked by the define_modifier refusal, and not
+        reported as a redefinition - 235 was not a modifier."""
+        def configure(keymap):
+            keymap.replace_key("LWin", 235)
+            keymap.replace_key("RWin", 255)
+            keymap.define_modifier(235, "User0")
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["U0-J"] = "Down"
+
+        with caplog.at_level("INFO", logger="keyhac.Keymap"):
+            e = engine(configure, platform="windows")
+        assert not any("modifier and is now" in r.message
+                       for r in caplog.records)
+        assert e.down("LWin") is True          # consumed, never emitted
+        assert e.hook.sent == []
+        assert e.down("J") is True
+        assert e.sent_names() == ["D-Down", "U-Down"]
+
+    def test_redefining_a_modifier_is_reported(self, engine, caplog):
+        """Legitimate, so not a warning - but the key stops being the modifier
+        it was, everywhere, and that is worth saying out loud."""
+        def configure(keymap):
+            keymap.define_modifier("RAlt", "RUser0")
+            keymap.define_keytable(focus_path_pattern="*")
+
+        with caplog.at_level("INFO", logger="keyhac.Keymap"):
+            engine(configure)
+        assert any("RAlt was the RAlt modifier and is now RUser0" in r.message
+                   for r in caplog.records)
+
+    def test_defining_a_plain_key_says_nothing(self, engine, caplog):
+        def configure(keymap):
+            keymap.define_modifier("F20", "User0")
+            keymap.define_keytable(focus_path_pattern="*")
+
+        with caplog.at_level("INFO", logger="keyhac.Keymap"):
+            engine(configure)
+        assert not any("modifier and is now" in r.message
+                       for r in caplog.records)
 
     def test_user2_user3_supported(self, engine):
         def configure(keymap):

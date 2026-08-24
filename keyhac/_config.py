@@ -30,18 +30,41 @@ def configure(keymap):
     # Turn a key into User0, a modifier of your own that no application
     # sees.  User0-User3 are available; a key used this way is never
     # emitted, so it loses its original meaning while defined.
-    if mac:
-        # The right Option key; it stops acting as Option.
-        keymap.define_modifier("RAlt", "RUser0")
-    else:
-        # The left Windows key; the Start menu no longer opens on a tap
-        # (bind kt["O-LWin"] = "LWin" below if you want that back).
-        keymap.define_modifier("LWin", "LUser0")
+    #
+    # Pick a key that is not a modifier already.  Naming one here does work,
+    # but that key then stops being Alt (or Ctrl, or Shift) for everything,
+    # everywhere - a large thing to give up by accident.
+    #
+    # Windows has no spare key on every keyboard, so the Windows keys are
+    # retired instead: replace_key renames them to codes Windows has no
+    # meaning for, and the left one becomes User0.  This is what Keyhac for
+    # Windows always did, and define_modifier("LWin", ...) is refused
+    # directly, because retiring a Win key does not retire it everywhere:
+    #
+    #   Win+L still locks the screen.  Windows reserves that combination
+    #     (like Ctrl+Alt+Del) and handles it before any keyboard hook runs.
+    #     Nothing running as a program can stop it.
+    #   Win+G still opens the Game Bar, and swallows the keystroke that
+    #     opened it - including one Keyhac injected.  So an action bound
+    #     under User0 should not start by typing "g".
+    #
+    # The rest is gone as promised: Win+I, Win+T and their kind do not fire,
+    # and no application receives the key.
+    #
+    # macOS needs none of this - it has Fn, which no application uses as a
+    # shortcut modifier - so the samples below hang off Fn there.  To define
+    # one anyway, name a key you can spare: keymap.define_modifier("F13",
+    # "User0").  Not CapsLock: it reports its own release immediately, so
+    # there is no "held" state to hang a modifier on.
+    if not mac:
+        keymap.replace_key("LWin", 235)     # 235, 255: unassigned key codes
+        keymap.replace_key("RWin", 255)
+        keymap.define_modifier(235, "User0")
 
     # --- the two portability constants ---------------------------------
     # LEADER: the modifier most samples below hang off.
     #   macOS   - the Fn key, which Windows does not expose to software
-    #   Windows - User0, i.e. the left Windows key defined just above
+    #   Windows - User0, i.e. the left Windows key retired just above
     LEADER = "Fn" if mac else "User0"
 
     # MOD: the OS's primary shortcut modifier, so one binding can mean
@@ -50,7 +73,8 @@ def configure(keymap):
 
     # --- swap a key entirely (uncomment to try) ------------------------
     # replace_key runs before any key table, so the rest of the config
-    # only ever sees the replacement.
+    # only ever sees the replacement - the Windows keys above are retired
+    # this way.
     # keymap.replace_key("CapsLock", "LCtrl")
 
     # --- text editor for "Edit Config" ---------------------------------

@@ -167,6 +167,10 @@ Define a user modifier key.
 
 While defined, the key loses its original meaning entirely: a User0..User3 modifier is never emitted, so assignments hanging off it cannot collide with anything an application understands. 
 
+A Windows key cannot be one, and the call is refused with an error in the log. Defining it does not take the key away from the OS: Keyhac consumes the key-down, so no application ever receives it and the Start menu stays shut, but anything watching the keyboard ahead of Keyhac still sees the physical key held - the Xbox Game Bar opens on Win+G either way, and it swallows that keystroke, including one Keyhac itself injected. A modifier that is invisible to applications but not to the shell is not what this promises, so it is not offered. 
+
+Any other key may be redefined, including one that already is a modifier - ``define_modifier("RAlt", "RUser0")`` works - but prefer a key that is not one: the key stops being Alt (or Ctrl, or Shift) for everything, everywhere, and that is a large thing to give up by accident. Redefining a modifier is noted in the log. 
+
 
 
 **Args:**
