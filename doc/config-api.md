@@ -244,6 +244,29 @@ Get the frontmost window.
 
 ---
 
+### <kbd>method</kbd> `Keymap.get_ime_status`
+
+```python
+get_ime_status() → bool | None
+```
+
+Get whether the IME is on for whatever holds the input focus. 
+
+There is no window argument on purpose: macOS can only ever address the current input source, so naming a window would mean two different contracts on the two OSes. 
+
+
+
+**Returns:**
+  True when the IME is on, False when it is off, or None when the  state cannot be determined - no IME is installed or reachable, or  (Windows) a TSF-only IME does not answer the IMM32 query. 
+
+
+
+**Note:**
+
+> UI-thread only.  On macOS "off" means a plain keyboard layout or an input method's Roman mode is selected, which is close to but not the same thing as Windows' "the IME is closed". 
+
+---
+
 ### <kbd>method</kbd> `Keymap.get_input_context`
 
 ```python
@@ -376,6 +399,33 @@ Get the work area of every screen.
 **Note:**
 
 > UI-thread only - the macOS implementation is an AppKit query. 
+
+---
+
+### <kbd>method</kbd> `Keymap.set_ime_status`
+
+```python
+set_ime_status(on: bool) → bool
+```
+
+Turn the IME on or off for whatever holds the input focus. 
+
+
+
+**Args:**
+ 
+ - <b>`on`</b>:  True to turn the IME on, False to turn it off. 
+
+
+
+**Returns:**
+ Whether the requested state was actually reached - the result is read back rather than assumed, so False means the IME declined or there was none to ask. 
+
+
+
+**Note:**
+
+> UI-thread only.  Whether the change also affects other applications is the user's OS setting ("Let me use a different input method for each app window" on Windows, "Automatically switch to a document's input source" on macOS), not something Keyhac decides. 
 
 ---
 

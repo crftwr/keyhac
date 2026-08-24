@@ -1,12 +1,14 @@
 """Fake platform implementations for tests and headless development.
 
 FakeInputHook records injected events and lets tests drive the engine with
-scripted key sequences.  FakeFocusProvider returns a settable Focus.
+scripted key sequences.  FakeFocusProvider returns a settable Focus, and
+FakeImeProvider a settable IME state.
 """
 
 from typing import Callable, Sequence
 
-from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
+from keyhac.platform.base import (InputHook, FocusProvider, Focus, KeyEvent,
+                                  ImeProvider)
 
 
 class FakeInputHook(InputHook):
@@ -97,3 +99,21 @@ class FakeFocusProvider(FocusProvider):
 
     def get_focus(self) -> Focus | None:
         return self.focus
+
+
+class FakeImeProvider(ImeProvider):
+    """Settable IME state.  ``status = None`` models the OS having no IME to
+    ask, and ``accepts`` an IME that declines the change."""
+
+    def __init__(self, status: bool | None = False, accepts: bool = True):
+        self.status = status
+        self.accepts = accepts
+
+    def get_status(self) -> bool | None:
+        return self.status
+
+    def set_status(self, on: bool) -> bool:
+        if not self.accepts or self.status is None:
+            return False
+        self.status = on
+        return True

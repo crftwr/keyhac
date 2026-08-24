@@ -199,6 +199,22 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
 - **macOS AX window tests**: 15 live tests (identity, enumeration, find_window,
   frame writes, minimize/restore, activate, worker-thread geometry), mirroring the
   Windows set.
+- **macOS IME** (2026-08-23, `tests/test_mac_ime.py`, Kotoeri installed): reading
+  the state off `kTISPropertyInputModeID` was verified against both ends
+  (`com.apple.keylayout.US` → off, `...RomajiTyping.Japanese` → on), and on/off
+  round-trips. The measurement that shaped the implementation: `TISSelectInputSource`
+  on the Roman mode fails with **OSStatus −50 (paramErr)** because that mode is
+  disabled on a default Japanese setup — hence the ASCII-capable-layout fallback,
+  which is also what the Eisu key reaches on such a setup. The probe also showed
+  the palette input sources (`CharacterPaletteIM`, `50onPaletteIM`, `PressAndHold`)
+  report no input mode, so the "first enabled non-Roman mode" selection cannot land
+  on one. The tests restore the input source they found.
+- **Windows IME**: `tests/test_win_ime.py` is written and **not yet run** — it needs
+  a machine with Microsoft IME, and it is the outstanding item for the IME API
+  (issue #107). What it has to establish beyond the round trip: that a TSF-only IME
+  answering nothing reads as `None` rather than `False`, and that the
+  `SendMessageTimeout` cap holds — a plain `SendMessage` here would stall the
+  `WH_KEYBOARD_LL` callback past `LowLevelHooksTimeout`.
 - **macOS element tree and text layer** (2026-08-06, Safari 18 / Chrome on a page
   built to the shape in `doc/dev/ai-integration.md` §2): `children()`,
   `describe()`, `get_ui_tree`, `find_element` by DOM id / label / role / text,
@@ -433,6 +449,12 @@ struck off.
   whenever that input-context code moves — which is exactly why 2.2.1 repeated
   it: that commit is what `puikit>=1.0.10` pins, and 2.2.1 is the first release
   taking it from the published wheel rather than a local checkout.
+- **The Windows JIS IME key names** *(new, not yet passed)* — that `Kanji`,
+  `Henkan` and `Muhenkan` actually match the 半角/全角, 変換 and 無変換 keys when
+  pressed on JIS hardware. The VKs (0x19 / 0x1C / 0x1D) are the documented ones,
+  but no JIS keyboard was available to confirm what the hardware really reports;
+  the console's last-key display is the one-line check. Same hardware dependency
+  as the entry below, so pass them together.
 - **JIS layout detection on real JIS hardware** *(passed 2026-08-07; **skipped
   for 2.2.1** — no JIS keyboard available)* — `GetKeyboardType(0) == 7`, one
   line. The tables it selects are pinned against `kbd106.dll` independently, so

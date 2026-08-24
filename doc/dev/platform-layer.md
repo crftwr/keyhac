@@ -61,6 +61,11 @@ summary of the surface:
   find/enumerate/activate/geometry queries (`screen_frames`, `screen_work_frames`,
   `window_frames`); thread contract documented in
   [../configuration.md](../configuration.md#windows-screens-and-applications).
+- **`ImeProvider`** — `get_status()` (tri-state: on / off / `None` = could not
+  ask) and `set_status(on)`. Deliberately window-less: Windows reaches the state
+  through a window handle, macOS has only "the current input source", so a window
+  argument would split the contract between the two OSes. See
+  [../configuration.md](../configuration.md#ime).
 
 ## Windows implementation notes (`keyhac/platform/win/`, ctypes)
 
@@ -91,6 +96,14 @@ house style for raw-ctypes Win32/COM):
 - **Clipboard**: `AddClipboardFormatListener` on a message-only window →
   `WM_CLIPBOARDUPDATE` (event-driven; keyhac-win moved to this in 1.75). Text via
   `CF_UNICODETEXT`; optionally capture `CF_HTML`/`CF_DIB` payloads for history fidelity.
+- **IME**: `ImmGetDefaultIMEWnd(GetForegroundWindow())` → `WM_IME_CONTROL` with
+  `IMC_GETOPENSTATUS`/`IMC_SETOPENSTATUS` — the route pyauto used, and the only one
+  that crosses a process boundary (an `HIMC` is process-local). Sent with
+  `SendMessageTimeout(SMTO_NORMAL | SMTO_ABORTIFHUNG, 100 ms)`, **not**
+  `SendMessage`: this runs on the main thread inside the `WH_KEYBOARD_LL` callback,
+  and a hung target would stall the hook past `LowLevelHooksTimeout` (300 ms) and
+  get it silently unhooked. A TSF-only IME may not answer IMM32 at all, which is
+  what `None` reports.
 - **Caret**: `GetGUIThreadInfo().rcCaret` + `ClientToScreen` (balloon placement).
 - **Mouse**: `WH_MOUSE_LL` for one-shot cancellation on click
   (observation-only; own output recognized by dwExtraInfo); `SendInput` mouse
@@ -145,6 +158,18 @@ a few AX calls need `objc.loadBundleFunctions`-style care).
   would sit in the path of every pointer movement); mouse events are never
   consumed and never enter the key deferral queue, and own output is
   recognized by event source, mirroring the WH_MOUSE_LL rules.
+
+- **IME**: Text Input Sources (Carbon TIS), which PyObjC does not wrap — reached
+  by ctypes against `Carbon.framework`, as `keyboard_layout()` already does.
+  On/off is read off `kTISPropertyInputModeID` of the current source rather than
+  its bundle id, which is what makes it IME-agnostic: Kotoeri, Google IME and ATOK
+  all report `com.apple.inputmethod.Japanese*` / `.Roman`. Turning it *off* prefers
+  the current method's Roman mode but falls back to
+  `TISCopyCurrentASCIICapableKeyboardLayoutInputSource()`, because that Roman mode
+  is disabled on a default Japanese setup and `TISSelectInputSource` refuses a
+  disabled source with OSStatus −50 (measured, not assumed). CoreFoundation is
+  called through ctypes too, so ownership of the `+1` references the Copy/Create
+  functions return stays explicit.
 
 ## Keycode & layout strategy
 

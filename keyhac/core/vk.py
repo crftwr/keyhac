@@ -53,6 +53,11 @@ WIN_VK = dict(
     LBUTTON=0x01, RBUTTON=0x02, MBUTTON=0x04,
     BACK=0x08, TAB=0x09, RETURN=0x0D,
     SHIFT=0x10, CONTROL=0x11, MENU=0x12, PAUSE=0x13, CAPITAL=0x14,
+    # IME keys.  IME_ON/IME_OFF are what the portable Eisu/Kana names reach
+    # here: macOS's Eisu/Kana keys mean exactly "IME off"/"IME on", and a name
+    # is portable by meaning, not by scan code.  KANJI/CONVERT/NONCONVERT are
+    # the physical JIS keys, which macOS has no equivalent of.
+    IME_ON=0x16, KANJI=0x19, IME_OFF=0x1A, CONVERT=0x1C, NONCONVERT=0x1D,
     ESCAPE=0x1B, SPACE=0x20,
     PRIOR=0x21, NEXT=0x22, END=0x23, HOME=0x24,
     LEFT=0x25, UP=0x26, RIGHT=0x27, DOWN=0x28,
@@ -238,6 +243,8 @@ def _win_tables(layout: str):
         "APPS": v["APPS"],
         "INSERT": v["INSERT"], "DELETE": v["DELETE"], "HOME": v["HOME"],
         "END": v["END"], "PAGEDOWN": v["NEXT"], "PAGEUP": v["PRIOR"],
+        "EISU": v["IME_OFF"], "KANA": v["IME_ON"], "KANJI": v["KANJI"],
+        "HENKAN": v["CONVERT"], "MUHENKAN": v["NONCONVERT"],
         "ALT": v["MENU"], "LALT": v["LMENU"], "RALT": v["RMENU"],
         "CTRL": v["CONTROL"], "LCTRL": v["LCONTROL"], "RCTRL": v["RCONTROL"],
         "SHIFT": v["SHIFT"], "LSHIFT": v["LSHIFT"], "RSHIFT": v["RSHIFT"],
@@ -262,6 +269,8 @@ def _win_tables(layout: str):
         v["APPS"]: "Apps",
         v["INSERT"]: "Insert", v["DELETE"]: "Delete", v["HOME"]: "Home",
         v["END"]: "End", v["NEXT"]: "PageDown", v["PRIOR"]: "PageUp",
+        v["IME_OFF"]: "Eisu", v["IME_ON"]: "Kana", v["KANJI"]: "Kanji",
+        v["CONVERT"]: "Henkan", v["NONCONVERT"]: "Muhenkan",
         v["MENU"]: "Alt", v["LMENU"]: "LAlt", v["RMENU"]: "RAlt",
         v["CONTROL"]: "Ctrl", v["LCONTROL"]: "LCtrl", v["RCONTROL"]: "RCtrl",
         v["SHIFT"]: "Shift", v["LSHIFT"]: "LShift", v["RSHIFT"]: "RShift",

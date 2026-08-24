@@ -240,6 +240,51 @@ modifiers first (so a `User0-…` binding does not click with a phantom modifier
 moves keep them. Relative moves are injected acceleration-proof on both OSes, and
 rapid synthetic clicks register as double-clicks.
 
+## IME
+
+```python
+if keymap.get_ime_status():          # True on, False off, None can't tell
+    keymap.set_ime_status(False)     # returns whether the state was reached
+```
+
+Both act on **whatever holds the input focus**, and neither takes a window. That is
+the one contract the two OSes can both honor: Windows reaches the state through a
+window handle and so could address a background window, while macOS only ever
+exposes "the current input source". A window argument would mean two different
+APIs wearing one name.
+
+`get_ime_status()` returns `None` — not `False` — when the state cannot be
+determined: no IME is installed, or on Windows a TSF-only IME that does not answer
+the IMM32 query. `set_ime_status()` reads the state back rather than assuming the
+call took, so its `False` means the IME declined or there was none to ask.
+
+Two caveats worth knowing:
+
+- On macOS, "off" means a plain keyboard layout or an input method's Roman mode is
+  selected. That is close to, but not the same thing as, Windows' "the IME is
+  closed".
+- Turning the IME *on* when it already is leaves the current mode alone, so a
+  binding that asserts "on" will not drag a macOS user out of Katakana back into
+  Hiragana. With several IMEs installed and the IME off, which one "on" picks is
+  the first enabled one — macOS exposes no most-recently-used order.
+- Whether a change also affects *other* applications is the user's OS setting —
+  "Let me use a different input method for each app window" on Windows,
+  "Automatically switch to a document's input source" on macOS — not something
+  Keyhac decides.
+
+For simply toggling, the key names cost nothing and work on both OSes: `Eisu` is
+IME off and `Kana` is IME on, reaching the macOS keys of those names and Windows'
+`VK_IME_OFF` / `VK_IME_ON`.
+
+```python
+kt["O-LCmd"] = "Eisu"        # tap left Cmd alone -> IME off
+kt["O-RCmd"] = "Kana"        # tap right Cmd alone -> IME on
+```
+
+Windows additionally has the physical JIS keys `Kanji` (半角/全角), `Henkan` (変換)
+and `Muhenkan` (無変換), which macOS has no equivalent of — guard those with
+`keymap.platform`.
+
 ## Clipboard
 
 ```python
@@ -444,6 +489,7 @@ focus path — the two things you need when writing new bindings.
 | `keymap.focus` | current `Focus` snapshot |
 | `keymap.get_active_window()` / `list_windows()` / `find_window(...)` | portable `Window` objects; UI thread only |
 | `keymap.screen_frames()` / `screen_work_frames()` / `window_frames()` | screen/window geometry; `screen_work_frames` UI thread only |
+| `keymap.get_ime_status()` / `set_ime_status(on)` | IME on/off for the input focus; UI thread only |
 | `keymap.clipboard_history` | settings + `items()` / `get_current()` / `set_current()` |
 | `keymap.editor` / `edit_config()` / `reload_config()` | config lifecycle (tray menu uses these) |
 | `keymap.replay_buffer` | macro buffer behind the record actions |

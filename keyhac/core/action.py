@@ -192,13 +192,19 @@ class ThreadedAction:
             return self.run()
 
     @contextlib.contextmanager
-    def cancellable(self, name: str | None = None):
+    def cancellable(self, name: str | None = None, run=None):
         """Make this action reachable by Esc, and record what it produces.
 
         `name` is what the run is filed under. A caller that knows it - the
         MCP tool, which was handed a name to look the action up by - passes it
         rather than letting the lookup below go through the Keymap singleton,
         which is not necessarily the registry it came from.
+
+        `run` is for a caller that had to open the record *before* getting
+        here: `start_action` opens it on the calling thread so that the window
+        between it returning and this line running cannot be read as the
+        previous run of the same name. A key press passes neither and gets a
+        fresh record opened here.
 
         Both ways of starting an action enter this - `_run_tracked` for a key
         press, and the MCP tool that starts one from a chat window - which is
@@ -223,7 +229,8 @@ class ThreadedAction:
         # class's `module.Class` to look this up by. A key press has none to
         # give, so it is derived from the class, which lands on the same string
         # for anything defined in `extensions/`.
-        self._run_record = capture.start_run(name or self._run_name())
+        self._run_record = (run if run is not None
+                            else capture.start_run(name or self._run_name()))
         try:
             with capture.capture(self._run_record.output):
                 yield self

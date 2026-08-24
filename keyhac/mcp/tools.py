@@ -728,14 +728,24 @@ class ToolRegistry:
             return (f"{name} is already running - get_action_result to watch "
                     f"it, or cancel_action to stop it.")
 
+        # Opened here, on the calling thread, and handed to the worker - not
+        # opened inside it. This call returns immediately by design, and a
+        # get_action_result arriving before the worker reached `cancellable`
+        # used to find the *previous* run of this name still on file: finished,
+        # so wait_for_run answered at once and the model read the last run's
+        # output as this one's. Which is the one failure the pair exists to
+        # prevent. It also makes the already-running guard above true for a
+        # second start_action inside that same window.
+        run = capture.start_run(name)
+
         # Always a ThreadedAction: that is what the scan matches on, and what
-        # instantiate() confirms. So `cancellable` opens the run record, files
-        # the traceback and closes it - the same path a key press takes, which
-        # is what makes a run started from here and one started by a key report
+        # instantiate() confirms. So `cancellable` files the traceback and
+        # closes the record - the same path a key press takes, which is what
+        # makes a run started from here and one started by a key report
         # identically.
         def body():
             try:
-                with action.cancellable(name):
+                with action.cancellable(name, run=run):
                     self.ui.on_main_thread(action.starting)
                     result = action.run()
                     self.ui.on_main_thread(lambda: action.finished(result))
@@ -744,7 +754,14 @@ class ToolRegistry:
                 # would only reach a daemon thread nobody is watching.
                 pass
 
-        threading.Thread(target=body, name=f"mcp-{name}", daemon=True).start()
+        try:
+            threading.Thread(target=body, name=f"mcp-{name}",
+                             daemon=True).start()
+        except BaseException as error:                    # noqa: BLE001
+            # A record left open would answer "still running" forever and the
+            # guard above would refuse every later start of this action.
+            run.finish("failed", f"the action's thread did not start: {error}")
+            raise
         return (f"{name} started. Call get_action_result to see what it did.")
 
     def get_action_result(self, name: str, wait: int = 30,
