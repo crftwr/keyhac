@@ -114,6 +114,24 @@ PREFERRED_ROLES = ("AXTextArea", "AXWebArea", "AXTextField", "AXOutline",
                    "AXList", "AXTable", "AXBrowser", "AXScrollArea",
                    "Edit", "Document", "Tree", "List", "DataGrid", "Pane")
 
+#: Gaps within this many points of each other count as the same distance, so
+#: that overlap - not a few points of edge position - decides between two
+#: neighbours.
+#:
+#: Measured on a VS Code window split three ways (2026-08-23).  From a
+#: full-height panel on the right, the pane to its left is an editor covering
+#: 620 points of it and a terminal covering 238; ordering by raw gap chose the
+#: terminal, because its edge happened to sit 19 points nearer.  A splitter is
+#: a few points wide, so any bucket wide enough to absorb one fixes that,
+#: while the distances that mean "a pane further on" in that window were 107
+#: and up - an order of magnitude clear of this.
+#:
+#: The cost of the bucket: a genuinely adjacent pane and one 60 points further
+#: off are treated as equally near, so a much larger pane just behind the
+#: nearest one can win.  That needs a layout with 60-point gaps between panes,
+#: which is not what splitters look like.
+GAP_BUCKET = 64.0
+
 DIRECTIONS = ("left", "right", "up", "down")
 
 #: Per-application recipes, most recently defined first.  Lives here rather
@@ -390,10 +408,18 @@ def panes_towards(panes: list[UINode], origin, direction: str,
     that way" rather than "the next thing that way, unless it is unreachable,
     in which case nothing".
 
-    Ordered by the gap in the direction of travel, then by how much the pane
-    overlaps `origin` on the perpendicular axis - the same measure
-    `MoveWindow` uses to choose an adjacent screen, which is the same problem
-    with screen rectangles swapped for element ones.
+    Ordered by the gap in the direction of travel *bucketed* (see GAP_BUCKET),
+    then by how much the pane overlaps `origin` on the perpendicular axis -
+    the same measure `MoveWindow` uses to choose an adjacent screen, which is
+    the same problem with screen rectangles swapped for element ones.  The
+    bucket is what keeps a few points of edge position from outvoting an
+    overlap two and a half times larger.
+
+    Two panes stacked beside one tall pane is genuinely ambiguous - both
+    overlap it by nearly the same amount - and no geometry resolves that.
+    The answer is stable for a given layout, and it is not the one a person
+    would have to think about; remembering which pane was last used would
+    settle it, and this deliberately keeps no such state.
     """
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be one of {DIRECTIONS}, not {direction!r}")
@@ -417,6 +443,6 @@ def panes_towards(panes: list[UINode], origin, direction: str,
         # A pane merely nested inside the origin is not "that way".
         if gap < -tolerance or overlap <= 0:
             continue
-        out.append((max(gap, 0.0), -overlap, pane))
+        out.append((int(max(gap, 0.0) // GAP_BUCKET), -overlap, pane))
     out.sort(key=lambda item: (item[0], item[1]))
     return [pane for _gap, _overlap, pane in out]

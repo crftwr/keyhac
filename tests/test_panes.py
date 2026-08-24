@@ -245,3 +245,73 @@ def test_reloading_the_config_does_not_accumulate_recipes():
     panes.clear_recipes()
     panes.define_recipe(app="Code", roles="AXGroup")
     assert len(panes._recipes) == 1
+
+
+# -- the layout that was actually measured -----------------------------------
+
+#: A VS Code window split three ways: explorer, a middle column split top and
+#: bottom, a third editor beside it, a terminal across the bottom and a
+#: full-height panel on the right.  Read off the screen on 2026-08-23, and
+#: kept because a nested split is where flat geometric adjacency was expected
+#: to pick something surprising.
+MEASURED = {
+    "Claude":   (1088, 145, 612, 925),
+    "Terminal": (69, 811, 1001, 238),
+    "EditorR":  (756, 104, 295, 661),
+    "Explorer": (49, 132, 261, 572),
+    "EditorMB": (317, 450, 382, 315),
+    "EditorMT": (317, 104, 382, 314),
+}
+
+
+@pytest.fixture
+def measured():
+    return [UINode(rect=r, name=n) for n, r in MEASURED.items()]
+
+
+@pytest.mark.parametrize("origin,direction,expected", [
+    # A pane full height on the right, with an editor above a terminal to its
+    # left: the editor covers 620 points of it and the terminal 238, but the
+    # terminal's edge sits 19 points nearer.  Ordering by raw gap chose the
+    # terminal.
+    ("Claude", "left", "EditorR"),
+    # Down the middle column, then out of it - the nested split resolves the
+    # way the layout reads.
+    ("EditorMT", "down", "EditorMB"),
+    ("EditorMB", "down", "Terminal"),
+    ("EditorMB", "up", "EditorMT"),
+    ("EditorMT", "right", "EditorR"),
+    ("EditorR", "right", "Claude"),
+    ("EditorMT", "left", "Explorer"),
+    ("EditorMB", "left", "Explorer"),
+    ("Explorer", "down", "Terminal"),
+    ("Terminal", "right", "Claude"),
+    ("EditorR", "down", "Terminal"),
+    # Window edges: scoped to the window, so nothing beyond them.
+    ("EditorMT", "up", None),
+    ("Claude", "right", None),
+    ("Terminal", "down", None),
+    ("Explorer", "left", None),
+])
+def test_the_measured_layout_resolves_as_the_screen_reads(measured, origin,
+                                                          direction, expected):
+    order = panes_towards(measured, MEASURED[origin], direction)
+    assert (order[0].name if order else None) == expected
+
+
+def test_a_nearer_edge_does_not_outvote_a_much_larger_overlap():
+    """What GAP_BUCKET is for, reduced to its bones."""
+    origin = (1000, 0, 300, 900)
+    tall = UINode(rect=(600, 0, 350, 900), name="tall")     # gap 50, overlap 900
+    near = UINode(rect=(600, 0, 390, 100), name="near")     # gap 10, overlap 100
+    assert panes_towards([tall, near], origin, "left")[0].name == "tall"
+
+
+def test_a_pane_a_column_further_off_is_still_ordered_behind():
+    """The bucket must not flatten "next to me" and "two panes over"."""
+    origin = (700, 0, 300, 900)
+    next_to = UINode(rect=(400, 0, 290, 900), name="next")   # gap 10
+    beyond = UINode(rect=(0, 0, 390, 900), name="beyond")    # gap 310
+    assert [p.name for p in panes_towards([next_to, beyond], origin, "left")] \
+        == ["next", "beyond"]
+
