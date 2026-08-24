@@ -175,6 +175,8 @@ A top-level window, as a node to search inside.
 
 Matches exactly like `keymap.find_window` and `define_keytable`: case-insensitive fnmatch, "|" alternation, ".exe" optional on Windows. 
 
+**Say which window.** With no pattern this is the first *visible* window, which is not the focused one and is not even reliably the same one twice - it is whatever the platform enumerates first. A diagnostic written as `ui.window()` therefore reported on some other application entirely, every time, and looked like it was working. For the window the user is actually in, ask `keymap.get_active_window()` and wrap it with `ui.node()`; `ui.focused()` is the way in when the element matters more than the window. 
+
 
 
 **Args:**
