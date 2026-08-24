@@ -163,6 +163,24 @@ def test_pane_holding_picks_the_smallest_container():
     assert pane_holding(panes_list, (10, 10, 50, 50)).rect == (0, 0, 300, 900)
 
 
+def test_pane_holding_survives_a_pane_that_scrolls():
+    """Measured in Microsoft To Do: the focused list of lists is 637 points
+    tall inside a 548-point scroll area, running past the bottom of the
+    window.  A containment test called that "focus is not inside any pane"
+    and the arrow keys did nothing."""
+    panes_list = [UINode(rect=(1406, 337, 260, 704), name="detail"),
+                  UINode(rect=(1021, 417, 375, 361), name="tasks"),
+                  UINode(rect=(836, 451, 176, 548), name="sidebar")]
+    assert pane_holding(panes_list, (836.0, 451.0, 176.5, 637.0)).name == "sidebar"
+
+
+def test_pane_holding_prefers_the_pane_it_overlaps_most():
+    panes_list = [UINode(rect=(0, 0, 300, 900), name="left"),
+                  UINode(rect=(300, 0, 300, 900), name="right")]
+    # Straddling the splitter, mostly on the right.
+    assert pane_holding(panes_list, (250, 100, 200, 100)).name == "right"
+
+
 def test_pane_holding_returns_none_outside_every_pane():
     assert pane_holding([UINode(rect=(0, 0, 100, 100))], (500, 500, 10, 10)) is None
     assert pane_holding([UINode(rect=(0, 0, 100, 100))], None) is None

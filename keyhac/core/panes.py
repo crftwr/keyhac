@@ -382,19 +382,41 @@ def find_panes(window: UINode,
 
 
 def pane_holding(panes: list[UINode], rect) -> UINode | None:
-    """The smallest pane containing `rect`, or None.
+    """The pane `rect` mostly lies in, or None if it lies in none of them.
 
     Asked of the focused element's rectangle, this is "which pane has the
     keyboard".  Geometry rather than ancestry, for the reason in the module
     docstring.
+
+    **Overlap, not containment.**  Containment looks like the obvious test and
+    fails on any scrolling pane: a list reports the height of its *contents*,
+    not of the viewport showing them, so the focused element is routinely
+    larger than the pane it is inside and sometimes larger than the window.
+    Microsoft To Do's list of lists was measured at 637 points tall inside a
+    548-point scroll area, running 47 points past the bottom of the window
+    itself - structurally inside its pane, geometrically not, and the arrow
+    keys did nothing at all as a result.
+
+    Largest intersection is also what `MoveWindow._get_best_screen` uses to
+    decide which screen a window is on, which is the same question asked of
+    bigger rectangles.  Ties go to the smaller pane.
     """
     if not rect:
         return None
-    holding = [p for p in panes
-               if same_rect(p.rect, rect) or contains_rect(p.rect, rect)]
-    if not holding:
-        return None
-    return min(holding, key=lambda p: p.rect[2] * p.rect[3])
+    x, y, w, h = rect
+    best, best_area = None, 0.0
+    for pane in panes:
+        if not pane.rect:
+            continue
+        px, py, pw, ph = pane.rect
+        overlap = (max(0.0, min(x + w, px + pw) - max(x, px))
+                   * max(0.0, min(y + h, py + ph) - max(y, py)))
+        if overlap <= 0:
+            continue
+        if overlap > best_area or (overlap == best_area and best is not None
+                                   and pw * ph < best.rect[2] * best.rect[3]):
+            best, best_area = pane, overlap
+    return best
 
 
 def panes_towards(panes: list[UINode], origin, direction: str,
