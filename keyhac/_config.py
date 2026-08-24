@@ -170,9 +170,20 @@ def configure(keymap):
 
     kt[f"{LEADER}-Space"] = toggle_ime
 
-    # A sample of the state going the other way is in the terminal key
-    # table near the bottom: turning the IME off around a send_key()
-    # sequence, and putting it back the way it was.
+    # What *not* to do with these: turn the IME off, send keys, turn it back
+    # on in a finally.  It reads well and it does not work.  set_ime_status()
+    # takes effect at once, while send_key() only queues its events for the
+    # application to pick up later - so the restore wins the race and the
+    # keys compose after all ("git status" arrives as "gいt", measured).
+    # Waiting it out is worse than it looks: a key-triggered action runs on
+    # the main thread inside the keyboard hook, and sleeping there past the
+    # hook timeout is exactly what gets the hook silently unhooked.
+    #
+    # Literal text needs none of this - InputText() and ctx.send_text()
+    # inject the characters themselves, so they land whatever the IME is
+    # doing.  And if keys really must go out with the IME closed, close it
+    # and leave it closed: the Kana / 半角全角 key is how the user puts it
+    # back.
 
     # ==================================================================
     # Clipboard
@@ -438,29 +449,6 @@ def configure(keymap):
 
     kt_terminal = keymap.define_keytable(custom_condition_func=is_terminal)
     kt_terminal[f"{LEADER}-K"] = "Ctrl-K"     # clear, rather than "Down"
-
-    # --- sending keys the IME must not eat -------------------------------
-    # send_key() feeds the IME exactly like real typing, so with a Japanese
-    # IME on this would compose instead of arriving.  send_text() and
-    # InputText() are unaffected - they inject the characters directly - so
-    # this dance is only ever needed when you are sending *keys*.
-    #
-    # `was_on` is tri-state, and falsy is the right reading of None: an IME
-    # we cannot see the state of is one to leave alone, in both directions.
-    def type_git_status():
-        was_on = keymap.get_ime_status()
-        if was_on:
-            keymap.set_ime_status(False)
-        try:
-            with keymap.get_input_context() as ctx:
-                for key in ("G", "I", "T", "Space",
-                            "S", "T", "A", "T", "U", "S"):
-                    ctx.send_key(key)
-        finally:
-            if was_on:
-                keymap.set_ime_status(True)
-
-    kt_terminal[f"{LEADER}-G"] = type_git_status
 
     # ==================================================================
     # More to explore

@@ -263,7 +263,7 @@ There is no window argument on purpose: macOS can only ever address the current 
 
 **Note:**
 
-> UI-thread only.  On macOS "off" means a plain keyboard layout or an input method's Roman mode is selected, which is close to but not the same thing as Windows' "the IME is closed". 
+> UI-thread only.  "Off" is the same answer for two different situations, on both OSes: an IME that is installed and closed, and no IME in the picture at all - a plain keyboard layout on Windows, a plain layout or an input method's Roman mode on macOS. 
 
 ---
 
@@ -425,7 +425,9 @@ Turn the IME on or off for whatever holds the input focus.
 
 **Note:**
 
-> UI-thread only.  Whether the change also affects other applications is the user's OS setting ("Let me use a different input method for each app window" on Windows, "Automatically switch to a document's input source" on macOS), not something Keyhac decides. 
+> UI-thread only, and it takes effect **at once** - unlike key output, which `InputContext` only queues for the application. Wrapping a `send_key` batch in "off ... back on" therefore does not work: the restore lands before the keys do and they are composed anyway.  Use `InputContext.send_text` for literal text, which the IME does not intercept. 
+>The two OSes differ in how far "on" reaches: macOS selects a Japanese input source even from a US layout, while Windows only opens an IME that the focused window is already typing under - asking for "on" while a plain layout like en-US is active returns False rather than switching the input language, which is the user's own Win+Space to give. 
+>Whether a change also affects other applications is the user's OS setting ("Let me use a different input method for each app window" on Windows, "Automatically switch to a document's input source" on macOS), not something Keyhac decides. 
 
 ---
 
@@ -564,6 +566,8 @@ Build a focus condition.
 A context manager to send virtual key strokes. 
 
 Key events are accumulated and sent as one batch when the context exits. Physically held modifiers are released around the batch and restored afterwards, so ``ctx.send_key("Ctrl-C")`` works even while the modifiers of the binding that triggered it are still down. 
+
+Sending is where the batch *ends*, not where it arrives: the events are queued for the application to pick up later.  So anything the action does after the context exits - changing the IME state, activating another window - takes effect while the keys are still in flight, and lands first.  ``keymap.set_ime_status(False)`` around a ``send_key`` batch is the trap this makes: the matching restore wins the race and the keys are composed by the IME after all.  Send literal text with ``send_text()``, which the IME does not intercept, and leave IME changes standing rather than undoing them in the same action. 
 
 ``keymap.get_input_context()`` creates one.  It is safe to use from a ThreadedAction worker thread. 
 

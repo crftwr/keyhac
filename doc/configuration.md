@@ -258,11 +258,17 @@ determined: no IME is installed, or on Windows a TSF-only IME that does not answ
 the IMM32 query. `set_ime_status()` reads the state back rather than assuming the
 call took, so its `False` means the IME declined or there was none to ask.
 
-Two caveats worth knowing:
+Some caveats worth knowing:
 
-- On macOS, "off" means a plain keyboard layout or an input method's Roman mode is
-  selected. That is close to, but not the same thing as, Windows' "the IME is
-  closed".
+- "Off" covers two different situations on both OSes: an IME that is installed and
+  closed, and no IME in the picture at all — a plain keyboard layout on Windows, a
+  plain layout or an input method's Roman mode on macOS.
+- **"On" does not reach as far on Windows as on macOS.** macOS selects a Japanese
+  input source even from a US layout; Windows only opens an IME the focused window
+  is *already* typing under, so `set_ime_status(True)` under en-US returns `False`
+  instead of switching the input language. Switching languages stays the user's own
+  Win+Space. A portable config should therefore treat `False` as "the user is not
+  in an IME language right now", not as a failure worth retrying.
 - Turning the IME *on* when it already is leaves the current mode alone, so a
   binding that asserts "on" will not drag a macOS user out of Katakana back into
   Hiragana. With several IMEs installed and the IME off, which one "on" picks is
@@ -271,6 +277,15 @@ Two caveats worth knowing:
   "Let me use a different input method for each app window" on Windows,
   "Automatically switch to a document's input source" on macOS — not something
   Keyhac decides.
+- **Do not wrap key output in "off … back on".** The state change takes effect at
+  once, while `send_key()` only *queues* its events for the application to pick up
+  later — so the restore lands first and the keys compose anyway (`"git status"`
+  arrives as `"gいt"`). Waiting it out is not the fix either: a key-triggered
+  action runs on the main thread inside the keyboard hook, where sleeping past the
+  hook timeout gets the hook unhooked. For literal text use `ctx.send_text()` or
+  `InputText`, which inject the characters themselves and are unaffected by the
+  IME. If keys must go out with the IME closed, close it and leave it closed — the
+  `Kana` / 半角全角 key is how the user puts it back.
 
 For simply toggling, the key names cost nothing and work on both OSes: `Eisu` is
 IME off and `Kana` is IME on, reaching the macOS keys of those names and Windows'

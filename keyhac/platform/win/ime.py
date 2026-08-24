@@ -1,4 +1,4 @@
-"""Windows IME control - IMM32 through the foreground window's IME window.
+"""Windows IME control - IMM32 through the focused window's IME window.
 
 The IME open/close state lives in an input context, which by default belongs
 to a thread and is shared by that thread's windows.  A context in another
@@ -19,8 +19,11 @@ Two things make that message send worth care:
   Microsoft IME does.  A TSF-only IME may not answer at all - that is what
   get_status() returning None means, and why it is not folded into False.
 
-STATUS: written to spec; needs a live Windows pass with Microsoft IME (see
-doc/dev/testing.md).
+Live-verified on Windows 11 with Microsoft IME (Japanese), 2026-08-23 - see
+doc/dev/testing.md for what the pass measured, including the two things it
+corrected here: the *focused* window, not the foreground one, is what
+ImmGetDefaultIMEWnd has to be asked about, and an open status read under a
+non-IME layout is a flag nobody consumes.
 """
 
 import ctypes
@@ -54,25 +57,64 @@ if sys.platform == "win32":
     SMTO_NORMAL = 0x0000
     SMTO_ABORTIFHUNG = 0x0002
 
+    #: ImmGetProperty index for the conversion modes a layout can offer.  Zero
+    #: for a layout with no IME behind it - see _layout_has_ime().
+    IGP_CONVERSION = 0x0008
+
+    class GUITHREADINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                    ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
+                    ("hwndCapture", wintypes.HWND),
+                    ("hwndMenuOwner", wintypes.HWND),
+                    ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
+                    ("rcCaret", wintypes.RECT)]
+
     user32.GetForegroundWindow.argtypes = []
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD,
+                                        ctypes.POINTER(GUITHREADINFO)]
+    user32.GetGUIThreadInfo.restype = wintypes.BOOL
     user32.SendMessageTimeoutW.argtypes = [
         wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
         wintypes.UINT, wintypes.UINT, ctypes.POINTER(DWORD_PTR)]
     user32.SendMessageTimeoutW.restype = LRESULT
+    user32.GetKeyboardLayout.argtypes = [wintypes.DWORD]
+    user32.GetKeyboardLayout.restype = wintypes.HKL
     imm32.ImmGetDefaultIMEWnd.argtypes = [wintypes.HWND]
     imm32.ImmGetDefaultIMEWnd.restype = wintypes.HWND
+    imm32.ImmGetProperty.argtypes = [wintypes.HKL, wintypes.DWORD]
+    imm32.ImmGetProperty.restype = wintypes.UINT
 
 
 class WinImeProvider(ImeProvider):
-    """IME on/off of the foreground window's input context."""
+    """IME on/off of the input context the focused window types through."""
 
     def get_status(self) -> bool | None:
-        result = self._ime_control(IMC_GETOPENSTATUS, 0)
+        hwnd = self._input_window()
+        if not hwnd:
+            logger.debug("No foreground window to reach an IME through.")
+            return None
+        if not self._layout_has_ime(hwnd):
+            return False
+        result = self._ime_control(hwnd, IMC_GETOPENSTATUS, 0)
         return None if result is None else bool(result)
 
     def set_status(self, on: bool) -> bool:
-        if self._ime_control(IMC_SETOPENSTATUS, 1 if on else 0) is None:
+        hwnd = self._input_window()
+        if not hwnd:
+            logger.debug("No foreground window to reach an IME through.")
+            return False
+        if not self._layout_has_ime(hwnd):
+            # Off is already true and stays true; on is unreachable.  The
+            # open flag *would* take here - IMM32 stores it on the input
+            # context whatever the layout - but nothing consumes it and the
+            # next layout switch drops it (measured), so reporting success
+            # would be a lie the caller cannot see through.
+            return not on
+        if self._ime_control(hwnd, IMC_SETOPENSTATUS, 1 if on else 0) is None:
             return False
         # Report what was actually reached: an IME may decline the change
         # (no conversion mode available for the current input language).
@@ -80,19 +122,62 @@ class WinImeProvider(ImeProvider):
 
     # ------------------------------------------------------------------
 
-    def _ime_control(self, command: int, value: int) -> int | None:
-        """Send one WM_IME_CONTROL to the foreground window's IME window.
+    @staticmethod
+    def _input_window():
+        """The window whose IME state is the one the user is typing into.
 
-        Returns the message result, or None when there is nothing to ask -
-        no foreground window, no IME for its thread, or the send timed out.
+        Not the foreground window: a frame and the control that actually has
+        the focus can resolve to *different* default IME windows, and only the
+        focused one carries the live state.  Measured on Windows 11 with
+        Notepad, whose RichEditD2DPT edit control answers open=0/1 in step with
+        the IME while its top-level frame stays stuck at 0 - so asking the
+        frame reads a phantom flag that nothing consumes and writing to it
+        changes nothing the user can see.  Falls back to the foreground window
+        when the thread reports no focus (a window can be active with focus
+        nowhere).
         """
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
-            logger.debug("No foreground window to reach an IME through.")
             return None
+        tid = user32.GetWindowThreadProcessId(hwnd, None)
+        info = GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(info)
+        if user32.GetGUIThreadInfo(tid, ctypes.byref(info)) and info.hwndFocus:
+            return info.hwndFocus
+        return hwnd
+
+    @staticmethod
+    def _layout_has_ime(hwnd) -> bool:
+        """Whether the layout the focused window types under has an IME at all.
+
+        Without this the answers are about a flag rather than about the IME:
+        IMM32 keeps an open status on the input context even while a plain
+        layout (en-US) is selected, so set_status(True) there reports success,
+        composes nothing, and is gone at the next layout switch - all three
+        measured on Windows 11 with Microsoft IME installed.
+
+        The obvious test, ImmIsIME(), does not work: on that machine it answers
+        true for the *US* layout too (false only for a layout that is not
+        installed at all), so it separates nothing.  ImmGetDescription() and
+        ImmGetIMEFileName() are no help either - both are empty even for
+        Microsoft IME, which is a TSF text service with no IMM32 IME file
+        behind it.  What does separate them is the set of conversion modes the
+        layout offers: 0 for en-US, IME_CMODE_NATIVE|KATAKANA|FULLSHAPE (0xb)
+        for Microsoft IME.
+        """
+        tid = user32.GetWindowThreadProcessId(hwnd, None)
+        hkl = user32.GetKeyboardLayout(tid)
+        return bool(imm32.ImmGetProperty(hkl, IGP_CONVERSION))
+
+    def _ime_control(self, hwnd, command: int, value: int) -> int | None:
+        """Send one WM_IME_CONTROL to the given window's IME window.
+
+        Returns the message result, or None when there is nothing to ask -
+        no IME window for the target's thread, or the send timed out.
+        """
         ime_hwnd = imm32.ImmGetDefaultIMEWnd(hwnd)
         if not ime_hwnd:
-            logger.debug("The foreground window's thread has no IME window.")
+            logger.debug("The focused window's thread has no IME window.")
             return None
 
         result = DWORD_PTR()

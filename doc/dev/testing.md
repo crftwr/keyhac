@@ -73,6 +73,14 @@ live on each OS.
   harness records every vk the hook was handed for exactly that reason — 100
   taps is 200 events, and fewer means the burst never arrived to be translated,
   which is a skip rather than a translation failure.
+- **An IME that was just closed costs the *next* test's injection its tail.**
+  The same loss, arriving through a neighbour rather than through the test's
+  own burst. `tests/test_win_ime.py` opens the IME; without settling after it
+  closes one again, the Japanese case of `tests/test_win_send_text.py` received
+  `日本語入力` for `日本語入力のテスト` about one run in five, while that module
+  alone passed 8/8 and the pair passed 6/6 with the IME test deselected — which
+  is how it was attributed. A test that changes IME state owns putting it back
+  *and* pumping afterwards.
 - **A guard must not be able to hide the defect the test exists to catch.**
   These skip only on *detected interference* — focus observed to leave the
   probe, or the pointer observed moving while nothing is injecting — never on
@@ -209,12 +217,37 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   the palette input sources (`CharacterPaletteIM`, `50onPaletteIM`, `PressAndHold`)
   report no input mode, so the "first enabled non-Roman mode" selection cannot land
   on one. The tests restore the input source they found.
-- **Windows IME**: `tests/test_win_ime.py` is written and **not yet run** — it needs
-  a machine with Microsoft IME, and it is the outstanding item for the IME API
-  (issue #107). What it has to establish beyond the round trip: that a TSF-only IME
-  answering nothing reads as `None` rather than `False`, and that the
-  `SendMessageTimeout` cap holds — a plain `SendMessage` here would stall the
-  `WH_KEYBOARD_LL` callback past `LowLevelHooksTimeout`.
+- **Windows IME** (2026-08-23, `tests/test_win_ime.py`, Windows 11 26200 with
+  Microsoft IME for Japanese): 11 live tests, and the pass that **caught two real
+  bugs** — the module as first written did not work at all, and its own tests had
+  passed against the broken behavior because they only ever compared the API with
+  itself. What broke that circle was checking against ground truth: driving the IME
+  with the OS's own `VK_IME_ON`/`VK_IME_OFF` and typing `aiueo` into a real control
+  to see whether あいうえお or `aiueo` came out.
+  1. **The foreground window is the wrong window to ask.** A frame and its focused
+     control resolve to different default IME windows. With the IME genuinely on,
+     the focused control's answered `open=1` while the frame's stayed at `0`, so
+     `get_status()` reported off while Japanese was composing, and `set_status(True)`
+     returned True, read back True, and changed nothing visible. Fixed by resolving
+     through `GetGUIThreadInfo(...).hwndFocus`; `test_the_focused_control_is_asked_not_the_frame`
+     is the guard.
+  2. **An open status under a non-IME layout is a phantom.** Under en-US,
+     `set_status(True)` reported success, composed nothing, and the flag was gone
+     after the next layout switch (measured — it is not even latent). Both calls are
+     now gated on `ImmGetProperty(hkl, IGP_CONVERSION)`. Note `ImmIsIME()` is *not*
+     usable for that gate: it answered true for the US layout too.
+  The tests switch the probe thread's layout with `ActivateKeyboardLayout`, so both
+  halves — IME layout and plain layout — run on one machine without touching its
+  settings. Timing held throughout: 0.17 ms per query, far inside `SEND_TIMEOUT_MS`.
+  Three application families were swept by hand, since the frame-vs-focus shape
+  differs between them: **Notepad** (focus is a `RichEditD2DPT` child of the frame —
+  the case that exposed the bug), **Edge/Chromium** (focus *is* the frame; correct
+  either way, and what every Electron app looks like), and a **PuiKit window** — where
+  `set_status(True)` returns False and should: PuiKit associates no input context
+  with a window until a text field wants one (`ImmGetContext` → 0), so there is no
+  IME to open, and the API refuses rather than reporting a success it did not have.
+  Still not covered on this machine: a **TSF-only IME** that answers nothing, which
+  is the only path to `None` (none installed to test against).
 - **macOS element tree and text layer** (2026-08-06, Safari 18 / Chrome on a page
   built to the shape in `doc/dev/ai-integration.md` §2): `children()`,
   `describe()`, `get_ui_tree`, `find_element` by DOM id / label / role / text,
@@ -454,7 +487,11 @@ struck off.
   pressed on JIS hardware. The VKs (0x19 / 0x1C / 0x1D) are the documented ones,
   but no JIS keyboard was available to confirm what the hardware really reports;
   the console's last-key display is the one-line check. Same hardware dependency
-  as the entry below, so pass them together.
+  as the entry below, so pass them together. Still open after the 2026-08-23 IME
+  pass — that machine reports `GetKeyboardType(0) == 4`, so it cannot answer this.
+  What the pass *did* confirm is the other half of those names: injecting
+  `VK_IME_ON`/`VK_IME_OFF` (what `Kana`/`Eisu` send) drives Microsoft IME exactly
+  as `set_ime_status()` does.
 - **JIS layout detection on real JIS hardware** *(passed 2026-08-07; **skipped
   for 2.2.1** — no JIS keyboard available)* — `GetKeyboardType(0) == 7`, one
   line. The tables it selects are pinned against `kbd106.dll` independently, so

@@ -237,11 +237,10 @@ class ImeProvider(ABC):
     """IME (input method) on/off state for whatever holds the input focus.
 
     Deliberately window-less.  Windows reaches the state through a window
-    handle (IMM32 input contexts are per thread), so it *could* address a
-    background window; macOS has no such handle - TIS only ever exposes "the
-    current input source".  Naming a window would therefore split the contract
-    between the two OSes, so the portable one is the intersection: whatever has
-    the input focus right now.
+    handle, so it *could* address a background window; macOS has no such
+    handle - TIS only ever exposes "the current input source".  Naming a
+    window would therefore split the contract between the two OSes, so the
+    portable one is the intersection: whatever has the input focus right now.
 
     Whether a change leaks to other applications is the user's OS setting
     ("Let me use a different input method for each app window" on Windows,

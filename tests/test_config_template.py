@@ -120,19 +120,26 @@ def test_the_ime_samples_run(shipped):
     assert shipped.get_ime_status() is False
 
 
-def test_the_ime_sample_restores_the_state_it_found(shipped):
-    from keyhac.platform.fake import FakeImeProvider
+def test_the_template_types_text_without_going_near_the_ime(shipped):
+    """Literal text goes out as InputText, never as a send_key() batch.
 
-    shipped.ime_provider = FakeImeProvider(status=True)
-    type_git_status = shipped_action(shipped, "type_git_status")
+    The distinction is not cosmetic: a batch is only *queued* for the
+    application, so the "turn the IME off, send the keys, turn it back on"
+    shape a config reaches for cannot work - the restore lands before the keys
+    and "git status" arrives as "gいt" (doc/configuration.md). InputText
+    injects the characters themselves, which the IME does not intercept, so
+    there is nothing to turn off.
+    """
+    from keyhac.core.action import InputText
 
-    type_git_status()
-    assert shipped.get_ime_status() is True, "the IME was left off"
-    assert shipped._hook.sent, "no keys reached the hook"
+    typed = [action for table in shipped._all_keytables
+             for action in table.table.values()
+             if isinstance(action, InputText)]
+    assert typed, "the template no longer shows InputText"
 
 
-def test_the_ime_samples_leave_an_unreadable_ime_alone(shipped, caplog):
-    """None means "could not tell"; neither sample may act on it."""
+def test_the_ime_sample_leaves_an_unreadable_ime_alone(shipped, caplog):
+    """None means "could not tell"; the toggle must say so rather than act."""
     from keyhac.platform.fake import FakeImeProvider
 
     shipped.ime_provider = FakeImeProvider(status=None)
@@ -140,6 +147,4 @@ def test_the_ime_samples_leave_an_unreadable_ime_alone(shipped, caplog):
     with caplog.at_level("WARNING"):
         shipped_action(shipped, "toggle_ime")()
     assert "No IME to toggle" in caplog.text
-
-    shipped_action(shipped, "type_git_status")()
     assert shipped.get_ime_status() is None

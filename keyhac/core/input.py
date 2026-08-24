@@ -32,6 +32,16 @@ class InputContext:
     afterwards, so ``ctx.send_key("Ctrl-C")`` works even while the modifiers
     of the binding that triggered it are still down.
 
+    Sending is where the batch *ends*, not where it arrives: the events are
+    queued for the application to pick up later.  So anything the action does
+    after the context exits - changing the IME state, activating another
+    window - takes effect while the keys are still in flight, and lands
+    first.  ``keymap.set_ime_status(False)`` around a ``send_key`` batch is
+    the trap this makes: the matching restore wins the race and the keys are
+    composed by the IME after all.  Send literal text with ``send_text()``,
+    which the IME does not intercept, and leave IME changes standing rather
+    than undoing them in the same action.
+
     ``keymap.get_input_context()`` creates one.  It is safe to use from a
     ThreadedAction worker thread.
 
