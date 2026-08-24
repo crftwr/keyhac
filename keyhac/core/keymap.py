@@ -21,7 +21,6 @@ from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core import log
-from keyhac.core import panes
 from keyhac.core.action import ThreadedAction
 from keyhac.core.config import Config
 from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
@@ -259,10 +258,6 @@ class Keymap:
                 self._release_modifier_all()
 
             init_key_names(self.platform, self._hook.keyboard_layout())
-
-            # Pane recipes are config-defined too: without this a reload
-            # appends another copy of every MoveFocus.define_panes() call.
-            panes.clear_recipes()
 
             self._keytable_list = []
             self._all_keytables = []

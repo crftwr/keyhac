@@ -1158,18 +1158,14 @@ table[f"{LEADER}-{MOD}-{RIGHT}"] = MoveFocus("right")
 
 **A pane that will not take focus is skipped, not stopped at.** Some panes accept a focus request and ignore it - Finder's sidebar and System Settings' detail pane both do - so the action tries each pane that way in turn and lands on the first that actually takes the keyboard. 
 
-Applications with no recipe are handled by a generic rule: a big rectangle that holds something focusable and is not merely a container of other panes.  Where that picks the wrong things, `define_panes()` narrows it. 
+What counts as a pane is decided by one generic rule - a big rectangle whose keyboard target either says what it is by its role or is large enough to be the pane - with no per-application knowledge at all.  That found exactly the panes a person would name in every application it has been run against. 
+
+There is deliberately no way to tune this from a configuration yet. The knobs exist, on `keyhac.core.panes.find_panes()`, and a configuration can reach them from an action of its own; they are not public API because nothing has yet needed them, and an entry point published before its first real use case freezes the wrong shape. 
 
 ### <kbd>method</kbd> `MoveFocus.__init__`
 
 ```python
-__init__(
-    direction: str,
-    roles: str = None,
-    min_area: float = None,
-    min_side: float = None,
-    max_depth: int = None
-)
+__init__(direction: str)
 ```
 
 Build the action. 
@@ -1179,10 +1175,6 @@ Build the action.
 **Args:**
  
  - <b>`direction`</b>:  "left", "right", "up" or "down". 
- - <b>`roles`</b>:  Role pattern that candidate panes must match, for this  binding only.  Overrides any recipe. 
- - <b>`min_area`</b>:  Smallest fraction of the window a pane may cover. 
- - <b>`min_side`</b>:  Smallest a pane may be on either axis, in points. 
- - <b>`max_depth`</b>:  Depth bound for the element walk. 
 
 
 ---
@@ -1198,45 +1190,6 @@ The running Keymap, so an action need not import and look it up.
 The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
-
-
-
----
-
-### <kbd>classmethod</kbd> `MoveFocus.define_panes`
-
-```python
-define_panes(
-    app: str = None,
-    title: str = None,
-    roles: str = None,
-    min_area: float = None,
-    min_side: float = None,
-    max_depth: int = None
-) → None
-```
-
-Teach MoveFocus what counts as a pane in an application. 
-
-A recipe declares *which elements are candidates*, never which key to send. That distinction is the point: a role set is independent of layout, so it survives every rearrangement - splitting an editor, moving the explorer to the other side, detaching a panel - that makes a command mapping point at the wrong pane. 
-
-Recipes are optional. The generic rule found exactly the panes a person would name in every application measured; reach for this when it picks too much or too little in one of yours. 
-
-```python
-MoveFocus.define_panes(app="Code", roles="AXGroup", min_area=0.03)
-MoveFocus.define_panes(app="Finder", roles="AXScrollArea|AXOutline")
-``` 
-
-
-
-**Args:**
- 
- - <b>`app`</b>:  Application name pattern, matched exactly as  `define_keytable(app=...)` matches it.  None matches any. 
- - <b>`title`</b>:  Window title pattern.  None matches any. 
- - <b>`roles`</b>:  Role pattern candidate panes must match. 
- - <b>`min_area`</b>:  Smallest fraction of the window a pane may cover. 
- - <b>`min_side`</b>:  Smallest a pane may be on either axis, in points. 
- - <b>`max_depth`</b>:  Depth bound for the element walk. 
 
 ---
 

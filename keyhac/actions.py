@@ -686,68 +686,31 @@ class MoveFocus(ThreadedAction):
     Settings' detail pane both do - so the action tries each pane that way in
     turn and lands on the first that actually takes the keyboard.
 
-    Applications with no recipe are handled by a generic rule: a big rectangle
-    that holds something focusable and is not merely a container of other
-    panes.  Where that picks the wrong things, `define_panes()` narrows it.
+    What counts as a pane is decided by one generic rule - a big rectangle
+    whose keyboard target either says what it is by its role or is large
+    enough to be the pane - with no per-application knowledge at all.  That
+    found exactly the panes a person would name in every application it has
+    been run against.
+
+    There is deliberately no way to tune this from a configuration yet. The
+    knobs exist, on `keyhac.core.panes.find_panes()`, and a configuration can
+    reach them from an action of its own; they are not public API because
+    nothing has yet needed them, and an entry point published before its first
+    real use case freezes the wrong shape.
     """
 
-    def __init__(self, direction: str, roles: str = None,
-                 min_area: float = None, min_side: float = None,
-                 max_depth: int = None):
+    def __init__(self, direction: str):
         """Build the action.
 
         Args:
             direction: "left", "right", "up" or "down".
-            roles: Role pattern that candidate panes must match, for this
-                binding only.  Overrides any recipe.
-            min_area: Smallest fraction of the window a pane may cover.
-            min_side: Smallest a pane may be on either axis, in points.
-            max_depth: Depth bound for the element walk.
         """
         if direction not in panes_module.DIRECTIONS:
             raise ValueError(
                 f"MoveFocus direction must be one of "
                 f"{panes_module.DIRECTIONS}, not {direction!r}")
         self.direction = direction
-        self._overrides = {k: v for k, v in
-                           (("roles", roles), ("min_area", min_area),
-                            ("min_side", min_side), ("max_depth", max_depth))
-                           if v is not None}
         self.window = None
-
-    @classmethod
-    def define_panes(cls, app: str = None, title: str = None,
-                     roles: str = None, min_area: float = None,
-                     min_side: float = None, max_depth: int = None) -> None:
-        """Teach MoveFocus what counts as a pane in an application.
-
-        A recipe declares *which elements are candidates*, never which key to
-        send. That distinction is the point: a role set is independent of
-        layout, so it survives every rearrangement - splitting an editor,
-        moving the explorer to the other side, detaching a panel - that makes
-        a command mapping point at the wrong pane.
-
-        Recipes are optional. The generic rule found exactly the panes a
-        person would name in every application measured; reach for this when
-        it picks too much or too little in one of yours.
-
-        ```python
-        MoveFocus.define_panes(app="Code", roles="AXGroup", min_area=0.03)
-        MoveFocus.define_panes(app="Finder", roles="AXScrollArea|AXOutline")
-        ```
-
-        Args:
-            app: Application name pattern, matched exactly as
-                `define_keytable(app=...)` matches it.  None matches any.
-            title: Window title pattern.  None matches any.
-            roles: Role pattern candidate panes must match.
-            min_area: Smallest fraction of the window a pane may cover.
-            min_side: Smallest a pane may be on either axis, in points.
-            max_depth: Depth bound for the element walk.
-        """
-        panes_module.define_recipe(app=app, title=title, roles=roles,
-                                   min_area=min_area, min_side=min_side,
-                                   max_depth=max_depth)
 
     def starting(self):
         """lazydocs: ignore"""
@@ -782,13 +745,11 @@ class MoveFocus(ThreadedAction):
             logger.warning("MoveFocus: the window exposes no element tree.")
             return
 
-        settings = panes_module.settings_for(self.window)
-        settings.update(self._overrides)
         # One dispatch for the whole walk: 400-odd nodes and ~35 ms on the
         # widest window measured. Per-node dispatch would be hundreds of round
         # trips, and doing it on this thread is not allowed at all.
         found = evaluate_on_main_thread(
-            lambda: panes_module.find_panes(window_node, **settings))
+            lambda: panes_module.find_panes(window_node))
         if len(found) < 2:
             logger.info("MoveFocus: %d pane(s) in this window; nothing to "
                         "move between.", len(found))

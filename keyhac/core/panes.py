@@ -134,41 +134,6 @@ GAP_BUCKET = 64.0
 
 DIRECTIONS = ("left", "right", "up", "down")
 
-#: Per-application recipes, most recently defined first.  Lives here rather
-#: than on the action so that Keymap.configure() can clear it without importing
-#: keyhac.actions, which imports Keymap.  The public spelling is
-#: MoveFocus.define_panes().
-_recipes: list[dict] = []
-
-
-def define_recipe(app: str | None = None, title: str | None = None,
-                  **settings) -> None:
-    """Record what counts as a pane in a matching window.
-
-    Reached from configurations as `MoveFocus.define_panes()`, which carries
-    the documentation.
-    """
-    _recipes.insert(0, {"app": app, "title": title,
-                        "settings": {k: v for k, v in settings.items()
-                                     if v is not None}})
-
-
-def clear_recipes() -> None:
-    """Forget every recipe.  Called by Keymap.configure(), because a reload
-    that appended to the list would accumulate a copy per reload."""
-    _recipes.clear()
-
-
-def settings_for(window) -> dict:
-    """The first matching recipe's settings, or {}."""
-    from keyhac.core.focus import match_window_fields
-
-    for recipe in _recipes:
-        if match_window_fields(window, app=recipe["app"], title=recipe["title"]):
-            return dict(recipe["settings"])
-    return {}
-
-
 def _accepts_focus(node: UINode) -> bool:
     """Whether the application says this element can take focus.
 

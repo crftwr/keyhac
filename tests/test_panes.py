@@ -225,46 +225,6 @@ def test_direction_must_be_one_of_the_four():
         panes_towards([], (0, 0, 10, 10), "sideways")
 
 
-# -- recipes -----------------------------------------------------------------
-
-class FakeWindow:
-    def __init__(self, app_name="Code", title="Main"):
-        self.app_name = app_name
-        self.title = title
-        self.class_name = None
-
-
-@pytest.fixture(autouse=True)
-def no_leftover_recipes():
-    panes.clear_recipes()
-    yield
-    panes.clear_recipes()
-
-
-def test_the_most_recent_matching_recipe_wins():
-    panes.define_recipe(app="Code", roles="AXGroup")
-    panes.define_recipe(app="Code", roles="AXScrollArea")
-    assert panes.settings_for(FakeWindow())["roles"] == "AXScrollArea"
-
-
-def test_a_recipe_only_applies_to_its_application():
-    panes.define_recipe(app="Finder", roles="AXOutline")
-    assert panes.settings_for(FakeWindow(app_name="Code")) == {}
-    assert panes.settings_for(FakeWindow(app_name="Finder"))["roles"] == "AXOutline"
-
-
-def test_unset_recipe_fields_are_not_recorded():
-    panes.define_recipe(app="Code", roles="AXGroup", min_area=None)
-    assert panes.settings_for(FakeWindow()) == {"roles": "AXGroup"}
-
-
-def test_reloading_the_config_does_not_accumulate_recipes():
-    panes.define_recipe(app="Code", roles="AXGroup")
-    panes.clear_recipes()
-    panes.define_recipe(app="Code", roles="AXGroup")
-    assert len(panes._recipes) == 1
-
-
 # -- the layout that was actually measured -----------------------------------
 
 #: A VS Code window split three ways: explorer, a middle column split top and
