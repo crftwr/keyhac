@@ -69,6 +69,53 @@ class FakeField:
             self.value = 0 if self.value else 1
 
 
+class LaggingField(FakeField):
+    """A field that takes a few reads to admit it has focus.
+
+    What Chromium does: the AXFocused write lands, and the system-wide focused
+    element catches up 2-22 ms later.  `lag` is expressed in reads rather than
+    milliseconds so the test neither sleeps nor races.
+    """
+
+    def __init__(self, lag=3, accepts=True, ever=True, **kwargs):
+        super().__init__(**kwargs)
+        self.lag = lag
+        self.accepts = accepts
+        self.ever = ever
+        self.requests = 0
+        self.checks = 0
+
+    def accepts_focus(self):
+        return self.accepts
+
+    def request_focus(self):
+        self.requests += 1
+
+    def has_focus(self):
+        self.checks += 1
+        self.focused = self.ever and self.requests > 0 and self.checks > self.lag
+        return self.focused
+
+    def set_focus(self):                     # must never be reached
+        raise AssertionError("set_focus() used where request/has_focus exist")
+
+
+class ContainerField(LaggingField):
+    """A pane that answers a focus write by focusing something inside itself.
+
+    VS Code's trees do this: the write lands on the tree, the keyboard goes to
+    a row, and the identity test therefore never becomes true.
+    """
+
+    def has_focus(self):
+        self.checks += 1
+        return False                         # never itself
+
+    def contains_focus(self):
+        self.checks += 1
+        return self.requests > 0 and self.checks > self.lag
+
+
 @pytest.fixture
 def wired(engine, monkeypatch):
     """A Keymap with a fake clipboard, and typing captured rather than sent."""
@@ -228,3 +275,76 @@ def test_press_uses_whichever_action_the_platform_offers(wired):
 def test_press_reports_an_element_that_cannot_be_pressed(wired):
     with pytest.raises(FillFailed, match="no press action"):
         press(FakeField(actions=()))
+
+
+# -- focus -------------------------------------------------------------------
+
+def test_focus_waits_for_a_late_arrival(wired):
+    """The bug this split exists for.
+
+    An immediate read-back called every Chromium and Electron target a
+    failure, so set_text() refused to write into any of them.
+    """
+    field = LaggingField(lag=3)
+    assert fill.focus(field) is True
+    assert field.requests == 1                 # asked once, looked repeatedly
+
+
+def test_focus_gives_up_when_it_never_arrives(wired):
+    field = LaggingField(ever=False)
+    assert fill.focus(field, timeout=0.1) is False
+
+
+def test_focus_refuses_an_element_that_cannot_take_it(wired):
+    """Finder's sidebar: the write is accepted and does nothing, and the
+    application says so beforehand if asked."""
+    field = LaggingField(accepts=False)
+    assert fill.focus(field) is False
+    assert field.requests == 0                 # not even attempted
+
+
+def test_focus_falls_back_for_an_element_without_the_split(wired):
+    """A test double or a config's own object still works the old way."""
+    field = FakeField()
+    assert fill.focus(field) is True
+    assert field.focused is True
+
+
+def test_set_text_writes_into_a_field_whose_focus_is_late(wired):
+    """End to end: this is what raised FillFailed on every Chromium target."""
+    field = LaggingField(lag=3)
+    assert set_text(field, "REC-001", methods=("set_value",)) == "set_value"
+    assert field.value == "REC-001"
+
+
+def test_focus_does_not_wait_on_the_event_loop(wired, monkeypatch):
+    """The whole reason the wait moved out of the platform method.
+
+    Polling on the loop thread would hold the keyboard hook for the length of
+    the wait, so there the answer is one look and whatever it says.
+    """
+    monkeypatch.setattr(fill, "on_loop_thread", lambda: True)
+    field = LaggingField(lag=3)
+    assert fill.focus(field) is False
+    assert field.checks == 1
+
+
+def test_focus_accepts_a_pane_that_focuses_something_inside_itself(wired):
+    """The identity test alone reported this as a failure, after waiting out
+    the whole timeout, while the keyboard was where it was aimed."""
+    pane = ContainerField(lag=2)
+    assert fill.focus(pane) is True
+
+
+def test_focus_prefers_containment_over_identity(wired):
+    pane = ContainerField(lag=0)
+    fill.focus(pane)
+    assert pane.checks > 0                   # contains_focus, not has_focus
+
+
+def test_focus_still_uses_has_focus_when_containment_is_unavailable(wired):
+    """An element with only the older pair keeps working."""
+    field = LaggingField(lag=2)
+    assert not hasattr(field, "contains_focus")
+    assert fill.focus(field) is True
+

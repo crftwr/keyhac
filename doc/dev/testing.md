@@ -260,6 +260,50 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   **Not covered**: Terminal.app and iTerm2 whole-value reads — neither had a
   window open — so the terminal half of §6 is still unmeasured *on macOS*. The
   Windows half is measured; see the Text-pattern survey below.
+- **macOS focus writes** (2026-08-23, Finder / System Settings / Chrome / VS
+  Code): whether `AXFocused` can be written on an arbitrary element, measured
+  for the first open question of discussion #102. **Yes in Chromium and
+  Electron** — checked against the page's own `document.activeElement` and
+  against where a posted keystroke actually lands, not against AX alone — and
+  *sometimes* in native applications: Finder's sidebar and System Settings'
+  detail pane accept the write and ignore it, while the panes beside them take
+  focus. `AXUIElementIsAttributeSettable` predicted every case, both ways,
+  which is what `accepts_focus()` exists for. `AXFocusedUIElement` written on
+  the window (`-25205`) or on the application (accepted, ignored) is not a way
+  round it. A PuiKit window (XeFM) exposes six nodes and no internal tree, so
+  there is nothing inside it to address.
+
+  **Two bugs, both in shipped code.** `UIElement.set_focus()` read the
+  system-wide focused element immediately, and in Chromium that read lags the
+  write by 2–22 ms — 5/5 false negatives in Chrome, which made `set_text()`
+  raise `FillFailed: could not focus the field` on *every* Chromium and
+  Electron target. The Windows method had the opposite fault: it returned
+  `SetFocus`'s HRESULT, reporting success for focus that never landed, which is
+  the more dangerous direction since a keystroke usually follows. The wait now
+  lives in `keyhac.core.fill.focus()`, on the worker thread — polling where the
+  check used to run would have held the keyboard hook for its duration, which
+  `wait_for` refuses for exactly that reason. Verified after the fix: the same
+  five Chrome targets return True in ~21 ms with the page confirming each one,
+  an unfocusable `<div>` returns False in 0 ms rather than timing out, and
+  `set_text()` writes.
+
+  **Not covered**: the Windows half. `IsKeyboardFocusable` (vtable slot 27) and
+  the reworked `set_focus()` are unverified on hardware — slot 27 is bracketed
+  by 26 and 29, which the accessor tests pin, but bracketed is not measured.
+  `contains_focus()` and `IUIAutomation::CompareElements` (slot 3) are
+  unverified there for the same reason.
+
+  **The identity test was the wrong question for a container.** VS Code
+  answers a focus write on a tree by focusing a *row* inside it, so
+  `has_focus()`, which compares identity, waited out the whole timeout and
+  then reported failure while the keyboard was demonstrably where it had been
+  aimed — False after 253 ms, focus on `AXRow "keyhac Git"`. `contains_focus()`
+  climbs from the focused element instead: the same call is True in 26 ms, and
+  `has_focus()` still answers False, which is the fact it exists to report.
+  Verified live on both — Chrome unchanged at ~22 ms per target with the page
+  confirming each, and a Chromium container asked while focus was already
+  inside it answers True at once, correctly, with the more specific write
+  landing 400 ms later regardless.
 - **macOS waiting and AX notifications** (2026-08-06): the three-beat modal
   cycle end to end in the real thread architecture — `CFRunLoop` on the main
   thread, the action on a worker, every UI read dispatched back — press,

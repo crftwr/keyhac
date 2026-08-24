@@ -308,10 +308,23 @@ The same live read as `find` - the snapshot is not consulted.
 ### <kbd>method</kbd> `UINode.focus`
 
 ```python
-focus() → bool
+focus(timeout: 'float | None' = None) → bool
 ```
 
 Give this element keyboard focus; True when it actually landed. 
+
+Waits briefly for focus to arrive rather than reading it back at once: Chromium and Electron targets report the change a few milliseconds late, and an immediate read called every one of them a failure. 
+
+
+
+**Args:**
+ 
+ - <b>`timeout`</b>:  How long focus is given to arrive.  The default suits  every application measured; raise it for one that is slow to  respond. 
+
+
+
+**Returns:**
+ Whether the keyboard is in this element now - it, or something inside it, since an application asked to focus a pane routinely hands the keyboard to a control within it.  False also when the application says the element cannot take focus at all, which some panes and containers do while accepting the request in silence. 
 
 ---
 

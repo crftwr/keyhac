@@ -19,6 +19,12 @@ _DESCRIBE_ATTRS = ["AXRole", "AXTitle", "AXValue", "AXDescription",
 #: Descent bound for UIElement.get_text()'s leaf collection.
 _TEXT_MAX_DEPTH = 12
 
+#: Ancestor bound for contains_focus()'s climb.  Generous: the focused element
+#: in VS Code sits 26 levels below its window, and the whole climb measured
+#: 1.1 ms there (2026-08-23) because it reads no attributes on the way.  This
+#: is a guard against a pathological tree, not a budget.
+_FOCUS_ANCESTOR_LIMIT = 64
+
 
 def _from_ax(value):
     if value is None:
@@ -102,12 +108,37 @@ class UIElement:
     def set_attribute_value(self, name: str, type_name: str, value) -> None:
         AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
 
-    def set_focus(self) -> bool:
-        """Give this element keyboard focus (the macOS half of the Windows
-        UIElement.set_focus()).
+    def accepts_focus(self) -> bool:
+        """Whether the application says this element can be focused at all.
 
-        Returns whether focus actually landed, rather than whether the write
-        was accepted - AX takes AXFocused writes that do nothing.
+        The cheapest guard there is against the AX failure that looks like
+        success: AXUIElementSetAttributeValue returns kAXErrorSuccess for an
+        AXFocused write the application then ignores, and nothing downstream
+        can tell that from a write that worked.  Asking first can.
+
+        Measured 2026-08-23 across Finder, System Settings, Chrome and VS
+        Code, this predicted every case: Finder's sidebar and System
+        Settings' detail pane answer False and swallow the write, their
+        neighbouring panes answer True and take focus, and in Chromium it
+        separates a div with a tabindex from one without - checked against
+        the page's own document.activeElement, not just against AX.
+        """
+        err, ok = AS.AXUIElementIsAttributeSettable(self._ref, "AXFocused", None)
+        return bool(ok) if err == 0 else False
+
+    def request_focus(self) -> None:
+        """Ask for keyboard focus, without waiting to see whether it arrives.
+
+        The write half of set_focus(), split out because the two halves belong
+        on different threads: the write is a main-thread element access, and
+        the wait for it to take effect must not happen there - it would hold
+        the keyboard hook for its duration.  `keyhac.core.fill.focus()` is
+        what pairs them correctly.
+        """
+        self.set_attribute_value("AXFocused", "bool", True)
+
+    def has_focus(self) -> bool:
+        """Whether the keyboard is pointed at this element right now.
 
         Checked against the *system-wide* focused element, not this element's
         own AXFocused: an element in a background application can hold its
@@ -115,13 +146,64 @@ class UIElement:
         Anything about to send keystrokes needs to know which of those it has,
         because the failure is not "nothing happens", it is text typed into
         whatever the user was actually looking at.
+
+        AXFocused is not consulted even as a fallback.  It is not merely
+        narrower, it is wrong: a live Finder sidebar reported AXFocused True
+        on all fourteen of its rows at once (2026-08-23).  When the
+        system-wide read fails there is no second opinion worth having, and
+        False - a loud failure - is the answer this module wants.
         """
-        self.set_attribute_value("AXFocused", "bool", True)
         err, focused = AS.AXUIElementCopyAttributeValue(
             AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
-        if err == 0 and focused is not None:
-            return bool(AS.CFEqual(focused, self._ref))
-        return bool(self.get_attribute_value("AXFocused"))
+        if err != 0 or focused is None:
+            return False
+        return bool(AS.CFEqual(focused, self._ref))
+
+    def contains_focus(self) -> bool:
+        """Whether the keyboard is inside this element - it, or a descendant.
+
+        What "did focus land here" means for a *container*.  An application
+        that takes a focus write on a pane routinely hands the keyboard to a
+        control inside it - VS Code's trees answer a write on the tree by
+        focusing a row - and has_focus(), which compares identity, calls that
+        a failure while the keyboard is demonstrably where it was aimed.
+
+        The climb starts at the system-wide focused element, so the first
+        comparison *is* the has_focus() test and the exact case costs nothing
+        extra.
+
+        Note what this cannot distinguish: asked of an ancestor of wherever
+        focus already was - a window, say - it answers True whether or not
+        anything moved.  Aimed at a pane, whose siblings are not its
+        descendants, it stays discriminating; aimed at the root it is
+        vacuous.
+        """
+        err, focused = AS.AXUIElementCopyAttributeValue(
+            AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
+        if err != 0 or focused is None:
+            return False
+        for _ in range(_FOCUS_ANCESTOR_LIMIT):
+            if AS.CFEqual(focused, self._ref):
+                return True
+            err, focused = AS.AXUIElementCopyAttributeValue(
+                focused, "AXParent", None)
+            if err != 0 or focused is None:
+                return False
+        return False
+
+    def set_focus(self) -> bool:
+        """Ask for focus and look once, immediately, to see if it arrived.
+
+        **Does not wait**, and in Chromium that matters: the system-wide
+        focused element takes 2-22 ms to catch up with a write that worked
+        (measured over Chrome and VS Code), so this reports False for focus
+        that is about to land.  It is kept as the one-call form for code
+        already on a worker thread; everything else should use
+        `keyhac.core.fill.focus()` or `UINode.focus()`, which do the waiting
+        on the right thread.
+        """
+        self.request_focus()
+        return self.has_focus()
 
     def set_value(self, value: str) -> bool:
         """Write AXValue (the macOS counterpart of the Windows Value pattern).

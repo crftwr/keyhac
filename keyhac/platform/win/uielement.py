@@ -34,6 +34,10 @@ logger = log.getLogger("WinUIElement")
 #: Sibling bound on UIElement.children() - see its docstring.
 MAX_CHILDREN = 2000
 
+#: Ancestor bound for contains_focus()'s climb.  The macOS counterpart carries
+#: the measurement this is sized from.
+FOCUS_ANCESTOR_LIMIT = 64
+
 if sys.platform == "win32":
     from ctypes import wintypes
 
@@ -82,6 +86,11 @@ if sys.platform == "win32":
 # vtable slot indices (UIAutomationClient.h).  0-2 are IUnknown.
 
 class _IUIAutomation:
+    # 3 is the first method after IUnknown, and the three below it are pinned
+    # from the far side: ElementFromHandle (6) is verified against the Win32
+    # answer, and UIAutomationClient.h orders CompareElements(3),
+    # CompareRuntimeIds(4), GetRootElement(5) before it.
+    CompareElements = 3
     ElementFromHandle = 6
     ElementFromPoint = 7
     GetFocusedElement = 8
@@ -97,6 +106,11 @@ class _IUIAutomationElement:
     get_CurrentLocalizedControlType = 22
     get_CurrentName = 23
     get_CurrentHasKeyboardFocus = 26
+    # UNVERIFIED on hardware, unlike its neighbours: it sits between
+    # HasKeyboardFocus (26) and AutomationId (29) in UIAutomationClient.h,
+    # both of which the accessor tests pin, so the ordering is constrained
+    # from both sides - but constrained is not measured.
+    get_CurrentIsKeyboardFocusable = 27
     get_CurrentAutomationId = 29
     get_CurrentClassName = 30
     get_CurrentNativeWindowHandle = 36
@@ -347,6 +361,7 @@ class UIElement:
         "ProcessId": (_IUIAutomationElement.get_CurrentProcessId, ctypes.c_int),
         "NativeWindowHandle": (_IUIAutomationElement.get_CurrentNativeWindowHandle, ctypes.c_void_p),
         "HasKeyboardFocus": (_IUIAutomationElement.get_CurrentHasKeyboardFocus, ctypes.c_int),
+        "IsKeyboardFocusable": (_IUIAutomationElement.get_CurrentIsKeyboardFocusable, ctypes.c_int),
         "IsOffscreen": (_IUIAutomationElement.get_CurrentIsOffscreen, ctypes.c_int),
     }
     _STRING_ATTRS = {
@@ -416,7 +431,8 @@ class UIElement:
         if name in self._SCALAR_ATTRS:
             slot, ctype = self._SCALAR_ATTRS[name]
             value = _int_out(ctype, self._ptr, slot)
-            if name in ("HasKeyboardFocus", "IsOffscreen") and value is not None:
+            if name in ("HasKeyboardFocus", "IsKeyboardFocusable",
+                        "IsOffscreen") and value is not None:
                 return bool(value)
             return value
         if name == "ControlTypeId":
@@ -719,11 +735,91 @@ class UIElement:
         finally:
             _release(pattern)
 
-    def set_focus(self) -> bool:
+    def accepts_focus(self) -> bool:
+        """Whether UI Automation says this element can take keyboard focus.
+
+        The counterpart of the macOS AXUIElementIsAttributeSettable guard:
+        asked before the write, it separates an element that will take focus
+        from one whose SetFocus is accepted and does nothing.
+
+        STATUS: unverified on hardware.  IsKeyboardFocusable is read through
+        the same scalar-property path as HasKeyboardFocus below, which is
+        verified.
+        """
+        value = self.get_attribute_value("IsKeyboardFocusable")
+        return bool(value) if value is not None else False
+
+    def request_focus(self) -> None:
+        """Ask for keyboard focus, without waiting to see whether it arrives.
+
+        The write half of set_focus().  Split out for the same reason as on
+        macOS: the write is main-thread element access and the wait for it to
+        take effect is not, and only `keyhac.core.fill.focus()` is in a
+        position to put each on the right thread.
+
+        The HRESULT is deliberately dropped.  S_OK here means UIA accepted the
+        request, which is not the question anyone downstream is asking - see
+        has_focus().
+        """
+        if self._ptr:
+            _com_call(self._ptr, _IUIAutomationElement.SetFocus,
+                      ctypes.c_long, [])
+
+    def has_focus(self) -> bool:
+        """Whether the keyboard is pointed at this element right now."""
         if not self._ptr:
             return False
-        return _com_call(self._ptr, _IUIAutomationElement.SetFocus,
-                         ctypes.c_long, []) == S_OK
+        return bool(self.get_attribute_value("HasKeyboardFocus"))
+
+    def contains_focus(self) -> bool:
+        """Whether the keyboard is inside this element - it, or a descendant.
+
+        The Windows half of the macOS method of the same name, which carries
+        the reasoning.  Walks the control view up from the focused element,
+        comparing with IUIAutomation::CompareElements - UIA element pointers
+        are not identity-comparable, which is also why keyhac.core cannot do
+        this walk itself and why it lives here on both platforms.
+
+        STATUS: unverified on hardware.
+        """
+        if not self._ptr:
+            return False
+        automation = get_automation()
+        walker = _control_view_walker()
+        if automation is None or walker is None:
+            return False
+        focused = _element_out(automation, _IUIAutomation.GetFocusedElement)
+        for _ in range(FOCUS_ANCESTOR_LIMIT):
+            if focused is None or not focused.value:
+                return False
+            same = ctypes.c_int()
+            hr = _com_call(automation, _IUIAutomation.CompareElements,
+                           ctypes.c_long,
+                           [ctypes.c_void_p, ctypes.c_void_p,
+                            ctypes.POINTER(ctypes.c_int)],
+                           ctypes.c_void_p(focused.value),
+                           ctypes.c_void_p(self._ptr.value),
+                           ctypes.byref(same))
+            if hr == S_OK and same.value:
+                return True
+            focused = _element_out(walker,
+                                   _IUIAutomationTreeWalker.GetParentElement,
+                                   ctypes.c_void_p(focused.value))
+        return False
+
+    def set_focus(self) -> bool:
+        """Ask for focus and look once, immediately, to see if it arrived.
+
+        Used to return whether SetFocus returned S_OK, which reports success
+        for focus that never landed - the mirror image of the macOS method's
+        old fault, and the more dangerous direction, since what follows a
+        focus call in this codebase is usually a keystroke.  **Does not
+        wait**; `keyhac.core.fill.focus()` is the one that does.
+        """
+        if not self._ptr:
+            return False
+        self.request_focus()
+        return self.has_focus()
 
     # -- construction -------------------------------------------------------
 

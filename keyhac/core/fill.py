@@ -50,7 +50,8 @@ from typing import Any, Iterable
 
 from keyhac.core import log
 from keyhac.core.uitree import StaleElement, UINode
-from keyhac.core.wait import WaitTimeout, evaluate_on_main_thread, wait_for
+from keyhac.core.wait import (WaitTimeout, evaluate_on_main_thread,
+                              on_loop_thread, wait_for)
 
 logger = log.getLogger("Fill")
 
@@ -73,6 +74,17 @@ VERIFY_TIMEOUT = 2.0
 #: command the operator had copied an hour earlier.  A fixed delay is a guess
 #: and says so; it is the price of asking for a write nobody can confirm.
 PASTE_SETTLE = 0.5
+
+#: How long focus is given to arrive before the request is called a failure.
+#:
+#: Not zero, which is what it used to be.  The system-wide focused element is
+#: read to confirm a focus write, and in Chromium it lags the write by 2-22 ms
+#: (measured over Chrome and VS Code, 2026-08-23) - so an immediate read
+#: reported failure for focus that had landed, on every Chromium and Electron
+#: target, and set_text() refused to write into any of them.  A quarter second
+#: is far more than the measurement needs and still short enough that a
+#: genuinely unfocusable element fails promptly.
+FOCUS_SETTLE = 0.25
 
 
 class FillFailed(RuntimeError):
@@ -149,21 +161,72 @@ def preserve_clipboard():
 
 # -- focus -------------------------------------------------------------------
 
-def focus(target) -> bool:
+def focus(target, timeout: float = FOCUS_SETTLE) -> bool:
     """Give an element keyboard focus, and report whether it landed.
 
     Checked rather than assumed: both platforms accept the request without
     always honouring it, and a keystroke aimed at an element that never got
     focus goes wherever focus actually is - which is how a form fill ends up
     typing its data into the page behind it.
+
+    Checked *after waiting*, which is the part that was missing.  The write and
+    the check are one main-thread round trip each, but the wait between them
+    happens here, on the worker: waiting on the loop thread would hold the
+    keyboard hook for its duration, which is what `wait_for` refuses to allow
+    and why the check could not simply be retried where it lived before.
+
+    Args:
+        target: A UINode or platform element.
+        timeout: How long focus is given to arrive.
+
+    Returns:
+        Whether the keyboard is in this element now - it, or something inside
+        it, since an application asked to focus a container routinely hands
+        the keyboard to a control within it.  Asked of an element that already
+        contained focus this can answer True before the write has settled on
+        the element itself; that is the question being answered, and code that
+        needs the exact element should ask `has_focus()`.
     """
     element = _element(target)
+    request = getattr(element, "request_focus", None)
+    # contains_focus() rather than has_focus(): an application that takes a
+    # focus write on a container hands the keyboard to a control inside it -
+    # VS Code answers a write on a tree by focusing a row - and the identity
+    # test calls that a failure while the keyboard is where it was aimed.
+    # has_focus() stays the fallback, for an element predating the pair.
+    has_focus = (getattr(element, "contains_focus", None)
+                 or getattr(element, "has_focus", None))
 
-    def do_focus():
+    if request is None or has_focus is None:
+        # An element from outside the platform layer - a test double, or a
+        # config's own object.  One write and one look, as before.
         setter = getattr(element, "set_focus", None)
-        return bool(setter()) if setter is not None else False
+        if setter is None:
+            return False
+        return bool(evaluate_on_main_thread(setter))
 
-    return bool(evaluate_on_main_thread(do_focus))
+    accepts = getattr(element, "accepts_focus", None)
+    if accepts is not None and not evaluate_on_main_thread(accepts):
+        # The application says this element cannot take focus at all, so the
+        # write would be accepted and ignored.  Failing now is both faster and
+        # more accurate than timing out: "it never arrived" and "it was never
+        # going to" are different problems for whoever reads the message.
+        logger.debug("%r does not accept focus", element)
+        return False
+
+    evaluate_on_main_thread(request)
+
+    if on_loop_thread():
+        # Already on the loop: there is nobody to wait on our behalf, and
+        # sleeping here would stop the hook.  One look, and an honest answer.
+        return bool(evaluate_on_main_thread(has_focus))
+
+    try:
+        wait_for(has_focus, timeout=timeout,
+                 message="focus to land on the element")
+        return True
+    except WaitTimeout:
+        return False
 
 
 def read_value(target) -> Any:

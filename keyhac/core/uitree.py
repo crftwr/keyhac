@@ -266,10 +266,27 @@ class UINode:
         from keyhac.core.fill import press
         press(self)
 
-    def focus(self) -> bool:
-        """Give this element keyboard focus; True when it actually landed."""
+    def focus(self, timeout: float | None = None) -> bool:
+        """Give this element keyboard focus; True when it actually landed.
+
+        Waits briefly for focus to arrive rather than reading it back at once:
+        Chromium and Electron targets report the change a few milliseconds
+        late, and an immediate read called every one of them a failure.
+
+        Args:
+            timeout: How long focus is given to arrive.  The default suits
+                every application measured; raise it for one that is slow to
+                respond.
+
+        Returns:
+            Whether the keyboard is in this element now - it, or something
+            inside it, since an application asked to focus a pane routinely
+            hands the keyboard to a control within it.  False also when the
+            application says the element cannot take focus at all, which some
+            panes and containers do while accepting the request in silence.
+        """
         from keyhac.core.fill import focus
-        return focus(self)
+        return focus(self) if timeout is None else focus(self, timeout=timeout)
 
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.
