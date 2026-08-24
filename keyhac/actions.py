@@ -671,8 +671,11 @@ class MoveFocus(ThreadedAction):
     default layout starts pointing at the wrong pane the moment you do.
 
     ```python
-    table["User0-Left"]  = MoveFocus("left")
-    table["User0-Right"] = MoveFocus("right")
+    # LEFT/RIGHT/UP/DOWN as the template defines them: Apple keyboards
+    # translate Fn-Arrow into Home/End/PageUp/PageDown in hardware, so a
+    # "Fn-...-Left" binding never fires (doc/configuration.md).
+    table[f"{LEADER}-{MOD}-{LEFT}"]  = MoveFocus("left")
+    table[f"{LEADER}-{MOD}-{RIGHT}"] = MoveFocus("right")
     ```
 
     **Scoped to the focused window.** At the last pane in a direction nothing
