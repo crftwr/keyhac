@@ -122,6 +122,12 @@ class UINode:
     # the shallow nodes ui.window()/ui.node() return. Promotable later.
     _parent = None
 
+    #: What keyhac.core.panes decided this pane hands the keyboard to,
+    #: remembered so that deciding a candidate is a pane and deciding what to
+    #: focus in it are not two searches. False means "not asked yet"; None
+    #: means "asked, and nothing here takes focus". Private, like _parent.
+    _focus_target = False
+
     @property
     def text(self) -> str:
         """This element's own label and content, as one string.

@@ -66,6 +66,7 @@ API_NAMES = [
     "InputText",
     "LaunchApplication",
     "ActivateWindow",
+    "MoveFocus",
     "MoveWindow",
     "SnapWindow",
     "MouseMove",

@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveFocus](#class-movefocus) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1137,6 +1137,103 @@ The running Keymap, so an action need not import and look it up.
 The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
 
 An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
+---
+
+
+## <kbd>class</kbd> `MoveFocus`
+Move keyboard focus to the pane in a direction, within the window. 
+
+One binding with the same meaning everywhere: `MoveFocus("left")` moves focus to whatever is to the left of what has it now - the next editor group, the tree view, the terminal panel - read off the screen rather than translated into whatever command that application happens to have.  Pane layout is something you rearrange, and a command mapping written against a default layout starts pointing at the wrong pane the moment you do. 
+
+```python
+table["User0-Left"]  = MoveFocus("left")
+table["User0-Right"] = MoveFocus("right")
+``` 
+
+**Scoped to the focused window.** At the last pane in a direction nothing happens; focus never leaves the window for a neighbouring one. 
+
+**A pane that will not take focus is skipped, not stopped at.** Some panes accept a focus request and ignore it - Finder's sidebar and System Settings' detail pane both do - so the action tries each pane that way in turn and lands on the first that actually takes the keyboard. 
+
+Applications with no recipe are handled by a generic rule: a big rectangle that holds something focusable and is not merely a container of other panes.  Where that picks the wrong things, `define_panes()` narrows it. 
+
+### <kbd>method</kbd> `MoveFocus.__init__`
+
+```python
+__init__(
+    direction: str,
+    roles: str = None,
+    min_area: float = None,
+    min_side: float = None,
+    max_depth: int = None
+)
+```
+
+Build the action. 
+
+
+
+**Args:**
+ 
+ - <b>`direction`</b>:  "left", "right", "up" or "down". 
+ - <b>`roles`</b>:  Role pattern that candidate panes must match, for this  binding only.  Overrides any recipe. 
+ - <b>`min_area`</b>:  Smallest fraction of the window a pane may cover. 
+ - <b>`min_side`</b>:  Smallest a pane may be on either axis, in points. 
+ - <b>`max_depth`</b>:  Depth bound for the element walk. 
+
+
+---
+
+#### <kbd>property</kbd> MoveFocus.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> MoveFocus.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
+
+
+---
+
+### <kbd>classmethod</kbd> `MoveFocus.define_panes`
+
+```python
+define_panes(
+    app: str = None,
+    title: str = None,
+    roles: str = None,
+    min_area: float = None,
+    min_side: float = None,
+    max_depth: int = None
+) → None
+```
+
+Teach MoveFocus what counts as a pane in an application. 
+
+A recipe declares *which elements are candidates*, never which key to send. That distinction is the point: a role set is independent of layout, so it survives every rearrangement - splitting an editor, moving the explorer to the other side, detaching a panel - that makes a command mapping point at the wrong pane. 
+
+Recipes are optional. The generic rule found exactly the panes a person would name in every application measured; reach for this when it picks too much or too little in one of yours. 
+
+```python
+MoveFocus.define_panes(app="Code", roles="AXGroup", min_area=0.03)
+MoveFocus.define_panes(app="Finder", roles="AXScrollArea|AXOutline")
+``` 
+
+
+
+**Args:**
+ 
+ - <b>`app`</b>:  Application name pattern, matched exactly as  `define_keytable(app=...)` matches it.  None matches any. 
+ - <b>`title`</b>:  Window title pattern.  None matches any. 
+ - <b>`roles`</b>:  Role pattern candidate panes must match. 
+ - <b>`min_area`</b>:  Smallest fraction of the window a pane may cover. 
+ - <b>`min_side`</b>:  Smallest a pane may be on either axis, in points. 
+ - <b>`max_depth`</b>:  Depth bound for the element walk. 
 
 ---
 

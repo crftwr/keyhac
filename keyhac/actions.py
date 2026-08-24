@@ -6,6 +6,7 @@ they are the user-facing glue between the two.
 
 import datetime
 
+from keyhac.core import panes as panes_module
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.action import ThreadedAction
 from keyhac.core.keymap import Keymap
@@ -657,6 +658,161 @@ class MoveWindow(ThreadedAction):
 
     def __repr__(self):
         return f'MoveWindow(direction="{self.direction}")'
+
+
+class MoveFocus(ThreadedAction):
+    """Move keyboard focus to the pane in a direction, within the window.
+
+    One binding with the same meaning everywhere: `MoveFocus("left")` moves
+    focus to whatever is to the left of what has it now - the next editor
+    group, the tree view, the terminal panel - read off the screen rather than
+    translated into whatever command that application happens to have.  Pane
+    layout is something you rearrange, and a command mapping written against a
+    default layout starts pointing at the wrong pane the moment you do.
+
+    ```python
+    table["User0-Left"]  = MoveFocus("left")
+    table["User0-Right"] = MoveFocus("right")
+    ```
+
+    **Scoped to the focused window.** At the last pane in a direction nothing
+    happens; focus never leaves the window for a neighbouring one.
+
+    **A pane that will not take focus is skipped, not stopped at.** Some panes
+    accept a focus request and ignore it - Finder's sidebar and System
+    Settings' detail pane both do - so the action tries each pane that way in
+    turn and lands on the first that actually takes the keyboard.
+
+    Applications with no recipe are handled by a generic rule: a big rectangle
+    that holds something focusable and is not merely a container of other
+    panes.  Where that picks the wrong things, `define_panes()` narrows it.
+    """
+
+    def __init__(self, direction: str, roles: str = None,
+                 min_area: float = None, min_side: float = None,
+                 max_depth: int = None):
+        """Build the action.
+
+        Args:
+            direction: "left", "right", "up" or "down".
+            roles: Role pattern that candidate panes must match, for this
+                binding only.  Overrides any recipe.
+            min_area: Smallest fraction of the window a pane may cover.
+            min_side: Smallest a pane may be on either axis, in points.
+            max_depth: Depth bound for the element walk.
+        """
+        if direction not in panes_module.DIRECTIONS:
+            raise ValueError(
+                f"MoveFocus direction must be one of "
+                f"{panes_module.DIRECTIONS}, not {direction!r}")
+        self.direction = direction
+        self._overrides = {k: v for k, v in
+                           (("roles", roles), ("min_area", min_area),
+                            ("min_side", min_side), ("max_depth", max_depth))
+                           if v is not None}
+        self.window = None
+
+    @classmethod
+    def define_panes(cls, app: str = None, title: str = None,
+                     roles: str = None, min_area: float = None,
+                     min_side: float = None, max_depth: int = None) -> None:
+        """Teach MoveFocus what counts as a pane in an application.
+
+        A recipe declares *which elements are candidates*, never which key to
+        send. That distinction is the point: a role set is independent of
+        layout, so it survives every rearrangement - splitting an editor,
+        moving the explorer to the other side, detaching a panel - that makes
+        a command mapping point at the wrong pane.
+
+        Recipes are optional. The generic rule found exactly the panes a
+        person would name in every application measured; reach for this when
+        it picks too much or too little in one of yours.
+
+        ```python
+        MoveFocus.define_panes(app="Code", roles="AXGroup", min_area=0.03)
+        MoveFocus.define_panes(app="Finder", roles="AXScrollArea|AXOutline")
+        ```
+
+        Args:
+            app: Application name pattern, matched exactly as
+                `define_keytable(app=...)` matches it.  None matches any.
+            title: Window title pattern.  None matches any.
+            roles: Role pattern candidate panes must match.
+            min_area: Smallest fraction of the window a pane may cover.
+            min_side: Smallest a pane may be on either axis, in points.
+            max_depth: Depth bound for the element walk.
+        """
+        panes_module.define_recipe(app=app, title=title, roles=roles,
+                                   min_area=min_area, min_side=min_side,
+                                   max_depth=max_depth)
+
+    def starting(self):
+        """lazydocs: ignore"""
+        # Main thread: the window handle and the focused element's rectangle,
+        # both cheap. The tree walk is NOT done here - it is dispatched from
+        # run() so the action can be cancelled and so the cost is visible as
+        # what it is.
+        keymap = Keymap.get_instance()
+        self.window = keymap.get_active_window() if keymap else None
+        focus = keymap.focus if keymap else None
+        element = getattr(focus, "element", None)
+        self.focus_rect = None
+        if element is not None:
+            describe = getattr(element, "describe", None)
+            if describe is not None:
+                self.focus_rect = describe().get("rect")
+
+    def run(self):
+        """lazydocs: ignore"""
+        from keyhac.core.wait import evaluate_on_main_thread
+
+        if self.window is None:
+            logger.warning("MoveFocus: no focused window.")
+            return
+        if not self.focus_rect:
+            logger.warning("MoveFocus: the focused element has no rectangle, "
+                           "so there is no direction to move in.")
+            return
+        keymap = Keymap.get_instance()
+        window_node = keymap.ui.node(getattr(self.window, "element", None))
+        if window_node is None:
+            logger.warning("MoveFocus: the window exposes no element tree.")
+            return
+
+        settings = panes_module.settings_for(self.window)
+        settings.update(self._overrides)
+        # One dispatch for the whole walk: 400-odd nodes and ~35 ms on the
+        # widest window measured. Per-node dispatch would be hundreds of round
+        # trips, and doing it on this thread is not allowed at all.
+        found = evaluate_on_main_thread(
+            lambda: panes_module.find_panes(window_node, **settings))
+        if len(found) < 2:
+            logger.info("MoveFocus: %d pane(s) in this window; nothing to "
+                        "move between.", len(found))
+            return
+
+        origin = panes_module.pane_holding(found, self.focus_rect)
+        if origin is None:
+            logger.info("MoveFocus: focus is not inside any pane.")
+            return
+
+        for pane in panes_module.panes_towards(found, origin.rect,
+                                               self.direction):
+            target = evaluate_on_main_thread(
+                lambda p=pane: panes_module.focus_target(p))
+            if target is None:
+                continue
+            if target.focus():
+                logger.debug("MoveFocus: %s -> %r", self.direction, target)
+                return
+            # Accepted and ignored, or it went somewhere else entirely; the
+            # next pane that way is a better answer than stopping here.
+            logger.debug("MoveFocus: %r would not take focus, trying the "
+                         "next pane %s", target, self.direction)
+        logger.info("MoveFocus: nothing to the %s takes focus.", self.direction)
+
+    def __repr__(self):
+        return f'MoveFocus(direction="{self.direction}")'
 
 
 class SnapWindow:
