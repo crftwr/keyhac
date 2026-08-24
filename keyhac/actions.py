@@ -796,7 +796,16 @@ class MoveFocus(ThreadedAction):
 
         origin = panes_module.pane_holding(found, self.focus_rect)
         if origin is None:
-            logger.info("MoveFocus: focus is not inside any pane.")
+            # Say where, because "not inside any pane" is unactionable on its
+            # own: the interesting cases look nothing alike. Focus sitting in
+            # a toolbar above the panes is the layout working as described,
+            # while focus reported as the whole window - which is what an
+            # Electron application says when nothing inside it has the
+            # keyboard yet - means the panes are fine and the starting point
+            # is not.
+            logger.info("MoveFocus: focus is not inside any pane. focus rect "
+                        "%s; panes %s", tuple(int(v) for v in self.focus_rect),
+                        [tuple(int(v) for v in p.rect) for p in found])
             return
 
         for pane in panes_module.panes_towards(found, origin.rect,
