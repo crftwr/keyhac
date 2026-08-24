@@ -155,6 +155,36 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   trigger re-install, and consumption works again after. Note: this Windows build
   survives a 0.6 s callback stall without unhooking, so the silent-unhook path
   cannot be provoked via `LowLevelHooksTimeout` here.
+- **A Win key as a user modifier, on Windows 11** — the pass that produced the
+  refusal in `define_modifier` ([design-notes.md](design-notes.md#why-a-windows-key-cannot-be-a-user-modifier)).
+  With `define_modifier("LWin", "LUser0")`: an unbound `LWin-G` opened the Game Bar
+  even though Keyhac emits no Win key, and a `U0-G` action typing "git status" typed
+  "it status" — the injected `g` eaten as Win+G, every other letter arriving. Also
+  measured: `replace_key("LWin", 235)` + `define_modifier(235, "LUser0")` changes
+  nothing; the same user modifier on `RAlt` is clean; and injecting `U-LWin` at the
+  head of the batch fixes the typing *and* does not open the Start menu. Also
+  confirmed: `Win+L` locks the screen with the Win key retired, which is Windows
+  reserving that combination ahead of the hook chain and is not fixable. Reproducing
+  any of this needs a real Game Bar, so none of it is in the automated suite.
+
+  A scratch probe that consumes a physical key in its own low-level hook while
+  watching `GetAsyncKeyState` and a raw input sink shows *nothing* surviving the
+  consume, for a Win key or an ordinary one - with the key passed through, both
+  channels register, which is what makes the negative readable. So the Game Bar is
+  not reading either of those. Which route it does use is still open.
+
+  Checked against keyhac-win 1.83 on the same machine - the released build run
+  portable (a `config.py` beside `keyhac.exe` keeps it off `~/.keyhac`), stock
+  configuration, Keyhac2 shut down: `Win+L` locks, `Win+G` opens the Game Bar, and a
+  `U0-G` bound to `InputKeyCommand("G","I","T",...)` types "it status". The same
+  command under a real Alt keeps its `g` and does not move focus to Notepad's menu
+  bar - which is `cancel_oneshot_win_alt` working upstream, and the behavior the
+  Keyhac2 port reproduces. The behavior is inherited, not a regression.
+- **Lone Win/Alt cancelling** (Notepad, Windows 11): `kt["Alt-G"]` bound to an
+  action, triggered with Alt physically held. The action runs and the menu bar does
+  not take focus - the `VK_LCONTROL` tap marks the modifier used before the Alt is
+  released and again after it is re-pressed. Notepad is the check that matters here:
+  it has a menu bar to lose focus into.
 - **Chooser paste flow end-to-end** (14/14): open-with-focus, filter, Enter →
   refocus original cross-process app → Ctrl-V into a real EDIT control; Shift-Enter
   copy-only; hotkey toggle.

@@ -9,6 +9,19 @@ Ported from keyhac-mac keyhac_input.py.  Differences:
 from keyhac.core.const import *
 from keyhac.core.key import KeyCondition
 from keyhac.core.vk import KeyNames, get_key_names
+from keyhac.core import log
+
+logger = log.getLogger("Input")
+
+
+def _format_item(item) -> str:
+    """One queued item as readable text, for the SEND debug log."""
+    if item[0] == "text":
+        return f"text({item[1]!r})"
+    if item[0] == "mouse":
+        return f"mouse{item[1]!r}"
+    vk, down = item
+    return ("D-" if down else "U-") + get_key_names().vk_to_str(vk)
 
 
 class InputContext:
@@ -224,6 +237,23 @@ class InputContext:
         lazydocs: ignore
         """
 
+        # A lone Win or Alt press means something to Windows by itself - the
+        # Start menu opens, the menu bar takes focus - and reconciling the
+        # modifiers around a batch produces exactly that shape: the key goes
+        # up (and later down again) with nothing pressed in between, because
+        # what the user actually pressed was consumed.  A Ctrl tap between the
+        # two loops below is what marks the modifier as used.  Port of
+        # keyhac-win setInput_Modifier's cancel_oneshot_win_alt; macOS has no
+        # such behavior to cancel, and the tap would be pure noise there.
+        cancel_win_alt = False
+        if self._keymap.platform == "windows":
+            if mod == 0 and (mod_eq(self._virtual_modifier, MODKEY_ALT)
+                             or mod_eq(self._virtual_modifier, MODKEY_WIN)):
+                cancel_win_alt = True
+            elif self._virtual_modifier == 0 and (mod_eq(mod, MODKEY_ALT)
+                                                  or mod_eq(mod, MODKEY_WIN)):
+                cancel_win_alt = True
+
         # Key down modifiers that are missing
         for vk, modkey in self._vk_mod_map.items():
             # User modifiers are never physically emitted (except in replay
@@ -233,6 +263,11 @@ class InputContext:
             if not (modkey & self._virtual_modifier) and (modkey & mod):
                 self._input_seq.append((vk, True))
                 self._virtual_modifier |= modkey
+
+        if cancel_win_alt:
+            ctrl_vk = get_key_names().str_to_vk("LCtrl")
+            self._input_seq.append((ctrl_vk, True))
+            self._input_seq.append((ctrl_vk, False))
 
         # Key up modifiers that must not be held
         for vk, modkey in self._vk_mod_map.items():
@@ -245,6 +280,14 @@ class InputContext:
     def _flush(self):
         self.send_modifier_keys(self._real_modifier)
         seq, self._input_seq = self._input_seq, []
+
+        # What actually leaves Keyhac, before it is split into platform
+        # batches - the counterpart of keyhac-win's "OUT :" line.  Without it
+        # the log shows which action ran but not one byte of what it emitted,
+        # and questions like "is the modifier released around this batch?"
+        # cannot be answered from a log at all.
+        if seq:
+            logger.debug("SEND     : " + " ".join(_format_item(i) for i in seq))
 
         # Consecutive items of one kind go out as one platform batch; a kind
         # change flushes, so overall ordering is preserved across the key /

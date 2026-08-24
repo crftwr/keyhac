@@ -11,15 +11,120 @@ rich clipboard formats).
 - `KeyCondition` hashes by vk only, with an L/R-agnostic `__eq__` — the dict-lookup
   trick behind side-agnostic matching.
 - Output resolves modifiers to **left-side** physical keys (`force_LR`).
-- User modifiers are never physically emitted (except during replay).
+- User modifiers are never physically emitted (except during replay). The Win keys
+  are refused as user modifiers rather than made an exception to this — see below.
 - An unmatched key-down leaving multi-stroke mode is still consumed (no stray
   keystroke leaks into the app).
 - Errors in user callables pass the key through — typing keeps working on a broken
   config.
+- A lone held Win/Alt is fenced with a Ctrl tap on Windows, so the OS does not read
+  it as a tap on the key itself — see below.
 - Three upstream keyhac-mac hook bugs are intentionally *fixed* in the mac hook port —
   see the module docstring of `keyhac/platform/mac/hook.py`. The third (fresh real
   input overtaking re-posted deferred reals during the flush window) was found by the
   ordering verification in [testing.md](testing.md).
+
+## Why a Windows key cannot be a user modifier
+
+`define_modifier` refuses `LWin` / `RWin`. The reason is that consuming a key-down
+does not take the key away from everything.
+
+The Windows sample configuration nevertheless reaches User0 through the Win key, via
+`replace_key("LWin", 235)` — the route keyhac-win always took, and one the refusal
+does not close. That is deliberate, not an oversight: `define_modifier` promises a
+modifier nothing outside Keyhac can see, and that promise it cannot keep for a Win
+key; `replace_key` promises only "this key is now that key", which is true. Windows
+has no other key every keyboard can spare, so the alternative was no sample user
+modifier at all. What the operator has to know is in the template's own comment: an
+action under that modifier must not begin by typing `g`, and Win+L still locks.
+
+Returning 1 from `WH_KEYBOARD_LL` keeps the Win key-down out of every message queue,
+and that much works: no application receives it, and the Start menu does not open on
+a tap (the shell decides that on the key-up, which is consumed too). Two things
+survive it anyway.
+
+**Win+L locks the screen.** Windows reserves that combination, like Ctrl+Alt+Del,
+and resolves it before the hook chain runs, so the physical Win key is tracked
+somewhere below where any program can reach. Nothing Keyhac does — consuming,
+renaming through `replace_key` — changes it.
+
+**Win+G opens the Game Bar, and it eats the keystroke.** Live findings, with
+`define_modifier("LWin", "LUser0")` in effect:
+
+- an unbound `LWin-G` opened the Game Bar, although Keyhac emits no Win key at all
+  and the binding could not match (`LWin-G` parses to `MODKEY_WIN_L`, and the key
+  now produces `MODKEY_USER0_L`);
+- `U0-G` bound to an action typing "git status" typed **"it status"** — the injected
+  `g` was swallowed as Win+G. The other letters survived: `Win+I`, `Win+T`, `Win+S`
+  and `Win+A` are shell hotkeys, and those go through the path that *did* honour the
+  consume.
+
+None of this is new. All of it reproduces on keyhac-win 1.83 - the released build,
+run portable with its stock configuration, on the same machine, with the Win keys
+retired by `replaceKey`/`defineModifier` exactly as that configuration ships them.
+Win+L locks; Win+G opens the Game Bar; and a `U0-G` bound to
+`InputKeyCommand("G","I","T",...)` types "it status" there too. The same command
+under a real Alt (`A-G`) keeps its `g`, which places the loss on the Win key being
+held rather than on anything about the head of an injected batch. So this is not a
+Keyhac2 regression; the Win key has never been fully retirable, and the sample
+configuration inherits the trade rather than introducing it.
+
+By what route the Game Bar sees the key is **not settled**. It is not the route a
+bystander would take: a probe that consumes a physical key in its own low-level hook
+and watches for it on the two channels open to any process — `GetAsyncKeyState` and
+a raw input sink — sees nothing on either, for a Win key and for an ordinary key
+alike (`tools/`-grade scratch probe, not in the suite; the same probe with the key
+passed through registers on both channels, which is what validates it). So a hook
+installed *after* Keyhac's, and therefore called before it, remains the most likely
+explanation, and the reserved-combination path that Win+L proves exists is the other
+candidate. Restarting Keyhac (making its hook the most recent) would separate them
+and has not been tried.
+
+Two dead ends, both measured:
+
+- keyhac-win's idiom — `replaceKey("LWin", 235)` then `defineModifier(235, "User0")`,
+  which is how its sample configuration reached User0 — changes nothing. It renames
+  the key inside Keyhac; the physical event is identical.
+- Injecting a Win key-up at the head of each batch *does* fix it, and does not open
+  the Start menu. It was implemented and then dropped: it makes a user modifier emit
+  an unmatched key-up, which is a hole in the invariant above, and it leaves the OS
+  believing the key is released while the user is still holding it. A modifier that
+  is invisible to applications but not to the shell is not what `define_modifier`
+  promises, so the key is refused instead of patched around.
+
+keyhac-win refused *every* key that already was a modifier. Keyhac2 refuses only the
+Win keys: the rest of that rule would break `define_modifier("RAlt", "RUser0")`,
+which migrated keyhac-mac configurations use. Redefining a modifier is reported at
+INFO rather than refused — legitimate, but it costs that key its modifier
+everywhere, so the sample no longer demonstrates the feature that way.
+
+Related, and a separate problem — about *real* Win/Alt, not user modifiers: a held
+Win or Alt whose companion key Keyhac consumed reaches the OS as a lone tap, opening
+the Start menu or moving focus to the menu bar. keyhac-win cancelled that with a
+`VK_LCONTROL` tap, in two places, and both are ported (Windows only; macOS has no
+such behavior to cancel):
+
+- `InputContext.send_modifier_keys` taps Ctrl between its press and release loops
+  whenever a lone Win/Alt is being released or taken — the transitions that
+  reconciling modifiers around a batch produces.
+- `Keymap._cancel_oneshot_win_alt` taps before a callable action runs and before
+  entering a multi-stroke table, for actions that emit no key output at all.
+
+A callable that *does* send keys therefore emits the tap three times, which is what
+keyhac-win emitted too, and none of the three is safe to drop on its own:
+
+```
+SEND : D-LCtrl U-LCtrl                          <- before the callable
+SEND : D-LCtrl U-LCtrl U-LAlt D-G ... D-LAlt D-LCtrl U-LCtrl
+```
+
+The last one is unconditional: the re-pressed `D-LAlt` is a fresh Alt-down as far as
+the OS is concerned, so the user's own eventual release opens the menu bar unless
+something marks it used. The middle one is the only chance a key-output assignment
+gets — those never reach `_cancel_oneshot_win_alt`. The first is the only chance an
+action that emits nothing at all gets. The redundancy is between the first two, and
+only for the case where the callable happens to send keys, which cannot be known
+before running it.
 
 ## Clipboard history
 
