@@ -132,6 +132,17 @@ PREFERRED_ROLES = ("AXTextArea", "AXWebArea", "AXTextField", "AXOutline",
 #: which is not what splitters look like.
 GAP_BUCKET = 64.0
 
+#: Roles that are a pane's *furniture* rather than anywhere to put the
+#: keyboard.  They take focus perfectly well and are never what a person means
+#: by moving into a pane.
+#:
+#: Without this, System Settings' detail pane resolved to its scroll bar: the
+#: pane holds 33 checkboxes and popup buttons, none of them a preferred role,
+#: so the largest-focusable fallback picked the one element 647 points tall
+#: (2026-08-24).  Landing there does nothing a keystroke can follow up on.
+CHROME_ROLES = ("AXScrollBar", "AXSplitter", "AXValueIndicator", "AXGrowArea",
+                "ScrollBar", "Thumb", "Separator")
+
 DIRECTIONS = ("left", "right", "up", "down")
 
 def _accepts_focus(node: UINode) -> bool:
@@ -238,7 +249,8 @@ def focus_target(pane: UINode, max_depth: int = TARGET_MAX_DEPTH,
             seen.add(identity)
         budget -= 1
         node = UINode(depth=depth, element=element, **_describe(element))
-        if _accepts_focus(node):
+        if _accepts_focus(node) and not (
+                node.role and match_role(node.role, "|".join(CHROME_ROLES))):
             if node.role and match_role(node.role, "|".join(PREFERRED_ROLES)):
                 return node
             rect = node.rect
@@ -255,9 +267,22 @@ def is_pane(candidate: UINode, min_cover: float = MIN_TARGET_COVER,
             max_nodes: int = QUALIFY_MAX_NODES) -> bool:
     """Whether a candidate rectangle is a pane rather than content inside one.
 
-    True when the element the keyboard would go to either says what it is by
-    its role - a tree, a document, a terminal's input - or is large enough to
-    *be* the candidate.  See MIN_TARGET_COVER for what each half is carrying.
+    True on any of three counts, each of which one of the others misses:
+
+    - the element the keyboard would go to says what it is by its role - a
+      tree, a document, a terminal's input;
+    - that element is large enough to *be* the candidate (MIN_TARGET_COVER
+      carries what each of these first two is for);
+    - or the candidate's **own** role says it is a region rather than a piece
+      of content.  System Settings' detail pane needed this: it is an
+      AXScrollArea holding 33 checkboxes and popup buttons, so no single
+      target names it and none covers a fortieth of it, and the pane was
+      dropped entirely while its sidebar survived.  A scroll area is a
+      viewport onto content, which is what a pane is.
+
+    Something focusable must still be found inside either way, which is what
+    keeps this from readmitting the panes nothing can reach - Finder's sidebar
+    is also an AXScrollArea, and its only focusable element is its scroll bar.
     """
     target = focus_target(candidate, max_nodes=max_nodes)
     # Kept on the node so the destination is not searched for twice.  Deciding
@@ -271,9 +296,13 @@ def is_pane(candidate: UINode, min_cover: float = MIN_TARGET_COVER,
     if target.role and match_role(target.role, "|".join(PREFERRED_ROLES)):
         return True
     if not target.rect or not candidate.rect:
-        return False
+        return bool(candidate.role
+                    and match_role(candidate.role, "|".join(PREFERRED_ROLES)))
     area = candidate.rect[2] * candidate.rect[3]
-    return area > 0 and (target.rect[2] * target.rect[3]) / area >= min_cover
+    if area > 0 and (target.rect[2] * target.rect[3]) / area >= min_cover:
+        return True
+    return bool(candidate.role
+                and match_role(candidate.role, "|".join(PREFERRED_ROLES)))
 
 
 def find_panes(window: UINode,

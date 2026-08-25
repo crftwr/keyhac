@@ -10,7 +10,7 @@ import pytest
 
 from keyhac.core import panes
 from keyhac.core.panes import (
-    centre_of, clamp_point, contains_rect, find_panes, focus_target,
+    centre_of, clamp_point, contains_rect, find_panes, focus_target, is_pane,
     pane_holding, panes_towards, same_rect,
 )
 from keyhac.core.uitree import UINode
@@ -154,6 +154,41 @@ def test_focus_target_falls_back_to_the_largest_focusable():
     big = leaf(role="AXButton", rect=(0, 0, 300, 800))   # neither is preferred
     pane = FakeElement("AXGroup", (0, 0, 300, 900), [small, big])
     assert focus_target(node_for(pane)).rect == (0, 0, 300, 800)
+
+
+def test_a_scroll_bar_is_not_somewhere_to_put_the_keyboard():
+    """System Settings' detail pane resolved to its scroll bar: 33 controls
+    inside, none of them a preferred role, and the largest-focusable fallback
+    picked the one element 647 points tall."""
+    bar = leaf(role="AXScrollBar", rect=(280, 0, 19, 640))
+    control = leaf(role="AXCheckBox", rect=(0, 100, 36, 16))
+    pane = FakeElement("AXScrollArea", (0, 0, 300, 900), [bar, control])
+    assert focus_target(node_for(pane)).role == "AXCheckBox"
+
+
+def test_a_pane_of_small_controls_qualifies_by_its_own_role():
+    """The System Settings shape: no single target names the pane and none
+    covers a fortieth of it, but a scroll area is a viewport onto content,
+    which is what a pane is."""
+    controls = [leaf(role="AXCheckBox", rect=(0, 40 * i, 36, 16)) for i in range(8)]
+    pane = FakeElement("AXScrollArea", (0, 0, 300, 900), controls)
+    assert is_pane(node_for(pane)) is True
+
+
+def test_a_content_block_of_the_same_size_still_does_not():
+    """A chat transcript's message block: one small button, and an AXGroup."""
+    block = FakeElement("AXGroup", (0, 0, 300, 900),
+                        [leaf(role="AXButton", rect=(0, 0, 24, 24))])
+    assert is_pane(node_for(block)) is False
+
+
+def test_a_region_reachable_only_through_its_scroll_bar_is_not_a_pane():
+    """Finder's sidebar is an AXScrollArea too - the own-role arm must not
+    readmit the panes nothing can actually reach."""
+    sidebar = FakeElement("AXScrollArea", (0, 0, 300, 900),
+                          [leaf(role="AXScrollBar", rect=(280, 0, 19, 890))])
+    assert focus_target(node_for(sidebar)) is None
+    assert is_pane(node_for(sidebar)) is False
 
 
 # -- pane_holding ------------------------------------------------------------
