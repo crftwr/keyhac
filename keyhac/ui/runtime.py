@@ -4,3 +4,6 @@ running headless (--no-ui), in which case UI-dependent actions log an error
 instead of opening windows."""
 
 backend = None
+
+#: The focus-flash overlay owner, built on first use (keyhac.ui.flash).
+flash_manager = None

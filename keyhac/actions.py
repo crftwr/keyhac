@@ -762,6 +762,7 @@ class MoveFocus(ThreadedAction):
     def run(self):
         """lazydocs: ignore"""
         from keyhac.core.wait import evaluate_on_main_thread
+        from keyhac.ui.flash import flash
 
         if self.window is None:
             logger.warning("MoveFocus: no focused window.")
@@ -818,6 +819,9 @@ class MoveFocus(ThreadedAction):
                 continue
             if target.focus():
                 self._remember(reference, pane)
+                # After the move, never before it, and without waiting: this is
+                # feedback about something that has already happened.
+                flash(origin.rect, pane.rect)
                 logger.debug("MoveFocus: %s -> %r", self.direction, target)
                 return
             # Accepted and ignored, or it went somewhere else entirely; the
