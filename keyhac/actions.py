@@ -704,8 +704,17 @@ class MoveFocus(ThreadedAction):
     real use case freezes the wrong shape.
     """
 
-    #: The hidden reference position (x, y) in screen coordinates, the pane
-    #: the last move landed in, and which window both belong to.
+    #: The level this action moves between: panes, or the elements inside one.
+    #: Everything else about the two is identical, which is why they are one
+    #: class with two hooks rather than two implementations.
+    SCOPE = "pane"
+    NOUN = "pane"
+
+    #: The hidden reference position (x, y) in screen coordinates, the
+    #: rectangle the last move landed in, and which window both belong to -
+    #: each keyed by SCOPE, because the levels must not steer by each other's
+    #: memory. A move between elements inside a pane says nothing about which
+    #: pane to return to.
     #:
     #: Class state, not instance state, because a configuration binds four
     #: separate MoveFocus objects - one per direction - and the whole point is
@@ -720,9 +729,9 @@ class MoveFocus(ThreadedAction):
     #: arrow key steers by a position with no relation to where the keyboard
     #: now is. Detecting that needs no hooks and no notifications: if focus is
     #: not in the pane this last landed in, something else moved it.
-    _reference = None
-    _reference_pane = None
-    _reference_window = None
+    _reference: dict = {}
+    _reference_rect: dict = {}
+    _reference_window: dict = {}
 
     def __init__(self, direction: str):
         """Build the action.
@@ -777,11 +786,42 @@ class MoveFocus(ThreadedAction):
             logger.warning("MoveFocus: the window exposes no element tree.")
             return
 
+        found, origin = self._collect(window_node, evaluate_on_main_thread)
+        if not found or origin is None:
+            return
+
+        reference = self._steer_from(origin)
+        for candidate in panes_module.panes_towards(found, origin.rect,
+                                                    self.direction,
+                                                    reference=reference):
+            target = evaluate_on_main_thread(
+                lambda c=candidate: self._target_for(c))
+            if target is None:
+                continue
+            if target.focus():
+                self._remember(reference, candidate)
+                # After the move, never before it, and without waiting: this is
+                # feedback about something that has already happened.
+                flash(origin.rect, candidate.rect)
+                logger.debug("%s: %s -> %r", type(self).__name__,
+                             self.direction, target)
+                return
+            # Accepted and ignored, or it went somewhere else entirely; the
+            # next one that way is a better answer than stopping here.
+            logger.debug("%s: %r would not take focus, trying the next %s %s",
+                         type(self).__name__, target, self.NOUN, self.direction)
+        logger.info("%s: nothing to the %s takes focus.",
+                    type(self).__name__, self.direction)
+
+    def _collect(self, window_node, dispatch):
+        """What to move between, and the rectangle to move from.
+
+        lazydocs: ignore
+        """
         # One dispatch for the whole walk: 400-odd nodes and ~35 ms on the
         # widest window measured. Per-node dispatch would be hundreds of round
         # trips, and doing it on this thread is not allowed at all.
-        found = evaluate_on_main_thread(
-            lambda: panes_module.find_panes(window_node))
+        found = dispatch(lambda: panes_module.find_panes(window_node))
         if len(found) < 2:
             # Zero is worth saying more about than one. A Chromium or Electron
             # application builds no accessibility tree until an assistive
@@ -793,7 +833,7 @@ class MoveFocus(ThreadedAction):
                      if not found else "")
             logger.info("MoveFocus: %d pane(s) in this window; nothing to "
                         "move between%s.", len(found), extra)
-            return
+            return None, None
 
         origin = panes_module.pane_holding(found, self.focus_rect)
         if origin is None:
@@ -807,40 +847,29 @@ class MoveFocus(ThreadedAction):
             logger.info("MoveFocus: focus is not inside any pane. focus rect "
                         "%s; panes %s", tuple(int(v) for v in self.focus_rect),
                         [tuple(int(v) for v in p.rect) for p in found])
-            return
+            return None, None
+        return found, origin
 
-        reference = self._steer_from(origin)
-        for pane in panes_module.panes_towards(found, origin.rect,
-                                               self.direction,
-                                               reference=reference):
-            target = evaluate_on_main_thread(
-                lambda p=pane: panes_module.focus_target(p))
-            if target is None:
-                continue
-            if target.focus():
-                self._remember(reference, pane)
-                # After the move, never before it, and without waiting: this is
-                # feedback about something that has already happened.
-                flash(origin.rect, pane.rect)
-                logger.debug("MoveFocus: %s -> %r", self.direction, target)
-                return
-            # Accepted and ignored, or it went somewhere else entirely; the
-            # next pane that way is a better answer than stopping here.
-            logger.debug("MoveFocus: %r would not take focus, trying the "
-                         "next pane %s", target, self.direction)
-        logger.info("MoveFocus: nothing to the %s takes focus.", self.direction)
+    def _target_for(self, candidate):
+        """The element inside a candidate that should receive the keyboard.
+
+        lazydocs: ignore
+        """
+        return panes_module.focus_target(candidate)
 
     def _steer_from(self, origin):
         """The reference position to move by, re-seeded if it has gone stale.
 
         lazydocs: ignore
         """
-        cls = MoveFocus
-        if (cls._reference is not None
-                and cls._reference_window == self.window_key
-                and cls._reference_pane is not None
-                and panes_module.same_rect(cls._reference_pane, origin.rect)):
-            return cls._reference
+        cls, scope = MoveFocus, self.SCOPE
+        remembered = cls._reference.get(scope)
+        landed = cls._reference_rect.get(scope)
+        if (remembered is not None
+                and cls._reference_window.get(scope) == self.window_key
+                and landed is not None
+                and panes_module.same_rect(landed, origin.rect)):
+            return remembered
         # Seeded from the focused element rather than the middle of the pane,
         # so the first move goes where the keyboard actually is - clamped,
         # because a scrolling pane's focused element can be taller than the
@@ -848,20 +877,96 @@ class MoveFocus(ThreadedAction):
         return panes_module.clamp_point(
             panes_module.centre_of(self.focus_rect), origin.rect)
 
-    def _remember(self, reference, pane):
+    def _remember(self, reference, landed):
         """Record where the keyboard now is, moving only this axis.
 
         lazydocs: ignore
         """
-        cls = MoveFocus
+        cls, scope = MoveFocus, self.SCOPE
         x, y = reference
-        cx, cy = panes_module.centre_of(pane.rect)
-        cls._reference = (cx, y) if self.direction in ("left", "right") else (x, cy)
-        cls._reference_pane = pane.rect
-        cls._reference_window = self.window_key
+        cx, cy = panes_module.centre_of(landed.rect)
+        cls._reference[scope] = ((cx, y) if self.direction in ("left", "right")
+                                 else (x, cy))
+        cls._reference_rect[scope] = landed.rect
+        cls._reference_window[scope] = self.window_key
 
     def __repr__(self):
         return f'MoveFocus(direction="{self.direction}")'
+
+
+class MoveFocusWithinPane(MoveFocus):
+    """Move keyboard focus between the controls of one pane.
+
+    The finer half of `MoveFocus`: same directions, same reversibility, same
+    flash, but the things moved between are the individual controls inside the
+    pane the keyboard is already in - Microsoft To Do's task detail fields, a
+    settings pane's checkboxes and popup buttons.
+
+    ```python
+    table[f"{LEADER}-Ctrl-{LEFT}"] = MoveFocusWithinPane("left")
+    ```
+
+    **A second binding rather than a mode.** A drill-in mode is state you can
+    lose track of, and unlike focus it has nothing on screen to anchor it -
+    which would compound the problem the flash exists to solve rather than
+    live beside it.
+
+    It needs *less* than the pane level, not more. `is_pane` and its three arms
+    exist because a pane is a container and something has to guess whether a
+    rectangle is one; here the candidates are the focusable elements
+    themselves, so "the application says this can take focus" is the whole
+    rule.
+
+    Movement stays inside the current pane. Crossing to another one is what
+    `MoveFocus` is for, and blurring the two would leave neither meaning
+    anything definite.
+
+    PROVISIONAL. The name and the shape of the two levels are still being
+    tried; treat this as subject to change until it has been used against
+    more than a handful of applications.
+    """
+
+    SCOPE = "element"
+    NOUN = "element"
+
+    def _collect(self, window_node, dispatch):
+        """lazydocs: ignore"""
+        from keyhac.core.uitree import UINode
+
+        panes = dispatch(lambda: panes_module.find_panes(window_node))
+        pane = (panes_module.pane_holding(panes, self.focus_rect)
+                if panes else None)
+        # No pane is not a reason to refuse: the whole window is a perfectly
+        # good thing to move between the controls of, and an application
+        # exposing no pane structure at all is exactly where this is the only
+        # half that can work.
+        root = pane if pane is not None else window_node
+        found = dispatch(lambda: panes_module.find_widgets(root))
+        if len(found) < 2:
+            logger.info("MoveFocusWithinPane: %d focusable element(s) here; "
+                        "nothing to move between.", len(found))
+            return None, None
+
+        # The origin is where the keyboard *is*, not the region around it -
+        # unless where it is happens to be the region. A list that takes focus
+        # as a whole (most lists do) leaves every candidate nested inside the
+        # origin, so nothing is "that way" and the binding looks dead while
+        # standing on eighteen things it could reach.
+        origin_rect = self.focus_rect
+        inside = [node for node in found
+                  if not panes_module.same_rect(node.rect, origin_rect)
+                  and panes_module.contains_rect(origin_rect, node.rect)]
+        if inside:
+            found = inside
+            origin_rect = panes_module.entry_edge(origin_rect, self.direction)
+        return found, UINode(rect=origin_rect)
+
+    def _target_for(self, candidate):
+        """lazydocs: ignore"""
+        return candidate
+
+    def __repr__(self):
+        return f'MoveFocusWithinPane(direction="{self.direction}")'
 
 
 class SnapWindow:

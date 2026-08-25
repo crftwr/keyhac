@@ -172,13 +172,13 @@ class TestMoveFocusReference:
 
     @pytest.fixture(autouse=True)
     def clean_state(self):
-        MoveFocus._reference = None
-        MoveFocus._reference_pane = None
-        MoveFocus._reference_window = None
+        def wipe():
+            MoveFocus._reference.clear()
+            MoveFocus._reference_rect.clear()
+            MoveFocus._reference_window.clear()
+        wipe()
         yield
-        MoveFocus._reference = None
-        MoveFocus._reference_pane = None
-        MoveFocus._reference_window = None
+        wipe()
 
     def _action(self, direction, focus_rect, window=None):
         action = MoveFocus(direction)
@@ -201,12 +201,12 @@ class TestMoveFocusReference:
     def test_a_horizontal_move_keeps_the_vertical_reference(self):
         action = self._action("right", (10, 100, 40, 40))
         action._remember((30.0, 120.0), self.RIGHT_PANE)
-        assert MoveFocus._reference == (450.0, 120.0)     # x moved, y kept
+        assert MoveFocus._reference["pane"] == (450.0, 120.0)   # x moved, y kept
 
     def test_a_vertical_move_keeps_the_horizontal_reference(self):
         action = self._action("down", (10, 100, 40, 40))
         action._remember((30.0, 120.0), self.RIGHT_PANE)
-        assert MoveFocus._reference == (30.0, 450.0)      # y moved, x kept
+        assert MoveFocus._reference["pane"] == (30.0, 450.0)    # y moved, x kept
 
     def test_the_reference_is_reused_by_the_opposite_binding(self):
         """The whole point: a left press must steer by what a right press
@@ -241,4 +241,36 @@ class TestMoveFocusReference:
         moved = self._action("left", (310, 400, 40, 40),
                              window=(42, (100, 0, 600, 900)))
         assert moved._steer_from(self.RIGHT_PANE) == (330.0, 420.0)
+
+    def test_the_two_levels_do_not_steer_by_each_other(self):
+        """A move between the controls of a pane says nothing about which pane
+        to go back to, so the two memories are separate or both are wrong."""
+        from keyhac.actions import MoveFocusWithinPane
+
+        self._action("right", (10, 100, 40, 40))._remember(
+            (30.0, 120.0), self.RIGHT_PANE)
+
+        fine = MoveFocusWithinPane("down")
+        fine.window_key = self.WINDOW
+        fine.focus_rect = (310, 10, 40, 20)
+        fine._remember((330.0, 20.0), UINode(rect=(310, 200, 40, 20), name="field"))
+
+        assert MoveFocus._reference["pane"] == (450.0, 120.0)      # untouched
+        assert MoveFocus._reference["element"] == (330.0, 210.0)
+        assert MoveFocus._reference_rect["pane"] == self.RIGHT_PANE.rect
+
+    def test_the_finer_level_still_returns_the_way_it_came(self):
+        from keyhac.actions import MoveFocusWithinPane
+
+        out = MoveFocusWithinPane("right")
+        out.window_key = self.WINDOW
+        out.focus_rect = (10, 100, 40, 20)
+        landed = UINode(rect=(200, 100, 40, 20), name="b")
+        seed = out._steer_from(UINode(rect=(10, 100, 40, 20)))
+        out._remember(seed, landed)
+
+        back = MoveFocusWithinPane("left")
+        back.window_key = self.WINDOW
+        back.focus_rect = landed.rect
+        assert back._steer_from(landed)[1] == seed[1]     # the y it left with
 

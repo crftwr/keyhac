@@ -392,6 +392,51 @@ def find_panes(window: UINode,
     return panes
 
 
+def find_widgets(root: UINode, max_depth: int = TARGET_MAX_DEPTH,
+                 max_nodes: int = TARGET_MAX_NODES,
+                 roles: str | None = None) -> list[UINode]:
+    """Every element inside `root` the keyboard can actually be put on.
+
+    The finer half of directional movement, and it needs *less* machinery than
+    the pane half rather than more.  `is_pane` and its three arms exist because
+    a pane is a container and something has to guess whether a rectangle is
+    one; here the candidates are the focusable elements themselves, so
+    "the application says this can take focus" is the entire rule.
+
+    Pane chrome is excluded for the same reason it is excluded as a focus
+    target: a scroll bar takes focus perfectly well and is never where a person
+    means to arrive.
+
+    Deduplicated by rectangle, because a control wrapped in a group reports the
+    same frame twice and would otherwise be two stops in a row that look
+    identical.  The outermost is kept, matching find_panes.
+
+    Args:
+        root: The pane (or window) to enumerate inside.
+        max_depth: Depth bound for the walk.
+        max_nodes: Node budget for the walk.
+        roles: Optional role pattern the elements must match.
+
+    Returns:
+        Focusable elements, in the platform's own order.
+    """
+    tree = get_ui_tree(root, max_depth=max_depth, max_nodes=max_nodes)
+    found: list[UINode] = []
+    for node in tree.walk():
+        if not node.rect or node.rect[2] <= 0 or node.rect[3] <= 0:
+            continue
+        if node.role and match_role(node.role, "|".join(CHROME_ROLES)):
+            continue
+        if roles is not None and not (node.role and match_role(node.role, roles)):
+            continue
+        if not _accepts_focus(node):
+            continue
+        if any(same_rect(node.rect, kept.rect) for kept in found):
+            continue
+        found.append(node)
+    return found
+
+
 def pane_holding(panes: list[UINode], rect) -> UINode | None:
     """The pane `rect` mostly lies in, or None if it lies in none of them.
 
@@ -428,6 +473,32 @@ def pane_holding(panes: list[UINode], rect) -> UINode | None:
                                    and pw * ph < best.rect[2] * best.rect[3]):
             best, best_area = pane, overlap
     return best
+
+
+def entry_edge(rect, direction: str):
+    """`rect` collapsed to the edge that `direction` enters it through.
+
+    For when the keyboard is on a *container* rather than on something inside
+    it - a list that takes focus as a whole, which is most lists. Everything
+    that could be moved to is then nested inside the origin, and nothing is
+    "that way" at all: measured in Microsoft To Do, whose task list holds 18
+    focusable controls and offered none of them because focus sat on the
+    AXTable around them.
+
+    Collapsing the origin to the edge being entered from turns that into the
+    obvious thing instead: moving down from the list arrives at its top row,
+    moving up at its bottom one.
+    """
+    if direction not in DIRECTIONS:
+        raise ValueError(f"direction must be one of {DIRECTIONS}, not {direction!r}")
+    x, y, w, h = rect
+    if direction == "left":
+        return (x + w, y, 0.0, h)
+    if direction == "right":
+        return (x, y, 0.0, h)
+    if direction == "up":
+        return (x, y + h, w, 0.0)
+    return (x, y, w, 0.0)
 
 
 def panes_towards(panes: list[UINode], origin, direction: str,

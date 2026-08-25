@@ -10,8 +10,8 @@ import pytest
 
 from keyhac.core import panes
 from keyhac.core.panes import (
-    centre_of, clamp_point, contains_rect, find_panes, focus_target,
-    is_pane, pane_holding, panes_towards, same_rect,
+    centre_of, clamp_point, contains_rect, entry_edge, find_panes,
+    focus_target, is_pane, pane_holding, panes_towards, same_rect,
 )
 from keyhac.core.uitree import UINode
 
@@ -426,3 +426,55 @@ def test_nearest_wins_only_after_overlap_has_tied():
     tall = UINode(rect=(600, 0, 350, 900), name="tall")     # gap 50, overlap 900
     near = UINode(rect=(600, 0, 390, 100), name="near")     # gap 10, overlap 100
     assert panes_towards([tall, near], origin, "left")[0].name == "tall"
+
+
+# -- entering a container ----------------------------------------------------
+
+def test_entry_edge_collapses_to_the_side_being_entered():
+    rect = (100, 200, 400, 300)
+    assert entry_edge(rect, "down") == (100, 200, 400, 0.0)     # in at the top
+    assert entry_edge(rect, "up") == (100, 500, 400, 0.0)       # in at the bottom
+    assert entry_edge(rect, "right") == (100, 200, 0.0, 300)    # in at the left
+    assert entry_edge(rect, "left") == (500, 200, 0.0, 300)     # in at the right
+    with pytest.raises(ValueError):
+        entry_edge(rect, "sideways")
+
+
+def test_entering_a_list_arrives_at_the_row_nearest_the_edge():
+    """Microsoft To Do's task list: eighteen focusable controls, and focus on
+    the AXTable around them, so every candidate is nested inside the origin
+    and nothing is "that way" at all.  The measured columns - a complete
+    button 8 points in, an importance checkbox 10, and the selected row's
+    title field 51 - are what decides whether entry lands somewhere with
+    neighbours or somewhere with none."""
+    complete = [UINode(rect=(1053, y, 28, 28), name=f"complete{i}")
+                for i, y in enumerate((489, 534, 579, 625))]
+    important = [UINode(rect=(1392, y, 26, 26), name=f"important{i}")
+                 for i, y in enumerate((491, 536, 581, 626))]
+    title = UINode(rect=(1088, 532, 88, 20), name="title")
+    table = (1037, 481, 396, 361)
+    inside = complete + important + [title]
+
+    # Reference at the middle of the list, which is nearest the title column -
+    # and the title column has exactly one element, so landing there is a dead
+    # end. Distance has to settle it before alignment does.
+    first = panes_towards(inside, entry_edge(table, "down"), "down",
+                          reference=centre_of(table))[0]
+    assert first.name == "complete0"
+
+    # ... and from there the column walks, and comes back.
+    down = panes_towards(inside, complete[0].rect, "down",
+                         reference=centre_of(complete[0].rect))[0]
+    assert down.name == "complete1"
+    up = panes_towards(inside, down.rect, "up",
+                       reference=centre_of(down.rect))[0]
+    assert up.name == "complete0"
+
+
+def test_entering_from_the_bottom_arrives_at_the_last_row():
+    rows = [UINode(rect=(0, y, 100, 20), name=str(i))
+            for i, y in enumerate((10, 40, 70))]
+    container = (0, 0, 100, 100)
+    assert panes_towards(rows, entry_edge(container, "up"), "up",
+                         reference=centre_of(container))[0].name == "2"
+
