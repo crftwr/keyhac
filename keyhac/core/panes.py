@@ -115,22 +115,21 @@ PREFERRED_ROLES = ("AXTextArea", "AXWebArea", "AXTextField", "AXOutline",
                    "Edit", "Document", "Tree", "List", "DataGrid", "Pane")
 
 #: Gaps within this many points of each other count as the same distance, so
-#: that overlap - not a few points of edge position - decides between two
-#: neighbours.
+#: that a splitter's width is not mistaken for travel.
 #:
-#: Measured on a VS Code window split three ways (2026-08-23).  From a
-#: full-height panel on the right, the pane to its left is an editor covering
-#: 620 points of it and a terminal covering 238; ordering by raw gap chose the
-#: terminal, because its edge happened to sit 19 points nearer.  A splitter is
-#: a few points wide, so any bucket wide enough to absorb one fixes that,
-#: while the distances that mean "a pane further on" in that window were 107
-#: and up - an order of magnitude clear of this.
+#: It was 64 and had to shrink twice, both times because it was sized for one
+#: scale and used at another. A column of controls is 43 points apart, so
+#: several rows shared a bucket and moving up skipped one; entering a list,
+#: the candidates sat 8, 10 and 51 points in and all three counted as equally
+#: near, which put the keyboard on the one column with a single element in it.
 #:
-#: The cost of the bucket: a genuinely adjacent pane and one 60 points further
-#: off are treated as equally near, so a much larger pane just behind the
-#: nearest one can win.  That needs a layout with 60-point gaps between panes,
-#: which is not what splitters look like.
-GAP_BUCKET = 64.0
+#: What it was originally for - keeping a few points of edge position from
+#: outvoting an overlap two and a half times larger - is now done by the
+#: reference position, which sorts ahead of it. Measured: every pane-level
+#: test passes with this at 1. So it is left only wide enough to absorb a
+#: splitter, and the work it used to do is done by something that is right at
+#: every scale rather than tuned for one.
+GAP_BUCKET = 8.0
 
 #: Roles that are a pane's *furniture* rather than anywhere to put the
 #: keyboard.  They take focus perfectly well and are never what a person means
@@ -454,7 +453,16 @@ def panes_towards(panes: list[UINode], origin, direction: str,
     ORDERED BY, in order: whether the pane's perpendicular extent covers the
     reference position, then the gap in the direction of travel *bucketed*
     (see GAP_BUCKET), then how far off the reference it is, then how much it
-    overlaps `origin`.  The overlap is the measure `MoveWindow` uses to choose
+    overlaps `origin`, and finally the unbucketed gap.
+
+    That last key is what makes the ordering work at more than one scale. The
+    bucket is sized for panes, where a splitter is a few points and the next
+    pane along is a hundred; a *column of controls* is 43 points apart, so
+    several rows share a bucket and identically-wide buttons overlap the origin
+    identically too - every key ties, and the answer falls out of enumeration
+    order. Moving up from the third row of System Settings' accessibility list
+    went to the first. Nearest-wins settles it, and only where overlap has
+    already tied, so nothing coarser is affected.  The overlap is the measure `MoveWindow` uses to choose
     an adjacent screen, which is the same problem with screen rectangles
     swapped for element ones; the bucket keeps a few points of edge position
     from outvoting an overlap two and a half times larger.
@@ -505,6 +513,6 @@ def panes_towards(panes: list[UINode], origin, direction: str,
         covers = low - tolerance <= along <= high + tolerance
         off = 0.0 if covers else min(abs(along - low), abs(along - high))
         out.append((0 if covers else 1, int(max(gap, 0.0) // GAP_BUCKET),
-                    off, -overlap, pane))
-    out.sort(key=lambda item: item[:4])
+                    off, -overlap, max(gap, 0.0), pane))
+    out.sort(key=lambda item: item[:5])
     return [item[-1] for item in out]

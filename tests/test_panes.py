@@ -10,8 +10,8 @@ import pytest
 
 from keyhac.core import panes
 from keyhac.core.panes import (
-    centre_of, clamp_point, contains_rect, find_panes, focus_target, is_pane,
-    pane_holding, panes_towards, same_rect,
+    centre_of, clamp_point, contains_rect, find_panes, focus_target,
+    is_pane, pane_holding, panes_towards, same_rect,
 )
 from keyhac.core.uitree import UINode
 
@@ -406,3 +406,23 @@ def test_a_pane_covering_the_reference_is_preferred_over_a_nearer_one():
     assert panes_towards(options, origin, "left",
                          reference=(700, 100))[0].name == "on-the-reference"
 
+
+def test_a_column_of_identical_controls_goes_to_the_nearest():
+    """The bucket is sized for panes and a control column is finer than it:
+    43 points apart, identically wide, so covers/bucket/off/overlap all tie
+    and the answer used to fall out of enumeration order. Moving up from the
+    third row of System Settings' accessibility list went to the first."""
+    rows = [UINode(rect=(302, 502, 460, 42), name="first"),
+            UINode(rect=(302, 545, 460, 42), name="second"),
+            UINode(rect=(302, 588, 460, 42), name="third")]
+    assert panes_towards(rows, rows[2].rect, "up")[0].name == "second"
+    assert panes_towards(rows, rows[0].rect, "down")[0].name == "second"
+
+
+def test_nearest_wins_only_after_overlap_has_tied():
+    """The pane-level answer must not change: a much larger overlap still
+    beats a nearer edge."""
+    origin = (1000, 0, 300, 900)
+    tall = UINode(rect=(600, 0, 350, 900), name="tall")     # gap 50, overlap 900
+    near = UINode(rect=(600, 0, 390, 100), name="near")     # gap 10, overlap 100
+    assert panes_towards([tall, near], origin, "left")[0].name == "tall"
