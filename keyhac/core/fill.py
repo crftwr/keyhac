@@ -229,6 +229,54 @@ def focus(target, timeout: float = FOCUS_SETTLE) -> bool:
         return False
 
 
+def select(target, timeout: float = FOCUS_SETTLE) -> bool:
+    """Select an element, and report whether the selection took.
+
+    The other way the keyboard reaches something. A list is navigated by
+    selection rather than focus and says so - see
+    `UIElement.accepts_selection` - so an action that only knows how to focus
+    cannot reach a list item at all, and settles for whichever control inside
+    it happens to be focusable.
+
+    Waits like `focus()`, and for the same reason: the write and the read-back
+    are one main-thread round trip each, and the wait between them belongs on
+    the worker.
+
+    Args:
+        target: A UINode or platform element.
+        timeout: How long the selection is given to take.
+
+    Returns:
+        Whether the element is selected now.
+    """
+    element = _element(target)
+    request = getattr(element, "request_selection", None)
+    is_selected = getattr(element, "is_selected", None)
+
+    if request is None or is_selected is None:
+        setter = getattr(element, "select", None)
+        if setter is None:
+            return False
+        return bool(evaluate_on_main_thread(setter))
+
+    accepts = getattr(element, "accepts_selection", None)
+    if accepts is not None and not evaluate_on_main_thread(accepts):
+        logger.debug("%r does not accept selection", element)
+        return False
+
+    evaluate_on_main_thread(request)
+
+    if on_loop_thread():
+        return bool(evaluate_on_main_thread(is_selected))
+
+    try:
+        wait_for(is_selected, timeout=timeout,
+                 message="the selection to take")
+        return True
+    except WaitTimeout:
+        return False
+
+
 def read_value(target) -> Any:
     """The element's current content, from the loop thread."""
     element = _element(target)

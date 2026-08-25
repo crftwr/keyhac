@@ -126,6 +126,42 @@ class UIElement:
         err, ok = AS.AXUIElementIsAttributeSettable(self._ref, "AXFocused", None)
         return bool(ok) if err == 0 else False
 
+    def accepts_selection(self) -> bool:
+        """Whether this element is *selected* rather than focused.
+
+        A list is navigated by selection, not by focus, and says so: Microsoft
+        To Do's sidebar rows and task rows answer True here and False to
+        `accepts_focus`, while the controls *inside* a task row - the complete
+        circle, the importance star - answer the other way round. Reading only
+        focus therefore skips the item a person is trying to reach and offers
+        the two things that act on it, which is worse than finding nothing.
+        """
+        err, ok = AS.AXUIElementIsAttributeSettable(self._ref, "AXSelected", None)
+        return bool(ok) if err == 0 else False
+
+    def request_selection(self) -> None:
+        """Ask for this element to be selected, without waiting.
+
+        Split from the check for the same reason request_focus() is: the write
+        is main-thread element access and the wait for it to take effect must
+        not happen there.
+        """
+        self.set_attribute_value("AXSelected", "bool", True)
+
+    def is_selected(self) -> bool:
+        """Whether this element is selected right now."""
+        return bool(self.get_attribute_value("AXSelected"))
+
+    def select(self) -> bool:
+        """Ask to be selected and look once, immediately.
+
+        **Does not wait.** `keyhac.core.fill.select()` is the one that does;
+        AX accepts AXSelected writes that do nothing just as readily as
+        AXFocused ones, and reports them late just as readily too.
+        """
+        self.request_selection()
+        return self.is_selected()
+
     def request_focus(self) -> None:
         """Ask for keyboard focus, without waiting to see whether it arrives.
 

@@ -11,18 +11,21 @@ import pytest
 from keyhac.core import panes
 from keyhac.core.panes import (
     centre_of, clamp_point, contains_rect, entry_edge, find_panes,
-    focus_target, is_pane, pane_holding, panes_towards, same_rect,
+    find_widgets, focus_target, is_pane, pane_holding, panes_towards,
+    reachable, same_rect,
 )
 from keyhac.core.uitree import UINode
 
 
 class FakeElement:
     def __init__(self, role, rect, children=(), focusable=False,
-                 identifier=None, name=None):
+                 selectable=False, identifier=None, name=None):
         self.role = role
         self.rect = rect
         self._children = list(children)
         self._focusable = focusable
+        self._selectable = selectable
+        self.selected = False
         self.identifier = identifier
         self.name = name
         self.child_reads = 0
@@ -40,6 +43,15 @@ class FakeElement:
 
     def accepts_focus(self):
         return self._focusable
+
+    def accepts_selection(self):
+        return self._selectable
+
+    def request_selection(self):
+        self.selected = self._selectable
+
+    def is_selected(self):
+        return self.selected
 
 
 def node_for(element):
@@ -477,4 +489,54 @@ def test_entering_from_the_bottom_arrives_at_the_last_row():
     container = (0, 0, 100, 100)
     assert panes_towards(rows, entry_edge(container, "up"), "up",
                          reference=centre_of(container))[0].name == "2"
+
+
+# -- which level of a list is the one being moved between --------------------
+
+def task_row(y, height=45, selectable=True):
+    """A list row, with the two controls a task row carries."""
+    return FakeElement("AXRow", (1037, y, 657, height), selectable=selectable,
+                       children=[
+                           leaf(role="AXButton", rect=(1053, y + 8, 28, 28)),
+                           leaf(role="AXCheckBox", rect=(1653, y + 10, 26, 26)),
+                       ])
+
+
+def test_a_list_offers_its_items_not_the_buttons_inside_them():
+    """Microsoft To Do's task list. Reading only focus finds the complete
+    circle and the importance star - so moving down a task list arrived on
+    the button that completes a task rather than on the task - while the row
+    itself is selectable and says so."""
+    rows = [task_row(y) for y in (508, 553, 598)]
+    table = FakeElement("AXTable", (1037, 508, 657, 2566), rows, focusable=True)
+    pane = node_for(FakeElement("AXScrollArea", (1037, 508, 657, 507), [table],
+                                focusable=True))
+    got = find_widgets(pane)
+    assert [n.role for n in got] == ["AXRow", "AXRow", "AXRow"]
+
+
+def test_the_container_of_the_items_is_not_an_item():
+    """The AXTable is as tall as its contents - 2566 points inside a 507-point
+    pane - which is how a holder of items is told from one."""
+    rows = [task_row(y) for y in (508, 553)]
+    table = FakeElement("AXTable", (1037, 508, 657, 2566), rows, focusable=True)
+    pane = node_for(FakeElement("AXScrollArea", (1037, 508, 657, 507), [table],
+                                focusable=True))
+    assert all(n.rect[3] < 100 for n in find_widgets(pane))
+
+
+def test_a_pane_of_plain_controls_is_unaffected():
+    """System Settings' detail pane: nothing nests, so every control stands."""
+    buttons = [leaf(role="AXButton", rect=(302, y, 460, 42))
+               for y in (380, 423, 466)]
+    pane = node_for(FakeElement("AXScrollArea", (282, 380, 500, 645), buttons))
+    assert len(find_widgets(pane)) == 3
+
+
+def test_reachable_covers_both_ways_in():
+    focusable = node_for(leaf(role="AXButton", rect=(0, 0, 20, 20)))
+    selectable = node_for(FakeElement("AXRow", (0, 0, 100, 20), selectable=True))
+    inert = node_for(FakeElement("AXGroup", (0, 0, 100, 20)))
+    assert reachable(focusable) and reachable(selectable)
+    assert not reachable(inert)
 

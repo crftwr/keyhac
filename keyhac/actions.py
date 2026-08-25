@@ -798,7 +798,7 @@ class MoveFocus(ThreadedAction):
                 lambda c=candidate: self._target_for(c))
             if target is None:
                 continue
-            if target.focus():
+            if target.reach():
                 self._remember(reference, candidate)
                 # After the move, never before it, and without waiting: this is
                 # feedback about something that has already happened.

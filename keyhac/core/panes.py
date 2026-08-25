@@ -144,6 +144,26 @@ CHROME_ROLES = ("AXScrollBar", "AXSplitter", "AXValueIndicator", "AXGrowArea",
 
 DIRECTIONS = ("left", "right", "up", "down")
 
+def _accepts_selection(node: UINode) -> bool:
+    """Whether the keyboard reaches this element by selecting it.
+
+    The other half of `_accepts_focus`, and a list has only this one - see
+    `UIElement.accepts_selection`.
+    """
+    ask = getattr(node.element, "accepts_selection", None)
+    if ask is None:
+        return False
+    try:
+        return bool(ask())
+    except Exception:                       # noqa: BLE001 - a dead element
+        return False
+
+
+def reachable(node: UINode) -> bool:
+    """Whether the keyboard can be put on this element at all, either way."""
+    return _accepts_focus(node) or _accepts_selection(node)
+
+
 def _accepts_focus(node: UINode) -> bool:
     """Whether the application says this element can take focus.
 
@@ -400,8 +420,13 @@ def find_widgets(root: UINode, max_depth: int = TARGET_MAX_DEPTH,
     The finer half of directional movement, and it needs *less* machinery than
     the pane half rather than more.  `is_pane` and its three arms exist because
     a pane is a container and something has to guess whether a rectangle is
-    one; here the candidates are the focusable elements themselves, so
-    "the application says this can take focus" is the entire rule.
+    one; here the candidates are the reachable elements themselves, so "the
+    application says the keyboard can go here" is the entire rule.
+
+    Reachable means focusable **or selectable**.  A list is navigated by
+    selection and says so, and reading only focus does not merely miss the
+    rows - it offers the controls inside them instead, so moving down a task
+    list arrives on the button that completes a task rather than on the task.
 
     Pane chrome is excluded for the same reason it is excluded as a focus
     target: a scroll bar takes focus perfectly well and is never where a person
@@ -429,12 +454,32 @@ def find_widgets(root: UINode, max_depth: int = TARGET_MAX_DEPTH,
             continue
         if roles is not None and not (node.role and match_role(node.role, roles)):
             continue
-        if not _accepts_focus(node):
+        if not reachable(node):
             continue
         if any(same_rect(node.rect, kept.rect) for kept in found):
             continue
         found.append(node)
-    return found
+    # Which *level* of the reachable elements is the one being moved between.
+    # Neither the innermost nor the outermost: a task row holds a complete
+    # circle and an importance star, and keeping the innermost offers those two
+    # instead of the task - moving down a list arrives on the button that
+    # completes a task rather than on the task. Keeping the outermost hands
+    # back the AXTable around every row.
+    #
+    # The root itself and the scrolling container inside it are told apart by
+    # size: a container of the contents is as large as the contents, so To Do's
+    # AXTable is 2566 points tall inside a 507-point pane. Anything that does
+    # not fit inside the pane is holding the items rather than being one.
+    root_rect = root.rect
+    if root_rect:
+        found = [node for node in found if contains_rect(root_rect, node.rect)]
+    # Then the outermost of what is left, which is the item rather than its
+    # controls - exactly as "a container of panes is not a pane" one level up.
+    # Reaching the controls within an item is a further step in, and a separate
+    # question from this one.
+    return [node for node in found
+            if not any(contains_rect(other.rect, node.rect)
+                       for other in found if other is not node)]
 
 
 def pane_holding(panes: list[UINode], rect) -> UINode | None:

@@ -352,6 +352,18 @@ Press this element, by whichever action name the platform uses.
 
 ---
 
+### <kbd>method</kbd> `UINode.reach`
+
+```python
+reach() → bool
+```
+
+Put the keyboard on this element, whichever way it accepts. 
+
+Focus where the element is focusable, selection where it is selectable. An action moving between elements should not have to know which kind it is looking at - and the two are not interchangeable, so it cannot simply try one. 
+
+---
+
 ### <kbd>method</kbd> `UINode.read_text`
 
 ```python
@@ -378,6 +390,29 @@ reread(
 Read this subtree again, returning a fresh node. 
 
 A UINode is a snapshot: the screen moves on, and nothing here notices. 
+
+---
+
+### <kbd>method</kbd> `UINode.select`
+
+```python
+select(timeout: 'float | None' = None) → bool
+```
+
+Select this element; True when the selection took. 
+
+The other way the keyboard reaches something. A list item is selected rather than focused, so `focus()` cannot reach one at all. 
+
+
+
+**Args:**
+ 
+ - <b>`timeout`</b>:  How long the selection is given to take. 
+
+
+
+**Returns:**
+ Whether the element is selected now. 
 
 ---
 

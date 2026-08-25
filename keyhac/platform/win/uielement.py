@@ -749,6 +749,39 @@ class UIElement:
         value = self.get_attribute_value("IsKeyboardFocusable")
         return bool(value) if value is not None else False
 
+    def accepts_selection(self) -> bool:
+        """Whether this element is *selected* rather than focused.
+
+        The macOS method of the same name carries the reasoning. Here the
+        signal is the SelectionItem pattern, which is what a list item
+        supports and a button does not.
+
+        STATUS: unverified on hardware.
+        """
+        return self._pattern(_PatternId.SelectionItem) is not None
+
+    def request_selection(self) -> None:
+        """Ask for this element to be selected, without waiting.
+
+        STATUS: unverified on hardware.
+        """
+        self.perform_action("Select")
+
+    def is_selected(self) -> bool:
+        """Whether this element is selected right now.
+
+        STATUS: unverified on hardware.
+        """
+        return bool(self.get_attribute_value("IsSelected"))
+
+    def select(self) -> bool:
+        """Ask to be selected and look once, immediately.  **Does not wait.**
+
+        STATUS: unverified on hardware.
+        """
+        self.request_selection()
+        return self.is_selected()
+
     def request_focus(self) -> None:
         """Ask for keyboard focus, without waiting to see whether it arrives.
 

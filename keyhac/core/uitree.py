@@ -294,6 +294,33 @@ class UINode:
         from keyhac.core.fill import focus
         return focus(self) if timeout is None else focus(self, timeout=timeout)
 
+    def select(self, timeout: float | None = None) -> bool:
+        """Select this element; True when the selection took.
+
+        The other way the keyboard reaches something. A list item is selected
+        rather than focused, so `focus()` cannot reach one at all.
+
+        Args:
+            timeout: How long the selection is given to take.
+
+        Returns:
+            Whether the element is selected now.
+        """
+        from keyhac.core.fill import select
+        return select(self) if timeout is None else select(self, timeout=timeout)
+
+    def reach(self) -> bool:
+        """Put the keyboard on this element, whichever way it accepts.
+
+        Focus where the element is focusable, selection where it is
+        selectable. An action moving between elements should not have to know
+        which kind it is looking at - and the two are not interchangeable, so
+        it cannot simply try one.
+        """
+        from keyhac.core.panes import _accepts_focus
+
+        return self.focus() if _accepts_focus(self) else self.select()
+
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.
 
