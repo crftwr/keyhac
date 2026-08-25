@@ -169,6 +169,24 @@ def contains_rect(outer, inner, tolerance: float = RECT_TOLERANCE) -> bool:
             and oy + oh + tolerance >= iy + ih)
 
 
+def centre_of(rect):
+    """The middle of a rectangle."""
+    return (rect[0] + rect[2] / 2.0, rect[1] + rect[3] / 2.0)
+
+
+def clamp_point(point, rect):
+    """`point` moved the shortest distance needed to lie inside `rect`.
+
+    Seeding the reference position needs this: a scrolling pane reports the
+    height of its contents, so the focused element's centre can be well
+    outside the pane and even off the screen.  Microsoft To Do's list of lists
+    ran 47 points past the bottom of its own window.
+    """
+    x, y = point
+    return (min(max(x, rect[0]), rect[0] + rect[2]),
+            min(max(y, rect[1]), rect[1] + rect[3]))
+
+
 def focus_target(pane: UINode, max_depth: int = TARGET_MAX_DEPTH,
                  max_nodes: int = TARGET_MAX_NODES,
                  cached: bool = True) -> UINode | None:
@@ -385,6 +403,7 @@ def pane_holding(panes: list[UINode], rect) -> UINode | None:
 
 
 def panes_towards(panes: list[UINode], origin, direction: str,
+                  reference=None,
                   tolerance: float = RECT_TOLERANCE) -> list[UINode]:
     """Panes lying in `direction` from `origin`, nearest first.
 
@@ -395,24 +414,44 @@ def panes_towards(panes: list[UINode], origin, direction: str,
     that way" rather than "the next thing that way, unless it is unreachable,
     in which case nothing".
 
-    Ordered by the gap in the direction of travel *bucketed* (see GAP_BUCKET),
-    then by how much the pane overlaps `origin` on the perpendicular axis -
-    the same measure `MoveWindow` uses to choose an adjacent screen, which is
-    the same problem with screen rectangles swapped for element ones.  The
-    bucket is what keeps a few points of edge position from outvoting an
-    overlap two and a half times larger.
+    Args:
+        panes: Every pane in the window.
+        origin: The rectangle being moved away from.
+        direction: "left", "right", "up" or "down".
+        reference: The hidden reference position (x, y) - see below.  None
+            uses the middle of `origin`, which is what a first move does.
+        tolerance: Slack for edge comparisons.
 
-    Two panes stacked beside one tall pane is genuinely ambiguous - both
-    overlap it by nearly the same amount - and no geometry resolves that.
-    The answer is stable for a given layout, and it is not the one a person
-    would have to think about; remembering which pane was last used would
-    settle it, and this deliberately keeps no such state.
+    ORDERED BY, in order: whether the pane's perpendicular extent covers the
+    reference position, then the gap in the direction of travel *bucketed*
+    (see GAP_BUCKET), then how far off the reference it is, then how much it
+    overlaps `origin`.  The overlap is the measure `MoveWindow` uses to choose
+    an adjacent screen, which is the same problem with screen rectangles
+    swapped for element ones; the bucket keeps a few points of edge position
+    from outvoting an overlap two and a half times larger.
+
+    THE REFERENCE POSITION IS WHAT MAKES MOVEMENT REVERSIBLE, and that is
+    worth more than every other consideration here.  Moving left and then
+    right did not come back: on the six-pane layout in the tests, five of the
+    round trips landed somewhere other than where they started, because each
+    step chose against the *pane it was leaving* and a pane is wide enough to
+    lead to different answers from either end of it.  Steering by a position
+    that only the moving axis changes - the two-dimensional form of a text
+    editor's goal column - makes the return journey ask the same question that
+    led away, and all five come back.
+
+    What it does not do is make the first move less arbitrary.  Two panes
+    stacked beside one tall pane is genuinely ambiguous: the reference lands
+    in the splitter between them, and by overlap it is 315 against 314, by
+    centre distance 173.5 against 173.0.  No geometry resolves that.  It stops
+    mattering once the wrong guess is undoable.
     """
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be one of {DIRECTIONS}, not {direction!r}")
     if not origin:
         return []
     ox, oy, ow, oh = origin
+    rx, ry = reference if reference is not None else centre_of(origin)
     out = []
     for pane in panes:
         rect = pane.rect
@@ -421,15 +460,22 @@ def panes_towards(panes: list[UINode], origin, direction: str,
         px, py, pw, ph = rect
         if direction == "left":
             gap, overlap = ox - (px + pw), min(oy + oh, py + ph) - max(oy, py)
+            low, high, along = py, py + ph, ry
         elif direction == "right":
             gap, overlap = px - (ox + ow), min(oy + oh, py + ph) - max(oy, py)
+            low, high, along = py, py + ph, ry
         elif direction == "up":
             gap, overlap = oy - (py + ph), min(ox + ow, px + pw) - max(ox, px)
+            low, high, along = px, px + pw, rx
         else:
             gap, overlap = py - (oy + oh), min(ox + ow, px + pw) - max(ox, px)
+            low, high, along = px, px + pw, rx
         # A pane merely nested inside the origin is not "that way".
         if gap < -tolerance or overlap <= 0:
             continue
-        out.append((int(max(gap, 0.0) // GAP_BUCKET), -overlap, pane))
-    out.sort(key=lambda item: (item[0], item[1]))
-    return [pane for _gap, _overlap, pane in out]
+        covers = low - tolerance <= along <= high + tolerance
+        off = 0.0 if covers else min(abs(along - low), abs(along - high))
+        out.append((0 if covers else 1, int(max(gap, 0.0) // GAP_BUCKET),
+                    off, -overlap, pane))
+    out.sort(key=lambda item: item[:4])
+    return [item[-1] for item in out]

@@ -681,6 +681,11 @@ class MoveFocus(ThreadedAction):
     **Scoped to the focused window.** At the last pane in a direction nothing
     happens; focus never leaves the window for a neighbouring one.
 
+    **Overshooting is undoable.** Pressing the opposite direction returns to
+    the pane you came from, which took a hidden reference position to arrange
+    - see `_reference` - and is the difference between a binding you can lean
+    on and one you have to watch.
+
     **A pane that will not take focus is skipped, not stopped at.** Some panes
     accept a focus request and ignore it - Finder's sidebar and System
     Settings' detail pane both do - so the action tries each pane that way in
@@ -698,6 +703,26 @@ class MoveFocus(ThreadedAction):
     nothing has yet needed them, and an entry point published before its first
     real use case freezes the wrong shape.
     """
+
+    #: The hidden reference position (x, y) in screen coordinates, the pane
+    #: the last move landed in, and which window both belong to.
+    #:
+    #: Class state, not instance state, because a configuration binds four
+    #: separate MoveFocus objects - one per direction - and the whole point is
+    #: that a left and a right press share what they are steering by. It is
+    #: the two-dimensional form of a text editor's goal column: moving
+    #: horizontally changes x and preserves y, moving vertically changes y and
+    #: preserves x, so the return journey asks the same question that led
+    #: away.
+    #:
+    #: It has to be discarded the moment anything else moves focus - a click,
+    #: the application deciding for itself, a different window - or the next
+    #: arrow key steers by a position with no relation to where the keyboard
+    #: now is. Detecting that needs no hooks and no notifications: if focus is
+    #: not in the pane this last landed in, something else moved it.
+    _reference = None
+    _reference_pane = None
+    _reference_window = None
 
     def __init__(self, direction: str):
         """Build the action.
@@ -720,6 +745,12 @@ class MoveFocus(ThreadedAction):
         # what it is.
         keymap = Keymap.get_instance()
         self.window = keymap.get_active_window() if keymap else None
+        # Read here, not in run(): Window accessors are UI-thread only, and
+        # the frame is part of what the reference position is anchored to -
+        # it is a screen coordinate, so a window that has moved invalidates it.
+        self.window_key = None
+        if self.window is not None:
+            self.window_key = (self.window.pid, self.window.get_frame())
         focus = keymap.focus if keymap else None
         element = getattr(focus, "element", None)
         self.focus_rect = None
@@ -769,13 +800,16 @@ class MoveFocus(ThreadedAction):
                         [tuple(int(v) for v in p.rect) for p in found])
             return
 
+        reference = self._steer_from(origin)
         for pane in panes_module.panes_towards(found, origin.rect,
-                                               self.direction):
+                                               self.direction,
+                                               reference=reference):
             target = evaluate_on_main_thread(
                 lambda p=pane: panes_module.focus_target(p))
             if target is None:
                 continue
             if target.focus():
+                self._remember(reference, pane)
                 logger.debug("MoveFocus: %s -> %r", self.direction, target)
                 return
             # Accepted and ignored, or it went somewhere else entirely; the
@@ -783,6 +817,36 @@ class MoveFocus(ThreadedAction):
             logger.debug("MoveFocus: %r would not take focus, trying the "
                          "next pane %s", target, self.direction)
         logger.info("MoveFocus: nothing to the %s takes focus.", self.direction)
+
+    def _steer_from(self, origin):
+        """The reference position to move by, re-seeded if it has gone stale.
+
+        lazydocs: ignore
+        """
+        cls = MoveFocus
+        if (cls._reference is not None
+                and cls._reference_window == self.window_key
+                and cls._reference_pane is not None
+                and panes_module.same_rect(cls._reference_pane, origin.rect)):
+            return cls._reference
+        # Seeded from the focused element rather than the middle of the pane,
+        # so the first move goes where the keyboard actually is - clamped,
+        # because a scrolling pane's focused element can be taller than the
+        # window (keyhac.core.panes.clamp_point).
+        return panes_module.clamp_point(
+            panes_module.centre_of(self.focus_rect), origin.rect)
+
+    def _remember(self, reference, pane):
+        """Record where the keyboard now is, moving only this axis.
+
+        lazydocs: ignore
+        """
+        cls = MoveFocus
+        x, y = reference
+        cx, cy = panes_module.centre_of(pane.rect)
+        cls._reference = (cx, y) if self.direction in ("left", "right") else (x, cy)
+        cls._reference_pane = pane.rect
+        cls._reference_window = self.window_key
 
     def __repr__(self):
         return f'MoveFocus(direction="{self.direction}")'

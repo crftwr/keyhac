@@ -10,8 +10,8 @@ import pytest
 
 from keyhac.core import panes
 from keyhac.core.panes import (
-    contains_rect, find_panes, focus_target, pane_holding, panes_towards,
-    same_rect,
+    centre_of, clamp_point, contains_rect, find_panes, focus_target,
+    pane_holding, panes_towards, same_rect,
 )
 from keyhac.core.uitree import UINode
 
@@ -292,4 +292,82 @@ def test_a_pane_a_column_further_off_is_still_ordered_behind():
     beyond = UINode(rect=(0, 0, 390, 900), name="beyond")    # gap 310
     assert [p.name for p in panes_towards([next_to, beyond], origin, "left")] \
         == ["next", "beyond"]
+
+
+# -- the reference position --------------------------------------------------
+
+def test_centre_and_clamp():
+    assert centre_of((10, 20, 100, 200)) == (60.0, 120.0)
+    pane = (0, 0, 100, 100)
+    assert clamp_point((50, 50), pane) == (50, 50)
+    # A scrolling pane's focused element runs past it, so its centre does too.
+    assert clamp_point((50, 900), pane) == (50, 100)
+    assert clamp_point((-40, -40), pane) == (0, 0)
+
+
+def _step(panes_list, origin_rect, direction, reference):
+    """One MoveFocus press: choose, then move only this axis of the reference.
+
+    The same two lines the action runs, kept here so the property below is
+    tested against the geometry rather than against the action's plumbing.
+    """
+    order = panes_towards(panes_list, origin_rect, direction,
+                          reference=reference)
+    if not order:
+        return None, reference
+    x, y = reference
+    cx, cy = centre_of(order[0].rect)
+    moved = (cx, y) if direction in ("left", "right") else (x, cy)
+    return order[0], moved
+
+
+@pytest.mark.parametrize("start", sorted(MEASURED))
+@pytest.mark.parametrize("out_,back_", [("left", "right"), ("right", "left"),
+                                        ("up", "down"), ("down", "up")])
+def test_every_round_trip_comes_back(measured, start, out_, back_):
+    """Overshooting has to be undoable, and this is the layout where it was
+    not: steering by the pane being left behind, five of these landed
+    somewhere other than where they started.  A pane is wide enough to lead
+    to different answers from either end of it; a reference position that
+    only the moving axis changes asks the same question on the way back."""
+    seed = clamp_point(centre_of(MEASURED[start]), MEASURED[start])
+    away, reference = _step(measured, MEASURED[start], out_, seed)
+    if away is None:
+        pytest.skip(f"nothing to the {out_} of {start}")
+    home, _ = _step(measured, away.rect, back_, reference)
+    assert home is not None and home.name == start
+
+
+def test_the_reference_survives_a_pane_it_passes_through():
+    """The point of preserving the off-axis coordinate: two moves out and two
+    back, through a pane whose own centre would have answered differently."""
+    panes_list = [UINode(rect=(0, 0, 300, 900), name="far"),
+                  UINode(rect=(300, 0, 300, 900), name="middle"),
+                  UINode(rect=(600, 0, 300, 400), name="top"),
+                  UINode(rect=(600, 400, 300, 500), name="bottom")]
+    start = (600, 400, 300, 500)                 # bottom
+    reference = clamp_point(centre_of(start), start)
+    a, reference = _step(panes_list, start, "left", reference)
+    b, reference = _step(panes_list, a.rect, "left", reference)
+    assert [a.name, b.name] == ["middle", "far"]
+    c, reference = _step(panes_list, b.rect, "right", reference)
+    d, _ = _step(panes_list, c.rect, "right", reference)
+    assert [c.name, d.name] == ["middle", "bottom"]
+
+
+def test_without_a_reference_the_origin_centre_is_used():
+    """A first press has nothing remembered, and must still behave."""
+    row = [UINode(rect=(0, 0, 300, 900), name="A"),
+           UINode(rect=(300, 0, 300, 900), name="B")]
+    assert panes_towards(row, (300, 0, 300, 900), "left")[0].name == "A"
+
+
+def test_a_pane_covering_the_reference_is_preferred_over_a_nearer_one():
+    origin = (600, 0, 300, 200)
+    options = [UINode(rect=(300, 0, 250, 200), name="near-but-elsewhere"),
+               UINode(rect=(0, 0, 250, 200), name="on-the-reference")]
+    # Reference sits inside the second one's band only.
+    options[0].rect = (300, 500, 250, 200)
+    assert panes_towards(options, origin, "left",
+                         reference=(700, 100))[0].name == "on-the-reference"
 

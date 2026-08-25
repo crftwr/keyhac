@@ -1156,6 +1156,9 @@ table[f"{LEADER}-{MOD}-{RIGHT}"] = MoveFocus("right")
 
 **Scoped to the focused window.** At the last pane in a direction nothing happens; focus never leaves the window for a neighbouring one. 
 
+**Overshooting is undoable.** Pressing the opposite direction returns to the pane you came from, which took a hidden reference position to arrange 
+- see `_reference` - and is the difference between a binding you can lean on and one you have to watch. 
+
 **A pane that will not take focus is skipped, not stopped at.** Some panes accept a focus request and ignore it - Finder's sidebar and System Settings' detail pane both do - so the action tries each pane that way in turn and lands on the first that actually takes the keyboard. 
 
 What counts as a pane is decided by one generic rule - a big rectangle whose keyboard target either says what it is by its role or is large enough to be the pane - with no per-application knowledge at all.  That found exactly the panes a person would name in every application it has been run against. 

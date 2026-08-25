@@ -7,7 +7,8 @@ minimized-window restore, and the degraded paths.
 
 import pytest
 
-from keyhac.actions import SnapWindow
+from keyhac.actions import MoveFocus, SnapWindow
+from keyhac.core.uitree import UINode
 from keyhac.platform.base import Window, WindowProvider
 
 
@@ -156,3 +157,88 @@ class TestSnapValidation:
 
     def test_repr_names_the_position(self):
         assert repr(SnapWindow("left")) == 'SnapWindow("left")'
+
+
+class TestMoveFocusReference:
+    """The hidden reference position that makes overshooting undoable.
+
+    Class state on purpose - a configuration binds four MoveFocus objects and
+    they have to steer by the same thing - so each test starts from clean.
+    """
+
+    LEFT_PANE = UINode(rect=(0, 0, 300, 900), name="left")
+    RIGHT_PANE = UINode(rect=(300, 0, 300, 900), name="right")
+    WINDOW = (42, (0, 0, 600, 900))
+
+    @pytest.fixture(autouse=True)
+    def clean_state(self):
+        MoveFocus._reference = None
+        MoveFocus._reference_pane = None
+        MoveFocus._reference_window = None
+        yield
+        MoveFocus._reference = None
+        MoveFocus._reference_pane = None
+        MoveFocus._reference_window = None
+
+    def _action(self, direction, focus_rect, window=None):
+        action = MoveFocus(direction)
+        action.window_key = self.WINDOW if window is None else window
+        action.focus_rect = focus_rect
+        return action
+
+    def test_a_first_press_is_seeded_from_the_focused_element(self):
+        """Not from the middle of the pane: the first move should go where
+        the keyboard actually is."""
+        action = self._action("right", (10, 100, 40, 40))
+        assert action._steer_from(self.LEFT_PANE) == (30.0, 120.0)
+
+    def test_the_seed_is_clamped_into_the_pane(self):
+        """A scrolling pane reports the height of its contents, so the
+        focused element's centre can be outside the pane entirely."""
+        action = self._action("right", (0, 0, 300, 4000))
+        assert action._steer_from(self.LEFT_PANE) == (150.0, 900)
+
+    def test_a_horizontal_move_keeps_the_vertical_reference(self):
+        action = self._action("right", (10, 100, 40, 40))
+        action._remember((30.0, 120.0), self.RIGHT_PANE)
+        assert MoveFocus._reference == (450.0, 120.0)     # x moved, y kept
+
+    def test_a_vertical_move_keeps_the_horizontal_reference(self):
+        action = self._action("down", (10, 100, 40, 40))
+        action._remember((30.0, 120.0), self.RIGHT_PANE)
+        assert MoveFocus._reference == (30.0, 450.0)      # y moved, x kept
+
+    def test_the_reference_is_reused_by_the_opposite_binding(self):
+        """The whole point: a left press must steer by what a right press
+        left behind, and they are different objects."""
+        self._action("right", (10, 100, 40, 40))._remember(
+            (30.0, 120.0), self.RIGHT_PANE)
+        going_back = self._action("left", (400, 800, 40, 40))
+        assert going_back._steer_from(self.RIGHT_PANE) == (450.0, 120.0)
+
+    def test_focus_moved_by_something_else_discards_it(self):
+        """A click, or the application deciding for itself. Steering by a
+        position with no relation to where the keyboard now is would send the
+        next arrow key somewhere unrelated."""
+        self._action("right", (10, 100, 40, 40))._remember(
+            (30.0, 120.0), self.RIGHT_PANE)
+        # Focus is now in the left pane, which is not where we put it.
+        elsewhere = self._action("up", (10, 800, 40, 40))
+        assert elsewhere._steer_from(self.LEFT_PANE) == (30.0, 820.0)
+
+    def test_a_different_window_discards_it(self):
+        self._action("right", (10, 100, 40, 40))._remember(
+            (30.0, 120.0), self.RIGHT_PANE)
+        other = self._action("left", (310, 400, 40, 40),
+                             window=(99, (0, 0, 600, 900)))
+        assert other._steer_from(self.RIGHT_PANE) == (330.0, 420.0)
+
+    def test_a_moved_window_discards_it(self):
+        """The reference is a screen coordinate, so a window that has moved
+        no longer means what it meant."""
+        self._action("right", (10, 100, 40, 40))._remember(
+            (30.0, 120.0), self.RIGHT_PANE)
+        moved = self._action("left", (310, 400, 40, 40),
+                             window=(42, (100, 0, 600, 900)))
+        assert moved._steer_from(self.RIGHT_PANE) == (330.0, 420.0)
+
