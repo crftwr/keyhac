@@ -782,8 +782,16 @@ class MoveFocus(ThreadedAction):
         found = evaluate_on_main_thread(
             lambda: panes_module.find_panes(window_node))
         if len(found) < 2:
+            # Zero is worth saying more about than one. A Chromium or Electron
+            # application builds no accessibility tree until an assistive
+            # client asks, and until it does there is nothing here to find -
+            # which looks identical to an application that simply has one pane.
+            extra = ("; a Chromium or Electron application exposes nothing "
+                     "until ui.enable_content_access() is called for it, and "
+                     "some expose nothing even then"
+                     if not found else "")
             logger.info("MoveFocus: %d pane(s) in this window; nothing to "
-                        "move between.", len(found))
+                        "move between%s.", len(found), extra)
             return
 
         origin = panes_module.pane_holding(found, self.focus_rect)

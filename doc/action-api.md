@@ -70,13 +70,15 @@ Ask a Chromium or Electron application to expose its content.
 
 **Args:**
  
- - <b>`target`</b>:  A node in the application, or None for the focused one.  Any node will do; the request goes to its application. 
+ - <b>`target`</b>:  A node in the application, or None for the focused one,  falling back to the frontmost window.  Any node will do; the  request goes to its application. 
  - <b>`enable`</b>:  False to give it back, which is polite and measurably  works - Chrome returned to 59 nodes. 
 
 
 
 **Returns:**
- True when the platform did something. 
+ True when the request was delivered - **not** that content appeared.  The two are different and this cannot tell them apart: Steam's client advertises `AXEnhancedUserInterface`, accepts the write, and still exposes a window with no children at all, in both its processes, measured 2026-08-24.  Some applications have no accessibility tree to be asked for. 
+
+Verifying it would need a wait rather than a read.  Chromium builds the tree on its own schedule - half a second in the measurements this API came from - so checking immediately would report failure for content that was about to arrive, which is the fault `keyhac.core.fill.focus()` exists to avoid; and this runs on the event-loop thread, where waiting is not allowed.  So the honest answer here is the narrow one. 
 
 ---
 

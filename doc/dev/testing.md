@@ -260,6 +260,23 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   **Not covered**: Terminal.app and iTerm2 whole-value reads — neither had a
   window open — so the terminal half of §6 is still unmeasured *on macOS*. The
   Windows half is measured; see the Text-pattern survey below.
+- **An application can simply have no accessibility tree** (2026-08-24,
+  Steam): its window reports **one node - itself, no children** - in both the
+  `Steam` and `Steam Helper` processes, with `AXManualAccessibility` and
+  `AXEnhancedUserInterface` off *and* on. Both processes advertise
+  `AXEnhancedUserInterface`, so the write is accepted and changes nothing.
+  Nothing built on the element tree can work there, and no amount of asking
+  helps; this is a property of the application, not a bug to fix.
+
+  Two things came out of trying: `ui.enable_content_access()` could not reach
+  such an application at all, because it asked through the *focused element*
+  and an application exposing nothing has no focused element either - the one
+  call that might have helped was unreachable for exactly the applications
+  needing it. It falls back to the frontmost window now. And its True still
+  means "the request was delivered", not "content appeared", which is
+  documented rather than fixed: verifying needs a wait (Chromium builds its
+  tree on its own schedule) and the call runs on the event-loop thread.
+
 - **macOS focus writes** (2026-08-23, Finder / System Settings / Chrome / VS
   Code): whether `AXFocused` can be written on an arbitrary element, measured
   for the first open question of discussion #102. **Yes in Chromium and

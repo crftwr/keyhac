@@ -200,21 +200,46 @@ class UI:
         way rather than branching.
 
         Args:
-            target: A node in the application, or None for the focused one.
-                Any node will do; the request goes to its application.
+            target: A node in the application, or None for the focused one,
+                falling back to the frontmost window.  Any node will do; the
+                request goes to its application.
             enable: False to give it back, which is polite and measurably
                 works - Chrome returned to 59 nodes.
 
         Returns:
-            True when the platform did something.
+            True when the request was delivered - **not** that content
+            appeared.  The two are different and this cannot tell them apart:
+            Steam's client advertises `AXEnhancedUserInterface`, accepts the
+            write, and still exposes a window with no children at all, in
+            both its processes, measured 2026-08-24.  Some applications have
+            no accessibility tree to be asked for.
+
+            Verifying it would need a wait rather than a read.  Chromium
+            builds the tree on its own schedule - half a second in the
+            measurements this API came from - so checking immediately would
+            report failure for content that was about to arrive, which is the
+            fault `keyhac.core.fill.focus()` exists to avoid; and this runs on
+            the event-loop thread, where waiting is not allowed.  So the
+            honest answer here is the narrow one.
         """
         node = target or self.focused()
         element = getattr(node, "element", None)
-        if element is None:
-            return False
 
         def apply():
-            application = self._application_of(element)
+            # Falling back to the window is not a nicety. An application that
+            # exposes no accessibility tree has no focused element either -
+            # which is exactly the application this call exists for - so
+            # asking through focus alone could never reach the ones that need
+            # it most. Steam's client reported no focused element at all and
+            # no panes, and there was no way to ask it for any. The window is
+            # there regardless, and any element in the application will do.
+            start = element
+            if start is None:
+                window = self._keymap.get_active_window()
+                start = getattr(window, "element", None)
+            if start is None:
+                return False
+            application = self._application_of(start)
             setter = getattr(application, "set_manual_accessibility", None)
             if setter is None:
                 return False
@@ -250,10 +275,19 @@ class UI:
     @staticmethod
     def _application_of(element):
         """Walk up to the application element, which is what the Chromium
-        accessibility switch has to be set on."""
+        accessibility switch has to be set on.
+
+        An element that cannot say who its parent is stands for itself.  Both
+        platform elements always can; this is for anything else handed in
+        through `ui.node()`, and for the caller's promise that
+        `enable_content_access()` is safe to call anywhere.
+        """
         current = element
         for _ in range(32):
-            parent = current.parent()
+            climb = getattr(current, "parent", None)
+            if climb is None:
+                return current
+            parent = climb()
             if parent is None:
                 return current
             current = parent

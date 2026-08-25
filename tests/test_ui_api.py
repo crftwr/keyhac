@@ -355,9 +355,41 @@ def test_wait_refuses_to_block_the_loop_thread(ui):
 # -- the one platform-specific call -----------------------------------------
 
 def test_enable_content_access_is_safe_where_it_does_not_apply(ui):
-    """Windows needs no equivalent, so an action calls it unconditionally."""
+    """Windows needs no equivalent, so an action calls it unconditionally.
+
+    This used to pass for the wrong reason - there was no focused element, so
+    the call returned before reaching anything.  It now walks to the window
+    and finds no setter there, which is what the assertion was always meant
+    to be about.
+    """
     api, _element = ui
     assert api.enable_content_access() is False     # fake has no such setter
+
+
+def test_enable_content_access_reaches_an_application_with_no_focus(ui):
+    """The chicken and egg this exists to break.
+
+    An application that exposes no accessibility tree has no focused element
+    either - which is exactly the application the call is for - so asking
+    through focus alone could never reach the ones that need it most. Steam's
+    client reported no focused element and no panes, and there was no way to
+    ask it for any.
+    """
+    api, element = ui
+    asked = []
+
+    class AppElement(FakeElement):
+        def set_manual_accessibility(self, enable=True):
+            asked.append(enable)
+
+    application = AppElement("Application", key="app")
+    element.parent = lambda: application
+    application.parent = lambda: None
+    api._keymap._focus_provider.get_focused_element = lambda: None
+
+    assert api.focused() is None                 # nothing to ask through
+    assert api.enable_content_access() is True   # ... but the window is there
+    assert asked == [True]
 
 
 def test_enable_content_access_reaches_the_application(ui):
