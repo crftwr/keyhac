@@ -737,7 +737,12 @@ class Keymap:
         # the user is watching. What "real" does still include is another
         # application's injected input, which the OS lets us distinguish but
         # Keyhac does not - and an Esc from anywhere is a request to stop.
-        if event.down and event.kind == "real" and event.vk == self._escape_vk():
+        if event.down and event.kind == "real" and event.vk == self._escape_vk() \
+           and self._modal_input is None:
+            # Not while a candidate window holds the keyboard: Esc there is
+            # "close this window", and the window is the thing the user is
+            # looking at.  Without the guard a background action would eat
+            # the Esc and the window would stay up (discussion #112).
             if ThreadedAction.cancel_all():
                 # Consumed only when it actually stopped something: swallowing
                 # every Esc would change what the focused application sees.

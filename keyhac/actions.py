@@ -40,11 +40,19 @@ class ChooserAction:
     _open = None
 
     #: How the filter text is matched against the rows.  None means the
-    #: default (multi-word, case-insensitive substring).  Set it per action
-    #: to pick something else - ``keyhac.core.matcher.with_migemo()`` so
-    #: romaji finds Japanese labels, or ``WildcardMatcher()`` for 1.x's
-    #: ``*`` / ``?``.
+    #: default: case-insensitive substring, unioned with Migemo so romaji
+    #: finds Japanese.  Set it per action to pick something else -
+    #: ``WildcardMatcher()`` for 1.x's ``*`` / ``?``.
     matcher = None
+
+    #: Whether the chooser takes OS keyboard focus.  False (the default)
+    #: leaves the application underneath focused and routes the keystrokes
+    #: through the key hook, which is what keeps the console where it is,
+    #: keeps the current Space, and lets a paste go out with no settle
+    #: delay.  Set it True only for a source whose filter field genuinely
+    #: needs an input method: composition cannot reach an unfocused window,
+    #: so that is the one thing the default gives up.
+    activates = False
 
     def __repr__(self):
         return f"{type(self).__name__}()"
@@ -62,23 +70,25 @@ class ChooserAction:
         # Only one chooser at a time (issue #3): pressing the same action's
         # key again toggles its chooser closed; a different chooser action
         # replaces the open one. Either way the replacement inherits the app
-        # to refocus - at this point the focus is the chooser itself, not the
-        # window the user was working in.
+        # to refocus - which matters only for an activating chooser, where
+        # the focus at this point is the chooser itself rather than the
+        # window the user was working in. A non-activating one never took
+        # the focus, so there is nothing to give back.
         open_entry, ChooserAction._open = ChooserAction._open, None
         if open_entry is not None:
             prev_action, prev_chooser, original_pid = open_entry
             prev_chooser.dismiss()
             if prev_action is self:
-                if original_pid is not None and keymap.app_control is not None:
-                    keymap.app_control.activate_pid(original_pid)
+                self._refocus(original_pid)
                 return
         else:
-            focus = keymap.focus
-            original_pid = focus.pid if focus else None
+            original_pid = None
+            if self.activates:
+                focus = keymap.focus
+                original_pid = focus.pid if focus else None
 
         def _refocus_original_app():
-            if original_pid is not None and keymap.app_control is not None:
-                keymap.app_control.activate_pid(original_pid)
+            self._refocus(original_pid)
 
         def _on_selected(item, modifier_flags):
             ChooserAction._open = None
@@ -104,16 +114,28 @@ class ChooserAction:
         chooser = ChooserWindow(runtime.backend, self.list_items(),
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
-                                matcher=self.matcher)
+                                matcher=self.matcher, activates=self.activates)
         ChooserAction._open = (self, chooser, original_pid)
 
-        # Keyhac runs as an accessory (agent) app, so the chooser must
-        # deliberately activate our own process to take keyboard input; the
-        # original app is re-activated on selection/cancel above. (A true
-        # non-activating chooser needs an NSPanel - a planned PuiKit feature.)
-        if keymap.app_control is not None:
+        if self.activates and keymap.app_control is not None:
+            # Keyhac runs as an accessory (agent) app, so an activating
+            # chooser has to activate our own process to be typed into; the
+            # original app is re-activated on selection/cancel above. This
+            # is app-scoped, so it also brings the console forward and can
+            # follow the app to another Space - the reason the default is
+            # not to do it (discussion #112).
             import os
             keymap.app_control.activate_pid(os.getpid())
+
+    @staticmethod
+    def _refocus(pid) -> None:
+        """Give the focus back to the application the chooser took it from.
+        `pid` is None for a non-activating chooser, which never took it."""
+        if pid is None:
+            return
+        keymap = Keymap.get_instance()
+        if keymap.app_control is not None:
+            keymap.app_control.activate_pid(pid)
 
     def list_items(self):
         """Build the list the chooser shows.  Override this.
@@ -149,6 +171,12 @@ class ClipboardChooserAction(ChooserAction):
 
         # Shift-select: set the clipboard without pasting
         if modifier_flags & MODKEY_SHIFT:
+            return
+
+        if not self.activates:
+            # The target application never lost the focus, so there is
+            # nothing to settle and the keystroke can go out now.
+            self._paste()
             return
 
         # Paste once the re-activated target app has settled

@@ -143,11 +143,58 @@ before running it.
 - Async, callback-based (`ChooserAction.list_items/on_chosen`) — keyhac-win's
   blocking `popListWindow` is deliberately not carried over (its nested message loop
   was the worst reentrancy source in 1.x).
-- Filtering: multi-word AND substring (keyhac-mac behavior). The match function is a
-  hook point for a future migemo port.
+- Filtering: a pluggable `Matcher` (`keyhac/core/matcher.py`). The default is
+  multi-word AND substring (keyhac-mac behavior) **unioned with Migemo**, so romaji
+  finds Japanese; `WildcardMatcher` restores 1.x's `*`/`?`. Migemo only ever adds
+  matches — see [Migemo](#migemo) below.
 - Placement: centered on the focused window, clamped to its screen; one chooser at a
-  time — the same action's hotkey toggles it closed, a different chooser replaces it,
-  and the replacement inherits the app to refocus.
+  time — the same action's hotkey toggles it closed, a different chooser replaces it.
+- **It does not take OS keyboard focus** (discussion #112). It used to, which was not
+  a decision anybody made — it is what a secondary PuiKit window does by default —
+  and three things followed from it, all now gone: the console came to the front
+  alongside it (activation is app-scoped, and macOS 26 refuses
+  `activateWithOptions:` for self-activation, so there is no narrower call);
+  reopening could jump to another Space, because the OS follows the app's frontmost
+  window; and pasting needed a 150 ms settle delay because the target application
+  was deactivated and reactivated around it. `ChooserAction.activates = True` opts
+  one source back into the old behavior, with the old costs.
+- Non-activating and frameless are **one decision, not two**: a titled macOS window
+  still becomes key when clicked, so only a borderless one is genuinely
+  non-activating. `ChooserWindow` derives `frameless` from `activates` rather than
+  letting the two be set to a combination that does not work.
+- The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
+  plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
+  named keys; it cannot carry shifted punctuation (a vk does not say which glyph the
+  layout produces — solvable with `ToUnicodeEx`/`UCKeyTranslate` if it is ever
+  wanted) and it cannot carry an input method at all, ever. Composition follows OS
+  keyboard focus: IMM32 delivers `WM_IME_*` only to the focused HWND and
+  `NSTextInputClient` serves only the key window. That is why Migemo is part of the
+  default matcher rather than an option — for a localised list it is what makes the
+  filter reach the rows.
+- A key grab and a multi-stroke prefix are the same kind of state and are kept
+  mutually exclusive: pushing a grab disarms any armed prefix.
+- **Esc precedence.** `on_key_event` normally offers Esc to a running `ThreadedAction`
+  before the key tables. While a grab is up it does not: Esc there means "close this
+  window", and the window is what the user is looking at.
+
+## Migemo
+
+- Engine: oguna's `pymigemo` — pure Python, BSD-3, dictionary bundled in the wheel.
+  **Not a hard dependency**: absent, `keyhac/core/migemo.py` degrades and the default
+  matcher is exactly `SubstringMatcher`.
+- **Union, never replace.** Migemo is added on top of the caller's own matching, so
+  an engine quirk can only ever *add* matches. XeFM reached this rule the hard way;
+  a hard dependency would invert it and let a pymigemo bug remove matches.
+- **The minimum-length gate is load-bearing.** Generating the regex costs ~1.4 s for
+  a 1-character query and ~0.5 ms for seven (measured, Apple silicon). A filter field
+  recompiles on every keystroke, so without the gate the window freezes on the first
+  character.
+- **The LP64 runtime patch.** pymigemo 0.0.1 reads a 32-bit dictionary field as
+  `array('L')`, which is 8 bytes on macOS/Linux; `_Array32` swaps the binding before
+  the engine is built. Inert on Windows and once upstream lands its own fix. Pin the
+  version — the patch reaches into internals.
+- **Wildcards bypass Migemo.** A generated regex would collide with `*`/`?`, so a
+  query using them keeps exactly the wildcard semantics it asked for.
 
 ## Console
 

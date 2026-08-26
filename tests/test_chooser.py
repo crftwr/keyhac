@@ -189,3 +189,131 @@ class TestChooserFiltering:
         action()
         chooser = ChooserAction._open[1]
         assert chooser._matcher is _Wild.matcher
+
+
+class TestChooserActivation:
+    """The chooser does not take OS keyboard focus by default (discussion
+    #112).  What that removes is the app-scoped activation - which brought
+    the console forward, could follow the app to another Space, and forced
+    a settle delay before pasting."""
+
+    class _Recorder:
+        """Stands in for the platform AppControl, recording activations."""
+
+        def __init__(self):
+            self.activated = []
+
+        def activate_pid(self, pid):
+            self.activated.append(pid)
+            return True
+
+    def _wire(self, ui_backend):
+        from keyhac.core.keymap import Keymap
+        keymap = Keymap.get_instance()
+        # The focus snapshot is normally taken on the first key event; the
+        # activating path reads it to know whom to give the focus back to.
+        keymap._check_focus_change()
+        recorder = self._Recorder()
+        keymap.app_control = recorder
+        return keymap, recorder
+
+    def test_default_activates_nothing(self, ui_backend):
+        _keymap, recorder = self._wire(ui_backend)
+        action = _Items()
+        action()
+        assert recorder.activated == []
+
+    def test_selection_does_not_refocus(self, ui_backend):
+        _keymap, recorder = self._wire(ui_backend)
+        action = _Items()
+        action()
+        chooser = ChooserAction._open[1]
+        chooser._finish(chooser._filtered[0], 0)
+        assert recorder.activated == []
+        assert action.chosen == [("*", "alpha", "a")]
+
+    def test_toggling_closed_does_not_refocus(self, ui_backend):
+        _keymap, recorder = self._wire(ui_backend)
+        action = _Items()
+        action()
+        action()  # same action again: closes it
+        assert ChooserAction._open is None
+        assert recorder.activated == []
+
+    def test_opting_in_restores_the_old_behaviour(self, ui_backend):
+        import os
+
+        _keymap, recorder = self._wire(ui_backend)
+
+        class _Focused(_Items):
+            activates = True
+
+        action = _Focused()
+        action()
+        assert recorder.activated == [os.getpid()]
+
+        chooser = ChooserAction._open[1]
+        chooser._finish(chooser._filtered[0], 0)
+        # ... and hands the focus back to the application it took it from.
+        original_pid = _keymap.focus.pid
+        assert recorder.activated == [os.getpid(), original_pid]
+
+
+class TestClipboardPaste:
+    """The settle delay existed only to let a re-activated application catch
+    up; with no activation there is nothing to wait for."""
+
+    def _wire(self, ui_backend, tmp_path):
+        from keyhac.actions import ClipboardChooserAction
+        from keyhac.core.clipboard_history import ClipboardHistory
+        from keyhac.core.keymap import Keymap
+        from keyhac.platform.base import ClipboardProvider
+
+        class _Board(ClipboardProvider):
+            def __init__(self):
+                self.text = None
+
+            def get_text(self):
+                return self.text
+
+            def set_text(self, s):
+                self.text = s
+
+            def poll(self):
+                return False
+
+        keymap = Keymap.get_instance()
+        keymap._clipboard_history = ClipboardHistory(
+            _Board(), str(tmp_path / "clipboard.json"))
+        pasted, deferred = [], []
+
+        class _Paste(ClipboardChooserAction):
+            def _paste(self):
+                pasted.append(True)
+
+        ui_backend.call_later = lambda delay, fn: deferred.append((delay, fn))
+        return keymap, _Paste(), pasted, deferred
+
+    def test_paste_is_immediate_without_activation(self, ui_backend, tmp_path):
+        keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
+        action._on_chosen_common("hello", 0)
+        assert pasted == [True]
+        assert deferred == []
+        assert keymap.clipboard_history.get_current() == "hello"
+
+    def test_paste_still_waits_when_the_chooser_took_focus(self, ui_backend,
+                                                           tmp_path):
+        _keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
+        type(action).activates = True
+        try:
+            action._on_chosen_common("hello", 0)
+        finally:
+            type(action).activates = False
+        assert pasted == []
+        assert len(deferred) == 1 and deferred[0][0] > 0
+
+    def test_shift_select_never_pastes(self, ui_backend, tmp_path):
+        from keyhac.core.const import MODKEY_SHIFT
+        _keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
+        action._on_chosen_common("hello", MODKEY_SHIFT)
+        assert pasted == [] and deferred == []

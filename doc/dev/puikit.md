@@ -61,9 +61,15 @@ Keyhac2-side usage notes:
   `activation_policy="accessory"`.
 - The console's WM_CLOSE hides instead of quitting (`main_window_close="hide"`);
   shown/hidden state persists via #84's visibility API.
-- The chooser deliberately activates our own process to take keyboard input, then
-  re-activates the original app on selection/cancel. A true non-activating chooser
-  needs an `NSPanel` with `nonactivatingPanel` — a possible future PuiKit extension.
+- The chooser is `WindowStyle(frameless=True, activates=False)` and is typed into
+  through the key hook, not through the window — see the Chooser notes in
+  [design-notes.md](design-notes.md). `frameless` is what makes it non-activating on
+  macOS: a titled `NSWindow` still becomes key when clicked. An `NSPanel` with
+  `nonactivatingPanel` is what a *titled* non-activating window would need, and is
+  still a possible future PuiKit extension; nothing needs it today.
+- Guaranteeing the window opens on the active Space would want a `WindowStyle` field
+  reaching `collectionBehavior` (`NSWindowCollectionBehaviorMoveToActiveSpace`).
+  Not needed while the chooser builds a fresh window per invocation.
 
 ## Known limit
 

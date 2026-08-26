@@ -199,4 +199,10 @@ def with_migemo(base: Matcher = None) -> Matcher:
 
 
 #: The matcher a candidate view uses when its caller names none.
-DEFAULT_MATCHER = SubstringMatcher()
+#:
+#: Substring plus Migemo, because the candidate window does not take OS
+#: keyboard focus and so cannot host an input method (discussion #112): for a
+#: localised list, romaji is the only way the filter reaches the rows.  With
+#: pymigemo absent this is exactly ``SubstringMatcher`` - ``with_migemo``
+#: unions, it never replaces - so it is safe as a default.
+DEFAULT_MATCHER = with_migemo()

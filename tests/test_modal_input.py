@@ -226,8 +226,47 @@ class TestNonActivatingChooser:
         fixture.up("LShift")
         assert flags == [MODKEY_SHIFT]
 
-    def test_an_activating_chooser_takes_no_grab(self, ui_backend):
+    def test_not_taking_focus_is_the_default(self, ui_backend):
         fixture, backend = ui_backend
         chooser = ChooserWindow(backend, [("*", "alpha", 1)])
+        assert chooser.window.window_style.activates is False
+        # Frameless is what makes it non-activating on macOS, so the two
+        # travel together rather than being independently settable.
+        assert chooser.window.window_style.frameless is True
+        assert fixture.keymap.modal_input_active()
+        chooser.dismiss()
+
+    def test_an_activating_chooser_takes_no_grab(self, ui_backend):
+        fixture, backend = ui_backend
+        chooser = ChooserWindow(backend, [("*", "alpha", 1)], activates=True)
+        assert chooser.window.window_style.frameless is False
         assert not fixture.keymap.modal_input_active()
         chooser.dismiss()
+
+    def test_escape_closes_the_window_even_while_an_action_runs(self, ui_backend):
+        """Esc is offered to a running ThreadedAction before the key tables,
+        but not while a candidate window holds the keyboard."""
+        import threading
+        from keyhac.core.action import ThreadedAction
+
+        fixture, _backend = ui_backend
+        started, release = threading.Event(), threading.Event()
+
+        class _Slow(ThreadedAction):
+            def run(self):
+                started.set()
+                release.wait(5)
+
+            def finished(self, result):
+                pass
+
+        _Slow()()
+        assert started.wait(5)
+
+        canceled = []
+        chooser = self._chooser(ui_backend,
+                                on_canceled=lambda: canceled.append(True))
+        fixture.stroke("Escape")
+        release.set()
+        assert canceled == [True]
+        assert not fixture.keymap.modal_input_active()

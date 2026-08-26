@@ -4,13 +4,32 @@ Replaces keyhac-mac's SwiftUI ChooserWindowView / keyhac-win's ListWindow:
 a search field + filtered list. Up/Down navigate, Enter chooses, Escape
 cancels.
 
-Filtering goes through a pluggable ``Matcher`` (discussion #112), defaulting
-to the multi-word AND substring behaviour inherited from keyhac-mac, so
-nothing shipped changes unless a caller asks for something else - Migemo
-(``matcher.with_migemo()``, issue #106) or 1.x's wildcards
-(``WildcardMatcher``). Rows are ``Candidate`` objects internally; the
-``(icon, label, *payload)`` tuples ``ChooserAction.list_items`` returns are
-adapted on the way in and handed back untouched on selection.
+Filtering goes through a pluggable ``Matcher`` (discussion #112): the
+multi-word AND substring behaviour inherited from keyhac-mac, unioned with
+Migemo so romaji finds Japanese (issue #106), and replaceable per source -
+``WildcardMatcher`` restores 1.x's ``*`` / ``?``. Rows are ``Candidate``
+objects internally; the ``(icon, label, *payload)`` tuples
+``ChooserAction.list_items`` returns are adapted on the way in and handed
+back untouched on selection.
+
+**The window does not take OS keyboard focus** (discussion #112). It used to,
+and that was never a decision anybody made: it is what a secondary PuiKit
+window does by default. Three things followed from it, all of which go away
+here - the console window came to the front alongside the chooser, because
+activation is app-scoped and there is no way to activate without it (macOS 26
+refuses ``activateWithOptions:`` for self-activation); reopening the chooser
+could jump to another Space, because the OS follows the app's frontmost
+window; and pasting needed a settle delay, because the target application had
+to be deactivated and reactivated around it.
+
+The keystrokes arrive through the key hook instead - see
+``keyhac.ui.keyroute`` for that route and, importantly, for what it cannot
+carry. The one real loss is IME composition, which is why Migemo is now part
+of the default matcher rather than an option: for a localised list, romaji
+matching is what makes the filter reach the rows at all.
+
+A source that genuinely needs an input method in the filter field asks for
+``activates=True`` and gets the old behaviour back, with the old costs.
 """
 
 from puikit import Panel, WindowStyle
@@ -43,8 +62,13 @@ _EVENT_MODKEYS = {
 class ChooserWindow:
     """items are (icon, label, *payload) tuples, or Candidate objects.
 
-    matcher: how the filter text is matched against the candidates; the
-    keyhac-mac substring behaviour by default.
+    matcher: how the filter text is matched against the candidates.
+
+    activates: whether the window takes OS keyboard focus.  The default is
+    not to - see the module docstring.  A non-activating window is also
+    frameless, because that is what makes it non-activating on macOS: a
+    titled NSWindow still becomes key when clicked, a borderless one cannot
+    become key at all.  The two are one decision, so they are one parameter.
 
     center_on: a screen rect (x, y, w, h) to center the window on - the
     focused window's frame (issue #4); clamp_to keeps the result on the
@@ -53,7 +77,7 @@ class ChooserWindow:
 
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
-                 activates=True):
+                 activates=False):
         self._items = [Candidate.from_item(item) for item in items]
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._filtered = list(self._items)
@@ -66,7 +90,7 @@ class ChooserWindow:
             72, 20, title=title,
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
-                              activates=activates))
+                              activates=activates, frameless=not activates))
         if center_on is not None:
             self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.

@@ -47,6 +47,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Romaji-finds-Japanese filtering in the chooser (issue #106).  Deliberately
+# optional and deliberately pinned: keyhac/core/migemo.py degrades to plain
+# matching when it is absent, and it carries a runtime patch for a dictionary
+# bug in 0.0.1 that reaches into the package's internals.  Whether the shipped
+# bundles should include it is a separate, open decision - without it a
+# localised candidate list cannot be filtered by name at all, because the
+# chooser no longer takes the keyboard focus an input method would need.
+migemo = ["pymigemo==0.0.1"]
 
 [project.scripts]
 keyhac = "keyhac.main:main"
