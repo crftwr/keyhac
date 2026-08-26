@@ -20,11 +20,18 @@ class _Items(ChooserAction):
 
 
 @pytest.fixture
-def ui_backend(engine):
+def keyhac_engine(engine):
+    """The Keymap the actions look up, plus its fake hook and focus provider.
+    A separate fixture from ui_backend so a test can drive both; pytest hands
+    the same instance to each."""
     def configure(keymap):
         keymap.define_keytable(focus_path_pattern="*")
 
-    engine(configure)  # registers the Keymap instance the actions look up
+    return engine(configure)
+
+
+@pytest.fixture
+def ui_backend(keyhac_engine):
     from puikit.backends.memory_backend import MemoryBackend
     backend = MemoryBackend(width=100, height=30)
     backend.open()
@@ -32,6 +39,7 @@ def ui_backend(engine):
     yield backend
     runtime.backend = None
     ChooserAction._open = None
+    ChooserAction._stop_watch()
     backend.close()
 
 
@@ -317,3 +325,127 @@ class TestClipboardPaste:
         _keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
         action._on_chosen_common("hello", MODKEY_SHIFT)
         assert pasted == [] and deferred == []
+
+
+class TestAutoDismiss:
+    """A chooser is transient: it closes when the world it was opened over
+    moves (discussion #112).  Without this, one could survive on another
+    virtual desktop and the hotkey would toggle closed a window the user
+    could not see - which read as the chooser refusing to open."""
+
+    def _open(self, ui_backend):
+        action = _Items()
+        action()
+        assert ChooserAction._open is not None
+        return action, ChooserAction._open[1]
+
+    def _move_focus_to(self, provider, *, pid, title):
+        from keyhac.platform.base import Focus
+        provider.focus = Focus(app_name="other", pid=pid, window_title=title,
+                               class_name=None, path=f"/other/X({title})")
+
+    def _tick(self, ui_backend):
+        """Run the watch's pending timer once."""
+        ChooserAction._watch._tick()
+
+    def test_survives_while_nothing_moves(self, ui_backend):
+        _action, chooser = self._open(ui_backend)
+        self._tick(ui_backend)
+        assert ChooserAction._open is not None
+        assert not chooser._done
+
+    def test_closes_when_another_window_comes_forward(self, keyhac_engine,
+                                                     ui_backend):
+        _action, chooser = self._open(ui_backend)
+        self._move_focus_to(keyhac_engine.focus_provider, pid=99, title="Other Window")
+        self._tick(ui_backend)
+        assert ChooserAction._open is None
+        assert chooser._done
+
+    def test_closes_when_the_same_app_shows_a_different_window(
+            self, keyhac_engine, ui_backend):
+        """A desktop switch reads as this: same application, other window.
+        Keying on the pid alone would miss it."""
+        original = keyhac_engine.focus_provider.focus
+        _action, chooser = self._open(ui_backend)
+        self._move_focus_to(keyhac_engine.focus_provider, pid=original.pid,
+                            title="Window On The Other Desktop")
+        self._tick(ui_backend)
+        assert ChooserAction._open is None
+
+    def test_in_window_focus_moves_do_not_close_it(self, keyhac_engine,
+                                                   ui_backend):
+        """The macOS focus path runs down to the focused element, so Tabbing
+        between fields changes it.  The watch must not react to that."""
+        from keyhac.platform.base import Focus
+        original = keyhac_engine.focus_provider.focus
+        _action, chooser = self._open(ui_backend)
+        keyhac_engine.focus_provider.focus = Focus(
+            app_name=original.app_name, pid=original.pid,
+            window_title=original.window_title, class_name=original.class_name,
+            path=original.path + "/AXTextField(Other Field)")
+        self._tick(ui_backend)
+        assert ChooserAction._open is not None
+
+    def test_an_unreadable_focus_closes_nothing(self, keyhac_engine, ui_backend):
+        _action, chooser = self._open(ui_backend)
+        keyhac_engine.focus_provider.focus = None
+        self._tick(ui_backend)
+        assert ChooserAction._open is not None
+
+    def test_a_click_outside_closes_it(self, keyhac_engine, ui_backend):
+        _action, chooser = self._open(ui_backend)
+        x, y, w, h = chooser.window.frame_px()
+        keyhac_engine.hook._cursor = (int(x + w + 50), int(y + h + 50))
+        keyhac_engine.hook.mouse()
+        assert ChooserAction._open is None
+        assert chooser._done
+
+    def test_a_click_on_the_chooser_does_not(self, keyhac_engine, ui_backend):
+        _action, chooser = self._open(ui_backend)
+        x, y, w, h = chooser.window.frame_px()
+        keyhac_engine.hook._cursor = (int(x + w / 2), int(y + h / 2))
+        keyhac_engine.hook.mouse()
+        assert ChooserAction._open is not None
+        assert not chooser._done
+
+    def test_dismissal_never_refocuses(self, keyhac_engine, ui_backend):
+        """The user moved away on purpose; pulling them back would undo it."""
+        from keyhac.core.keymap import Keymap
+
+        class _Recorder:
+            def __init__(self):
+                self.activated = []
+
+            def activate_pid(self, pid):
+                self.activated.append(pid)
+                return True
+
+        recorder = _Recorder()
+        Keymap.get_instance().app_control = recorder
+
+        class _Focused(_Items):
+            activates = True
+
+        action = _Focused()
+        action()
+        recorder.activated.clear()          # drop the open-time self-activation
+        self._move_focus_to(keyhac_engine.focus_provider, pid=99, title="Elsewhere")
+        ChooserAction._watch._tick()
+        assert ChooserAction._open is None
+        assert recorder.activated == []
+
+    def test_dismissal_releases_the_key_grab(self, keyhac_engine, ui_backend):
+        _action, _chooser = self._open(ui_backend)
+        assert keyhac_engine.keymap.modal_input_active()
+        self._move_focus_to(keyhac_engine.focus_provider, pid=99, title="Elsewhere")
+        ChooserAction._watch._tick()
+        assert not keyhac_engine.keymap.modal_input_active()
+
+    def test_the_watch_is_torn_down_with_the_chooser(self, ui_backend):
+        from keyhac.core.keymap import Keymap
+        _action, chooser = self._open(ui_backend)
+        assert Keymap.get_instance().on_mouse_button is not None
+        chooser._finish(chooser._filtered[0], 0)
+        assert ChooserAction._watch is None
+        assert Keymap.get_instance().on_mouse_button is None

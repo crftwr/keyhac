@@ -149,6 +149,25 @@ before running it.
   matches — see [Migemo](#migemo) below.
 - Placement: centered on the focused window, clamped to its screen; one chooser at a
   time — the same action's hotkey toggles it closed, a different chooser replaces it.
+- **It closes when the user moves away from it** (`_DismissWatch` in `actions.py`).
+  A chooser is transient, and nothing used to end it but Enter/Esc/the hotkey — so
+  one could survive on another virtual desktop, and the hotkey then toggled closed a
+  window the user could not see, which read as the chooser refusing to open. Two
+  triggers: the frontmost window changed, or a click landed outside it. The first is
+  one observation covering three cases — a window belongs to exactly one desktop, so
+  a desktop switch necessarily changes which window is frontmost, as do an app
+  switch and a window switch. It is keyed on `(pid, window title)` and deliberately
+  **not** on the focus path: the macOS path runs down to the focused *element*, so
+  it changes when the user Tabs between fields and would pull the chooser out from
+  under them. Both triggers treat "could not read it" as "change nothing".
+  Dismissal never refocuses anyone — the user moved away on purpose.
+- Polled (250 ms, only while one is open) rather than pushed: the native
+  notifications differ per OS (`NSWorkspaceActiveSpaceDidChange`,
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`) and would be two platform-layer
+  implementations, while `FocusProvider.get_focus()` already runs on every key
+  down — a user typing pays it faster than the watch does.
+- An armed multi-stroke prefix does **not** get the same treatment yet: it still
+  survives a desktop or application switch. Same bug class, undecided.
 - **It does not take OS keyboard focus** (discussion #112). It used to, which was not
   a decision anybody made — it is what a secondary PuiKit window does by default —
   and three things followed from it, all now gone: the console came to the front

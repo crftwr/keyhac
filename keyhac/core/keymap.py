@@ -229,6 +229,7 @@ class Keymap:
         self._mcp_timer = None              # closes the window on its own
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
+        self.on_mouse_button = None         # callable() - see on_mouse_event
         self._main_thread_dispatcher = None  # callable(callback) - see below
 
         from keyhac.core.replay import KeyReplayBuffer
@@ -754,6 +755,34 @@ class Keymap:
             else:
                 return bool(self._on_key_up(event.vk))
 
+    def read_focus(self) -> Focus | None:
+        """Ask the platform where the focus is *now*.
+
+        `focus` is the snapshot taken during key dispatch, which is what a
+        key table should be resolved against; this bypasses it for a caller
+        that needs to notice a change no keystroke reported - an open
+        candidate window watching for the user to move somewhere else.
+
+        lazydocs: ignore
+        """
+        try:
+            return self._focus_provider.get_focus()
+        except Exception:
+            logger.debug("Focus read failed.")
+            return None
+
+    def cursor_pos(self) -> tuple[int, int] | None:
+        """The pointer position in portable top-left screen pixels - the same
+        space `WindowHandle.frame_px()` and `screen_frames()` report, so the
+        three compare directly. None where the platform does not offer it.
+
+        lazydocs: ignore
+        """
+        try:
+            return self._hook.cursor_pos()
+        except (NotImplementedError, Exception):
+            return None
+
     def _escape_vk(self) -> int:
         """Esc's vk for the active layout, resolved once and remembered."""
         vk = getattr(self, "_escape_vk_cached", None)
@@ -777,10 +806,22 @@ class Keymap:
         while holding a one-shot key means the hold was a drag/click
         modifier, not a tap).
 
+        `on_mouse_button` is the UI's wiring point on the same signal - an
+        open candidate window uses it to dismiss itself when the click landed
+        somewhere else. Called outside the lock: it does UI work, and the
+        engine has nothing left to protect by then.
+
         lazydocs: ignore
         """
         with self._lock:
             self._last_keydown = None
+        observer = self.on_mouse_button
+        if observer is not None:
+            try:
+                observer()
+            except Exception:
+                logger.error(f"on_mouse_button callback failed:\n"
+                             f"{traceback.format_exc()}")
 
     # ------------------------------------------------------------------
     # Key dispatch (ported from keyhac-mac)
