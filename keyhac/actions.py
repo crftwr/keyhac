@@ -35,8 +35,16 @@ class ChooserAction:
     ```
     """
 
+
     #: The one chooser currently open: (action, window, original_pid).
     _open = None
+
+    #: How the filter text is matched against the rows.  None means the
+    #: default (multi-word, case-insensitive substring).  Set it per action
+    #: to pick something else - ``keyhac.core.matcher.with_migemo()`` so
+    #: romaji finds Japanese labels, or ``WildcardMatcher()`` for 1.x's
+    #: ``*`` / ``?``.
+    matcher = None
 
     def __repr__(self):
         return f"{type(self).__name__}()"
@@ -95,7 +103,8 @@ class ChooserAction:
 
         chooser = ChooserWindow(runtime.backend, self.list_items(),
                                 on_selected=_on_selected, on_canceled=_on_canceled,
-                                center_on=center_on, clamp_to=clamp_to)
+                                center_on=center_on, clamp_to=clamp_to,
+                                matcher=self.matcher)
         ChooserAction._open = (self, chooser, original_pid)
 
         # Keyhac runs as an accessory (agent) app, so the chooser must

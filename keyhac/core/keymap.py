@@ -210,6 +210,7 @@ class Keymap:
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
+        self._modal_input = None            # sticky key grab - see push_modal_input
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
         self._vk_vk_map = {}                # replace_key map
@@ -878,6 +879,21 @@ class Keymap:
 
         logger.debug(f"INPUT    : {key}")
 
+        # A key grab (push_modal_input) outranks every table: the candidate
+        # window that owns it is not focused, so this is the only route its
+        # keystrokes have.  Modifier keys fall through - their bookkeeping
+        # already ran in the caller, and consuming them here would strand
+        # the modifier state of the application underneath.
+        if self._modal_input is not None and key.vk not in self._vk_mod_map:
+            if key.down and not key.oneshot:
+                try:
+                    self._modal_input(key)
+                except Exception:
+                    logger.error(f"Modal input handler failed:\n"
+                                 f"{traceback.format_exc()}")
+                    self._modal_input = None
+            return True
+
         action = None
         if key in self._unified_keytable:
             action = self._unified_keytable[key]
@@ -917,6 +933,60 @@ class Keymap:
                         raise TypeError(f"Invalid key action: {item!r}")
 
         return True
+
+    # ------------------------------------------------------------------
+    # Modal input (spike - discussion #112)
+
+    def push_modal_input(self, handler) -> None:
+        """Route every non-modifier key to `handler` until it is popped.
+
+        The mechanism a non-activating candidate window needs: the window
+        never takes OS keyboard focus, so its keystrokes have to arrive
+        through the hook that is already installed.
+
+        A grab is the same kind of state a multi-stroke prefix already is -
+        "the next keystroke resolves somewhere other than the active key
+        tables, and unmatched keys are consumed rather than passed through"
+        - differing in only two properties: it does not leave after one key,
+        and it has a catch-all instead of a table.  So the two are kept
+        mutually exclusive by construction: pushing a grab disarms any armed
+        prefix, and there is never a prefix and a grab up at once.  Whether
+        they should share one slot outright, rather than one policy, is the
+        open question this spike exists to inform.
+
+        Esc is the one key that does not arrive here first: `on_key_event`
+        offers it to a running `ThreadedAction` before the tables are
+        consulted, and consumes it if that stopped something.  With a grab
+        up and an action running, Esc therefore cancels the action and the
+        candidate window stays open.  That ordering is deliberate for the
+        action, and probably wrong for the window; it is one of the
+        decisions a real implementation has to make explicitly.
+
+        Args:
+            handler: Called with the `KeyCondition` of each non-modifier key
+                *down* (never a one-shot echo, never a key up).  Modifier
+                keys keep their normal bookkeeping so the handler sees
+                correct modifier state; every non-modifier key is consumed,
+                so the focused application sees nothing while the grab is up.
+
+        lazydocs: ignore
+        """
+        self._leave_multi_stroke()
+        self._modal_input = handler
+
+    def pop_modal_input(self) -> None:
+        """Release the grab pushed by :meth:`push_modal_input`.
+
+        lazydocs: ignore
+        """
+        self._modal_input = None
+
+    def modal_input_active(self) -> bool:
+        """Whether a key grab is up.
+
+        lazydocs: ignore
+        """
+        return self._modal_input is not None
 
     # ------------------------------------------------------------------
     # Multi-stroke

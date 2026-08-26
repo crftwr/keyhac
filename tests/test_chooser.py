@@ -63,7 +63,9 @@ class TestChooserSingleInstance:
         action = _Items()
         action()
         chooser = ChooserAction._open[1]
-        chooser._finish(("*", "alpha", "a"), 0)
+        # The rows are Candidates internally (discussion #112); a tuple
+        # source still gets its own tuple back in on_chosen.
+        chooser._finish(chooser._filtered[0], 0)
         assert ChooserAction._open is None
         assert action.chosen == [("*", "alpha", "a")]
 
@@ -123,3 +125,67 @@ class TestChooserCentering:
         chooser = self._window(ui_backend, center_on=(-500, -500, 100, 100),
                                clamp_to=(0, 0, 800, 600))
         assert chooser.window.frame_px() == (0.0, 0.0, 72.0, 20.0)
+
+
+class TestChooserFiltering:
+    """Filtering goes through a pluggable Matcher (discussion #112); the
+    default reproduces the multi-word substring behaviour shipped in 2.0."""
+
+    def _chooser(self, ui_backend, **kwargs):
+        from keyhac.ui.chooser import ChooserWindow
+        items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
+        return ChooserWindow(ui_backend, items, **kwargs)
+
+    def _labels(self, chooser):
+        return [c.display for c in chooser._filtered]
+
+    def test_default_is_multi_word_substring(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        chooser._on_filter_change("al")
+        assert self._labels(chooser) == ["alpha", "alpine"]
+        chooser._on_filter_change("al ne")
+        assert self._labels(chooser) == ["alpine"]
+
+    def test_empty_query_restores_every_row(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        chooser._on_filter_change("al")
+        chooser._on_filter_change("")
+        assert self._labels(chooser) == ["alpha", "beta", "alpine"]
+
+    def test_wildcards_are_literal_under_the_default_matcher(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        chooser._on_filter_change("al*a")
+        assert self._labels(chooser) == []
+
+    def test_wildcard_matcher_can_be_selected(self, ui_backend):
+        from keyhac.core.matcher import WildcardMatcher
+        chooser = self._chooser(ui_backend, matcher=WildcardMatcher())
+        chooser._on_filter_change("al*a")
+        assert self._labels(chooser) == ["alpha"]
+
+    def test_candidate_rows_are_accepted_directly(self, ui_backend):
+        from keyhac.core.candidate import Candidate
+        from keyhac.ui.chooser import ChooserWindow
+
+        chosen = []
+        target = Candidate(display="notes.txt", match_text="/home/u/notes.txt",
+                           payload=object())
+        chooser = ChooserWindow(
+            ui_backend, [target, Candidate(display="other")],
+            on_selected=lambda c, mod: chosen.append(c))
+        # Matched on the full path, displayed as the basename.
+        chooser._on_filter_change("home")
+        assert self._labels(chooser) == ["notes.txt"]
+        chooser._finish(chooser._filtered[0], 0)
+        assert chosen == [target]
+
+    def test_action_can_choose_its_matcher(self, ui_backend):
+        from keyhac.core.matcher import WildcardMatcher
+
+        class _Wild(_Items):
+            matcher = WildcardMatcher()
+
+        action = _Wild()
+        action()
+        chooser = ChooserAction._open[1]
+        assert chooser._matcher is _Wild.matcher
