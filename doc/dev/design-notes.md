@@ -160,6 +160,12 @@ before running it.
   **not** on the focus path: the macOS path runs down to the focused *element*, so
   it changes when the user Tabs between fields and would pull the chooser out from
   under them. Both triggers treat "could not read it" as "change nothing".
+  Keyhac's **own process is also "could not read it"**: the chooser is our
+  window, so the focus landing on us is the chooser's doing, not the user's —
+  on macOS a click on the popup can make us the AX-focused application even
+  though a borderless window cannot take key status, and the activating path
+  focuses us on purpose. Without that check a click on the chooser could close
+  it, and an activating chooser would have closed itself on its first tick.
   Dismissal never refocuses anyone — the user moved away on purpose.
 - Polled (250 ms, only while one is open) rather than pushed: the native
   notifications differ per OS (`NSWorkspaceActiveSpaceDidChange`,

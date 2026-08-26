@@ -449,3 +449,47 @@ class TestAutoDismiss:
         chooser._finish(chooser._filtered[0], 0)
         assert ChooserAction._watch is None
         assert Keymap.get_instance().on_mouse_button is None
+
+    def test_focus_landing_on_keyhac_itself_closes_nothing(
+            self, keyhac_engine, ui_backend):
+        """Clicking the popup can make Keyhac the AX-focused application on
+        macOS even though a borderless window cannot take key status. That is
+        the chooser's own doing, not the user leaving."""
+        import os
+        _action, chooser = self._open(ui_backend)
+        self._move_focus_to(keyhac_engine.focus_provider,
+                            pid=os.getpid(), title="Keyhac")
+        ChooserAction._watch._tick()
+        assert ChooserAction._open is not None
+        assert not chooser._done
+
+    def test_an_activating_chooser_survives_its_own_activation(
+            self, keyhac_engine, ui_backend):
+        """activates=True focuses us on purpose; the watch is armed before
+        that happens, so without the self-check the first tick would close
+        the chooser the user just opened."""
+        import os
+
+        class _Focused(_Items):
+            activates = True
+
+        action = _Focused()
+        action()
+        self._move_focus_to(keyhac_engine.focus_provider,
+                            pid=os.getpid(), title="Keyhac")
+        ChooserAction._watch._tick()
+        assert ChooserAction._open is not None
+
+    def test_moving_on_from_keyhac_still_closes_it(
+            self, keyhac_engine, ui_backend):
+        """The self-check is "no reading", not "never close": once the focus
+        lands somewhere that is not us, the watch works again."""
+        import os
+        _action, chooser = self._open(ui_backend)
+        self._move_focus_to(keyhac_engine.focus_provider,
+                            pid=os.getpid(), title="Keyhac")
+        ChooserAction._watch._tick()
+        self._move_focus_to(keyhac_engine.focus_provider,
+                            pid=99, title="Somewhere Else")
+        ChooserAction._watch._tick()
+        assert ChooserAction._open is None

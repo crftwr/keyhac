@@ -5,6 +5,7 @@ they are the user-facing glue between the two.
 """
 
 import datetime
+import os
 
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.action import ThreadedAction
@@ -73,9 +74,23 @@ class _DismissWatch:
 
     @staticmethod
     def _frontmost():
+        """Where the user is, or None for "no usable reading".
+
+        Keyhac's own process is deliberately no reading at all.  The chooser
+        is our window, so the focus landing on us is an artefact of the
+        chooser itself rather than the user going anywhere: on macOS a click
+        on the popup can make us the AX-focused application even though a
+        borderless window cannot take key status, and the activating path
+        (`activates = True`) puts the focus on us on purpose.  Counting
+        either as "the user moved away" is how a click on the chooser could
+        close it, and would have closed an activating chooser on its first
+        tick.
+        """
         keymap = Keymap.get_instance()
         focus = keymap.read_focus() if keymap is not None else None
-        return (focus.pid, focus.window_title) if focus is not None else None
+        if focus is None or focus.pid == os.getpid():
+            return None
+        return (focus.pid, focus.window_title)
 
     def _arm(self) -> None:
         from keyhac.ui import runtime
@@ -97,7 +112,13 @@ class _DismissWatch:
     def _clicked(self) -> None:
         if self._stopped or self._inside():
             return
-        logger.debug("Chooser dismissed: click outside it.")
+        # Coordinates in the message on purpose: if this ever fires for a
+        # click that was visibly on the popup, the two numbers say whether
+        # the geometry or the trigger is at fault.
+        keymap = Keymap.get_instance()
+        logger.debug(f"Chooser dismissed: click at "
+                     f"{keymap.cursor_pos() if keymap else None} is outside "
+                     f"{self._chooser.window.frame_px()}.")
         self._fire()
 
     def _inside(self) -> bool:
@@ -247,7 +268,6 @@ class ChooserAction:
             # is app-scoped, so it also brings the console forward and can
             # follow the app to another Space - the reason the default is
             # not to do it (discussion #112).
-            import os
             keymap.app_control.activate_pid(os.getpid())
 
     @staticmethod
