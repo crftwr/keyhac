@@ -258,24 +258,26 @@ def mouse_event(h, event_type, source_id=HID_ID):
 
 def test_real_mouse_down_calls_on_mouse_and_passes(h):
     cancels = []
-    h.hook._on_mouse = lambda: cancels.append(1)
+    h.hook._on_mouse = cancels.append
     event = mouse_event(h, h.Q.kCGEventLeftMouseDown)
     assert h.deliver(event) is event         # observation only, never consumed
-    assert cancels == [1]
+    assert cancels == ["button"]
     assert h.keys == []                      # never enters the key path
 
 
 def test_scroll_wheel_cancels_one_shot_too(h):
+    """...and reports itself as a wheel, which is not interchangeable with a
+    button press: an open chooser dismisses on the second, not the first."""
     cancels = []
-    h.hook._on_mouse = lambda: cancels.append(1)
+    h.hook._on_mouse = cancels.append
     event = mouse_event(h, h.Q.kCGEventScrollWheel)
     assert h.deliver(event) is event
-    assert cancels == [1]
+    assert cancels == ["wheel"]
 
 
 def test_own_and_replay_mouse_output_do_not_cancel(h):
     cancels = []
-    h.hook._on_mouse = lambda: cancels.append(1)
+    h.hook._on_mouse = cancels.append
     for source_id in (TRANSLATED_ID, REPLAY_ID):
         event = mouse_event(h, h.Q.kCGEventLeftMouseDown, source_id)
         assert h.deliver(event) is event
@@ -287,17 +289,17 @@ def test_mouse_events_bypass_the_deferral_queue(h):
     # deferral machinery orders keyboard events, and motion is not tapped,
     # so a re-posted click would land after moves that followed it.
     cancels = []
-    h.hook._on_mouse = lambda: cancels.append(1)
+    h.hook._on_mouse = cancels.append
     h.hook.send([(0x04, True)])              # key batch in flight
     event = mouse_event(h, h.Q.kCGEventRightMouseDown)
     assert h.deliver(event) is event         # passed straight through
     assert h.hook._deferred_real_events == []
-    assert cancels == [1]
+    assert cancels == ["button"]
     assert h.hook._num_pending_virtual == 1  # and the key ledger untouched
 
 
 def test_mouse_handler_error_passes_event_through(h):
-    def boom():
+    def boom(kind):
         raise RuntimeError("boom")
     h.hook._on_mouse = boom
     event = mouse_event(h, h.Q.kCGEventLeftMouseDown)

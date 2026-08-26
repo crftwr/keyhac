@@ -62,10 +62,10 @@ if sys.platform == "win32":
     WM_XBUTTONDOWN = 0x020B
     WM_MOUSEWHEEL = 0x020A
     WM_MOUSEHWHEEL = 0x020E
+    MOUSE_WHEEL_MSGS = frozenset([WM_MOUSEWHEEL, WM_MOUSEHWHEEL])
     MOUSE_CANCEL_MSGS = frozenset([
         WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN,
-        WM_MOUSEWHEEL, WM_MOUSEHWHEEL,
-    ])
+    ]) | MOUSE_WHEEL_MSGS
 
     LLKHF_EXTENDED = 0x01
     LLKHF_INJECTED = 0x10
@@ -293,7 +293,8 @@ class WinInputHook(InputHook):
             if int(mouse.dwExtraInfo) not in (EXTRA_INFO_OWN, EXTRA_INFO_REPLAY):
                 try:
                     if self._on_mouse is not None:
-                        self._on_mouse()
+                        self._on_mouse(
+                            "wheel" if w_param in MOUSE_WHEEL_MSGS else "button")
                 except Exception:
                     logger.error("Mouse handler raised; event passed through.")
         return user32.CallNextHookEx(None, n_code, w_param, l_param)

@@ -800,21 +800,28 @@ class Keymap:
             # Modifier key state is not reliable anymore. Resetting.
             self._modifier = 0
 
-    def on_mouse_event(self) -> None:
+    def on_mouse_event(self, kind: str = "button") -> None:
         """InputHook on_mouse callback: physical mouse button/wheel input
         cancels a pending one-shot modifier (keyhac-win behavior - clicking
         while holding a one-shot key means the hold was a drag/click
         modifier, not a tap).
 
-        `on_mouse_button` is the UI's wiring point on the same signal - an
-        open candidate window uses it to dismiss itself when the click landed
-        somewhere else. Called outside the lock: it does UI work, and the
+        `on_mouse_button` is the UI's wiring point on the same signal, and it
+        hears about **buttons only**. A wheel turn cancels a one-shot the same
+        way a click does, but it is not the user going anywhere: macOS scrolls
+        the window under the pointer without focusing it, so an open candidate
+        window that dismissed on it would vanish whenever the user nudged a
+        background list. Spotlight does not, and neither does this.
+
+        The observer is called outside the lock: it does UI work, and the
         engine has nothing left to protect by then.
 
         lazydocs: ignore
         """
         with self._lock:
             self._last_keydown = None
+        if kind != "button":
+            return
         observer = self.on_mouse_button
         if observer is not None:
             try:

@@ -160,6 +160,11 @@ before running it.
   **not** on the focus path: the macOS path runs down to the focused *element*, so
   it changes when the user Tabs between fields and would pull the chooser out from
   under them. Both triggers treat "could not read it" as "change nothing".
+  **Buttons only, never the wheel.** The mouse hook fires on both, and both
+  still cancel a one-shot — but macOS scrolls the window under the pointer
+  without focusing it, so dismissing on a wheel turn made the chooser vanish
+  whenever the user nudged a background list. Spotlight survives that; so
+  does this. `InputHook`'s `on_mouse` carries `"button"` / `"wheel"` for it.
   Keyhac's **own process is also "could not read it"**: the chooser is our
   window, so the focus landing on us is the chooser's doing, not the user's —
   on macOS a click on the popup can make us the AX-focused application even

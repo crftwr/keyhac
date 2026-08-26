@@ -493,3 +493,23 @@ class TestAutoDismiss:
                             pid=99, title="Somewhere Else")
         ChooserAction._watch._tick()
         assert ChooserAction._open is None
+
+    def test_a_wheel_turn_outside_does_not_close_it(self, keyhac_engine,
+                                                    ui_backend):
+        """macOS scrolls the window under the pointer without focusing it, so
+        a wheel turn over a background window is not the user leaving.
+        Spotlight survives it too."""
+        _action, chooser = self._open(ui_backend)
+        x, y, w, h = chooser.window.frame_px()
+        keyhac_engine.hook._cursor = (int(x + w + 50), int(y + h + 50))
+        keyhac_engine.hook.mouse("wheel")
+        assert ChooserAction._open is not None
+        assert not chooser._done
+
+    def test_a_wheel_turn_still_cancels_a_one_shot(self, keyhac_engine,
+                                                   ui_backend):
+        """Only the dismissal is button-only; the one-shot cancellation this
+        signal was originally for still fires on either."""
+        keyhac_engine.keymap._last_keydown = 1
+        keyhac_engine.hook.mouse("wheel")
+        assert keyhac_engine.keymap._last_keydown is None

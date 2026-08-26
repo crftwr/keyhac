@@ -67,10 +67,10 @@ class FakeInputHook(InputHook):
 
     # Test helpers ---------------------------------------------------------
 
-    def mouse(self) -> None:
-        """Deliver one physical mouse button/wheel notification."""
+    def mouse(self, kind: str = "button") -> None:
+        """Deliver one physical mouse notification - "button" or "wheel"."""
         if self._on_mouse is not None:
-            self._on_mouse()
+            self._on_mouse(kind)
 
     def key(self, vk: int, down: bool, kind: str = "real") -> bool:
         """Deliver one key event to the engine; returns the consume decision."""

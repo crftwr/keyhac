@@ -98,18 +98,23 @@ class InputHook(ABC):
     def install(self,
                 on_key: Callable[[KeyEvent], bool],
                 on_restored: Callable[[], None],
-                on_mouse: Callable[[], None] | None = None) -> None:
+                on_mouse: Callable[[str], None] | None = None) -> None:
         """Install the hook. on_key returns True to consume the event and is
         called synchronously on the thread that runs the event loop.
         on_restored is called when the OS disabled the hook and it was
         re-installed/re-enabled (modifier state must be reset).
 
-        on_mouse, when given, is called (no arguments; observation only,
-        mouse events are never consumed) on physical mouse button-down or
-        wheel input - the engine cancels a pending one-shot modifier on it
-        (keyhac-win's WH_MOUSE_LL behavior). Platforms without a mouse hook
-        may ignore it; a one-shot then simply survives mouse input, which is
-        what keyhac-mac always did."""
+        on_mouse, when given, is called on physical mouse button-down or
+        wheel input (observation only; mouse events are never consumed) with
+        the kind that happened - "button" or "wheel". The engine cancels a
+        pending one-shot modifier on either (keyhac-win's WH_MOUSE_LL
+        behavior), but the two are not interchangeable to everything: a
+        button press says the user acted somewhere, while a wheel turn scrolls
+        a background window without going anywhere, so an open candidate
+        window dismisses on the first and not the second.
+
+        Platforms without a mouse hook may ignore it; a one-shot then simply
+        survives mouse input, which is what keyhac-mac always did."""
 
     @abstractmethod
     def uninstall(self) -> None: ...

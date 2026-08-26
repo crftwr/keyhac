@@ -305,7 +305,9 @@ class MacInputHook(InputHook):
         if event_type in _MOUSE_CANCEL_TYPES:
             if kind == "real" and self._on_mouse is not None:
                 try:
-                    self._on_mouse()
+                    self._on_mouse(
+                        "wheel" if event_type == Quartz.kCGEventScrollWheel
+                        else "button")
                 except Exception:
                     logger.error("Mouse handler raised; event passed through.")
             return event
