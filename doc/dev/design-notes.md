@@ -157,6 +157,14 @@ before running it.
   Enter inert there would have been a regression. A click picks a row and moves
   the focus into the list but deliberately does **not** choose it — the payload
   can be a destructive action, so choosing stays an explicit Enter.
+- **Focus is marked one container at a time.** A child draws focused only if
+  every container above it is focused too, and a container marks only its *own*
+  direct child. The list sits inside the `Frame`, so focusing it means the page
+  focuses the frame and the frame focuses the list; naming the list to the page
+  marks nothing and the selection draws in the muted unfocused colour. The
+  symptom was a grey highlight that turned the accent colour only while a mouse
+  button was held — the press ran `focus_on_click`, which marks the frame
+  correctly, and the release handler then put it back to the broken form.
 - Placement: centered on the focused window, clamped to its screen; one chooser at a
   time — the same action's hotkey toggles it closed, a different chooser replaces it.
 - **It closes when the user moves away from it** (`_DismissWatch` in `actions.py`).

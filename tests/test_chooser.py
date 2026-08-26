@@ -699,3 +699,37 @@ class TestChooserFocus:
         assert chooser._list.selected == 1
         assert chooser.in_list
         assert chosen == [], "a click picks the row; Enter chooses it"
+
+    def test_the_selection_draws_as_active_while_the_list_has_focus(
+            self, ui_backend):
+        """Grey means "focus is elsewhere".  The list is nested inside the
+        Frame, and a child draws focused only if every container above it is
+        focused too - so naming the list to the page marks nothing and the
+        accent never appears."""
+        chooser = self._chooser(ui_backend)
+        theme = chooser.panel.theme
+        assert theme.selection_active_bg != theme.selection_inactive_bg
+
+        self._key(chooser, "down")
+        chooser.panel.render()
+        row = self._selected_row_bg(chooser)
+        assert row == theme.selection_active_bg, \
+            f"selection drew {row}, expected the focused accent"
+
+    def test_the_selection_is_not_drawn_at_all_from_the_field(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        theme = chooser.panel.theme
+        chooser.panel.render()
+        assert self._selected_row_bg(chooser) not in (
+            theme.selection_active_bg, theme.selection_inactive_bg)
+
+    def _selected_row_bg(self, chooser):
+        """Background of the row the list currently points at, read off the
+        rendered window."""
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        index = max(chooser._list.selected, 0)
+        label = chooser._filtered[index].display
+        for y, text in enumerate(rows):
+            if label in text:
+                return chooser.window.style_at(text.index(label), y).bg
+        raise AssertionError(f"{label!r} not found in the rendered window")

@@ -131,6 +131,11 @@ class ChooserWindow:
                               allow_no_selection=True,
                               on_select=self._on_row_clicked)
 
+        # Kept, not inlined: the list is nested inside it, and focus is marked
+        # one level at a time - see _focus_list.
+        self._frame = Frame(VSplit(Item(self._list, weight=1)),
+                            margin_px=_LIST_PAD_PX)
+
         self.panel = Panel(backend, window=self.window)
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
@@ -142,8 +147,7 @@ class ChooserWindow:
                 Item(self._edit, weight=1),
                 gap=0,
             ), size="content"),
-            Item(Frame(VSplit(Item(self._list, weight=1)), margin_px=_LIST_PAD_PX),
-                 weight=1),
+            Item(self._frame, weight=1),
             gap=0.3,
         )
         self._page = LayoutView(page, margin_px=_MARGIN_PX)
@@ -223,14 +227,20 @@ class ChooserWindow:
     def _focus_list(self, index: int = 0) -> None:
         if not self._filtered:
             return
-        self._page.set_focused(self._list)
+        # A container marks *its own* child as focused, and a child is focused
+        # only if every container above it is too.  The list sits inside the
+        # Frame, so the page has to focus the frame and the frame the list -
+        # naming the list to the page marks nothing, and the selection then
+        # draws in the muted unfocused colour (grey) instead of the accent.
+        self._page.set_focused(self._frame)
+        self._frame.set_focused(self._list)
         self._list.selected = index
 
     def _on_row_clicked(self, index: int, _label) -> None:
         """A click on a row moves the focus into the list along with the
         selection.  It deliberately does not confirm: the payload can be a
         destructive action, so choosing stays an explicit Enter."""
-        self._page.set_focused(self._list)
+        self._focus_list(index)
 
     def _on_filter_change(self, text: str) -> None:
         # The query is compiled once here, not once per candidate: Migemo's
