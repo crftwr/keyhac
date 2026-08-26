@@ -61,12 +61,13 @@ Keyhac2-side usage notes:
   `activation_policy="accessory"`.
 - The console's WM_CLOSE hides instead of quitting (`main_window_close="hide"`);
   shown/hidden state persists via #84's visibility API.
-- The chooser is `WindowStyle(frameless=True, activates=False)` and is typed into
-  through the key hook, not through the window — see the Chooser notes in
-  [design-notes.md](design-notes.md). `frameless` is what makes it non-activating on
-  macOS: a titled `NSWindow` still becomes key when clicked. An `NSPanel` with
-  `nonactivatingPanel` is what a *titled* non-activating window would need, and is
-  still a possible future PuiKit extension; nothing needs it today.
+- The chooser is `WindowStyle(activates=False, nonactivating_panel=True,
+  becomes_key_on_demand=True)` and is typed into through the key hook, not through
+  the window — see the Chooser notes in [design-notes.md](design-notes.md). The two
+  panel flags are puikit PR #126; without them a *click* on the popup activates
+  Keyhac even though a borderless window cannot become key, which deactivated the
+  window underneath and broke the paste. Inert on Windows, where
+  `WS_EX_NOACTIVATE` already refuses both.
 - Guaranteeing the window opens on the active Space would want a `WindowStyle` field
   reaching `collectionBehavior` (`NSWindowCollectionBehaviorMoveToActiveSpace`).
   Not needed while the chooser builds a fresh window per invocation.

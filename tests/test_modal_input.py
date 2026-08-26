@@ -229,17 +229,21 @@ class TestNonActivatingChooser:
     def test_not_taking_focus_is_the_default(self, ui_backend):
         fixture, backend = ui_backend
         chooser = ChooserWindow(backend, [("*", "alpha", 1)])
-        assert chooser.window.window_style.activates is False
-        # Frameless is what makes it non-activating on macOS, so the two
-        # travel together rather than being independently settable.
-        assert chooser.window.window_style.frameless is True
+        style = chooser.window.window_style
+        assert style.activates is False
+        # Clickable without taking the keyboard: on macOS that is one
+        # specific window kind, so the flags travel with `activates` rather
+        # than being independently settable into a combination that does not
+        # work (puikit PR #126).
+        assert style.nonactivating_panel is True
+        assert style.becomes_key_on_demand is True
         assert fixture.keymap.modal_input_active()
         chooser.dismiss()
 
     def test_an_activating_chooser_takes_no_grab(self, ui_backend):
         fixture, backend = ui_backend
         chooser = ChooserWindow(backend, [("*", "alpha", 1)], activates=True)
-        assert chooser.window.window_style.frameless is False
+        assert chooser.window.window_style.nonactivating_panel is False
         assert not fixture.keymap.modal_input_active()
         chooser.dismiss()
 

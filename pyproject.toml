@@ -39,6 +39,10 @@ dependencies = [
     # assigned selection into view (puikit PR #95), which is what keeps the
     # chooser's highlight on screen (issue #27). To develop against a local
     # checkout, set PUIKIT_DIR (see Makefile).
+    # NOTE: this floor is stale until PR #126 (WindowStyle.nonactivating_panel
+    # / becomes_key_on_demand) is released. The chooser passes both, so the
+    # bundles and the wheel must not ship against 1.0.12 - bump this to the
+    # release that carries them before the next Keyhac release.
     "puikit>=1.0.12",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',

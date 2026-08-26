@@ -22,6 +22,15 @@ could jump to another Space, because the OS follows the app's frontmost
 window; and pasting needed a settle delay, because the target application had
 to be deactivated and reactivated around it.
 
+Not taking focus is not the same as not being clickable, and on macOS it takes
+a specific window kind to be both. A borderless window cannot become key, but
+a *click* on it still activates the application - which deactivated the window
+underneath and left the paste with nowhere to go. The window is therefore a
+non-activating panel that takes key status only on demand (puikit PR #126):
+clicks reach it, the application is never activated, and the target keeps its
+focus, its caret and its selection. On Windows ``WS_EX_NOACTIVATE`` already
+refuses both, so the flags are inert there.
+
 The keystrokes arrive through the key hook instead - see
 ``keyhac.ui.keyroute`` for that route and, importantly, for what it cannot
 carry. The one real loss is IME composition, which is why Migemo is now part
@@ -65,10 +74,10 @@ class ChooserWindow:
     matcher: how the filter text is matched against the candidates.
 
     activates: whether the window takes OS keyboard focus.  The default is
-    not to - see the module docstring.  A non-activating window is also
-    frameless, because that is what makes it non-activating on macOS: a
-    titled NSWindow still becomes key when clicked, a borderless one cannot
-    become key at all.  The two are one decision, so they are one parameter.
+    not to - see the module docstring.  A non-activating window is built as
+    a PuiKit non-activating panel that only takes key status on demand:
+    clicks reach it, but the application underneath keeps its focus, its
+    caret and its selection, and its application is never brought forward.
 
     center_on: a screen rect (x, y, w, h) to center the window on - the
     focused window's frame (issue #4); clamp_to keeps the result on the
@@ -90,7 +99,13 @@ class ChooserWindow:
             72, 20, title=title,
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
-                              activates=activates, frameless=not activates))
+                              activates=activates,
+                              # macOS: an NSPanel that clicks reach without
+                              # activating us or taking the target's keyboard
+                              # (puikit PR #126).  No-op on Windows, where
+                              # WS_EX_NOACTIVATE already refuses both.
+                              nonactivating_panel=not activates,
+                              becomes_key_on_demand=not activates))
         if center_on is not None:
             self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.

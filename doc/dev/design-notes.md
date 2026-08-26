@@ -188,10 +188,24 @@ before running it.
   window; and pasting needed a 150 ms settle delay because the target application
   was deactivated and reactivated around it. `ChooserAction.activates = True` opts
   one source back into the old behavior, with the old costs.
-- Non-activating and frameless are **one decision, not two**: a titled macOS window
-  still becomes key when clicked, so only a borderless one is genuinely
-  non-activating. `ChooserWindow` derives `frameless` from `activates` rather than
-  letting the two be set to a combination that does not work.
+- **Not taking focus is not the same as not being clickable**, and on macOS being
+  both takes a specific window kind. `activates=False` alone stops the window
+  taking focus *when it opens*; it does not stop a **click** activating the
+  application — borderless prevents a window becoming key, not the app coming
+  forward. That was a real defect: clicking the chooser deactivated the window
+  underneath and the paste then had nowhere to go. The window is a PuiKit
+  non-activating panel that takes key status only on demand
+  (`nonactivating_panel` + `becomes_key_on_demand`, puikit PR #126): clicks reach
+  it, the application is never activated, and the target keeps its focus, caret
+  and selection. `WS_EX_NOACTIVATE` already refuses both on Windows, so the flags
+  are inert there. The flags travel with `activates` rather than being separately
+  settable, so no caller can ask for a combination that does not work.
+- The same PuiKit primitive without `becomes_key_on_demand` is a panel that *is*
+  key while the app stays inactive — the Spotlight shape, in which an input method
+  works. That is the route back to IME in the filter field if it is ever wanted;
+  it would also mean dropping the hook route on macOS (a key window gets the
+  keystrokes itself, and both paths at once would double every character) and
+  re-checking the paste, so it is a deliberate separate decision, not a default.
 - The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
   named keys; it cannot carry shifted punctuation (a vk does not say which glyph the
