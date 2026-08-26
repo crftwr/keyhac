@@ -198,8 +198,11 @@ before running it.
   (`nonactivating_panel` + `becomes_key_on_demand`, puikit PR #126): clicks reach
   it, the application is never activated, and the target keeps its focus, caret
   and selection. `WS_EX_NOACTIVATE` already refuses both on Windows, so the flags
-  are inert there. The flags travel with `activates` rather than being separately
-  settable, so no caller can ask for a combination that does not work.
+  are inert there. `frameless` goes with them: the panel's mask forces a title
+  bar (a borderless panel cannot become key), and `frameless` is what hides it
+  again and puts the content rect back to the frame rect. All of these travel
+  with `activates` rather than being separately settable, so no caller can ask
+  for a combination that does not work.
 - The same PuiKit primitive without `becomes_key_on_demand` is a panel that *is*
   key while the app stays inactive — the Spotlight shape, in which an input method
   works. That is the route back to IME in the filter field if it is ever wanted;

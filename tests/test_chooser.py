@@ -4,6 +4,8 @@ stack another chooser window). UI is tested against puikit's MemoryBackend."""
 import pytest
 
 from keyhac.actions import ChooserAction
+from keyhac.core.keymap import Keymap
+from keyhac.platform.base import Window, WindowProvider
 from keyhac.ui import runtime
 
 
@@ -327,6 +329,62 @@ class TestClipboardPaste:
         assert pasted == [] and deferred == []
 
 
+class _ActiveWindow(Window):
+    """The frontmost window, as the dismissal watch reads it."""
+
+    def __init__(self, pid, title):
+        self._pid = pid
+        self._title = title
+
+    @property
+    def title(self):
+        return self._title
+
+    @property
+    def app_name(self):
+        return "FakeApp"
+
+    @property
+    def pid(self):
+        return self._pid
+
+    def get_frame(self):
+        return (0, 0, 800, 600)
+
+    def set_frame(self, x, y, w=None, h=None):
+        return True
+
+    def activate(self):
+        return True
+
+    def is_minimized(self):
+        return False
+
+    def restore(self):
+        return True
+
+
+class _ActiveWindowProvider(WindowProvider):
+
+    def __init__(self):
+        self.active = _ActiveWindow(1, "Original Window")
+
+    def get_active_window(self):
+        return self.active
+
+    def list_windows(self):
+        return [self.active] if self.active else []
+
+    def screen_frames(self):
+        return [(0, 0, 1920, 1080)]
+
+    def screen_work_frames(self):
+        return [(0, 0, 1920, 1040)]
+
+    def window_frames(self):
+        return [w.get_frame() for w in self.list_windows()]
+
+
 class TestAutoDismiss:
     """A chooser is transient: it closes when the world it was opened over
     moves (discussion #112).  Without this, one could survive on another
@@ -339,14 +397,23 @@ class TestAutoDismiss:
         assert ChooserAction._open is not None
         return action, ChooserAction._open[1]
 
-    def _move_focus_to(self, provider, *, pid, title):
-        from keyhac.platform.base import Focus
-        provider.focus = Focus(app_name="other", pid=pid, window_title=title,
-                               class_name=None, path=f"/other/X({title})")
+    def _move_focus_to(self, _unused, *, pid, title):
+        """Put a different window in front.
+
+        The watch reads the *active window*, not the keyboard focus - a Focus
+        mixes its sources and our own popup can appear in half of it - so the
+        test drives the window provider.
+        """
+        provider = Keymap.get_instance().window_provider
+        provider.active = _ActiveWindow(pid, title)
 
     def _tick(self, ui_backend):
         """Run the watch's pending timer once."""
         ChooserAction._watch._tick()
+
+    @pytest.fixture(autouse=True)
+    def _windows(self, keyhac_engine):
+        keyhac_engine.keymap.window_provider = _ActiveWindowProvider()
 
     def test_survives_while_nothing_moves(self, ui_backend):
         _action, chooser = self._open(ui_backend)
@@ -375,23 +442,32 @@ class TestAutoDismiss:
 
     def test_in_window_focus_moves_do_not_close_it(self, keyhac_engine,
                                                    ui_backend):
-        """The macOS focus path runs down to the focused element, so Tabbing
-        between fields changes it.  The watch must not react to that."""
-        from keyhac.platform.base import Focus
-        original = keyhac_engine.focus_provider.focus
+        """Tabbing between fields moves the keyboard focus without changing
+        the window.  Reading the active window makes that a non-event by
+        construction; the macOS focus *path* would have changed."""
         _action, chooser = self._open(ui_backend)
-        keyhac_engine.focus_provider.focus = Focus(
-            app_name=original.app_name, pid=original.pid,
-            window_title=original.window_title, class_name=original.class_name,
-            path=original.path + "/AXTextField(Other Field)")
+        keyhac_engine.focus_provider.focus = None   # the focus route moved
         self._tick(ui_backend)
         assert ChooserAction._open is not None
 
-    def test_an_unreadable_focus_closes_nothing(self, keyhac_engine, ui_backend):
+    def test_an_unreadable_active_window_closes_nothing(self, keyhac_engine,
+                                                        ui_backend):
+        _action, chooser = self._open(ui_backend)
+        Keymap.get_instance().window_provider.active = None
+        self._tick(ui_backend)
+        assert ChooserAction._open is not None
+
+    def test_a_click_on_the_popup_cannot_look_like_a_move(self, keyhac_engine,
+                                                          ui_backend):
+        """The bug this read replaced: a Focus carries the frontmost app's pid
+        but the AX-focused app's window title, and clicking the popup turns
+        the title into ours while the pid still says the target.  The active
+        window never reports our popup at all."""
         _action, chooser = self._open(ui_backend)
         keyhac_engine.focus_provider.focus = None
         self._tick(ui_backend)
         assert ChooserAction._open is not None
+        assert not chooser._done
 
     def test_a_click_outside_closes_it(self, keyhac_engine, ui_backend):
         _action, chooser = self._open(ui_backend)

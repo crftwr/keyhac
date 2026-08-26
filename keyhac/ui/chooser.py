@@ -100,6 +100,9 @@ class ChooserWindow:
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
                               activates=activates,
+                              # The panel's mask forces a title bar; frameless
+                              # hides it and restores content == frame.
+                              frameless=not activates,
                               # macOS: an NSPanel that clicks reach without
                               # activating us or taking the target's keyboard
                               # (puikit PR #126).  No-op on Windows, where

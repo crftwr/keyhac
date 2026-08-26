@@ -237,6 +237,8 @@ class TestNonActivatingChooser:
         # work (puikit PR #126).
         assert style.nonactivating_panel is True
         assert style.becomes_key_on_demand is True
+        # The panel's mask forces a title bar; frameless hides it again.
+        assert style.frameless is True
         assert fixture.keymap.modal_input_active()
         chooser.dismiss()
 

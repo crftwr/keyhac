@@ -755,22 +755,6 @@ class Keymap:
             else:
                 return bool(self._on_key_up(event.vk))
 
-    def read_focus(self) -> Focus | None:
-        """Ask the platform where the focus is *now*.
-
-        `focus` is the snapshot taken during key dispatch, which is what a
-        key table should be resolved against; this bypasses it for a caller
-        that needs to notice a change no keystroke reported - an open
-        candidate window watching for the user to move somewhere else.
-
-        lazydocs: ignore
-        """
-        try:
-            return self._focus_provider.get_focus()
-        except Exception:
-            logger.debug("Focus read failed.")
-            return None
-
     def cursor_pos(self) -> tuple[int, int] | None:
         """The pointer position in portable top-left screen pixels - the same
         space `WindowHandle.frame_px()` and `screen_frames()` report, so the

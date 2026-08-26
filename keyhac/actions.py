@@ -74,23 +74,32 @@ class _DismissWatch:
 
     @staticmethod
     def _frontmost():
-        """Where the user is, or None for "no usable reading".
+        """Which window the user is in, or None for "no usable reading".
 
-        Keyhac's own process is deliberately no reading at all.  The chooser
-        is our window, so the focus landing on us is an artefact of the
-        chooser itself rather than the user going anywhere: on macOS a click
-        on the popup can make us the AX-focused application even though a
-        borderless window cannot take key status, and the activating path
-        (`activates = True`) puts the focus on us on purpose.  Counting
-        either as "the user moved away" is how a click on the chooser could
-        close it, and would have closed an activating chooser on its first
-        tick.
+        The *active window*, deliberately, and not the keyboard focus.  A
+        `Focus` mixes its sources - its pid is the frontmost application
+        (which our popup never becomes) while its window title comes from
+        the AX-focused application (which our popup *can* become on a
+        click).  Watching that mixture is how clicking the chooser closed
+        it: the pid check passed, and the title had turned into ours.
+        `get_active_window()` reads the frontmost application's own focused
+        window throughout, so nothing about our popup can move it - and it
+        skips the up-to-64-level AX path walk `get_focus()` pays for, which
+        makes it the cheaper read as well.
+
+        Keyhac's own process is still no reading at all, for the activating
+        path (`activates = True`), which puts the focus on us on purpose.
         """
         keymap = Keymap.get_instance()
-        focus = keymap.read_focus() if keymap is not None else None
-        if focus is None or focus.pid == os.getpid():
+        if keymap is None:
             return None
-        return (focus.pid, focus.window_title)
+        try:
+            window = keymap.get_active_window()
+        except Exception:
+            return None
+        if window is None or window.pid == os.getpid():
+            return None
+        return (window.pid, window.title)
 
     def _arm(self) -> None:
         from keyhac.ui import runtime
