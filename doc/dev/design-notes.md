@@ -229,9 +229,16 @@ before running it.
   re-checking the paste, so it is a deliberate separate decision, not a default.
 - The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
-  named keys; it cannot carry shifted punctuation (a vk does not say which glyph the
-  layout produces — solvable with `ToUnicodeEx`/`UCKeyTranslate` if it is ever
-  wanted) and it cannot carry an input method at all, ever. Composition follows OS
+  named keys, and — through `InputHook.char_for_key` — every digit and
+  punctuation mark the active layout produces. That last part is not a table of
+  our own: a vk does not say which glyph it makes, and Keyhac's per-layout tables
+  map names to codes rather than codes to glyphs, so the OS is asked instead
+  (`NSEvent.eventWithCGEvent_(...).characters` on macOS, `ToUnicodeEx` on
+  Windows) — the same translation it performs for a real keystroke, so it follows
+  whatever layout is selected. Without it the filter field could not type `.` `/`
+  `-` `_` `@` at all, which for clipboard history full of paths and URLs is most
+  of what one would filter on. What the route still cannot carry is an input
+  method, ever. Composition follows OS
   keyboard focus: IMM32 delivers `WM_IME_*` only to the focused HWND and
   `NSTextInputClient` serves only the key window. That is why Migemo is part of the
   default matcher rather than an option — for a localised list it is what makes the

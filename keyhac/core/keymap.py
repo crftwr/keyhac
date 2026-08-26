@@ -755,6 +755,17 @@ class Keymap:
             else:
                 return bool(self._on_key_up(event.vk))
 
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """The character a key produces on the active keyboard layout, or
+        None. See `InputHook.char_for_key`.
+
+        lazydocs: ignore
+        """
+        try:
+            return self._hook.char_for_key(vk, mod)
+        except Exception:
+            return None
+
     def cursor_pos(self) -> tuple[int, int] | None:
         """The pointer position in portable top-left screen pixels - the same
         space `WindowHandle.frame_px()` and `screen_frames()` report, so the

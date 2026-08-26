@@ -73,11 +73,29 @@ class TestKeyRoute:
         engine(lambda keymap: None)
         assert to_event(_key("1")).key == "1"
 
-    def test_shifted_punctuation_has_no_portable_spelling(self, engine):
-        # Which glyph Shift-1 produces is a layout property; a vk does not
-        # say.  The route drops it rather than guessing (see keyroute).
+    def test_shifted_digits_come_from_the_layout(self, engine):
+        # Which glyph Shift-1 produces is a layout property, so the route
+        # asks the OS rather than guessing (see keyroute). Contract §3: the
+        # glyph *is* the identity and shift is dropped, since it is already
+        # baked in.
         engine(lambda keymap: None)
-        assert to_event(_key("1", MODKEY_SHIFT)) is None
+        event = to_event(_key("1", MODKEY_SHIFT))
+        assert (event.key, event.char) == ("!", "!")
+        assert event.modifiers == frozenset()
+
+    def test_punctuation_translates(self, engine):
+        engine(lambda keymap: None)
+        for name, plain, shifted in (("Minus", "-", "_"),
+                                     ("Period", ".", ">"),
+                                     ("Slash", "/", "?"),
+                                     ("Semicolon", ";", ":")):
+            assert to_event(_key(name)).char == plain, name
+            assert to_event(_key(name, MODKEY_SHIFT)).char == shifted, name
+
+    def test_a_ctrl_chord_is_a_command_not_text(self, engine):
+        from keyhac.core.const import MODKEY_CTRL
+        engine(lambda keymap: None)
+        assert to_event(_key("Slash", MODKEY_CTRL)) is None
 
 
 class TestModalGrab:

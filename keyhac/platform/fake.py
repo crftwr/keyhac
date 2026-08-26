@@ -7,8 +7,20 @@ FakeImeProvider a settable IME state.
 
 from typing import Callable, Sequence
 
+from keyhac.core.vk import get_key_names
 from keyhac.platform.base import (InputHook, FocusProvider, Focus, KeyEvent,
                                   ImeProvider)
+
+
+#: US layout, enough for the tests that care about punctuation.
+_FAKE_GLYPHS = {
+    "Minus": ("-", "_"), "Equal": ("=", "+"), "Comma": (",", "<"),
+    "Period": (".", ">"), "Slash": ("/", "?"), "Semicolon": (";", ":"),
+    "Quote": ("'", '"'), "BackQuote": ("`", "~"),
+    "OpenBracket": ("[", "{"), "CloseBracket": ("]", "}"),
+    "BackSlash": ("\\", "|"),
+}
+_FAKE_SHIFTED_DIGITS = dict(zip("1234567890", "!@#$%^&*()"))
 
 
 class FakeInputHook(InputHook):
@@ -64,6 +76,28 @@ class FakeInputHook(InputHook):
 
     def cursor_pos(self) -> tuple[int, int]:
         return self._cursor
+
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """A small US-layout stand-in for the OS translation, so the tests
+        can exercise the punctuation path without a real keyboard."""
+        from keyhac.core.const import (
+            MODKEY_CMD, MODKEY_CMD_L, MODKEY_CMD_R,
+            MODKEY_CTRL, MODKEY_CTRL_L, MODKEY_CTRL_R,
+            MODKEY_SHIFT, MODKEY_SHIFT_L, MODKEY_SHIFT_R,
+        )
+        if mod & (MODKEY_CTRL | MODKEY_CTRL_L | MODKEY_CTRL_R
+                  | MODKEY_CMD | MODKEY_CMD_L | MODKEY_CMD_R):
+            return None
+        name = get_key_names().vk_to_str(vk)
+        shift = bool(mod & (MODKEY_SHIFT | MODKEY_SHIFT_L | MODKEY_SHIFT_R))
+        pair = _FAKE_GLYPHS.get(name)
+        if pair is not None:
+            return pair[1] if shift else pair[0]
+        if len(name) == 1 and name.isalpha():
+            return name.upper() if shift else name.lower()
+        if len(name) == 1 and name.isdigit():
+            return _FAKE_SHIFTED_DIGITS[name] if shift else name
+        return None
 
     # Test helpers ---------------------------------------------------------
 

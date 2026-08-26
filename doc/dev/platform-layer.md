@@ -50,7 +50,11 @@ summary of the surface:
   `installed`; `send(events, replay=False)` (batch of `(vk, down)`; the platform
   handles atomicity, ordering and self-event tagging); `send_text(s)`;
   `send_mouse(events, replay=False)` / `cursor_pos()`; `keyboard_layout()`
-  (`"ansi" | "jis" | "iso"`); `check_health()` (periodic-timer driven recovery).
+  (`"ansi" | "jis" | "iso"`); `char_for_key(vk, mod)` — the character a key
+  produces on the *active* layout, asked of the OS rather than tabled
+  (`NSEvent.eventWithCGEvent_(...).characters` / `ToUnicodeEx`), for the one
+  caller that has to reconstruct typed text from hook events: the candidate
+  window's filter field; `check_health()` (periodic-timer driven recovery).
 - **`FocusProvider`** — `get_focus() -> Focus | None`.
 - **`EventLoop`** — `run` / `stop` / `call_later(delay_seconds, func)`; in UI mode
   the PuiKit backend fills this role, in `--no-ui` mode a per-OS minimal loop does.
