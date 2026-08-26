@@ -1,8 +1,16 @@
 """The chooser (candidate) window - a secondary PuiKit window.
 
 Replaces keyhac-mac's SwiftUI ChooserWindowView / keyhac-win's ListWindow:
-a search field + filtered list. Up/Down navigate, Enter chooses, Escape
-cancels.
+a search field + filtered list.
+
+**Two panes, one focus.** The filter field holds it to begin with, and while
+it does the list shows no selection at all - it is a preview of what matches,
+not a proposal. Down steps into the list; Up off its first row steps back
+out, as does typing any character, so the field is never more than one
+keystroke away. Enter chooses the selected row, or the top match when the
+field still has the focus - typing a few letters and pressing Enter is the
+flow this window exists for. Escape cancels. A click picks a row without
+choosing it: the payload can be a destructive action.
 
 Filtering goes through a pluggable ``Matcher`` (discussion #112): the
 multi-word AND substring behaviour inherited from keyhac-mac, unioned with
@@ -119,7 +127,9 @@ class ChooserWindow:
         # units of its flex slot, so pass the full window width to let the
         # field fill whatever the layout resolves (the window is not resizable).
         self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
-        self._list = ListView(self._labels(), ellipsis="…", elide_where="end")
+        self._list = ListView(self._labels(), ellipsis="…", elide_where="end",
+                              allow_no_selection=True,
+                              on_select=self._on_row_clicked)
 
         self.panel = Panel(backend, window=self.window)
         # align="center" sits the magnifier on the field's text line (the field
@@ -139,7 +149,7 @@ class ChooserWindow:
         self._page = LayoutView(page, margin_px=_MARGIN_PX)
         self.panel.set_layout(VSplit(Item(self._page, weight=1)))
         self.panel.focus(self._page)
-        self._page.set_focused(self._edit)
+        self._focus_edit()
         self.panel.render()
 
         if not activates:
@@ -194,13 +204,43 @@ class ChooserWindow:
     def _labels(self):
         return [candidate.label for candidate in self._filtered]
 
+    # --- focus ------------------------------------------------------------
+    #
+    # Two panes, one at a time.  While the field has the focus the list shows
+    # *no* selection - it is a preview of what matches, not a proposal - and
+    # Down steps into it.  Up off the first row steps back out, as does
+    # typing, so the field is never more than one keystroke away.
+
+    @property
+    def in_list(self) -> bool:
+        """Whether the list has the focus (rather than the filter field)."""
+        return self._list.selected >= 0
+
+    def _focus_edit(self) -> None:
+        self._page.set_focused(self._edit)
+        self._list.selected = -1
+
+    def _focus_list(self, index: int = 0) -> None:
+        if not self._filtered:
+            return
+        self._page.set_focused(self._list)
+        self._list.selected = index
+
+    def _on_row_clicked(self, index: int, _label) -> None:
+        """A click on a row moves the focus into the list along with the
+        selection.  It deliberately does not confirm: the payload can be a
+        destructive action, so choosing stays an explicit Enter."""
+        self._page.set_focused(self._list)
+
     def _on_filter_change(self, text: str) -> None:
         # The query is compiled once here, not once per candidate: Migemo's
         # whole cost is in building its alternation regex (discussion #112).
         match = self._matcher.compile(text)
         self._filtered = [c for c in self._items if match.hit(c.match_text)]
         self._list.set_items(self._labels())
-        self._list.selected = 0
+        # A changed query re-proposes nothing: the focus is in the field, so
+        # the list goes back to showing no selection.
+        self._list.selected = -1
 
     def _on_event(self, event) -> None:
         if event.type is EventType.KEY:
@@ -208,7 +248,10 @@ class ChooserWindow:
                 self._finish(None, 0)
                 return
             if event.key == "enter":
-                index = self._list.selected
+                # With the focus in the field nothing is selected, and Enter
+                # still takes the top match - typing a few letters and
+                # pressing Enter is the flow this window exists for.
+                index = self._list.selected if self.in_list else 0
                 if 0 <= index < len(self._filtered):
                     mod = 0
                     for name in event.modifiers:
@@ -216,14 +259,33 @@ class ChooserWindow:
                     self._finish(self._filtered[index], mod)
                 return
             if event.key in ("up", "down", "pageup", "pagedown"):
-                delta = {"up": -1, "down": 1, "pageup": -10, "pagedown": 10}[event.key]
-                if self._filtered:
-                    self._list.selected = max(
-                        0, min(len(self._filtered) - 1, self._list.selected + delta))
+                self._navigate(event.key)
                 self.panel.render()
                 return
+            if self.in_list and event.char:
+                # Typing anywhere goes to the field, which means leaving the
+                # list first - then the character is dispatched as usual.
+                self._focus_edit()
         self.panel.dispatch_event(event)
         self.panel.render()
+
+    def _navigate(self, key: str) -> None:
+        if not self._filtered:
+            return
+        if not self.in_list:
+            # Only forward keys step into the list; Up in the field does
+            # nothing, so a stray Up cannot jump to the bottom of the list.
+            if key in ("down", "pagedown"):
+                self._focus_list(0)
+            return
+        delta = {"up": -1, "down": 1, "pageup": -10, "pagedown": 10}[key]
+        index = self._list.selected + delta
+        if index < 0:
+            # Off the top of the list is back to the field, whether it was one
+            # row up or a whole page.
+            self._focus_edit()
+            return
+        self._list.selected = min(len(self._filtered) - 1, index)
 
     def _on_user_close(self) -> None:
         if not self._done:

@@ -99,7 +99,9 @@ class TestChooserScrolling:
 
         items = [("*", f"entry {i:02}", i) for i in range(40)]
         chooser = ChooserWindow(ui_backend, items)
-        for _ in range(30):
+        # The first Down steps out of the filter field onto row 0, so 31
+        # presses reach row 30.
+        for _ in range(31):
             chooser._on_event(Event(type=EventType.KEY, key="down"))
         assert chooser._list.selected == 30
         rows = ["".join(row) for row in chooser.window.snapshot()]
@@ -589,3 +591,111 @@ class TestAutoDismiss:
         keyhac_engine.keymap._last_keydown = 1
         keyhac_engine.hook.mouse("wheel")
         assert keyhac_engine.keymap._last_keydown is None
+
+
+class TestChooserFocus:
+    """Two panes, one at a time (the filter field and the list).
+
+    While the field has the focus the list shows *no* selection - it is a
+    preview of what matches, not a proposal - and the field is never more
+    than one keystroke away from wherever the user is.
+    """
+
+    def _chooser(self, ui_backend, **kwargs):
+        from keyhac.ui.chooser import ChooserWindow
+        items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
+        return ChooserWindow(ui_backend, items, **kwargs)
+
+    def _key(self, chooser, key, char=None):
+        from puikit.event import Event, EventType
+        chooser._on_event(Event(type=EventType.KEY, key=key, char=char))
+
+    def test_nothing_is_selected_while_typing(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        assert chooser._list.selected == -1
+        assert not chooser.in_list
+        chooser._on_filter_change("al")
+        assert chooser._list.selected == -1
+
+    def test_down_steps_into_the_list_at_the_top(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        assert chooser.in_list
+        assert chooser._list.selected == 0
+
+    def test_up_off_the_first_row_returns_to_the_field(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        self._key(chooser, "down")
+        assert chooser._list.selected == 1
+        self._key(chooser, "up")
+        assert chooser._list.selected == 0
+        self._key(chooser, "up")
+        assert not chooser.in_list
+        assert chooser._list.selected == -1
+
+    def test_a_page_off_the_top_also_returns_to_the_field(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        self._key(chooser, "pageup")
+        assert not chooser.in_list
+
+    def test_up_in_the_field_does_not_jump_to_the_bottom(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "up")
+        assert not chooser.in_list
+
+    def test_typing_in_the_list_returns_to_the_field(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        assert chooser.in_list
+        self._key(chooser, "b", char="b")
+        assert not chooser.in_list
+        assert chooser._edit.text == "b"
+        assert [c.display for c in chooser._filtered] == ["beta"]
+
+    def test_changing_the_filter_deselects(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        chooser._on_filter_change("al")
+        assert not chooser.in_list
+
+    def test_enter_while_typing_takes_the_top_match(self, ui_backend):
+        from keyhac.ui.chooser import ChooserWindow
+        chosen = []
+        items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
+        chooser = ChooserWindow(ui_backend, items,
+                                on_selected=lambda item, mod: chosen.append(item))
+        chooser._on_filter_change("al")
+        self._key(chooser, "enter")
+        assert chosen == [("*", "alpha", 1)]
+
+    def test_enter_in_the_list_takes_the_selected_row(self, ui_backend):
+        from keyhac.ui.chooser import ChooserWindow
+        chosen = []
+        items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
+        chooser = ChooserWindow(ui_backend, items,
+                                on_selected=lambda item, mod: chosen.append(item))
+        self._key(chooser, "down")
+        self._key(chooser, "down")
+        self._key(chooser, "enter")
+        assert chosen == [("*", "beta", 2)]
+
+    def test_down_with_no_matches_stays_in_the_field(self, ui_backend):
+        chooser = self._chooser(ui_backend)
+        chooser._on_filter_change("zzz")
+        self._key(chooser, "down")
+        assert not chooser.in_list
+
+    def test_a_click_selects_and_does_not_confirm(self, ui_backend):
+        from puikit.event import Event, EventType
+        from keyhac.ui.chooser import ChooserWindow
+        chosen = []
+        items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
+        chooser = ChooserWindow(ui_backend, items,
+                                on_selected=lambda item, mod: chosen.append(item))
+        chooser._list.handle_event(
+            Event(type=EventType.MOUSE_CLICK, x=0, y=1, button="left"))
+        assert chooser._list.selected == 1
+        assert chooser.in_list
+        assert chosen == [], "a click picks the row; Enter chooses it"

@@ -193,6 +193,8 @@ class TestNonActivatingChooser:
         assert chooser._edit.text == "al"
         assert len(chooser._filtered) == 2
 
+        fixture.stroke("Down")      # steps out of the field onto the first row
+        assert chooser._list.selected == 0
         fixture.stroke("Down")
         assert chooser._list.selected == 1
         chooser.dismiss()

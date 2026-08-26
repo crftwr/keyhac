@@ -147,6 +147,16 @@ before running it.
   multi-word AND substring (keyhac-mac behavior) **unioned with Migemo**, so romaji
   finds Japanese; `WildcardMatcher` restores 1.x's `*`/`?`. Migemo only ever adds
   matches — see [Migemo](#migemo) below.
+- **Two panes, one focus.** The filter field starts with it, and while it has it
+  the list shows *no* selection (`ListView(allow_no_selection=True)`, puikit
+  PR #126) — not the muted unfocused highlight, which still reads as a proposal.
+  Down steps into the list, Up off its first row steps back out, and typing any
+  character does too, so the field is never more than one keystroke away. Enter
+  takes the selected row, or the top match while the field has the focus: typing
+  a few letters and pressing Enter is the flow the window exists for, and making
+  Enter inert there would have been a regression. A click picks a row and moves
+  the focus into the list but deliberately does **not** choose it — the payload
+  can be a destructive action, so choosing stays an explicit Enter.
 - Placement: centered on the focused window, clamped to its screen; one chooser at a
   time — the same action's hotkey toggles it closed, a different chooser replaces it.
 - **It closes when the user moves away from it** (`_DismissWatch` in `actions.py`).
