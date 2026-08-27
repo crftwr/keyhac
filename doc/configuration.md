@@ -380,6 +380,26 @@ A single row can override even that with `Candidate(action=...)`.
 `ShowClipboardHistory()` and its two siblings are presets over exactly these
 sources.
 
+### Scopes: one key, several sets
+
+Group the sources into named scopes and one key reaches all of them. `Tab` and
+`Shift-Tab` move along the cycle, and **the query comes with you** — type what
+you are looking for, then look for it somewhere else without retyping it. The
+current scope is named at the right of the filter field.
+
+```python
+kt["Fn-P"] = ShowCandidates([
+    Scope("All",       [clipboard, snippets, tools, windows]),
+    Scope("Clipboard", [clipboard, snippets]),
+    Scope("Windows",   [windows]),
+])
+```
+
+Scopes are also how an expensive source stays affordable: one that has real work
+to do — walking the window's controls, asking a server — costs that work every
+time it is in the scope being opened, so putting it in a scope of its own means
+it is paid for only when you ask for it.
+
 ### Writing a chooser as a class
 
 Custom choosers may also derive from `ChooserAction`: implement

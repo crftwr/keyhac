@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [Source](#class-source) · [CallableSource](#class-callablesource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [Source](#class-source) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1544,8 +1544,9 @@ Open the candidate window over one or more sources.
 The hotkey is the scarce resource, not the code: an action class per kind of row means a key per kind of row, and there are only so many a person can hold.  This takes sources as *values*, so several kinds share one key and one incremental search - and each row is labelled with where it came from, so a mixed list stays readable. 
 
 ```python
-kt["Fn-V"] = ShowCandidates([ClipboardHistory(), Snippets(my_snippets)])
+kt["Fn-V"] = ShowCandidates([ClipboardHistorySource(), SnippetsSource(mine)])
 kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
+kt["Fn-P"] = ShowCandidates([Scope("All", every), Scope("Clipboard", clip)])
 ``` 
 
 Enter runs whatever the chosen row's source says to do, so rows from different sources can mean different things in the same window - paste this, activate that, press the other. 
@@ -1562,7 +1563,7 @@ Build the action.
 
 **Args:**
  
- - <b>`sources`</b>:  A `Source`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing. 
+ - <b>`sources`</b>:  A `Source`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing.  A list  of `Scope` objects instead gives the window a cycle Tab and  Shift-Tab move along, keeping the query as they go. 
  - <b>`on_chosen`</b>:  Called as `on_chosen(candidate, modifier_flags)` for  rows whose source does not say what to do itself - which is  every row when the source is a bare callable. 
  - <b>`matcher`</b>:  How the filter text is matched; the default is  case-insensitive substring unioned with Migemo. 
  - <b>`activates`</b>:  Whether the window takes OS keyboard focus.  Leave it  alone unless the filter field genuinely needs an input method 
@@ -1660,6 +1661,39 @@ branches = CallableSource(git_branches, "Branches", on_chosen=checkout)
 ``` 
 
 The callable returns `Candidate` objects, or the `(icon, label, *rest)` tuples `ChooserAction.list_items` has always returned - those are adapted, and `on_chosen` then receives a candidate whose payload is the tuple. 
+
+---
+
+
+## <kbd>class</kbd> `Scope`
+A named set of sources the candidate window can switch between. 
+
+One key opens the window; Tab and Shift-Tab move along the cycle, and the query survives the move - type `kensaku`, then look for it somewhere else without retyping it. That is the thing a typed prefix (`>`, `@`) cannot do, and the reason the switch is a key rather than a sigil. The other reason is that with Migemo the query alphabet is exactly ASCII, so a sigil sits in the middle of what the user is trying to type. 
+
+Scopes are also how an *expensive* source stays affordable. A source that walks the accessibility tree costs a real traversal every time the window opens; put it in its own scope and it is paid for only when the user asks for it, instead of on every invocation of a merged everything-scope. 
+
+```python
+keymap_global["Fn-P"] = ShowCandidates([
+     Scope("All", [clipboard, snippets, windows]),
+     Scope("Clipboard", [clipboard, snippets]),
+     Scope("Windows", [windows]),
+])
+``` 
+
+### <kbd>method</kbd> `Scope.__init__`
+
+```python
+__init__(name: str, sources)
+```
+
+Build a scope. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  Shown in the window while this scope is the current one. 
+ - <b>`sources`</b>:  The sources it draws from - `Source` objects, plain  callables, or a mix. 
 
 ---
 

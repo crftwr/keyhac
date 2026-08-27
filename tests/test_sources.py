@@ -168,3 +168,105 @@ class TestClipboardPresets:
         source = src.SnippetsSource([("🕒", "Nothing", lambda: None)])
         source.choose(source.candidates()[0], 0)
         assert pasted == []
+
+
+class TestScopes:
+    """One key, several scopes, Tab between them - and the query survives the
+    move, which is the whole reason the switch is a key and not a typed
+    prefix."""
+
+    def _open(self, scopes):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        action = ShowCandidates(scopes)
+        action()
+        assert ChooserAction._open is not None
+        return action, ChooserAction._open[1]
+
+    def _scopes(self):
+        from keyhac.core.source import Scope
+        self.fruit, self.tool = _Fruit(), _Tool()
+        return [Scope("All", [self.fruit, self.tool]),
+                Scope("Fruit only", [self.fruit]),
+                Scope("Tools only", [self.tool])]
+
+    def _tab(self, chooser, shift=False):
+        from puikit.event import Event, EventType
+        chooser._on_event(Event(type=EventType.KEY, key="tab",
+                                modifiers=frozenset({"shift"} if shift else ())))
+
+    def test_it_opens_on_the_first_scope(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        assert chooser._scope == 0
+        assert [c.display for c in chooser._filtered] == [
+            "apple", "apricot", "hammer"]
+
+    def test_tab_moves_along_the_cycle(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+        self._tab(chooser)
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+
+    def test_it_wraps_around(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        for _ in range(3):
+            self._tab(chooser)
+        assert chooser._scope == 0
+
+    def test_shift_tab_goes_back(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser, shift=True)
+        assert chooser._scope == 2
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+
+    def test_the_query_survives_the_move(self, ui_backend):
+        """Look for the same thing somewhere else without retyping it - the
+        one thing a typed prefix cannot do without editing what is already
+        there. Typed for real: setting the filter directly would leave the
+        field empty and the assertion would pass on nothing."""
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        chooser._on_event(Event(type=EventType.KEY, key="a", char="a"))
+        assert chooser._edit.text == "a"
+        assert [c.display for c in chooser._filtered] == [
+            "apple", "apricot", "hammer"]
+        self._tab(chooser)
+        assert chooser._edit.text == "a"
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+
+    def test_the_current_scope_is_named_on_screen(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        assert chooser._scope_label.text == "‹ All ›"
+        self._tab(chooser)
+        assert chooser._scope_label.text == "‹ Fruit only ›"
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        assert any("Fruit only" in r for r in rows), rows
+
+    def test_switching_re_proposes_nothing(self, ui_backend):
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        chooser._on_event(Event(type=EventType.KEY, key="down"))
+        assert chooser.in_list
+        self._tab(chooser)
+        assert not chooser.in_list, "the rows are different ones now"
+
+    def test_choosing_still_routes_to_the_right_source(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        self._tab(chooser)                     # Tools only
+        chooser._finish(chooser._filtered[0], 0)
+        assert self.tool.chosen == ["hammer"] and self.fruit.chosen == []
+
+    def test_reopening_starts_at_the_first_scope_again(self, ui_backend):
+        action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        assert chooser._scope == 1
+        action()                               # toggles closed
+        action()                               # and open again
+        from keyhac.actions import ChooserAction
+        assert ChooserAction._open[1]._scope == 0
+
+    def test_one_scope_shows_no_switcher(self, ui_backend):
+        _action, chooser = self._open([_Fruit(), _Tool()])
+        assert chooser._scopes == []
+        assert chooser._scope_label.text == ""

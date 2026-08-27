@@ -257,12 +257,18 @@ class ChooserAction:
             clamp_to = MoveWindow._get_best_screen(
                 center_on, keymap.window_provider.screen_frames())
 
+        # Always open on the first scope: a window that reopened wherever it
+        # was last left would make the same key mean different things on
+        # different presses.
+        self._scope = 0
         rows, badge_of = self._collect()
         chooser = ChooserWindow(runtime.backend, rows,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
                                 matcher=self.matcher, activates=self.activates,
-                                badge_of=badge_of)
+                                badge_of=badge_of,
+                                scopes=self.scope_names(),
+                                on_scope=self._scope_rows)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -324,6 +330,21 @@ class ChooserAction:
             return rows, None
         return rows, lambda c: getattr(owners.get(id(c)), "name", "")
 
+    def _scope_rows(self, index: int):
+        """The rows of the scope the window is moving to.
+
+        lazydocs: ignore
+        """
+        self._scope = index
+        return self._collect()
+
+    def scope_names(self):
+        """Scope names for the window's cycle; empty when there is only one.
+
+        lazydocs: ignore
+        """
+        return []
+
     def _choose(self, candidate, modifier_flags: int) -> None:
         """Route a chosen row to whatever owns it."""
         source = self._owners.get(id(candidate))
@@ -382,8 +403,9 @@ class ShowCandidates(ChooserAction):
     from, so a mixed list stays readable.
 
     ```python
-    kt["Fn-V"] = ShowCandidates([ClipboardHistory(), Snippets(my_snippets)])
+    kt["Fn-V"] = ShowCandidates([ClipboardHistorySource(), SnippetsSource(mine)])
     kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
+    kt["Fn-P"] = ShowCandidates([Scope("All", every), Scope("Clipboard", clip)])
     ```
 
     Enter runs whatever the chosen row's source says to do, so rows from
@@ -397,7 +419,9 @@ class ShowCandidates(ChooserAction):
         Args:
             sources: A `Source`, a plain callable returning candidates, or a
                 list of either.  A callable is wrapped, so anything that can
-                produce a list can be a source without subclassing.
+                produce a list can be a source without subclassing.  A list
+                of `Scope` objects instead gives the window a cycle Tab and
+                Shift-Tab move along, keeping the query as they go.
             on_chosen: Called as `on_chosen(candidate, modifier_flags)` for
                 rows whose source does not say what to do itself - which is
                 every row when the source is a bare callable.
@@ -407,26 +431,39 @@ class ShowCandidates(ChooserAction):
                 alone unless the filter field genuinely needs an input method
                 - see `ChooserAction.activates`.
         """
-        from keyhac.core.source import as_source
+        from keyhac.core.source import Scope, as_source
 
         self._on_chosen = on_chosen
-        # A bare callable has no opinion about what choosing does, so it
-        # inherits this action's; a real Source keeps its own.
         listed = sources if isinstance(sources, (list, tuple)) else [sources]
-        self._sources = [as_source(s, on_chosen=self._chosen_here)
-                         for s in listed]
+        if listed and all(isinstance(s, Scope) for s in listed):
+            self._scopes = list(listed)
+        else:
+            # A bare callable has no opinion about what choosing does, so it
+            # inherits this action's; a real Source keeps its own.
+            self._scopes = [Scope("", [as_source(s, on_chosen=self._chosen_here)
+                                       for s in listed])]
         if matcher is not None:
             self.matcher = matcher
         if activates is not None:
             self.activates = activates
 
     def __repr__(self):
-        names = ", ".join(s.name or type(s).__name__ for s in self._sources)
+        if len(self._scopes) > 1:
+            return f"ShowCandidates({len(self._scopes)} scopes)"
+        names = ", ".join(s.name or type(s).__name__
+                          for s in self._scopes[0].sources)
         return f"ShowCandidates({names})"
 
     def sources(self):
         """lazydocs: ignore"""
-        return self._sources
+        return self._scopes[self._scope].sources
+
+    def scope_names(self):
+        """lazydocs: ignore"""
+        return [s.name for s in self._scopes] if len(self._scopes) > 1 else []
+
+    #: Index into `_scopes` while a window is open.
+    _scope = 0
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""

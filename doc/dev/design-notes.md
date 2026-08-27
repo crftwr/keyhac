@@ -305,6 +305,36 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   and two public things with one name in a flat `from keyhac import *` is a
   trap.
 
+## Candidate scopes
+
+- **The switch is a key (Tab / Shift-Tab), not a typed prefix**, for one
+  reason that a prefix cannot match: *the query survives the move*. Type
+  `kensaku`, cycle, and look for the same thing somewhere else without editing
+  what you already typed. The second reason is that with Migemo the query
+  alphabet is exactly ASCII, so a `>` or `@` sigil sits in the middle of what
+  the user is trying to type — the same collision the discussion notes between
+  letter labels and romaji filtering.
+- Tab is **intercepted before the Panel**, which would otherwise spend it on
+  focus traversal between the field and the list.
+- The scope name is drawn as `‹ Name ›` at the right of the search row. The
+  arrows are not decoration: a key-driven switch has no visible affordance of
+  its own, and they are what says one exists — which is the discoverability
+  cost of choosing a key over a prefix, paid back.
+- Switching **re-proposes nothing** (focus returns to the field, no row
+  selected): the rows are different ones, so the rule a changed query follows
+  applies here too.
+- A window **always opens on the first scope**. Reopening wherever it was last
+  left would make one key mean different things on different presses.
+- With scopes the row widget is used throughout, even in a scope that draws no
+  badge — switching would otherwise have to swap the list widget itself.
+- Scopes are also what keeps an **expensive source affordable**: a source that
+  walks the accessibility tree costs a real traversal every time the window
+  opens, so putting it in its own scope means it is paid for only when asked
+  for. That is why scopes came before the accessibility source rather than
+  after it — without them the only places to put an expensive source are "in
+  the merged everything-scope, paid every time" or "on a hotkey of its own",
+  and the hotkey is the thing this was trying to save.
+
 ## Migemo
 
 - Engine: oguna's `pymigemo` — pure Python, BSD-3, dictionary bundled in the wheel.

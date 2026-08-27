@@ -17,7 +17,7 @@ from keyhac.core.action import (
 )
 from keyhac.core.clipboard_history import ClipboardHistory
 from keyhac.core.candidate import Candidate
-from keyhac.core.source import CallableSource, Source
+from keyhac.core.source import CallableSource, Scope, Source
 from keyhac.core.sources import (
     ClipboardHistorySource,
     ClipboardToolsSource,
@@ -68,6 +68,7 @@ __all__ = [
     "Candidate",
     "Source",
     "CallableSource",
+    "Scope",
     "ClipboardHistorySource",
     "SnippetsSource",
     "ClipboardToolsSource",

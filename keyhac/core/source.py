@@ -111,3 +111,43 @@ def as_source(source: Any, name: str = "",
     if isinstance(source, Source):
         return source
     return CallableSource(source, name, on_chosen)
+
+
+class Scope:
+    """A named set of sources the candidate window can switch between.
+
+    One key opens the window; Tab and Shift-Tab move along the cycle, and the
+    query survives the move - type `kensaku`, then look for it somewhere else
+    without retyping it. That is the thing a typed prefix (`>`, `@`) cannot
+    do, and the reason the switch is a key rather than a sigil. The other
+    reason is that with Migemo the query alphabet is exactly ASCII, so a sigil
+    sits in the middle of what the user is trying to type.
+
+    Scopes are also how an *expensive* source stays affordable. A source that
+    walks the accessibility tree costs a real traversal every time the window
+    opens; put it in its own scope and it is paid for only when the user asks
+    for it, instead of on every invocation of a merged everything-scope.
+
+    ```python
+    keymap_global["Fn-P"] = ShowCandidates([
+        Scope("All", [clipboard, snippets, windows]),
+        Scope("Clipboard", [clipboard, snippets]),
+        Scope("Windows", [windows]),
+    ])
+    ```
+    """
+
+    def __init__(self, name: str, sources):
+        """Build a scope.
+
+        Args:
+            name: Shown in the window while this scope is the current one.
+            sources: The sources it draws from - `Source` objects, plain
+                callables, or a mix.
+        """
+        self.name = name
+        listed = sources if isinstance(sources, (list, tuple)) else [sources]
+        self.sources = [as_source(s) for s in listed]
+
+    def __repr__(self):
+        return f"Scope({self.name!r}, {len(self.sources)} sources)"

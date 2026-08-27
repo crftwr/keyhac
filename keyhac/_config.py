@@ -234,35 +234,44 @@ def configure(keymap):
     # across the lot.  Each row is labelled on the right with where it came
     # from, so a mixed list stays readable.
 
-    kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
-        ClipboardHistorySource(),
-        SnippetsSource(snippets),
-        ClipboardToolsSource(tools),
-    ])
-
     # --- your own source ------------------------------------------------
     # Anything that returns a list can be one; no class to subclass.  This
     # lists the open windows and brings the chosen one forward.
 
-    def open_windows():
-        return [Candidate(icon="🪟", display=f"{w.app_name} — {w.title}",
-                          payload=w)
-                for w in keymap.list_windows() if w.title]
+    class OpenWindows(Source):
+        name = "Window"
 
-    kt[f"{LEADER}-Shift-W"] = ShowCandidates(
-        open_windows, on_chosen=lambda c, mod: c.payload.activate())
+        def candidates(self):
+            return [Candidate(icon="🪟",
+                              display=f"{w.app_name} — {w.title}", payload=w)
+                    for w in keymap.list_windows() if w.title]
 
-    # A source can also be an object, which is what you want once it has a
-    # name to show in a shared window and its own idea of what choosing does:
+        def on_chosen(self, candidate, modifier_flags):
+            candidate.payload.activate()
+
+    # --- scopes: one key, several sets ----------------------------------
+    # Tab and Shift-Tab move along the cycle, and the query comes with you —
+    # type what you are looking for, then look for it somewhere else without
+    # retyping it.  The current scope is named at the right of the field.
     #
-    #     class Branches(Source):
-    #         name = "Branch"
-    #         def candidates(self):
-    #             return [Candidate(display=b) for b in git_branches()]
-    #         def on_chosen(self, candidate, modifier_flags):
-    #             checkout(candidate.display)
+    # Scopes are also how an expensive source stays affordable: put one that
+    # has real work to do in a scope of its own and it is paid for only when
+    # you ask for it, not every time the window opens.
+
+    kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
+        Scope("All", [ClipboardHistorySource(), SnippetsSource(snippets),
+                      ClipboardToolsSource(tools), OpenWindows()]),
+        Scope("Clipboard", [ClipboardHistorySource(), SnippetsSource(snippets)]),
+        Scope("Windows", [OpenWindows()]),
+        Scope("Tools", [ClipboardToolsSource(tools)]),
+    ])
+
+    # A source does not have to be a class - a plain callable works when
+    # there is nothing to name and one thing to do with every row:
     #
-    #     kt[f"{LEADER}-P"] = ShowCandidates([Branches(), ...])
+    #     kt[f"{LEADER}-B"] = ShowCandidates(
+    #         lambda: [Candidate(display=b) for b in git_branches()],
+    #         on_chosen=lambda c, mod: checkout(c.display))
 
     # ==================================================================
     # Windows and applications

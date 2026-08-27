@@ -87,6 +87,13 @@ class ChooserWindow:
     a row without its provenance is a guess.  None (or a function returning
     "" for everything) draws plain rows.
 
+    scopes: names of the scopes Tab / Shift-Tab move between, or None for a
+    window with only one.  `on_scope(index)` is asked for the rows of the
+    scope being moved to, as `(candidates, badge_of)`.  **The query survives
+    the move** - that is the whole reason the switch is a key rather than a
+    typed prefix, and a prefix could not do it without the user editing the
+    front of what they had already typed.
+
     activates: whether the window takes OS keyboard focus.  The default is
     not to - see the module docstring.  A non-activating window asks PuiKit
     for ``overlay_input="mouse"``: clicks reach it, but the application
@@ -100,7 +107,8 @@ class ChooserWindow:
 
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
-                 activates=False, badge_of=None):
+                 activates=False, badge_of=None,
+                 scopes=None, on_scope=None):
         self._items = [Candidate.from_item(item) for item in items]
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._filtered = list(self._items)
@@ -133,8 +141,15 @@ class ChooserWindow:
         # units of its flex slot, so pass the full window width to let the
         # field fill whatever the layout resolves (the window is not resizable).
         self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
+        self._scopes = list(scopes) if scopes else []
+        self._on_scope = on_scope
+        self._scope = 0
         self._badge_of = badge_of
-        if badge_of is None:
+        # With scopes, the row widget is used throughout even where the
+        # current scope draws no badge: switching would otherwise have to
+        # swap the list widget itself, and the badge is the first thing a
+        # merged scope needs anyway.
+        if badge_of is None and not self._scopes:
             self._list = ListView(self._labels(), ellipsis="…",
                                   elide_where="end", allow_no_selection=True,
                                   on_select=self._on_row_clicked)
@@ -157,13 +172,20 @@ class ChooserWindow:
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
         # and the search-row/list gap collapse to nothing on a character grid.
+        # ‹ › rather than just the name: a key-driven switch has no visible
+        # affordance of its own, so the arrows are what say one exists.
+        self._scope_label = Label(self._scope_text())
+        search_row = [
+            Item(Label("🔍"), size="content", align="center"),
+            Item(Label(""), size_px=_MARGIN_PX),
+            Item(self._edit, weight=1),
+        ]
+        if self._scopes:
+            search_row.append(Item(Label(""), size_px=_MARGIN_PX))
+            search_row.append(
+                Item(self._scope_label, size="content", align="center"))
         page = VSplit(
-            Item(HSplit(
-                Item(Label("🔍"), size="content", align="center"),
-                Item(Label(""), size_px=_MARGIN_PX),
-                Item(self._edit, weight=1),
-                gap=0,
-            ), size="content"),
+            Item(HSplit(*search_row, gap=0), size="content"),
             Item(self._frame, weight=1),
             gap=0.3,
         )
@@ -226,10 +248,13 @@ class ChooserWindow:
         return [candidate.label for candidate in self._filtered]
 
     def _rows(self):
-        return [(c.label, self._badge_of(c) or "") for c in self._filtered]
+        badge = self._badge_of
+        return [(c.label, (badge(c) or "") if badge else "")
+                for c in self._filtered]
 
     def _items_for_list(self):
-        return self._labels() if self._badge_of is None else self._rows()
+        plain = self._badge_of is None and not self._scopes
+        return self._labels() if plain else self._rows()
 
     # --- focus ------------------------------------------------------------
     #
@@ -275,8 +300,38 @@ class ChooserWindow:
         # the list goes back to showing no selection.
         self._list.selected = -1
 
+    # --- scopes -----------------------------------------------------------
+
+    def _scope_text(self) -> str:
+        if not self._scopes:
+            return ""
+        return f"‹ {self._scopes[self._scope]} ›"
+
+    def switch_scope(self, delta: int) -> None:
+        """Move `delta` steps along the scope cycle, keeping the query.
+
+        lazydocs: ignore
+        """
+        if len(self._scopes) < 2 or self._on_scope is None:
+            return
+        self._scope = (self._scope + delta) % len(self._scopes)
+        rows, badge_of = self._on_scope(self._scope)
+        self._items = [Candidate.from_item(row) for row in rows]
+        self._badge_of = badge_of
+        self._scope_label.text = self._scope_text()
+        # The rows are different ones, so nothing is proposed and the focus
+        # goes back to the field - the same rule a changed query follows.
+        self._focus_edit()
+        self._on_filter_change(self._edit.text)
+
     def _on_event(self, event) -> None:
         if event.type is EventType.KEY:
+            if event.key == "tab":
+                # Intercepted before the Panel, which would otherwise spend it
+                # on focus traversal between the field and the list.
+                self.switch_scope(-1 if "shift" in event.modifiers else 1)
+                self.panel.render()
+                return
             if event.key == "escape":
                 self._finish(None, 0)
                 return
