@@ -61,12 +61,25 @@ Keyhac2-side usage notes:
   `activation_policy="accessory"`.
 - The console's WM_CLOSE hides instead of quitting (`main_window_close="hide"`);
   shown/hidden state persists via #84's visibility API.
-- The chooser deliberately activates our own process to take keyboard input, then
-  re-activates the original app on selection/cancel. A true non-activating chooser
-  needs an `NSPanel` with `nonactivatingPanel` — a possible future PuiKit extension.
+- The chooser is `WindowStyle(frameless=True, activates=False,
+  overlay_input="mouse")` and is typed into through the key hook, not through the
+  window — see the Chooser notes in [design-notes.md](design-notes.md).
+  `overlay_input` is puikit PR #126; without it a *click* on the popup activates
+  Keyhac even though a borderless window cannot become key, which deactivated the
+  window underneath and broke the paste. `"keyboard"` is the same window taking
+  key status instead — the Spotlight shape, where an input method works. Inert on
+  Windows, where `WS_EX_NOACTIVATE` refuses both.
+- Guaranteeing the window opens on the active Space would want a `WindowStyle` field
+  reaching `collectionBehavior` (`NSWindowCollectionBehaviorMoveToActiveSpace`).
+  Not needed while the chooser builds a fresh window per invocation.
 
 ## Known limit
 
-IME composition stays attached to the main HWND on Windows, so a popup text field
-types ASCII but does not compose — the chooser's filter box with a Japanese IME is
-the case to watch. Fix would be puikit work; tracked in the issue tracker.
+Popup text fields do not compose with an input method — and for the chooser that
+is now by design rather than a gap. PuiKit gained per-window IME input contexts
+in PR #90 (keyhac #20), which fixed it for a popup that holds the keyboard
+focus; the chooser then stopped holding it, and composition follows OS keyboard
+focus wherever it goes. See the Chooser notes in
+[design-notes.md](design-notes.md) for why that trade was taken and what
+`overlay_input="keyboard"` would cost to undo it. PR #90 still matters for
+windows that *do* take focus.

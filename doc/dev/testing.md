@@ -61,6 +61,15 @@ live on each OS.
   alongside. On a quiet desktop the same tests passed 4/4 full runs before the
   change and 353/353 after, with no skips, so the guards are inert until
   something really is interfering.
+- **A live test that opens an app has to close the window it opened — and only
+  that one.** Windows 11 ships Notepad as a packaged app: System32's
+  `notepad.exe` is a stub that hands the work to one process shared by every
+  Notepad window, so `Popen.terminate()` closed nothing and the UIA probes left
+  a window behind per run. That is precisely the "other work of ours" above.
+  `TestUIAPatternsAgainstNotepad` takes the window that was not on screen
+  before the launch and posts `WM_CLOSE` to that one, which also stops the
+  fixture from typing into a Notepad the developer has a real file open in —
+  `find_window(app="notepad")` was free to answer with theirs.
 - **Injected input is occasionally lost before any hook sees it, and that is
   not the engine's doing.** Measured on the mouse side, which is where it is
   cleanly attributable: `SendInput` returns 1 with no error, the `WH_MOUSE_LL`
@@ -450,9 +459,52 @@ The genuinely-interactive checks were tracked in issue #10 and are all through
 as of 2026-08-07, but they are a **standing pass, not a burnt-down backlog**:
 they describe what to repeat before a release, since nothing here is covered by
 the automated harnesses. The two that needed hardware this machine does not
-have — a JIS keyboard, and a Japanese IME driving the chooser — were passed by
-hand on 2026-08-07 and stay on the list for the next release rather than being
-struck off.
+have — a JIS keyboard, and a Japanese input method — were passed by hand on
+2026-08-07 and stay on the list for the next release rather than being struck
+off. What the IME entry checks **inverted on 2026-08-26**: the chooser no
+longer takes keyboard focus, so its filter field no longer composes, and that
+is now the thing to confirm rather than the thing to fix.
+
+- **The chooser on Windows, after the non-activating rework** *(new, not yet
+  passed)* — this branch changed the chooser on both OSes but was developed and
+  live-checked only on macOS, and **Windows takes the other code path**:
+  `overlay_input` has no Windows equivalent and is inert, so the window is a
+  plain `WS_EX_NOACTIVATE` + `WS_POPUP` one with no panel behind it. Nothing
+  below is covered by the harnesses, because all of it is about what the OS does
+  with a window that never takes focus.
+
+  - *Symbols in the filter field.* `tests/test_win_char_for_key.py` covers the
+    mechanism (`ToUnicodeEx`) and runs on any layout; what it cannot reach is a
+    layout with an **AltGr layer** (`@` and the backslash on German/Nordic) or a
+    **dead key**. If such a keyboard is available, type both; if not, skip it
+    honestly — the dead-key path deliberately calls `ToUnicodeEx` twice for the
+    builds that ignore `TOUNICODE_NO_STATE`, and only real hardware proves the
+    next keystroke is not left composing.
+  - *The window never takes focus.* Opening the chooser leaves the foreground
+    window's title bar active and its caret blinking; typing reaches the filter
+    (through the hook, not the window); clicking a row selects it without the
+    window underneath deactivating; **Enter pastes with no settle delay** —
+    `_PASTE_DELAY` is now skipped entirely on this path, so a paste that lands
+    in the wrong place or not at all is this check failing.
+  - *It looks right without a title bar.* `frameless` is set on both OSes
+    because macOS needs it to hide the title bar its panel mask forces; on
+    Windows that means `WS_POPUP`, so the chooser lost the frame it had in
+    2.x. Confirm it still reads as a window and not as a floating rectangle.
+  - *Auto-dismiss.* Switch virtual desktops (Win+Ctrl+arrow) and the chooser
+    closes — then the hotkey opens a fresh one *on the new desktop*, which is
+    the bug that started this. Clicking another window closes it; scrolling a
+    background window with the wheel or trackpad does **not**.
+  - *Two panes.* Down steps from the field into the list, Up off the first row
+    steps back, typing anywhere returns to the field, and the selection draws
+    in the accent colour while the list has focus and not at all while the
+    field does.
+  - *The console stays put.* It never came forward on Windows (the macOS cause
+    was app-scoped activation, which `WS_EX_NOACTIVATE` never did), so this is
+    confirming nothing regressed rather than checking a fix.
+  - *Migemo loads.* `pymigemo` is a hard dependency now. The LP64 dictionary
+    patch is inert on Windows (`array('L')` is already 4 bytes there), so this
+    is confirming the engine reports itself loaded and that romaji finds
+    Japanese in the filter — not the patch.
 
 - **The `Keyhac.exe` bundle** — `tools/bundle_pass.py` does the mechanizable
   half; run it with no Keyhac running, or the instance guard makes every check
@@ -474,14 +526,29 @@ struck off.
   checked: UIA sometimes keeps answering S_OK for one with its ControlType
   degraded Window→Pane, and sometimes fails, so an assertion either way is a
   coin flip.
-- **The chooser filter box under a Japanese IME** *(passed 2026-08-07,
-  re-passed 2026-08-08)* — that 「か」 composes inline rather than typing `ka`,
-  that Enter is consumed by the IME to commit instead of choosing the
-  highlighted item, and that the committed text filters the list. Needs
-  puikit's per-window input contexts (keyhac #20, puikit `6906146`). Repeat it
-  whenever that input-context code moves — which is exactly why 2.2.1 repeated
-  it: that commit is what `puikit>=1.0.10` pins, and 2.2.1 is the first release
-  taking it from the published wheel rather than a local checkout.
+- **The chooser filter box with a Japanese input method selected** *(rewritten
+  2026-08-26; the previous version of this check asserted the opposite and
+  would now fail by design)* — the chooser stopped taking keyboard focus, and
+  composition follows that focus, so the filter field cannot compose and is not
+  meant to. Confirm instead:
+
+  - typing `ka` with the IME **on** puts `ka` in the field — the hook feeds it
+    characters directly and the input method never sees the keys;
+  - `kensaku` finds an entry containing 検索, which is how Japanese is reached
+    now (`keyhac/core/migemo.py`; `pymigemo` is a hard dependency, so an engine
+    that fails to load is a release blocker, not a degradation);
+  - Enter chooses rather than being eaten by a composition;
+  - **the target application's own composition survives.** Open the chooser
+    while mid-composition in the editor underneath — that window keeps its
+    focus, so its composition is still sitting there — and check that choosing
+    an entry pastes somewhere sane rather than into a half-finished
+    composition. This one is new with the non-activating window and has no
+    equivalent in the old check.
+
+  The reasoning behind giving composition up, and what `overlay_input="keyboard"`
+  would cost to get it back, is in [design-notes.md](design-notes.md). PuiKit's
+  per-window input contexts (keyhac #20, puikit PR #90) are still what the
+  console relies on; they are simply no longer on the chooser's path.
 - **The Windows JIS IME key names** *(new, not yet passed)* — that `Kanji`,
   `Henkan` and `Muhenkan` actually match the 半角/全角, 変換 and 無変換 keys when
   pressed on JIS hardware. The VKs (0x19 / 0x1C / 0x1D) are the documented ones,

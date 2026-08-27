@@ -210,6 +210,7 @@ class Keymap:
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
+        self._modal_input = None            # sticky key grab - see push_modal_input
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
         self._vk_vk_map = {}                # replace_key map
@@ -228,6 +229,7 @@ class Keymap:
         self._mcp_timer = None              # closes the window on its own
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
+        self.on_mouse_button = None         # callable() - see on_mouse_event
         self._main_thread_dispatcher = None  # callable(callback) - see below
 
         from keyhac.core.replay import KeyReplayBuffer
@@ -736,7 +738,12 @@ class Keymap:
         # the user is watching. What "real" does still include is another
         # application's injected input, which the OS lets us distinguish but
         # Keyhac does not - and an Esc from anywhere is a request to stop.
-        if event.down and event.kind == "real" and event.vk == self._escape_vk():
+        if event.down and event.kind == "real" and event.vk == self._escape_vk() \
+           and self._modal_input is None:
+            # Not while a candidate window holds the keyboard: Esc there is
+            # "close this window", and the window is the thing the user is
+            # looking at.  Without the guard a background action would eat
+            # the Esc and the window would stay up (discussion #112).
             if ThreadedAction.cancel_all():
                 # Consumed only when it actually stopped something: swallowing
                 # every Esc would change what the focused application sees.
@@ -747,6 +754,29 @@ class Keymap:
                 return bool(self._on_key_down(event.vk))
             else:
                 return bool(self._on_key_up(event.vk))
+
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """The character a key produces on the active keyboard layout, or
+        None. See `InputHook.char_for_key`.
+
+        lazydocs: ignore
+        """
+        try:
+            return self._hook.char_for_key(vk, mod)
+        except Exception:
+            return None
+
+    def cursor_pos(self) -> tuple[int, int] | None:
+        """The pointer position in portable top-left screen pixels - the same
+        space `WindowHandle.frame_px()` and `screen_frames()` report, so the
+        three compare directly. None where the platform does not offer it.
+
+        lazydocs: ignore
+        """
+        try:
+            return self._hook.cursor_pos()
+        except (NotImplementedError, Exception):
+            return None
 
     def _escape_vk(self) -> int:
         """Esc's vk for the active layout, resolved once and remembered."""
@@ -765,16 +795,35 @@ class Keymap:
             # Modifier key state is not reliable anymore. Resetting.
             self._modifier = 0
 
-    def on_mouse_event(self) -> None:
+    def on_mouse_event(self, kind: str = "button") -> None:
         """InputHook on_mouse callback: physical mouse button/wheel input
         cancels a pending one-shot modifier (keyhac-win behavior - clicking
         while holding a one-shot key means the hold was a drag/click
         modifier, not a tap).
 
+        `on_mouse_button` is the UI's wiring point on the same signal, and it
+        hears about **buttons only**. A wheel turn cancels a one-shot the same
+        way a click does, but it is not the user going anywhere: macOS scrolls
+        the window under the pointer without focusing it, so an open candidate
+        window that dismissed on it would vanish whenever the user nudged a
+        background list. Spotlight does not, and neither does this.
+
+        The observer is called outside the lock: it does UI work, and the
+        engine has nothing left to protect by then.
+
         lazydocs: ignore
         """
         with self._lock:
             self._last_keydown = None
+        if kind != "button":
+            return
+        observer = self.on_mouse_button
+        if observer is not None:
+            try:
+                observer()
+            except Exception:
+                logger.error(f"on_mouse_button callback failed:\n"
+                             f"{traceback.format_exc()}")
 
     # ------------------------------------------------------------------
     # Key dispatch (ported from keyhac-mac)
@@ -878,6 +927,21 @@ class Keymap:
 
         logger.debug(f"INPUT    : {key}")
 
+        # A key grab (push_modal_input) outranks every table: the candidate
+        # window that owns it is not focused, so this is the only route its
+        # keystrokes have.  Modifier keys fall through - their bookkeeping
+        # already ran in the caller, and consuming them here would strand
+        # the modifier state of the application underneath.
+        if self._modal_input is not None and key.vk not in self._vk_mod_map:
+            if key.down and not key.oneshot:
+                try:
+                    self._modal_input(key)
+                except Exception:
+                    logger.error(f"Modal input handler failed:\n"
+                                 f"{traceback.format_exc()}")
+                    self._modal_input = None
+            return True
+
         action = None
         if key in self._unified_keytable:
             action = self._unified_keytable[key]
@@ -917,6 +981,60 @@ class Keymap:
                         raise TypeError(f"Invalid key action: {item!r}")
 
         return True
+
+    # ------------------------------------------------------------------
+    # Modal input (spike - discussion #112)
+
+    def push_modal_input(self, handler) -> None:
+        """Route every non-modifier key to `handler` until it is popped.
+
+        The mechanism a non-activating candidate window needs: the window
+        never takes OS keyboard focus, so its keystrokes have to arrive
+        through the hook that is already installed.
+
+        A grab is the same kind of state a multi-stroke prefix already is -
+        "the next keystroke resolves somewhere other than the active key
+        tables, and unmatched keys are consumed rather than passed through"
+        - differing in only two properties: it does not leave after one key,
+        and it has a catch-all instead of a table.  So the two are kept
+        mutually exclusive by construction: pushing a grab disarms any armed
+        prefix, and there is never a prefix and a grab up at once.  Whether
+        they should share one slot outright, rather than one policy, is the
+        open question this spike exists to inform.
+
+        Esc is the one key that does not arrive here first: `on_key_event`
+        offers it to a running `ThreadedAction` before the tables are
+        consulted, and consumes it if that stopped something.  With a grab
+        up and an action running, Esc therefore cancels the action and the
+        candidate window stays open.  That ordering is deliberate for the
+        action, and probably wrong for the window; it is one of the
+        decisions a real implementation has to make explicitly.
+
+        Args:
+            handler: Called with the `KeyCondition` of each non-modifier key
+                *down* (never a one-shot echo, never a key up).  Modifier
+                keys keep their normal bookkeeping so the handler sees
+                correct modifier state; every non-modifier key is consumed,
+                so the focused application sees nothing while the grab is up.
+
+        lazydocs: ignore
+        """
+        self._leave_multi_stroke()
+        self._modal_input = handler
+
+    def pop_modal_input(self) -> None:
+        """Release the grab pushed by :meth:`push_modal_input`.
+
+        lazydocs: ignore
+        """
+        self._modal_input = None
+
+    def modal_input_active(self) -> bool:
+        """Whether a key grab is up.
+
+        lazydocs: ignore
+        """
+        return self._modal_input is not None
 
     # ------------------------------------------------------------------
     # Multi-stroke
@@ -982,10 +1100,16 @@ class Keymap:
 
         Key output does not need this: InputContext.send_modifier_keys emits
         the same tap while reconciling the modifiers around its batch.
+
+        User modifiers held alongside are not part of the question: they are
+        never emitted, so what Windows saw is a lone Alt however many of them
+        the binding also names.  U0-Alt-V on a chooser is the case - without
+        the mask the menu bar takes the focus the moment the popup appears.
         """
         if self.platform != "windows":
             return
-        if mod_eq(self._modifier, MODKEY_ALT) or mod_eq(self._modifier, MODKEY_WIN):
+        emitted = self._modifier & ~MODKEY_USER_ALL
+        if mod_eq(emitted, MODKEY_ALT) or mod_eq(emitted, MODKEY_WIN):
             with self.get_input_context() as ctx:
                 ctx.send_modifier_keys(self._modifier | MODKEY_CTRL_L)
 

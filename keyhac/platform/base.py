@@ -98,18 +98,23 @@ class InputHook(ABC):
     def install(self,
                 on_key: Callable[[KeyEvent], bool],
                 on_restored: Callable[[], None],
-                on_mouse: Callable[[], None] | None = None) -> None:
+                on_mouse: Callable[[str], None] | None = None) -> None:
         """Install the hook. on_key returns True to consume the event and is
         called synchronously on the thread that runs the event loop.
         on_restored is called when the OS disabled the hook and it was
         re-installed/re-enabled (modifier state must be reset).
 
-        on_mouse, when given, is called (no arguments; observation only,
-        mouse events are never consumed) on physical mouse button-down or
-        wheel input - the engine cancels a pending one-shot modifier on it
-        (keyhac-win's WH_MOUSE_LL behavior). Platforms without a mouse hook
-        may ignore it; a one-shot then simply survives mouse input, which is
-        what keyhac-mac always did."""
+        on_mouse, when given, is called on physical mouse button-down or
+        wheel input (observation only; mouse events are never consumed) with
+        the kind that happened - "button" or "wheel". The engine cancels a
+        pending one-shot modifier on either (keyhac-win's WH_MOUSE_LL
+        behavior), but the two are not interchangeable to everything: a
+        button press says the user acted somewhere, while a wheel turn scrolls
+        a background window without going anywhere, so an open candidate
+        window dismisses on the first and not the second.
+
+        Platforms without a mouse hook may ignore it; a one-shot then simply
+        survives mouse input, which is what keyhac-mac always did."""
 
     @abstractmethod
     def uninstall(self) -> None: ...
@@ -158,6 +163,28 @@ class InputHook(ABC):
         """Current cursor position in virtual-screen pixels (portable
         top-left coordinates). Platform-optional."""
         raise NotImplementedError
+
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """The character this key produces on the *active keyboard layout*,
+        or None when it produces none (a function key, a chord that is not
+        text) or the platform cannot say.
+
+        A virtual key code does not name a character: which glyph ``Shift-2``
+        makes is a property of the layout, and Keyhac's own tables map names
+        to codes, not codes to glyphs. Anything that has to reconstruct typed
+        text from hook events - the candidate window's filter field, which is
+        fed through the hook because its window has no keyboard focus - has to
+        ask the OS instead. See ``keyhac.ui.keyroute``.
+
+        `mod` is Keyhac's modifier mask. Only the modifiers that change the
+        produced glyph are honoured (Shift, and Alt/Option/AltGr, which
+        several layouts need for ``@`` or a backslash); Ctrl and Cmd are ignored,
+        since a Ctrl chord is a command rather than text.
+
+        Platform-optional: the base returns None and the caller falls back to
+        what it can name itself.
+        """
+        return None
 
     def check_health(self) -> None:
         """Called periodically (~100 ms) from the event loop.  Platforms that

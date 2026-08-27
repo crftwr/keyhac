@@ -126,6 +126,12 @@ action that emits nothing at all gets. The redundancy is between the first two, 
 only for the case where the callable happens to send keys, which cannot be known
 before running it.
 
+Both places ask "is a *lone* Win/Alt held?" of the emitted modifiers only — the user
+bits are masked out first, because a user modifier is never sent (except in replay,
+where the original key is reproduced and does count). `U0-Alt-V` on a chooser is the
+case that showed why: the OS saw nothing but Alt going down and coming back up, so
+without the mask the menu bar took the focus at the moment the popup appeared.
+
 ## Clipboard history
 
 - Model from keyhac-mac (`max_items=1000`, label truncation, size quotas);
@@ -143,11 +149,137 @@ before running it.
 - Async, callback-based (`ChooserAction.list_items/on_chosen`) — keyhac-win's
   blocking `popListWindow` is deliberately not carried over (its nested message loop
   was the worst reentrancy source in 1.x).
-- Filtering: multi-word AND substring (keyhac-mac behavior). The match function is a
-  hook point for a future migemo port.
+- Filtering: a pluggable `Matcher` (`keyhac/core/matcher.py`). The default is
+  multi-word AND substring (keyhac-mac behavior) **unioned with Migemo**, so romaji
+  finds Japanese; `WildcardMatcher` restores 1.x's `*`/`?`. Migemo only ever adds
+  matches — see [Migemo](#migemo) below.
+- **Two panes, one focus.** The filter field starts with it, and while it has it
+  the list shows *no* selection (`ListView(allow_no_selection=True)`, puikit
+  PR #126) — not the muted unfocused highlight, which still reads as a proposal.
+  Down steps into the list, Up off its first row steps back out, and typing any
+  character does too, so the field is never more than one keystroke away. Enter
+  takes the selected row, or the top match while the field has the focus: typing
+  a few letters and pressing Enter is the flow the window exists for, and making
+  Enter inert there would have been a regression. A click picks a row and moves
+  the focus into the list but deliberately does **not** choose it — the payload
+  can be a destructive action, so choosing stays an explicit Enter.
+- **Focus is marked one container at a time.** A child draws focused only if
+  every container above it is focused too, and a container marks only its *own*
+  direct child. The list sits inside the `Frame`, so focusing it means the page
+  focuses the frame and the frame focuses the list; naming the list to the page
+  marks nothing and the selection draws in the muted unfocused colour. The
+  symptom was a grey highlight that turned the accent colour only while a mouse
+  button was held — the press ran `focus_on_click`, which marks the frame
+  correctly, and the release handler then put it back to the broken form.
 - Placement: centered on the focused window, clamped to its screen; one chooser at a
-  time — the same action's hotkey toggles it closed, a different chooser replaces it,
-  and the replacement inherits the app to refocus.
+  time — the same action's hotkey toggles it closed, a different chooser replaces it.
+- **It closes when the user moves away from it** (`_DismissWatch` in `actions.py`).
+  A chooser is transient, and nothing used to end it but Enter/Esc/the hotkey — so
+  one could survive on another virtual desktop, and the hotkey then toggled closed a
+  window the user could not see, which read as the chooser refusing to open. Two
+  triggers: the frontmost window changed, or a click landed outside it. The first is
+  one observation covering three cases — a window belongs to exactly one desktop, so
+  a desktop switch necessarily changes which window is frontmost, as do an app
+  switch and a window switch. It is keyed on `(pid, window title)` and deliberately
+  **not** on the focus path: the macOS path runs down to the focused *element*, so
+  it changes when the user Tabs between fields and would pull the chooser out from
+  under them. Both triggers treat "could not read it" as "change nothing".
+  **Buttons only, never the wheel.** The mouse hook fires on both, and both
+  still cancel a one-shot — but macOS scrolls the window under the pointer
+  without focusing it, so dismissing on a wheel turn made the chooser vanish
+  whenever the user nudged a background list. Spotlight survives that; so
+  does this. `InputHook`'s `on_mouse` carries `"button"` / `"wheel"` for it.
+  Keyhac's **own process is also "could not read it"**: the chooser is our
+  window, so the focus landing on us is the chooser's doing, not the user's —
+  on macOS a click on the popup can make us the AX-focused application even
+  though a borderless window cannot take key status, and the activating path
+  focuses us on purpose. Without that check a click on the chooser could close
+  it, and an activating chooser would have closed itself on its first tick.
+  Dismissal never refocuses anyone — the user moved away on purpose.
+- Polled (250 ms, only while one is open) rather than pushed: the native
+  notifications differ per OS (`NSWorkspaceActiveSpaceDidChange`,
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`) and would be two platform-layer
+  implementations, while `FocusProvider.get_focus()` already runs on every key
+  down — a user typing pays it faster than the watch does.
+- An armed multi-stroke prefix does **not** get the same treatment yet: it still
+  survives a desktop or application switch. Same bug class, undecided.
+- **It does not take OS keyboard focus** (discussion #112). It used to, which was not
+  a decision anybody made — it is what a secondary PuiKit window does by default —
+  and three things followed from it, all now gone: the console came to the front
+  alongside it (activation is app-scoped, and macOS 26 refuses
+  `activateWithOptions:` for self-activation, so there is no narrower call);
+  reopening could jump to another Space, because the OS follows the app's frontmost
+  window; and pasting needed a 150 ms settle delay because the target application
+  was deactivated and reactivated around it. `ChooserAction.activates = True` opts
+  one source back into the old behavior, with the old costs.
+- **Not taking focus is not the same as not being clickable**, and on macOS being
+  both takes a specific window kind. `activates=False` alone stops the window
+  taking focus *when it opens*; it does not stop a **click** activating the
+  application — borderless prevents a window becoming key, not the app coming
+  forward. That was a real defect: clicking the chooser deactivated the window
+  underneath and the paste then had nowhere to go. The window is a PuiKit
+  window PuiKit builds for `overlay_input="mouse"` (puikit PR #126): clicks reach
+  it, the application is never activated, and the target keeps its focus, caret
+  and selection. `WS_EX_NOACTIVATE` already refuses both on Windows, so the flags
+  are inert there. `frameless` goes with them: the panel's mask forces a title
+  bar (a borderless panel cannot become key), and `frameless` is what hides it
+  again and puts the content rect back to the frame rect. All of these travel
+  with `activates` rather than being separately settable, so no caller can ask
+  for a combination that does not work.
+- **IME composition in the filter field is given up, deliberately** *(decided
+  2026-08-26)*. Composition follows OS keyboard focus, so a window that does not
+  take it cannot host an input method — no hook can substitute, because a hook
+  sees physical keys and not what an IME would make of them. Migemo is the
+  answer instead: romaji reaches Japanese candidates, and for a filter field it
+  is arguably the faster route anyway (`gijiroku` against ぎじろく plus a
+  conversion). That is why `pymigemo` is a hard dependency and not an extra.
+  The alternative was live and was declined: PuiKit's `overlay_input="keyboard"`
+  gives a window that *is* key while the app stays inactive — the Spotlight
+  shape, in which an input method does work — but it is macOS-only, it means
+  dropping the hook route there (a key window gets the keystrokes itself, and
+  both paths at once double every character), it takes key status away from the
+  window being pasted into, and it would leave the two OSes with different
+  input paths. Not worth it for what Migemo already covers.
+- The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
+  plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
+  named keys, and — through `InputHook.char_for_key` — every digit and
+  punctuation mark the active layout produces. That last part is not a table of
+  our own: a vk does not say which glyph it makes, and Keyhac's per-layout tables
+  map names to codes rather than codes to glyphs, so the OS is asked instead
+  (`NSEvent.eventWithCGEvent_(...).characters` on macOS, `ToUnicodeEx` on
+  Windows) — the same translation it performs for a real keystroke, so it follows
+  whatever layout is selected. Without it the filter field could not type `.` `/`
+  `-` `_` `@` at all, which for clipboard history full of paths and URLs is most
+  of what one would filter on. What the route still cannot carry is an input
+  method, ever. Composition follows OS
+  keyboard focus: IMM32 delivers `WM_IME_*` only to the focused HWND and
+  `NSTextInputClient` serves only the key window. That is why Migemo is part of the
+  default matcher rather than an option — for a localised list it is what makes the
+  filter reach the rows.
+- A key grab and a multi-stroke prefix are the same kind of state and are kept
+  mutually exclusive: pushing a grab disarms any armed prefix.
+- **Esc precedence.** `on_key_event` normally offers Esc to a running `ThreadedAction`
+  before the key tables. While a grab is up it does not: Esc there means "close this
+  window", and the window is what the user is looking at.
+
+## Migemo
+
+- Engine: oguna's `pymigemo` — pure Python, BSD-3, dictionary bundled in the wheel.
+  **Not a hard dependency**: absent, `keyhac/core/migemo.py` degrades and the default
+  matcher is exactly `SubstringMatcher`.
+- **Union, never replace.** Migemo is added on top of the caller's own matching, so
+  an engine quirk can only ever *add* matches. XeFM reached this rule the hard way;
+  a hard dependency would invert it and let a pymigemo bug remove matches.
+- **The minimum-length gate is load-bearing.** Generating the regex costs ~1.4 s for
+  a 1-character query and ~0.5 ms for seven (measured, Apple silicon). A filter field
+  recompiles on every keystroke, so without the gate the window freezes on the first
+  character.
+- **The LP64 runtime patch.** pymigemo 0.0.1 reads a 32-bit dictionary field as
+  `array('L')`, which is 8 bytes on macOS/Linux; `_Array32` swaps the binding before
+  the engine is built. Inert on Windows and once upstream lands its own fix. Pin the
+  version — the patch reaches into internals.
+- **Wildcards bypass Migemo.** A generated regex would collide with `*`/`?`, so a
+  query using them keeps exactly the wildcard semantics it asked for.
 
 ## Console
 

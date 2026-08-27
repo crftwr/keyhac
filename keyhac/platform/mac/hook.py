@@ -37,6 +37,12 @@ from typing import Callable, Sequence
 import Quartz
 
 from keyhac.platform.base import InputHook, KeyEvent
+from keyhac.core.const import (
+    MODKEY_ALT, MODKEY_ALT_L, MODKEY_ALT_R,
+    MODKEY_CMD, MODKEY_CMD_L, MODKEY_CMD_R,
+    MODKEY_CTRL, MODKEY_CTRL_L, MODKEY_CTRL_R,
+    MODKEY_SHIFT, MODKEY_SHIFT_L, MODKEY_SHIFT_R,
+)
 from keyhac.core import log
 
 logger = log.getLogger("MacHook")
@@ -305,7 +311,9 @@ class MacInputHook(InputHook):
         if event_type in _MOUSE_CANCEL_TYPES:
             if kind == "real" and self._on_mouse is not None:
                 try:
-                    self._on_mouse()
+                    self._on_mouse(
+                        "wheel" if event_type == Quartz.kCGEventScrollWheel
+                        else "button")
                 except Exception:
                     logger.error("Mouse handler raised; event passed through.")
             return event
@@ -416,6 +424,41 @@ class MacInputHook(InputHook):
                 Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
     # ------------------------------------------------------------------
+
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """The character `vk` produces on the active layout (InputHook API).
+
+        A CGEvent carrying the key code and the glyph-changing modifiers is
+        handed to AppKit, whose `NSEvent.characters` is the same translation
+        the OS performs for a real keystroke - so the answer follows whatever
+        layout is selected, with no layout table of our own to go stale.
+        Cheaper and far shorter than the Carbon route (`UCKeyTranslate` plus
+        `TISCopyCurrentKeyboardLayoutInputSource`), and verified to honour
+        the modifier flags.
+
+        lazydocs: ignore
+        """
+        if mod & (MODKEY_CTRL | MODKEY_CTRL_L | MODKEY_CTRL_R
+                  | MODKEY_CMD | MODKEY_CMD_L | MODKEY_CMD_R):
+            return None
+        flags = 0
+        if mod & (MODKEY_SHIFT | MODKEY_SHIFT_L | MODKEY_SHIFT_R):
+            flags |= Quartz.kCGEventFlagMaskShift
+        if mod & (MODKEY_ALT | MODKEY_ALT_L | MODKEY_ALT_R):
+            flags |= Quartz.kCGEventFlagMaskAlternate
+        try:
+            from AppKit import NSEvent
+            event = Quartz.CGEventCreateKeyboardEvent(None, vk, True)
+            if event is None:
+                return None
+            if flags:
+                Quartz.CGEventSetFlags(event, flags)
+            text = NSEvent.eventWithCGEvent_(event).characters()
+        except Exception:
+            return None
+        if not text or len(text) != 1 or not text.isprintable():
+            return None
+        return str(text)
 
     def cursor_pos(self) -> tuple[int, int]:
         """Cursor position in CG global coordinates (top-left of the main

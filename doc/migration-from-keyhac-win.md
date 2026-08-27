@@ -54,8 +54,9 @@ per-user directory, exactly as in 1.x. See
   below.
 - **`keymap.setFont` / `keymap.setTheme`** — UI theme/font settings are not
   configurable yet (tracked in the issue tracker).
-- **Migemo matching** in the list window — not available (tracked in the issue
-  tracker); the chooser filters by multi-word substring match.
+- **Migemo matching** in the list window — available in the chooser when `pymigemo`
+  is installed; it is not a hard dependency, and without it filtering is multi-word
+  substring only. 1.x's `*` / `?` wildcards are available as `WildcardMatcher`.
 - **Blocking `popListWindow`** — dropped deliberately; its nested message loop was
   the worst source of reentrancy bugs in 1.x. `ChooserAction` is the replacement.
 - **`keymap.wnd`**, the `send_input_on_tru` ini hack, and profile-mode flag

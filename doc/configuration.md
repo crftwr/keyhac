@@ -308,9 +308,19 @@ kt["Fn-V"] = ShowClipboardHistory()
 ```
 
 `ShowClipboardHistory()` opens the chooser popup over the focused window: type to
-filter (multi-word AND match), `Up`/`Down` to select, **Enter pastes into the app
-you came from**, **Shift-Enter only sets the clipboard**, `Escape` cancels. Pressing
-the hotkey again closes it.
+filter, `Up`/`Down` to select, **Enter pastes into the app you came from**,
+**Shift-Enter only sets the clipboard**, `Escape` cancels. Pressing the hotkey again
+closes it.
+
+Filtering is multi-word AND substring, plus Migemo, so typing `gijiroku` finds an
+entry containing 議事録 without switching to an input method.
+
+**The popup does not take keyboard focus**, which is what keeps the application you
+came from active, keeps the console where it is, keeps you on the desktop you are
+on, and lets the paste go out with no delay. The keystrokes reach the popup through
+Keyhac's own key hook instead. The one consequence to know about: **an input method
+cannot compose in the filter field** — composition follows OS keyboard focus, and
+this window does not take it. Type romaji and let Migemo find the Japanese.
 
 ```python
 kt["Fn-Shift-V"] = ShowClipboardSnippets([
@@ -337,7 +347,10 @@ History behavior is configurable via `keymap.clipboard_history`: `max_items`
 
 Custom choosers derive from `ChooserAction`: implement
 `list_items() -> [(icon, label, ...)]` and `on_chosen(item, modifier_flags)`; the
-open/filter/refocus flow is inherited.
+open/filter flow is inherited. Two class attributes tune it: `matcher` (default
+substring + Migemo; `WildcardMatcher()` for `*` and `?`) and `activates` (default
+`False`; set it `True` only if the filter field genuinely needs an input method,
+which costs the focus of the application underneath).
 
 ## Windows, screens and applications
 

@@ -5,6 +5,7 @@ they are the user-facing glue between the two.
 """
 
 import datetime
+import os
 
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.action import ThreadedAction
@@ -15,7 +16,146 @@ logger = log.getLogger("Action")
 
 # Delay between re-activating the target app and sending the paste keystroke,
 # so the activation has settled (keyhac-win used a comparable settle wait).
+# Only the activating path pays it - see ChooserAction.activates.
 _PASTE_DELAY = 0.15
+
+#: Seconds between an open chooser's "did the world move" checks.  The same
+#: read runs on every key down, so a user typing pays it faster than this
+#: does, and it only runs while a chooser is open.
+_DISMISS_POLL = 0.25
+
+
+class _DismissWatch:
+    """Closes the open chooser when the user moves away from it.
+
+    A chooser is transient: opened over one window, for one decision.
+    Nothing used to close it when that context went away, so one could
+    survive on another virtual desktop - and the hotkey would then toggle
+    closed a window the user could not see, which looked like the chooser
+    refusing to open (discussion #112).
+
+    Two triggers, which are one observation and one more:
+
+    - **The frontmost window changed.**  A window belongs to exactly one
+      desktop, so switching desktops necessarily changes which window is
+      frontmost: the same check catches a desktop switch, another
+      application coming forward, and another window of the same
+      application.  Keyed on `(pid, window title)` and deliberately not on
+      the focus path - on macOS that path runs down to the focused
+      *element*, so it changes when the user Tabs between fields inside one
+      window and would pull the chooser out from under them.
+    - **A click landed outside the chooser.**  Separate, because a click on
+      the current window's own background moves no focus at all.  The mouse
+      hook is already installed for one-shot cancellation; this rides it.
+
+    Polled rather than pushed: the native notifications differ per OS
+    (`NSWorkspaceActiveSpaceDidChange`, `SetWinEventHook`) and would be two
+    platform-layer implementations, while `FocusProvider.get_focus()` is
+    already called on every keystroke - so the cost is known, and both OSes
+    behave identically.
+
+    Dismissal never gives the focus back to anyone.  The user moved away on
+    purpose; yanking them somewhere would be the opposite of what they did.
+    """
+
+    def __init__(self, chooser, on_dismiss):
+        self._chooser = chooser
+        self._on_dismiss = on_dismiss
+        self._stopped = False
+        self._cancel = None
+        self._origin = self._frontmost()
+        # One bound-method object, kept: `self._clicked` builds a fresh one on
+        # every access, so stop() could never recognise its own registration.
+        self._observer = self._clicked
+        keymap = Keymap.get_instance()
+        if keymap is not None:
+            keymap.on_mouse_button = self._observer
+        self._arm()
+
+    @staticmethod
+    def _frontmost():
+        """Which window the user is in, or None for "no usable reading".
+
+        The *active window*, deliberately, and not the keyboard focus.  A
+        `Focus` mixes its sources - its pid is the frontmost application
+        (which our popup never becomes) while its window title comes from
+        the AX-focused application (which our popup *can* become on a
+        click).  Watching that mixture is how clicking the chooser closed
+        it: the pid check passed, and the title had turned into ours.
+        `get_active_window()` reads the frontmost application's own focused
+        window throughout, so nothing about our popup can move it - and it
+        skips the up-to-64-level AX path walk `get_focus()` pays for, which
+        makes it the cheaper read as well.
+
+        Keyhac's own process is still no reading at all, for the activating
+        path (`activates = True`), which puts the focus on us on purpose.
+        """
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            return None
+        try:
+            window = keymap.get_active_window()
+        except Exception:
+            return None
+        if window is None or window.pid == os.getpid():
+            return None
+        return (window.pid, window.title)
+
+    def _arm(self) -> None:
+        from keyhac.ui import runtime
+        if runtime.backend is not None:
+            self._cancel = runtime.backend.call_later(_DISMISS_POLL, self._tick)
+
+    def _tick(self) -> None:
+        if self._stopped:
+            return
+        where = self._frontmost()
+        # None is "could not read it", not "nothing is focused": a transient
+        # AX failure must not close the window the user is typing into.
+        if where is not None and where != self._origin:
+            logger.debug(f"Chooser dismissed: focus moved to {where}.")
+            self._fire()
+            return
+        self._arm()
+
+    def _clicked(self) -> None:
+        if self._stopped or self._inside():
+            return
+        # Coordinates in the message on purpose: if this ever fires for a
+        # click that was visibly on the popup, the two numbers say whether
+        # the geometry or the trigger is at fault.
+        keymap = Keymap.get_instance()
+        logger.debug(f"Chooser dismissed: click at "
+                     f"{keymap.cursor_pos() if keymap else None} is outside "
+                     f"{self._chooser.window.frame_px()}.")
+        self._fire()
+
+    def _inside(self) -> bool:
+        """Whether the pointer is over the chooser.  True when it cannot be
+        told - same rule as above, an unreadable answer closes nothing."""
+        keymap = Keymap.get_instance()
+        pos = keymap.cursor_pos() if keymap is not None else None
+        frame = self._chooser.window.frame_px()
+        if pos is None or frame is None:
+            return True
+        x, y = pos
+        fx, fy, fw, fh = frame
+        return fx <= x < fx + fw and fy <= y < fy + fh
+
+    def _fire(self) -> None:
+        self.stop()
+        self._on_dismiss()
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        if self._cancel is not None:
+            self._cancel()
+            self._cancel = None
+        keymap = Keymap.get_instance()
+        if keymap is not None and keymap.on_mouse_button is self._observer:
+            keymap.on_mouse_button = None
 
 
 class ChooserAction:
@@ -35,8 +175,27 @@ class ChooserAction:
     ```
     """
 
+
     #: The one chooser currently open: (action, window, original_pid).
     _open = None
+
+    #: The _DismissWatch guarding it, cleared with it.
+    _watch = None
+
+    #: How the filter text is matched against the rows.  None means the
+    #: default: case-insensitive substring, unioned with Migemo so romaji
+    #: finds Japanese.  Set it per action to pick something else -
+    #: ``WildcardMatcher()`` for 1.x's ``*`` / ``?``.
+    matcher = None
+
+    #: Whether the chooser takes OS keyboard focus.  False (the default)
+    #: leaves the application underneath focused and routes the keystrokes
+    #: through the key hook, which is what keeps the console where it is,
+    #: keeps the current Space, and lets a paste go out with no settle
+    #: delay.  Set it True only for a source whose filter field genuinely
+    #: needs an input method: composition cannot reach an unfocused window,
+    #: so that is the one thing the default gives up.
+    activates = False
 
     def __repr__(self):
         return f"{type(self).__name__}()"
@@ -54,31 +213,36 @@ class ChooserAction:
         # Only one chooser at a time (issue #3): pressing the same action's
         # key again toggles its chooser closed; a different chooser action
         # replaces the open one. Either way the replacement inherits the app
-        # to refocus - at this point the focus is the chooser itself, not the
-        # window the user was working in.
+        # to refocus - which matters only for an activating chooser, where
+        # the focus at this point is the chooser itself rather than the
+        # window the user was working in. A non-activating one never took
+        # the focus, so there is nothing to give back.
         open_entry, ChooserAction._open = ChooserAction._open, None
+        ChooserAction._stop_watch()
         if open_entry is not None:
             prev_action, prev_chooser, original_pid = open_entry
             prev_chooser.dismiss()
             if prev_action is self:
-                if original_pid is not None and keymap.app_control is not None:
-                    keymap.app_control.activate_pid(original_pid)
+                self._refocus(original_pid)
                 return
         else:
-            focus = keymap.focus
-            original_pid = focus.pid if focus else None
+            original_pid = None
+            if self.activates:
+                focus = keymap.focus
+                original_pid = focus.pid if focus else None
 
         def _refocus_original_app():
-            if original_pid is not None and keymap.app_control is not None:
-                keymap.app_control.activate_pid(original_pid)
+            self._refocus(original_pid)
 
         def _on_selected(item, modifier_flags):
             ChooserAction._open = None
+            ChooserAction._stop_watch()
             _refocus_original_app()
             self.on_chosen(item, modifier_flags)
 
         def _on_canceled():
             ChooserAction._open = None
+            ChooserAction._stop_watch()
             _refocus_original_app()
 
         # Center the chooser on the focused window (issue #4). Both frames are
@@ -95,16 +259,42 @@ class ChooserAction:
 
         chooser = ChooserWindow(runtime.backend, self.list_items(),
                                 on_selected=_on_selected, on_canceled=_on_canceled,
-                                center_on=center_on, clamp_to=clamp_to)
+                                center_on=center_on, clamp_to=clamp_to,
+                                matcher=self.matcher, activates=self.activates)
         ChooserAction._open = (self, chooser, original_pid)
 
-        # Keyhac runs as an accessory (agent) app, so the chooser must
-        # deliberately activate our own process to take keyboard input; the
-        # original app is re-activated on selection/cancel above. (A true
-        # non-activating chooser needs an NSPanel - a planned PuiKit feature.)
-        if keymap.app_control is not None:
-            import os
+        def _dismiss():
+            # No refocus: the user moved away deliberately.
+            ChooserAction._open = None
+            chooser.dismiss()
+
+        ChooserAction._watch = _DismissWatch(chooser, _dismiss)
+
+        if self.activates and keymap.app_control is not None:
+            # Keyhac runs as an accessory (agent) app, so an activating
+            # chooser has to activate our own process to be typed into; the
+            # original app is re-activated on selection/cancel above. This
+            # is app-scoped, so it also brings the console forward and can
+            # follow the app to another Space - the reason the default is
+            # not to do it (discussion #112).
             keymap.app_control.activate_pid(os.getpid())
+
+    @staticmethod
+    def _stop_watch() -> None:
+        """Tear down the watch guarding the chooser that is going away."""
+        watch, ChooserAction._watch = ChooserAction._watch, None
+        if watch is not None:
+            watch.stop()
+
+    @staticmethod
+    def _refocus(pid) -> None:
+        """Give the focus back to the application the chooser took it from.
+        `pid` is None for a non-activating chooser, which never took it."""
+        if pid is None:
+            return
+        keymap = Keymap.get_instance()
+        if keymap.app_control is not None:
+            keymap.app_control.activate_pid(pid)
 
     def list_items(self):
         """Build the list the chooser shows.  Override this.
@@ -140,6 +330,12 @@ class ClipboardChooserAction(ChooserAction):
 
         # Shift-select: set the clipboard without pasting
         if modifier_flags & MODKEY_SHIFT:
+            return
+
+        if not self.activates:
+            # The target application never lost the focus, so there is
+            # nothing to settle and the keystroke can go out now.
+            self._paste()
             return
 
         # Paste once the re-activated target app has settled

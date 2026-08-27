@@ -30,6 +30,12 @@ import sys
 from typing import Callable, Sequence
 
 from keyhac.platform.base import InputHook, KeyEvent
+from keyhac.core.const import (
+    MODKEY_ALT, MODKEY_ALT_L, MODKEY_ALT_R,
+    MODKEY_CMD, MODKEY_CMD_L, MODKEY_CMD_R,
+    MODKEY_CTRL, MODKEY_CTRL_L, MODKEY_CTRL_R,
+    MODKEY_SHIFT, MODKEY_SHIFT_L, MODKEY_SHIFT_R,
+)
 from keyhac.core import log
 
 logger = log.getLogger("WinHook")
@@ -62,10 +68,10 @@ if sys.platform == "win32":
     WM_XBUTTONDOWN = 0x020B
     WM_MOUSEWHEEL = 0x020A
     WM_MOUSEHWHEEL = 0x020E
+    MOUSE_WHEEL_MSGS = frozenset([WM_MOUSEWHEEL, WM_MOUSEHWHEEL])
     MOUSE_CANCEL_MSGS = frozenset([
         WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN,
-        WM_MOUSEWHEEL, WM_MOUSEHWHEEL,
-    ])
+    ]) | MOUSE_WHEEL_MSGS
 
     LLKHF_EXTENDED = 0x01
     LLKHF_INJECTED = 0x10
@@ -77,6 +83,14 @@ if sys.platform == "win32":
     KEYEVENTF_KEYUP = 0x0002
     KEYEVENTF_SCANCODE = 0x0008
     MAPVK_VK_TO_VSC = 0
+
+    VK_SHIFT = 0x10
+    VK_CONTROL = 0x11
+    VK_MENU = 0x12
+    #: ToUnicodeEx flag (Windows 10 1607+): translate without disturbing the
+    #: keyboard's dead-key state. Older builds ignore it, which is why the
+    #: call below is still made twice on a dead key.
+    TOUNICODE_NO_STATE = 1 << 2
 
     MOUSEEVENTF_MOVE = 0x0001
     MOUSEEVENTF_ABSOLUTE = 0x8000
@@ -175,6 +189,12 @@ if sys.platform == "win32":
     user32.GetSystemMetrics.restype = ctypes.c_int
     user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
     user32.GetAsyncKeyState.restype = ctypes.c_short
+    user32.GetKeyboardLayout.argtypes = [wintypes.DWORD]
+    user32.GetKeyboardLayout.restype = wintypes.HKL
+    user32.ToUnicodeEx.argtypes = [
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_ubyte * 256),
+        ctypes.c_wchar_p, ctypes.c_int, wintypes.UINT, wintypes.HKL]
+    user32.ToUnicodeEx.restype = ctypes.c_int
     user32.GetKeyboardType.argtypes = [ctypes.c_int]
     user32.GetKeyboardType.restype = ctypes.c_int
     kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
@@ -293,7 +313,8 @@ class WinInputHook(InputHook):
             if int(mouse.dwExtraInfo) not in (EXTRA_INFO_OWN, EXTRA_INFO_REPLAY):
                 try:
                     if self._on_mouse is not None:
-                        self._on_mouse()
+                        self._on_mouse(
+                            "wheel" if w_param in MOUSE_WHEEL_MSGS else "button")
                 except Exception:
                     logger.error("Mouse handler raised; event passed through.")
         return user32.CallNextHookEx(None, n_code, w_param, l_param)
@@ -350,6 +371,49 @@ class WinInputHook(InputHook):
         return "jis" if user32.GetKeyboardType(0) == 7 else "ansi"
 
     # ------------------------------------------------------------------
+
+    def char_for_key(self, vk: int, mod: int = 0) -> str | None:
+        """The character `vk` produces on the active layout (InputHook API).
+
+        ``ToUnicodeEx`` against the foreground thread's keyboard layout: the
+        same translation Windows performs for a real keystroke, so the answer
+        follows whatever layout is selected with no table of our own to go
+        stale. AltGr is Ctrl+Alt on Windows, which is why an Alt in `mod`
+        sets both - several layouts need it for ``@`` and the backslash.
+
+        lazydocs: ignore
+        """
+        if mod & (MODKEY_CMD | MODKEY_CMD_L | MODKEY_CMD_R):
+            return None
+        alt = bool(mod & (MODKEY_ALT | MODKEY_ALT_L | MODKEY_ALT_R))
+        if mod & (MODKEY_CTRL | MODKEY_CTRL_L | MODKEY_CTRL_R) and not alt:
+            # A Ctrl chord is a command, not text. Ctrl+Alt is AltGr.
+            return None
+
+        state = (ctypes.c_ubyte * 256)()
+        if mod & (MODKEY_SHIFT | MODKEY_SHIFT_L | MODKEY_SHIFT_R):
+            state[VK_SHIFT] = 0x80
+        if alt:
+            state[VK_CONTROL] = 0x80
+            state[VK_MENU] = 0x80
+
+        scan = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)
+        layout = user32.GetKeyboardLayout(0)
+        buffer = ctypes.create_unicode_buffer(8)
+        count = user32.ToUnicodeEx(vk, scan, ctypes.byref(state), buffer,
+                                   len(buffer), TOUNICODE_NO_STATE, layout)
+        if count < 0:
+            # A dead key. The flag above leaves the state alone on Windows 10
+            # 1607+; on anything older the state is now armed, so translate
+            # again to consume it rather than leaving the next real keystroke
+            # to be composed against it.
+            user32.ToUnicodeEx(vk, scan, ctypes.byref(state), buffer,
+                               len(buffer), TOUNICODE_NO_STATE, layout)
+            return None
+        if count != 1:
+            return None
+        text = buffer[0]
+        return text if text.isprintable() else None
 
     def cursor_pos(self) -> tuple[int, int]:
         pt = wintypes.POINT()
