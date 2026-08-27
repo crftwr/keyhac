@@ -16,6 +16,13 @@ from keyhac.core.action import (
     PlaybackRecordedKeys,
 )
 from keyhac.core.clipboard_history import ClipboardHistory
+from keyhac.core.candidate import Candidate
+from keyhac.core.source import CallableSource, Source
+from keyhac.core.sources import (
+    ClipboardHistorySource,
+    ClipboardToolsSource,
+    SnippetsSource,
+)
 # The action API is reached through keymap.ui and UINode's own methods (see
 # doc/action-api.md); only the node type and the two exceptions an action has
 # to be able to catch are named here.
@@ -35,6 +42,7 @@ from keyhac.actions import (
     SnapWindow,
     ChooserAction,
     DateTimeSnippet,
+    ShowCandidates,
     ShowClipboardHistory,
     ShowClipboardSnippets,
     ShowClipboardTools,
@@ -57,6 +65,12 @@ __all__ = [
     "ToggleRecordingKeys",
     "PlaybackRecordedKeys",
     "ClipboardHistory",
+    "Candidate",
+    "Source",
+    "CallableSource",
+    "ClipboardHistorySource",
+    "SnippetsSource",
+    "ClipboardToolsSource",
     "UINode",
     "WaitTimeout",
     "FillFailed",
@@ -72,6 +86,7 @@ __all__ = [
     "MoveWindow",
     "SnapWindow",
     "ActivateWindow",
+    "ShowCandidates",
     "ShowClipboardHistory",
     "ShowClipboardSnippets",
     "ShowClipboardTools",

@@ -262,6 +262,49 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   before the key tables. While a grab is up it does not: Esc there means "close this
   window", and the window is what the user is looking at.
 
+## Candidate sources
+
+- **A source is a value, not a subclass** (`keyhac/core/source.py`). While the
+  only way to offer a new kind of row was to override `list_items`, every new
+  capability cost an action class *and a hotkey to reach it* — and the hotkey
+  is the scarce resource, not the code. As values, several sources go into one
+  window and one key reaches all of them, with one incremental search across
+  the lot.
+- Two things get named separately: **what the rows are** (`candidates()`,
+  rebuilt on every invocation, because anything read from the screen is stale
+  the moment it is cached) and **what choosing one does** (`on_chosen()`,
+  declared once per source because rows from one source almost always do the
+  same kind of thing). `Candidate.action` overrides it for a row that differs —
+  which is what a unified window needs, since Enter there has to mean whatever
+  *that* row means.
+- **`name` is on the source, not the candidate.** The window shows each row's
+  source beside it, and it already knows which source produced which row, so
+  copying the name onto every candidate would store the same fact twice.
+  `ChooserAction._collect` keeps that mapping for the life of one window.
+- The badge is drawn only when there is more than one source; with one, every
+  row would carry the same word.
+- **The badge is a `row_factory` widget** (`keyhac/ui/candidate_row.py`), not a
+  PuiKit addition. A trailing label is a reasonable thing for a list widget to
+  offer in general, but *this* badge belongs to the unified window, and
+  building it app-side is also the honest test of whether `ListView`'s
+  `row_factory` is flexible enough. What the toolkit does not hand over with it
+  is the eliding it applies to plain string rows, so the widget does its own —
+  and elides the two texts independently, the label yielding only the width the
+  badge needs, since clipping a long clipboard entry to fit a short source name
+  would lose the part that makes the row legible.
+- **The window always hands back a `Candidate`.** It used to unwrap a
+  tuple-derived row back to its tuple, which meant the *window* decided how a
+  row would be routed and a source that legitimately yields tuples had its own
+  `on_chosen` skipped. Unwrapping for the pre-source `ChooserAction.on_chosen`
+  is the action's business (`_chosen_legacy`).
+- `ShowClipboardHistory` and its siblings are presets over
+  `keyhac/core/sources.py`. Porting them was the point as much as the result:
+  they are the sources that already existed, so if they had not fitted, the
+  shape would have been wrong. The `Source` suffix on the source classes is not
+  decoration — `ClipboardHistory` is already the name of the history *store*,
+  and two public things with one name in a flat `from keyhac import *` is a
+  trap.
+
 ## Migemo
 
 - Engine: oguna's `pymigemo` — pure Python, BSD-3, dictionary bundled in the wheel.

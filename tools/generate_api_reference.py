@@ -80,7 +80,15 @@ API_NAMES = [
     "PlaybackRecordedKeys",
     # Clipboard
     "ClipboardHistory",
+    # Candidate window: sources are values, so several share one hotkey.
     "ChooserAction",
+    "ShowCandidates",
+    "Candidate",
+    "Source",
+    "CallableSource",
+    "ClipboardHistorySource",
+    "SnippetsSource",
+    "ClipboardToolsSource",
     "ShowClipboardHistory",
     "ShowClipboardSnippets",
     "ShowClipboardTools",

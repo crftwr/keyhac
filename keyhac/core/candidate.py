@@ -43,7 +43,16 @@ class Candidate:
         rect: Screen rectangle `(x, y, w, h)` in puikit's portable top-left
             coordinates, for views that draw over the real element.
         provenance: Where `display` came from, when that is not simply the
-            element's name - `"description"`, `"identifier"`, `"position"`.
+            element's name - `"description"`, `"help"`, `"identifier"`,
+            `"position"`.  `UINode.name_source` is where an accessibility
+            source gets this.
+        action: What choosing this row does, as `action(modifier_flags)`.
+            Usually left None: a source declares one `on_chosen` for
+            everything it yields, since candidates from one source almost
+            always do the same kind of thing.  Set it per candidate for a
+            source whose rows genuinely differ - and for the unified window,
+            where rows from several sources sit in one list and Enter has to
+            mean whatever *that* row means.
         extras: Anything else the source and its view agree on (a key
             expression, a role hint).
     """
@@ -55,6 +64,7 @@ class Candidate:
     icon: str = ""
     rect: tuple = None
     provenance: str = None
+    action: Any = None
     extras: dict = field(default_factory=dict)
 
     def __post_init__(self):

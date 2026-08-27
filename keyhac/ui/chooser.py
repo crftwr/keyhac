@@ -81,6 +81,12 @@ class ChooserWindow:
 
     matcher: how the filter text is matched against the candidates.
 
+    badge_of: optional `candidate -> str`, drawn quietly at the right of its
+    row.  What the unified window uses to say which source a row came from,
+    since with clipboard entries, windows and on-screen controls in one list
+    a row without its provenance is a guess.  None (or a function returning
+    "" for everything) draws plain rows.
+
     activates: whether the window takes OS keyboard focus.  The default is
     not to - see the module docstring.  A non-activating window asks PuiKit
     for ``overlay_input="mouse"``: clicks reach it, but the application
@@ -94,7 +100,7 @@ class ChooserWindow:
 
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
-                 activates=False):
+                 activates=False, badge_of=None):
         self._items = [Candidate.from_item(item) for item in items]
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._filtered = list(self._items)
@@ -127,9 +133,20 @@ class ChooserWindow:
         # units of its flex slot, so pass the full window width to let the
         # field fill whatever the layout resolves (the window is not resizable).
         self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
-        self._list = ListView(self._labels(), ellipsis="…", elide_where="end",
-                              allow_no_selection=True,
-                              on_select=self._on_row_clicked)
+        self._badge_of = badge_of
+        if badge_of is None:
+            self._list = ListView(self._labels(), ellipsis="…",
+                                  elide_where="end", allow_no_selection=True,
+                                  on_select=self._on_row_clicked)
+        else:
+            # Rows become widgets so each can carry its source beside it; the
+            # widget does its own eliding, which plain string rows get from
+            # ListView (see keyhac.ui.candidate_row).
+            from keyhac.ui.candidate_row import CandidateRow
+            self._list = ListView(
+                self._rows(), allow_no_selection=True,
+                on_select=self._on_row_clicked,
+                row_factory=lambda row: CandidateRow(*row))
 
         # Kept, not inlined: the list is nested inside it, and focus is marked
         # one level at a time - see _focus_list.
@@ -208,6 +225,12 @@ class ChooserWindow:
     def _labels(self):
         return [candidate.label for candidate in self._filtered]
 
+    def _rows(self):
+        return [(c.label, self._badge_of(c) or "") for c in self._filtered]
+
+    def _items_for_list(self):
+        return self._labels() if self._badge_of is None else self._rows()
+
     # --- focus ------------------------------------------------------------
     #
     # Two panes, one at a time.  While the field has the focus the list shows
@@ -247,7 +270,7 @@ class ChooserWindow:
         # whole cost is in building its alternation regex (discussion #112).
         match = self._matcher.compile(text)
         self._filtered = [c for c in self._items if match.hit(c.match_text)]
-        self._list.set_items(self._labels())
+        self._list.set_items(self._items_for_list())
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.
         self._list.selected = -1
@@ -321,9 +344,9 @@ class ChooserWindow:
             if self._on_canceled is not None:
                 self._on_canceled()
         elif self._on_selected is not None:
-            # Tuple sources get their own tuple back, so every ChooserAction
-            # written against the pre-Candidate API keeps working.
-            payload = candidate.payload
-            self._on_selected(
-                payload if isinstance(payload, tuple) else candidate,
-                modifier_flags)
+            # Always the Candidate. Handing a tuple-derived row back as its
+            # tuple - which this used to do, for the pre-Candidate API - meant
+            # the window decided how the row would be routed, and a source
+            # that legitimately yields tuples had its own on_chosen skipped.
+            # Unwrapping is the caller's business; see ChooserAction._choose.
+            self._on_selected(candidate, modifier_flags)

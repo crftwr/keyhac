@@ -238,7 +238,7 @@ class ChooserAction:
             ChooserAction._open = None
             ChooserAction._stop_watch()
             _refocus_original_app()
-            self.on_chosen(item, modifier_flags)
+            self._choose(item, modifier_flags)
 
         def _on_canceled():
             ChooserAction._open = None
@@ -257,10 +257,12 @@ class ChooserAction:
             clamp_to = MoveWindow._get_best_screen(
                 center_on, keymap.window_provider.screen_frames())
 
-        chooser = ChooserWindow(runtime.backend, self.list_items(),
+        rows, badge_of = self._collect()
+        chooser = ChooserWindow(runtime.backend, rows,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
-                                matcher=self.matcher, activates=self.activates)
+                                matcher=self.matcher, activates=self.activates,
+                                badge_of=badge_of)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -278,6 +280,61 @@ class ChooserAction:
             # follow the app to another Space - the reason the default is
             # not to do it (discussion #112).
             keymap.app_control.activate_pid(os.getpid())
+
+    def sources(self) -> list:
+        """The sources this action shows.  Override this, or `list_items`.
+
+        The default wraps `list_items` / `on_chosen` as one unnamed source, so
+        an action written before sources existed keeps working unchanged.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.source import CallableSource
+        return [CallableSource(self.list_items, on_chosen=self._chosen_legacy)]
+
+    def _chosen_legacy(self, candidate, modifier_flags: int) -> None:
+        """Hand `on_chosen` what it has always been handed: the tuple
+        `list_items` produced, for an action written before sources existed."""
+        payload = candidate.payload
+        self.on_chosen(payload if isinstance(payload, tuple) else candidate,
+                       modifier_flags)
+
+    def _collect(self):
+        """Every source's candidates, in source order, plus the badge lookup
+        the window draws beside each row.
+
+        The source is remembered *here*, keyed by the candidate's identity,
+        rather than being copied onto the candidate: the window already has
+        to be handed the mapping to draw a badge, so storing it on every row
+        as well would be keeping the same fact twice.  Badges are drawn only
+        when there is more than one source - with one, every row would carry
+        the same word.
+        """
+        from keyhac.core.candidate import Candidate
+
+        sources = self.sources()
+        rows, owners = [], {}
+        for source in sources:
+            for candidate in source.candidates():
+                candidate = Candidate.from_item(candidate)
+                rows.append(candidate)
+                owners[id(candidate)] = source
+        self._owners = owners
+        if len(sources) < 2:
+            return rows, None
+        return rows, lambda c: getattr(owners.get(id(c)), "name", "")
+
+    def _choose(self, candidate, modifier_flags: int) -> None:
+        """Route a chosen row to whatever owns it."""
+        source = self._owners.get(id(candidate))
+        if source is not None:
+            source.choose(candidate, modifier_flags)
+        else:
+            # A candidate this invocation did not produce.
+            self.on_chosen(candidate, modifier_flags)
+
+    #: Filled by _collect for the lifetime of one open window.
+    _owners: dict = {}
 
     @staticmethod
     def _stop_watch() -> None:
@@ -315,51 +372,109 @@ class ChooserAction:
         """
 
 
+class ShowCandidates(ChooserAction):
+    """Open the candidate window over one or more sources.
+
+    The hotkey is the scarce resource, not the code: an action class per kind
+    of row means a key per kind of row, and there are only so many a person
+    can hold.  This takes sources as *values*, so several kinds share one key
+    and one incremental search - and each row is labelled with where it came
+    from, so a mixed list stays readable.
+
+    ```python
+    kt["Fn-V"] = ShowCandidates([ClipboardHistory(), Snippets(my_snippets)])
+    kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
+    ```
+
+    Enter runs whatever the chosen row's source says to do, so rows from
+    different sources can mean different things in the same window - paste
+    this, activate that, press the other.
+    """
+
+    def __init__(self, sources, on_chosen=None, matcher=None, activates=None):
+        """Build the action.
+
+        Args:
+            sources: A `Source`, a plain callable returning candidates, or a
+                list of either.  A callable is wrapped, so anything that can
+                produce a list can be a source without subclassing.
+            on_chosen: Called as `on_chosen(candidate, modifier_flags)` for
+                rows whose source does not say what to do itself - which is
+                every row when the source is a bare callable.
+            matcher: How the filter text is matched; the default is
+                case-insensitive substring unioned with Migemo.
+            activates: Whether the window takes OS keyboard focus.  Leave it
+                alone unless the filter field genuinely needs an input method
+                - see `ChooserAction.activates`.
+        """
+        from keyhac.core.source import as_source
+
+        self._on_chosen = on_chosen
+        # A bare callable has no opinion about what choosing does, so it
+        # inherits this action's; a real Source keeps its own.
+        listed = sources if isinstance(sources, (list, tuple)) else [sources]
+        self._sources = [as_source(s, on_chosen=self._chosen_here)
+                         for s in listed]
+        if matcher is not None:
+            self.matcher = matcher
+        if activates is not None:
+            self.activates = activates
+
+    def __repr__(self):
+        names = ", ".join(s.name or type(s).__name__ for s in self._sources)
+        return f"ShowCandidates({names})"
+
+    def sources(self):
+        """lazydocs: ignore"""
+        return self._sources
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        self._chosen_here(candidate, modifier_flags)
+
+    def _chosen_here(self, candidate, modifier_flags: int) -> None:
+        if self._on_chosen is not None:
+            self._on_chosen(candidate, modifier_flags)
+
+
 class ClipboardChooserAction(ChooserAction):
+    """Base of the clipboard presets below.
+
+    Kept because it is documented and subclassed in the wild; the behaviour
+    itself now lives in `keyhac.core.sources`, so a clipboard row means the
+    same thing whether it is reached through its own hotkey or through a
+    unified window shared with other sources.
+    """
 
     def _paste(self):
-        keymap = Keymap.get_instance()
-        paste_key = "Cmd-V" if keymap.platform == "mac" else "Ctrl-V"
-        with keymap.get_input_context() as ctx:
-            ctx.send_key(paste_key)
+        """lazydocs: ignore"""
+        from keyhac.core.sources import _send_paste
+        _send_paste()
 
     def _on_chosen_common(self, text: str, modifier_flags: int):
-        from keyhac.ui import runtime
-        keymap = Keymap.get_instance()
-        keymap.clipboard_history.set_current(text)
-
-        # Shift-select: set the clipboard without pasting
-        if modifier_flags & MODKEY_SHIFT:
-            return
-
-        if not self.activates:
-            # The target application never lost the focus, so there is
-            # nothing to settle and the keystroke can go out now.
-            self._paste()
-            return
-
-        # Paste once the re-activated target app has settled
-        runtime.backend.call_later(_PASTE_DELAY, self._paste)
+        """lazydocs: ignore"""
+        from keyhac.core.sources import _PastingSource
+        _PastingSource().paste(text, modifier_flags)
 
 
-class ShowClipboardHistory(ClipboardChooserAction):
+class ShowClipboardHistory(ShowCandidates):
     """Show the clipboard history in the chooser window.
 
     Type to filter, Enter pastes into the application you came from,
     Shift-Enter only sets the clipboard, Escape cancels.
+
+    A preset: `ShowCandidates(ClipboardHistorySource())`.  Reach for
+    `ShowCandidates` directly to put the history in one window alongside
+    other sources rather than on a hotkey of its own.
     """
 
-    def list_items(self):
+    def __init__(self):
         """lazydocs: ignore"""
-        history = Keymap.get_instance().clipboard_history
-        return [("📋", label, s) for s, label in history.items()]
-
-    def on_chosen(self, item, modifier_flags: int):
-        """lazydocs: ignore"""
-        self._on_chosen_common(item[2], modifier_flags)
+        from keyhac.core.sources import ClipboardHistorySource
+        super().__init__(ClipboardHistorySource())
 
 
-class ShowClipboardSnippets(ClipboardChooserAction):
+class ShowClipboardSnippets(ShowCandidates):
     """Show fixed snippets in the chooser window.
 
     Choosing one pastes it, exactly like the clipboard history.
@@ -371,6 +486,8 @@ class ShowClipboardSnippets(ClipboardChooserAction):
         ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),       # (icon, label, callable)
     ])
     ```
+
+    A preset over `SnippetsSource`.
     """
 
     def __init__(self, snippets):
@@ -382,67 +499,36 @@ class ShowClipboardSnippets(ClipboardChooserAction):
                 the snippet is chosen and its return value is pasted;
                 returning None pastes nothing.
         """
+        from keyhac.core.sources import SnippetsSource
         self.snippets = list(snippets)
-
-    def list_items(self):
-        """lazydocs: ignore"""
-        return self.snippets
-
-    def on_chosen(self, item, modifier_flags: int):
-        """lazydocs: ignore"""
-        value = item[2] if len(item) > 2 else item[1]
-        if callable(value):
-            value = value()
-            if value is None:
-                return
-        self._on_chosen_common(str(value), modifier_flags)
+        super().__init__(SnippetsSource(self.snippets))
 
 
-class ShowClipboardTools(ClipboardChooserAction):
+class ShowClipboardTools(ShowCandidates):
     """Show clipboard conversion tools in the chooser window.
 
-    Each tool transforms the current clipboard text; the result is pasted like
-    a history entry.  quote, unindent, to_half_width and to_full_width below
-    are the stock converters, and any str -> str callable works.
+    Each tool takes the current clipboard text and returns its replacement.
 
     ```python
     ShowClipboardTools([
         ("🔄", "Quote", ShowClipboardTools.quote),
         ("🔄", "Upper case", str.upper),
-        ("🔄", "Pretty JSON", my_pretty_json),      # str -> str
     ])
     ```
 
-    Attributes:
-        quote_mark: Prefix quote() puts on each line (default "> ").
+    A preset over `ClipboardToolsSource`.
     """
-
-    quote_mark = "> "
 
     def __init__(self, tools):
         """Build the action.
 
         Args:
-            tools: Sequence of (icon, label, func) tuples, where func takes
-                the current clipboard text and returns the replacement;
-                returning None leaves the clipboard alone.
+            tools: Sequence of (icon, label, callable) tuples; the callable
+                takes the current clipboard text and returns the replacement.
         """
+        from keyhac.core.sources import ClipboardToolsSource
         self.tools = list(tools)
-
-    def list_items(self):
-        """lazydocs: ignore"""
-        return self.tools
-
-    def on_chosen(self, item, modifier_flags: int):
-        """lazydocs: ignore"""
-        func = item[2]
-        current = Keymap.get_instance().clipboard_history.get_current() or ""
-        result = func(current)
-        if result is None:
-            return
-        self._on_chosen_common(str(result), modifier_flags)
-
-    # -- stock converters (ported from keyhac-mac) ---------------------------
+        super().__init__(ClipboardToolsSource(self.tools))
 
     @staticmethod
     def to_plain(s):

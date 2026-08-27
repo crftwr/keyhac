@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [Source](#class-source) · [CallableSource](#class-callablesource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1538,10 +1538,190 @@ Handle the chosen item.  Override this.
 ---
 
 
+## <kbd>class</kbd> `ShowCandidates`
+Open the candidate window over one or more sources. 
+
+The hotkey is the scarce resource, not the code: an action class per kind of row means a key per kind of row, and there are only so many a person can hold.  This takes sources as *values*, so several kinds share one key and one incremental search - and each row is labelled with where it came from, so a mixed list stays readable. 
+
+```python
+kt["Fn-V"] = ShowCandidates([ClipboardHistory(), Snippets(my_snippets)])
+kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
+``` 
+
+Enter runs whatever the chosen row's source says to do, so rows from different sources can mean different things in the same window - paste this, activate that, press the other. 
+
+### <kbd>method</kbd> `ShowCandidates.__init__`
+
+```python
+__init__(sources, on_chosen=None, matcher=None, activates=None)
+```
+
+Build the action. 
+
+
+
+**Args:**
+ 
+ - <b>`sources`</b>:  A `Source`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing. 
+ - <b>`on_chosen`</b>:  Called as `on_chosen(candidate, modifier_flags)` for  rows whose source does not say what to do itself - which is  every row when the source is a bare callable. 
+ - <b>`matcher`</b>:  How the filter text is matched; the default is  case-insensitive substring unioned with Migemo. 
+ - <b>`activates`</b>:  Whether the window takes OS keyboard focus.  Leave it  alone unless the filter field genuinely needs an input method 
+        - see `ChooserAction.activates`. 
+
+---
+
+
+## <kbd>class</kbd> `Candidate`
+One row a source offers a view. 
+
+
+
+**Attributes:**
+ 
+ - <b>`match_text`</b>:  What the matcher runs against.  Defaults to `display`. 
+ - <b>`display`</b>:  What the user sees, which may differ from the match text -  a file candidate can match on its full path and display its  basename. 
+ - <b>`payload`</b>:  What the consumer wants back: a string to paste, a `UINode`,  a callable, a window handle. 
+ - <b>`identity`</b>:  Stable across invocations where the source can manage it,  so a view assigning short labels can keep giving the same  candidate the same label.  None when the source has nothing  stable to offer. 
+ - <b>`icon`</b>:  A short glyph shown before the display text. 
+ - <b>`rect`</b>:  Screen rectangle `(x, y, w, h)` in puikit's portable top-left  coordinates, for views that draw over the real element. 
+ - <b>`provenance`</b>:  Where `display` came from, when that is not simply the  element's name - `"description"`, `"help"`, `"identifier"`,  `"position"`.  `UINode.name_source` is where an accessibility  source gets this. 
+ - <b>`action`</b>:  What choosing this row does, as `action(modifier_flags)`. 
+ - <b>`Usually left None`</b>:  a source declares one `on_chosen` for everything it yields, since candidates from one source almost always do the same kind of thing.  Set it per candidate for a source whose rows genuinely differ - and for the unified window, where rows from several sources sit in one list and Enter has to mean whatever *that* row means. 
+ - <b>`extras`</b>:  Anything else the source and its view agree on (a key  expression, a role hint). 
+
+
+---
+
+#### <kbd>property</kbd> Candidate.label
+
+Icon and display text as one line, the way a list view draws it. 
+
+
+
+---
+
+### <kbd>method</kbd> `Candidate.from_item`
+
+```python
+from_item(item) → Candidate
+```
+
+Adapt the `(icon, label, *payload)` tuple `ChooserAction.list_items` returns.  The whole tuple becomes the payload, so `on_chosen` still receives exactly what it received before. 
+
+---
+
+
+## <kbd>class</kbd> `Source`
+A named set of candidates, and what choosing one does. 
+
+
+
+
+---
+
+### <kbd>method</kbd> `Source.candidates`
+
+```python
+candidates() → list[keyhac.core.candidate.Candidate]
+```
+
+The rows this source offers *right now*.  Override this. 
+
+Called on every invocation rather than cached: a source reading the screen - the windows that exist, the controls in the front window - is describing something that has already moved on by the time it is asked again. 
+
+---
+
+### <kbd>method</kbd> `Source.on_chosen`
+
+```python
+on_chosen(
+    candidate: keyhac.core.candidate.Candidate,
+    modifier_flags: int
+) → None
+```
+
+Act on the chosen row.  Override this. 
+
+
+
+**Args:**
+ 
+ - <b>`candidate`</b>:  The row the user picked. 
+ - <b>`modifier_flags`</b>:  Modifiers held at the moment of choosing, as a  bit mask - Shift-Enter is how the clipboard sources tell  "copy this" from "paste it". 
+
+---
+
+
+## <kbd>class</kbd> `CallableSource`
+A source built from a plain callable, so anything that can produce a list can be one without subclassing - SSH hosts, git branches, records out of a line-of-business system. 
+
+```python
+branches = CallableSource(git_branches, "Branches", on_chosen=checkout)
+``` 
+
+The callable returns `Candidate` objects, or the `(icon, label, *rest)` tuples `ChooserAction.list_items` has always returned - those are adapted, and `on_chosen` then receives a candidate whose payload is the tuple. 
+
+---
+
+
+## <kbd>class</kbd> `ClipboardHistorySource`
+Everything the clipboard has held, most recent first. 
+
+---
+
+
+## <kbd>class</kbd> `SnippetsSource`
+Fixed text you paste often. 
+
+```python
+SnippetsSource([("📧", "me@example.com"), ("🕒", "Date", DateTimeSnippet("%Y-%m-%d"))])
+``` 
+
+### <kbd>method</kbd> `SnippetsSource.__init__`
+
+```python
+__init__(snippets, name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`snippets`</b>:  Sequence of (icon, text), (icon, label, text) or  (icon, label, callable) tuples.  A callable is invoked when  the snippet is chosen and its return value is pasted;  returning None pastes nothing. 
+ - <b>`name`</b>:  What the unified window shows beside these rows. 
+
+---
+
+
+## <kbd>class</kbd> `ClipboardToolsSource`
+Transformations applied to whatever the clipboard holds now. 
+
+### <kbd>method</kbd> `ClipboardToolsSource.__init__`
+
+```python
+__init__(tools, name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`tools`</b>:  Sequence of (icon, label, callable) tuples; the callable  takes the current clipboard text and returns the replacement. 
+ - <b>`name`</b>:  What the unified window shows beside these rows. 
+
+---
+
+
 ## <kbd>class</kbd> `ShowClipboardHistory`
 Show the clipboard history in the chooser window. 
 
 Type to filter, Enter pastes into the application you came from, Shift-Enter only sets the clipboard, Escape cancels. 
+
+A preset: `ShowCandidates(ClipboardHistorySource())`.  Reach for `ShowCandidates` directly to put the history in one window alongside other sources rather than on a hotkey of its own. 
 
 ---
 
@@ -1558,6 +1738,8 @@ ShowClipboardSnippets([
      ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),       # (icon, label, callable)
 ])
 ``` 
+
+A preset over `SnippetsSource`. 
 
 ### <kbd>method</kbd> `ShowClipboardSnippets.__init__`
 
@@ -1579,21 +1761,16 @@ Build the action.
 ## <kbd>class</kbd> `ShowClipboardTools`
 Show clipboard conversion tools in the chooser window. 
 
-Each tool transforms the current clipboard text; the result is pasted like a history entry.  quote, unindent, to_half_width and to_full_width below are the stock converters, and any str -> str callable works. 
+Each tool takes the current clipboard text and returns its replacement. 
 
 ```python
 ShowClipboardTools([
      ("🔄", "Quote", ShowClipboardTools.quote),
      ("🔄", "Upper case", str.upper),
-     ("🔄", "Pretty JSON", my_pretty_json),      # str -> str
 ])
 ``` 
 
-
-
-**Attributes:**
- 
- - <b>`quote_mark`</b>:  Prefix quote() puts on each line (default "> "). 
+A preset over `ClipboardToolsSource`. 
 
 ### <kbd>method</kbd> `ShowClipboardTools.__init__`
 
@@ -1607,7 +1784,7 @@ Build the action.
 
 **Args:**
  
- - <b>`tools`</b>:  Sequence of (icon, label, func) tuples, where func takes  the current clipboard text and returns the replacement;  returning None leaves the clipboard alone. 
+ - <b>`tools`</b>:  Sequence of (icon, label, callable) tuples; the callable  takes the current clipboard text and returns the replacement. 
 
 
 

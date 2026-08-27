@@ -224,7 +224,7 @@ class TestNonActivatingChooser:
                                 on_selected=lambda item, mod: chosen.append(item))
         fixture.stroke("B")
         fixture.stroke("Return")
-        assert chosen == [("*", "beta", 2)]
+        assert [c.payload for c in chosen] == [("*", "beta", 2)]
         assert not fixture.keymap.modal_input_active()
 
     def test_escape_cancels_and_releases_the_grab(self, ui_backend):

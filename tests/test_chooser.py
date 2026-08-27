@@ -273,10 +273,13 @@ class TestChooserActivation:
 
 class TestClipboardPaste:
     """The settle delay existed only to let a re-activated application catch
-    up; with no activation there is nothing to wait for."""
+    up; with no activation there is nothing to wait for.  The behaviour lives
+    on the source now (`keyhac.core.sources`), so it is tested there - a
+    clipboard row means the same thing whether it is reached through its own
+    hotkey or through a window shared with other sources."""
 
-    def _wire(self, ui_backend, tmp_path):
-        from keyhac.actions import ClipboardChooserAction
+    def _wire(self, ui_backend, tmp_path, monkeypatch, took_focus):
+        from keyhac.core import sources
         from keyhac.core.clipboard_history import ClipboardHistory
         from keyhac.core.keymap import Keymap
         from keyhac.platform.base import ClipboardProvider
@@ -298,37 +301,36 @@ class TestClipboardPaste:
         keymap._clipboard_history = ClipboardHistory(
             _Board(), str(tmp_path / "clipboard.json"))
         pasted, deferred = [], []
-
-        class _Paste(ClipboardChooserAction):
-            def _paste(self):
-                pasted.append(True)
-
+        monkeypatch.setattr(sources, "_send_paste", lambda: pasted.append(True))
+        monkeypatch.setattr(sources, "_chooser_took_focus", lambda: took_focus)
         ui_backend.call_later = lambda delay, fn: deferred.append((delay, fn))
-        return keymap, _Paste(), pasted, deferred
+        return keymap, sources._PastingSource(), pasted, deferred
 
-    def test_paste_is_immediate_without_activation(self, ui_backend, tmp_path):
-        keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
-        action._on_chosen_common("hello", 0)
+    def test_paste_is_immediate_without_activation(self, ui_backend, tmp_path,
+                                                   monkeypatch):
+        keymap, source, pasted, deferred = self._wire(
+            ui_backend, tmp_path, monkeypatch, took_focus=False)
+        source.paste("hello", 0)
         assert pasted == [True]
         assert deferred == []
         assert keymap.clipboard_history.get_current() == "hello"
 
-    def test_paste_still_waits_when_the_chooser_took_focus(self, ui_backend,
-                                                           tmp_path):
-        _keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
-        type(action).activates = True
-        try:
-            action._on_chosen_common("hello", 0)
-        finally:
-            type(action).activates = False
+    def test_paste_still_waits_when_the_chooser_took_focus(
+            self, ui_backend, tmp_path, monkeypatch):
+        _keymap, source, pasted, deferred = self._wire(
+            ui_backend, tmp_path, monkeypatch, took_focus=True)
+        source.paste("hello", 0)
         assert pasted == []
         assert len(deferred) == 1 and deferred[0][0] > 0
 
-    def test_shift_select_never_pastes(self, ui_backend, tmp_path):
+    def test_shift_select_never_pastes(self, ui_backend, tmp_path, monkeypatch):
         from keyhac.core.const import MODKEY_SHIFT
-        _keymap, action, pasted, deferred = self._wire(ui_backend, tmp_path)
-        action._on_chosen_common("hello", MODKEY_SHIFT)
+        keymap, source, pasted, deferred = self._wire(
+            ui_backend, tmp_path, monkeypatch, took_focus=False)
+        source.paste("hello", MODKEY_SHIFT)
         assert pasted == [] and deferred == []
+        assert keymap.clipboard_history.get_current() == "hello", \
+            "Shift-Enter still sets the clipboard; it only skips the paste"
 
 
 class _ActiveWindow(Window):
@@ -668,7 +670,9 @@ class TestChooserFocus:
                                 on_selected=lambda item, mod: chosen.append(item))
         chooser._on_filter_change("al")
         self._key(chooser, "enter")
-        assert chosen == [("*", "alpha", 1)]
+        # The window hands back the Candidate; unwrapping to the tuple is
+        # ChooserAction's business, not the window's.
+        assert [c.payload for c in chosen] == [("*", "alpha", 1)]
 
     def test_enter_in_the_list_takes_the_selected_row(self, ui_backend):
         from keyhac.ui.chooser import ChooserWindow
@@ -679,7 +683,7 @@ class TestChooserFocus:
         self._key(chooser, "down")
         self._key(chooser, "down")
         self._key(chooser, "enter")
-        assert chosen == [("*", "beta", 2)]
+        assert [c.payload for c in chosen] == [("*", "beta", 2)]
 
     def test_down_with_no_matches_stays_in_the_field(self, ui_backend):
         chooser = self._chooser(ui_backend)
