@@ -208,11 +208,9 @@ class MenuItemsSource(CandidateSource):
 
     def candidates(self):
         """lazydocs: ignore"""
-        keymap = Keymap.get_instance()
-        focus = keymap.focus
-        element = getattr(focus, "element", None) if focus else None
+        element = self._front_element()
         if element is None:
-            logger.debug("No focused element; the menu bar cannot be found.")
+            logger.debug("No front window; there is no menu bar to read.")
             return []
         try:
             bar = element.menu_bar()
@@ -220,10 +218,34 @@ class MenuItemsSource(CandidateSource):
             logger.debug("This platform does not expose a menu bar.")
             return []
         if bar is None:
+            logger.debug("The front application exposes no menu bar.")
             return []
         rows = []
         _walk_menu(bar, (), rows, 0)
+        if not rows:
+            logger.debug("The front application's menu bar walked to nothing.")
         return rows
+
+    @staticmethod
+    def _front_element():
+        """An element inside the *front application*, to find its menu bar
+        from.
+
+        The active window, deliberately, and not `keymap.focus`. A `Focus`
+        mixes its sources - its window title comes from the AX-focused
+        application, which the popup itself can become - and reading the menu
+        bar from that gets Keyhac's, which as an accessory app has none. The
+        symptom is an empty list. `get_active_window()` reads the frontmost
+        application throughout, and nothing about the popup moves it.
+        """
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            return None
+        try:
+            window = keymap.get_active_window()
+        except Exception:
+            return None
+        return getattr(window, "native", None) if window is not None else None
 
     def badge(self, candidate) -> str:
         """lazydocs: ignore"""

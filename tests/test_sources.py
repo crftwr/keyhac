@@ -456,3 +456,43 @@ class TestMenuItemsSource:
         rows = []
         _walk_menu(_FakeMenuElement("AXMenuBar", kids=[loop]), (), rows, 0)
         assert rows == []
+
+    def test_the_menu_bar_is_read_from_the_front_window_not_the_focus(self):
+        """The second time this trap has bitten. A `Focus` mixes its sources -
+        its window title comes from the AX-focused application, which the
+        popup itself can become - and reading the menu bar from there gets
+        Keyhac's, which as an accessory app has none. The symptom was a scope
+        that came up empty."""
+        import keyhac.core.sources as src
+
+        class _Win:
+            native = _FakeMenuElement("AXWindow")
+
+        _Win.native.menu_bar = lambda: _FakeMenuElement("AXMenuBar", kids=[
+            _FakeMenuElement("AXMenuBarItem", "File",
+                             kids=[_menu(_item("New"))])])
+
+        class _Keymap:
+            focus = None                      # the route that used to be used
+            get_active_window = staticmethod(lambda: _Win())
+
+        original = src.Keymap.get_instance
+        src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+        try:
+            rows = src.MenuItemsSource().candidates()
+        finally:
+            src.Keymap.get_instance = original
+        assert [c.display for c in rows] == ["File › New"]
+
+    def test_no_front_window_is_an_empty_list_not_a_crash(self):
+        import keyhac.core.sources as src
+
+        class _Keymap:
+            get_active_window = staticmethod(lambda: None)
+
+        original = src.Keymap.get_instance
+        src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+        try:
+            assert src.MenuItemsSource().candidates() == []
+        finally:
+            src.Keymap.get_instance = original

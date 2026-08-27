@@ -376,6 +376,13 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   there is no such question and the source annotates its own rows — the menu
   source puts the shortcut there, so picking a command twice teaches the key
   the third time.
+- **Read from the active window, not from `keymap.focus`** — the same trap
+  that made the dismissal watch close on a click. A `Focus` mixes its sources:
+  its pid is the frontmost application, which the popup never becomes, while
+  its window title and element come from the *AX-focused* application, which
+  the popup **does** become. Reading the menu bar from there gets Keyhac's,
+  and Keyhac is an accessory app with no menu bar — so the scope came up
+  empty. `get_active_window()` reads the frontmost application throughout.
 - Worth knowing: **a custom-drawn application exposes almost nothing.** XeFM,
   a PuiKit app, offers 4 elements and 7 nodes — and Keyhac's own windows are
   the same. This source is for other people's applications.
