@@ -185,6 +185,38 @@ class TestLoneWinAltCancel:
         assert e.down("J") is True
         assert e.hook.sent == []
 
+    def test_callable_under_alt_and_a_user_modifier(self, engine):
+        """A user modifier is never emitted, so Windows still saw a lone Alt -
+        the cancel has to look past the user bits to see it."""
+        def configure(keymap):
+            keymap.define_modifier("RCtrl", "User0")
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["U0-Alt-J"] = lambda: None
+
+        e = engine(configure, platform="windows")
+        e.down("RCtrl")
+        e.down("LAlt")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl"]
+
+    def test_output_under_alt_and_a_user_modifier(self, engine):
+        """Same blind spot on the output path: releasing Alt around the batch
+        is the lone tap, and the user modifier does not fence it."""
+        def configure(keymap):
+            keymap.define_modifier("RCtrl", "User0")
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["U0-Alt-J"] = "Down"
+
+        e = engine(configure, platform="windows")
+        e.down("RCtrl")
+        e.down("LAlt")
+        e.hook.clear()
+        assert e.down("J") is True
+        assert e.sent_names() == ["D-LCtrl", "U-LCtrl", "U-LAlt",
+                                  "D-Down", "U-Down",
+                                  "D-LAlt", "D-LCtrl", "U-LCtrl"]
+
     def test_macos_has_nothing_to_cancel(self, engine):
         e = engine(self._configure)
         e.down("LAlt")

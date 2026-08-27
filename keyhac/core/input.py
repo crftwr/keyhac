@@ -255,13 +255,21 @@ class InputContext:
         # two loops below is what marks the modifier as used.  Port of
         # keyhac-win setInput_Modifier's cancel_oneshot_win_alt; macOS has no
         # such behavior to cancel, and the tap would be pure noise there.
+        # Both states are read through the same filter the emit loops below
+        # apply: a user modifier held alongside is never sent, so it neither
+        # makes the Alt non-lone nor fences it.  In replay mode the original
+        # key is reproduced, so there the user bits do count.
+        mask = ~0 if self._replay else ~MODKEY_USER_ALL
+        virtual = self._virtual_modifier & mask
+        target = mod & mask
+
         cancel_win_alt = False
         if self._keymap.platform == "windows":
-            if mod == 0 and (mod_eq(self._virtual_modifier, MODKEY_ALT)
-                             or mod_eq(self._virtual_modifier, MODKEY_WIN)):
+            if target == 0 and (mod_eq(virtual, MODKEY_ALT)
+                                or mod_eq(virtual, MODKEY_WIN)):
                 cancel_win_alt = True
-            elif self._virtual_modifier == 0 and (mod_eq(mod, MODKEY_ALT)
-                                                  or mod_eq(mod, MODKEY_WIN)):
+            elif virtual == 0 and (mod_eq(target, MODKEY_ALT)
+                                   or mod_eq(target, MODKEY_WIN)):
                 cancel_win_alt = True
 
         # Key down modifiers that are missing

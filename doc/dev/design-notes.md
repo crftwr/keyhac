@@ -126,6 +126,12 @@ action that emits nothing at all gets. The redundancy is between the first two, 
 only for the case where the callable happens to send keys, which cannot be known
 before running it.
 
+Both places ask "is a *lone* Win/Alt held?" of the emitted modifiers only — the user
+bits are masked out first, because a user modifier is never sent (except in replay,
+where the original key is reproduced and does count). `U0-Alt-V` on a chooser is the
+case that showed why: the OS saw nothing but Alt going down and coming back up, so
+without the mask the menu bar took the focus at the moment the popup appeared.
+
 ## Clipboard history
 
 - Model from keyhac-mac (`max_items=1000`, label truncation, size quotas);

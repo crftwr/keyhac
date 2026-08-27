@@ -1100,10 +1100,16 @@ class Keymap:
 
         Key output does not need this: InputContext.send_modifier_keys emits
         the same tap while reconciling the modifiers around its batch.
+
+        User modifiers held alongside are not part of the question: they are
+        never emitted, so what Windows saw is a lone Alt however many of them
+        the binding also names.  U0-Alt-V on a chooser is the case - without
+        the mask the menu bar takes the focus the moment the popup appears.
         """
         if self.platform != "windows":
             return
-        if mod_eq(self._modifier, MODKEY_ALT) or mod_eq(self._modifier, MODKEY_WIN):
+        emitted = self._modifier & ~MODKEY_USER_ALL
+        if mod_eq(emitted, MODKEY_ALT) or mod_eq(emitted, MODKEY_WIN):
             with self.get_input_context() as ctx:
                 ctx.send_modifier_keys(self._modifier | MODKEY_CTRL_L)
 
