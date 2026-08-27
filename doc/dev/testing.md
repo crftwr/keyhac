@@ -61,6 +61,15 @@ live on each OS.
   alongside. On a quiet desktop the same tests passed 4/4 full runs before the
   change and 353/353 after, with no skips, so the guards are inert until
   something really is interfering.
+- **A live test that opens an app has to close the window it opened — and only
+  that one.** Windows 11 ships Notepad as a packaged app: System32's
+  `notepad.exe` is a stub that hands the work to one process shared by every
+  Notepad window, so `Popen.terminate()` closed nothing and the UIA probes left
+  a window behind per run. That is precisely the "other work of ours" above.
+  `TestUIAPatternsAgainstNotepad` takes the window that was not on screen
+  before the launch and posts `WM_CLOSE` to that one, which also stops the
+  fixture from typing into a Notepad the developer has a real file open in —
+  `find_window(app="notepad")` was free to answer with theirs.
 - **Injected input is occasionally lost before any hook sees it, and that is
   not the engine's doing.** Measured on the mouse side, which is where it is
   cleanly attributable: `SendInput` returns 1 with no error, the `WH_MOUSE_LL`

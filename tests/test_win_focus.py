@@ -26,10 +26,38 @@ user32.GetDesktopWindow.restype = wintypes.HWND
 user32.GetForegroundWindow.restype = wintypes.HWND
 
 
+user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                wintypes.WPARAM, wintypes.LPARAM]
+user32.PostMessageW.restype = wintypes.BOOL
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.IsWindow.restype = wintypes.BOOL
+
+WM_CLOSE = 0x0010
+
+
 def _win32_class_name(hwnd):
     buf = ctypes.create_unicode_buffer(256)
     user32.GetClassNameW(hwnd, buf, 256)
     return buf.value
+
+
+def _notepad_hwnds():
+    """Every top-level Notepad window on screen, by HWND."""
+    from keyhac.platform.win.window import WinWindowProvider
+    return {int(w.hwnd) for w in WinWindowProvider().list_windows()
+            if w.class_name == "Notepad"}
+
+
+def _close_window(hwnd, timeout=3.0):
+    """Ask one window to close, and wait until it is gone."""
+    import time
+    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not user32.IsWindow(hwnd):
+            return True
+        time.sleep(0.05)
+    return False
 
 
 @pytest.fixture(scope="module")
@@ -283,29 +311,44 @@ class TestUIAPatternsAgainstNotepad:
     """The read/write paths against a real editable control.
 
     Launches Notepad, so it is marked slow and skips cleanly if unavailable.
+    The window it opens is the only one it touches, and it closes it again.
     """
 
     @pytest.fixture
     def edit(self, automation):
         import subprocess
         import time
-        from keyhac.platform.win.window import WinWindowProvider
+        from keyhac.platform.win.window import WinWindow
         from keyhac.platform.win.uielement import (
             _control_view_walker, _element_out, _IUIAutomationTreeWalker)
 
+        # Which Notepad window is ours has to be answered by hand, twice
+        # over. Windows 11 ships Notepad as a packaged app: System32's
+        # notepad.exe is a stub that hands the work to one process shared by
+        # every Notepad window, so the Popen handle is not the window's
+        # process, terminating it closes nothing, and the windows this suite
+        # opened used to pile up on the desktop. And "the Notepad window" is
+        # not a thing either - a developer running the suite may well have
+        # one open on a real file, which is not a window to type into or to
+        # close. Both are answered by the window that was not there before.
+        before = _notepad_hwnds()
         try:
             process = subprocess.Popen(["notepad.exe"])
         except OSError:
             pytest.skip("notepad.exe unavailable")
+        window = None
+        found = None
         try:
-            window = None
             for _ in range(30):
                 time.sleep(0.1)
-                window = WinWindowProvider().find_window(app="notepad")
-                if window is not None:
+                fresh = _notepad_hwnds() - before
+                if fresh:
+                    window = WinWindow(fresh.pop())
                     break
             if window is None:
-                pytest.skip("Notepad window did not appear")
+                # Notepad can be set to open in a tab of the window that is
+                # already up; then there is nothing of ours here at all.
+                pytest.skip("Notepad did not open a window of its own")
 
             def walk(element, depth=0):
                 if element.get_attribute_value("ControlType") in ("Edit", "Document"):
@@ -329,6 +372,18 @@ class TestUIAPatternsAgainstNotepad:
                 pytest.skip("no editable element found in Notepad")
             yield window, found
         finally:
+            # Leave the document empty so the close is not answered by a
+            # save prompt, which would outlive the test as surely as the
+            # window did.
+            if found is not None:
+                try:
+                    found.set_value("")
+                except Exception:
+                    pass
+            if window is not None:
+                _close_window(window.hwnd)
+            # The stub, on the chance this is the classic single-process
+            # Notepad and the window did not take the process with it.
             process.terminate()
 
     def test_value_round_trips(self, edit):
