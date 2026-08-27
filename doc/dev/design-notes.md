@@ -212,8 +212,7 @@ before running it.
   application — borderless prevents a window becoming key, not the app coming
   forward. That was a real defect: clicking the chooser deactivated the window
   underneath and the paste then had nowhere to go. The window is a PuiKit
-  non-activating panel that takes key status only on demand
-  (`nonactivating_panel` + `becomes_key_on_demand`, puikit PR #126): clicks reach
+  window PuiKit builds for `overlay_input="mouse"` (puikit PR #126): clicks reach
   it, the application is never activated, and the target keeps its focus, caret
   and selection. `WS_EX_NOACTIVATE` already refuses both on Windows, so the flags
   are inert there. `frameless` goes with them: the panel's mask forces a title
@@ -221,8 +220,8 @@ before running it.
   again and puts the content rect back to the frame rect. All of these travel
   with `activates` rather than being separately settable, so no caller can ask
   for a combination that does not work.
-- The same PuiKit primitive without `becomes_key_on_demand` is a panel that *is*
-  key while the app stays inactive — the Spotlight shape, in which an input method
+- The same PuiKit field set to `"keyboard"` gives a window that *is* key while
+  the app stays inactive — the Spotlight shape, in which an input method
   works. That is the route back to IME in the filter field if it is ever wanted;
   it would also mean dropping the hook route on macOS (a key window gets the
   keystrokes itself, and both paths at once would double every character) and

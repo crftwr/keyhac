@@ -251,12 +251,10 @@ class TestNonActivatingChooser:
         chooser = ChooserWindow(backend, [("*", "alpha", 1)])
         style = chooser.window.window_style
         assert style.activates is False
-        # Clickable without taking the keyboard: on macOS that is one
-        # specific window kind, so the flags travel with `activates` rather
-        # than being independently settable into a combination that does not
-        # work (puikit PR #126).
-        assert style.nonactivating_panel is True
-        assert style.becomes_key_on_demand is True
+        # Clickable without taking the keyboard (puikit PR #126). It travels
+        # with `activates` rather than being separately settable, so no
+        # caller can ask for a combination that does not work.
+        assert style.overlay_input == "mouse"
         # The panel's mask forces a title bar; frameless hides it again.
         assert style.frameless is True
         assert fixture.keymap.modal_input_active()
@@ -265,7 +263,7 @@ class TestNonActivatingChooser:
     def test_an_activating_chooser_takes_no_grab(self, ui_backend):
         fixture, backend = ui_backend
         chooser = ChooserWindow(backend, [("*", "alpha", 1)], activates=True)
-        assert chooser.window.window_style.nonactivating_panel is False
+        assert chooser.window.window_style.overlay_input == "none"
         assert not fixture.keymap.modal_input_active()
         chooser.dismiss()
 

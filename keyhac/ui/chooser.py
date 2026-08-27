@@ -82,10 +82,10 @@ class ChooserWindow:
     matcher: how the filter text is matched against the candidates.
 
     activates: whether the window takes OS keyboard focus.  The default is
-    not to - see the module docstring.  A non-activating window is built as
-    a PuiKit non-activating panel that only takes key status on demand:
-    clicks reach it, but the application underneath keeps its focus, its
-    caret and its selection, and its application is never brought forward.
+    not to - see the module docstring.  A non-activating window asks PuiKit
+    for ``overlay_input="mouse"``: clicks reach it, but the application
+    underneath keeps its focus, its caret and its selection, and Keyhac is
+    never brought forward.
 
     center_on: a screen rect (x, y, w, h) to center the window on - the
     focused window's frame (issue #4); clamp_to keeps the result on the
@@ -111,12 +111,12 @@ class ChooserWindow:
                               # The panel's mask forces a title bar; frameless
                               # hides it and restores content == frame.
                               frameless=not activates,
-                              # macOS: an NSPanel that clicks reach without
-                              # activating us or taking the target's keyboard
-                              # (puikit PR #126).  No-op on Windows, where
+                              # Clicks reach the popup without activating us
+                              # and without taking the target's keyboard, so
+                              # the paste still has somewhere to land (puikit
+                              # PR #126).  Inert on Windows, where
                               # WS_EX_NOACTIVATE already refuses both.
-                              nonactivating_panel=not activates,
-                              becomes_key_on_demand=not activates))
+                              overlay_input="mouse" if not activates else "none"))
         if center_on is not None:
             self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.
