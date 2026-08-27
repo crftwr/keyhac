@@ -671,3 +671,59 @@ class TestKeyBindingsSource:
 
         assert [c.display for c in self._rows(engine, configure)] == [
             "DateTimeSnippet('%Y-%m-%d')"]
+
+
+class TestCandidateRowLayout:
+    """The row widget's own geometry. `ListView` hands a row `ctx.width - 1`
+    when a scrollbar is showing, so the row's right edge *is* the scrollbar's
+    left edge and anything drawn flush there touches it."""
+
+    def _render(self, width=46, rows=12):
+        from puikit import Panel
+        from puikit.backends.memory_backend import MemoryBackend
+        from puikit.widgets.list import ListView
+        from keyhac.ui.candidate_row import CandidateRow
+
+        backend = MemoryBackend(width, 5)
+        backend.open()
+        items = [(f"entry number {i}", "Clipboard") for i in range(rows)]
+        lst = ListView(items, row_factory=lambda r: CandidateRow(*r),
+                       allow_no_selection=True)
+        panel = Panel(backend)
+        panel.add(lst, 0, 0, width, 4)
+        panel.render()
+        return ["".join(row) for row in backend.snapshot()]
+
+    def test_the_badge_does_not_touch_the_scrollbar(self):
+        lines = self._render()
+        assert any("▅" in line for line in lines), "no scrollbar to sit beside"
+        for line in lines:
+            if "Clipboard" not in line:
+                continue
+            after = line[line.index("Clipboard") + len("Clipboard"):]
+            assert after.startswith(" "), f"badge is flush: {line!r}"
+
+    def test_the_badge_is_still_right_aligned(self):
+        lines = self._render()
+        badged = [l for l in lines if "Clipboard" in l]
+        assert badged
+        # One blank column, then the scrollbar column: the badge ends two
+        # short of the pane, not further in.
+        for line in badged:
+            assert line.rstrip().endswith("Clipboard") or \
+                line.index("Clipboard") + len("Clipboard") >= len(line) - 2
+
+    def test_the_inset_is_pixels_on_a_vector_backend_and_a_column_on_a_grid(self):
+        """A whole column would be a gulf where pixels are available, and a
+        grid cannot express less than one."""
+        from keyhac.ui.candidate_row import CandidateRow, _TRAILING_PX
+
+        class _Ctx:
+            def __init__(self, vector, base_w):
+                self.vector_shapes = vector
+                self.base_size = (base_w, 1)
+
+        row = CandidateRow("x", "y")
+        assert row._trailing(_Ctx(False, 8)) == 1.0
+        assert row._trailing(_Ctx(True, 8)) == _TRAILING_PX / 8
+        assert row._trailing(_Ctx(True, 0)) == 0.0

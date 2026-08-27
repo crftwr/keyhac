@@ -23,6 +23,11 @@ from puikit.widgets.base import Widget
 #: does not run into it.
 _GAP = 2
 
+#: Breathing room at the row's right edge.  A row is drawn exactly up to the
+#: scrollbar's left edge (`ListView` hands it `ctx.width - 1` when the bar is
+#: showing), so without this the badge and the bar touch.
+_TRAILING_PX = 4
+
 #: The badge is quieter than the row it annotates: it is context, not content.
 _BADGE_STYLE = Style(fg=(130, 130, 140))
 
@@ -38,9 +43,18 @@ class CandidateRow(Widget):
         self.style = style
         self.badge_style = badge_style
 
+    def _trailing(self, ctx) -> float:
+        """The right-edge inset in base units.  Pixels on a vector backend,
+        where a whole column would be a gulf; a whole column on a character
+        grid, which cannot express less and would otherwise leave none."""
+        if not ctx.vector_shapes:
+            return 1.0
+        base_w = ctx.base_size[0]
+        return _TRAILING_PX / base_w if base_w else 0.0
+
     def draw(self, ctx) -> None:
         """lazydocs: ignore"""
-        width = ctx.size_units[0]
+        width = max(0.0, ctx.size_units[0] - self._trailing(ctx))
         measure = lambda t: ctx.measure_text(t, self.style)
         badge_w = 0.0
         badge = ""
