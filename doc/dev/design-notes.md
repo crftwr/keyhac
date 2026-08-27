@@ -353,6 +353,11 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   does menu commands and clipboard history natively, so those two sources are
   where Keyhac competes worst on that OS; this one it cannot compete with at
   all, because the data is the engine's own.
+- That comparison is **macOS-only, and half the audience is not on it.** Windows
+  has no Spotlight, so the menu and clipboard sources are unambiguously worth
+  having there — "Apple already does it" is a reason not to *out-engineer*
+  Apple at ranking clipboard entries, not a reason to leave a Windows user
+  without the feature. The same config runs on both.
 - It reads `Keymap.effective_keytable()` — *the table the hook resolves
   against*, not a re-derivation. Answering "what can I press here" by walking
   the configuration again would be a second implementation of the
