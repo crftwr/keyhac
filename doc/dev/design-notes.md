@@ -226,12 +226,20 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   again and puts the content rect back to the frame rect. All of these travel
   with `activates` rather than being separately settable, so no caller can ask
   for a combination that does not work.
-- The same PuiKit field set to `"keyboard"` gives a window that *is* key while
-  the app stays inactive — the Spotlight shape, in which an input method
-  works. That is the route back to IME in the filter field if it is ever wanted;
-  it would also mean dropping the hook route on macOS (a key window gets the
-  keystrokes itself, and both paths at once would double every character) and
-  re-checking the paste, so it is a deliberate separate decision, not a default.
+- **IME composition in the filter field is given up, deliberately** *(decided
+  2026-08-26)*. Composition follows OS keyboard focus, so a window that does not
+  take it cannot host an input method — no hook can substitute, because a hook
+  sees physical keys and not what an IME would make of them. Migemo is the
+  answer instead: romaji reaches Japanese candidates, and for a filter field it
+  is arguably the faster route anyway (`gijiroku` against ぎじろく plus a
+  conversion). That is why `pymigemo` is a hard dependency and not an extra.
+  The alternative was live and was declined: PuiKit's `overlay_input="keyboard"`
+  gives a window that *is* key while the app stays inactive — the Spotlight
+  shape, in which an input method does work — but it is macOS-only, it means
+  dropping the hook route there (a key window gets the keystrokes itself, and
+  both paths at once double every character), it takes key status away from the
+  window being pasted into, and it would leave the two OSes with different
+  input paths. Not worth it for what Migemo already covers.
 - The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
   named keys, and — through `InputHook.char_for_key` — every digit and

@@ -39,7 +39,8 @@ dependencies = [
     # chooser and the console. Earlier floors, still required: set_tray(image=)
     # (PR #82), main-window visibility (PR #84), the LogView sized-font clip
     # fix the 11pt console log needs (PR #86), per-window IME input contexts
-    # (PR #90) - issue #20, and what doc/dev/testing.md's IME pass verifies -
+    # (PR #90, issue #20 - for the windows that still take keyboard focus; the
+    # chooser deliberately no longer does) -
     # and ListView scrolling an assigned selection into view (PR #95), which
     # keeps the chooser's highlight on screen (issue #27). To develop against
     # a local checkout, set PUIKIT_DIR (see Makefile).

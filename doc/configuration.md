@@ -312,11 +312,15 @@ filter, `Up`/`Down` to select, **Enter pastes into the app you came from**,
 **Shift-Enter only sets the clipboard**, `Escape` cancels. Pressing the hotkey again
 closes it.
 
-Filtering is multi-word AND substring, plus Migemo when `pymigemo` is installed, so
-typing `gijiroku` finds an entry containing 議事録 without switching to an input
-method. The popup does not take keyboard focus — the application you came from stays
-focused and the keystrokes reach the popup through Keyhac's key hook — which is why
-the filter field accepts romaji but cannot itself run an input method.
+Filtering is multi-word AND substring, plus Migemo, so typing `gijiroku` finds an
+entry containing 議事録 without switching to an input method.
+
+**The popup does not take keyboard focus**, which is what keeps the application you
+came from active, keeps the console where it is, keeps you on the desktop you are
+on, and lets the paste go out with no delay. The keystrokes reach the popup through
+Keyhac's own key hook instead. The one consequence to know about: **an input method
+cannot compose in the filter field** — composition follows OS keyboard focus, and
+this window does not take it. Type romaji and let Migemo find the Japanese.
 
 ```python
 kt["Fn-Shift-V"] = ShowClipboardSnippets([

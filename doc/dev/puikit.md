@@ -75,6 +75,11 @@ Keyhac2-side usage notes:
 
 ## Known limit
 
-IME composition stays attached to the main HWND on Windows, so a popup text field
-types ASCII but does not compose — the chooser's filter box with a Japanese IME is
-the case to watch. Fix would be puikit work; tracked in the issue tracker.
+Popup text fields do not compose with an input method — and for the chooser that
+is now by design rather than a gap. PuiKit gained per-window IME input contexts
+in PR #90 (keyhac #20), which fixed it for a popup that holds the keyboard
+focus; the chooser then stopped holding it, and composition follows OS keyboard
+focus wherever it goes. See the Chooser notes in
+[design-notes.md](design-notes.md) for why that trade was taken and what
+`overlay_input="keyboard"` would cost to undo it. PR #90 still matters for
+windows that *do* take focus.

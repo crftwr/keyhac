@@ -459,9 +459,11 @@ The genuinely-interactive checks were tracked in issue #10 and are all through
 as of 2026-08-07, but they are a **standing pass, not a burnt-down backlog**:
 they describe what to repeat before a release, since nothing here is covered by
 the automated harnesses. The two that needed hardware this machine does not
-have — a JIS keyboard, and a Japanese IME driving the chooser — were passed by
-hand on 2026-08-07 and stay on the list for the next release rather than being
-struck off.
+have — a JIS keyboard, and a Japanese input method — were passed by hand on
+2026-08-07 and stay on the list for the next release rather than being struck
+off. What the IME entry checks **inverted on 2026-08-26**: the chooser no
+longer takes keyboard focus, so its filter field no longer composes, and that
+is now the thing to confirm rather than the thing to fix.
 
 - **The chooser on Windows, after the non-activating rework** *(new, not yet
   passed)* — this branch changed the chooser on both OSes but was developed and
@@ -524,14 +526,29 @@ struck off.
   checked: UIA sometimes keeps answering S_OK for one with its ControlType
   degraded Window→Pane, and sometimes fails, so an assertion either way is a
   coin flip.
-- **The chooser filter box under a Japanese IME** *(passed 2026-08-07,
-  re-passed 2026-08-08)* — that 「か」 composes inline rather than typing `ka`,
-  that Enter is consumed by the IME to commit instead of choosing the
-  highlighted item, and that the committed text filters the list. Needs
-  puikit's per-window input contexts (keyhac #20, puikit `6906146`). Repeat it
-  whenever that input-context code moves — which is exactly why 2.2.1 repeated
-  it: that commit is what `puikit>=1.0.10` pins, and 2.2.1 is the first release
-  taking it from the published wheel rather than a local checkout.
+- **The chooser filter box with a Japanese input method selected** *(rewritten
+  2026-08-26; the previous version of this check asserted the opposite and
+  would now fail by design)* — the chooser stopped taking keyboard focus, and
+  composition follows that focus, so the filter field cannot compose and is not
+  meant to. Confirm instead:
+
+  - typing `ka` with the IME **on** puts `ka` in the field — the hook feeds it
+    characters directly and the input method never sees the keys;
+  - `kensaku` finds an entry containing 検索, which is how Japanese is reached
+    now (`keyhac/core/migemo.py`; `pymigemo` is a hard dependency, so an engine
+    that fails to load is a release blocker, not a degradation);
+  - Enter chooses rather than being eaten by a composition;
+  - **the target application's own composition survives.** Open the chooser
+    while mid-composition in the editor underneath — that window keeps its
+    focus, so its composition is still sitting there — and check that choosing
+    an entry pastes somewhere sane rather than into a half-finished
+    composition. This one is new with the non-activating window and has no
+    equivalent in the old check.
+
+  The reasoning behind giving composition up, and what `overlay_input="keyboard"`
+  would cost to get it back, is in [design-notes.md](design-notes.md). PuiKit's
+  per-window input contexts (keyhac #20, puikit PR #90) are still what the
+  console relies on; they are simply no longer on the chooser's path.
 - **The Windows JIS IME key names** *(new, not yet passed)* — that `Kanji`,
   `Henkan` and `Muhenkan` actually match the 半角/全角, 変換 and 無変換 keys when
   pressed on JIS hardware. The VKs (0x19 / 0x1C / 0x1D) are the documented ones,
