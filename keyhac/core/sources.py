@@ -454,6 +454,7 @@ class KeyBindingsSource(CandidateSource):
 def _walk_bindings(table, path, rows, depth) -> None:
     """Flatten a key table onto `rows`, expanding multi-stroke prefixes."""
     from keyhac.core.key import KeyTable
+    from keyhac.core.keymap import _key_text
 
     if table is None or depth > _PREFIX_MAX_DEPTH:
         return
@@ -468,19 +469,14 @@ def _walk_bindings(table, path, rows, depth) -> None:
             extras={"keys": " › ".join(keys)}))
 
 
-def _key_text(key) -> str:
-    """A key expression as a configuration would write it.
-
-    `str()` on a condition leads with `D-` for the ordinary key-down case,
-    which is noise in a list where almost everything is a key down; `U-` and
-    `O-` stay, because those *are* the unusual thing about the binding.
-    """
-    text = str(key)
-    return text[2:] if text.startswith("D-") else text
-
-
 def _action_text(action) -> str:
-    """What a binding does, in one line."""
+    """What a binding does, in one line.
+
+    An instance falls back to its class name when it has no `__repr__` of its
+    own: the default one is `<module.Class object at 0x...>`, which in a list
+    of things you might run reads as a failure rather than as a name.  The
+    built-in actions all define one; an operator's class often will not.
+    """
     if isinstance(action, str):
         return action
     if isinstance(action, (list, tuple)):
@@ -488,4 +484,7 @@ def _action_text(action) -> str:
     name = getattr(action, "__name__", None)
     if name:
         return f"{name}()"
-    return repr(action)
+    text = repr(action)
+    if text.startswith("<") and " object at 0x" in text:
+        return f"{type(action).__name__}()"
+    return text

@@ -363,6 +363,9 @@ class StartRecordingKeys:
     Bind it to a key; the recording is played back by PlaybackRecordedKeys.
     """
 
+    def __repr__(self):
+        return "StartRecordingKeys()"
+
     def __call__(self):
         from keyhac.core.keymap import Keymap
         Keymap.get_instance().replay_buffer.start_recording()
@@ -371,6 +374,9 @@ class StartRecordingKeys:
 class StopRecordingKeys:
     """Stop recording and normalize the buffer."""
 
+    def __repr__(self):
+        return "StopRecordingKeys()"
+
     def __call__(self):
         from keyhac.core.keymap import Keymap
         Keymap.get_instance().replay_buffer.stop_recording()
@@ -378,6 +384,9 @@ class StopRecordingKeys:
 
 class ToggleRecordingKeys:
     """Toggle keystroke recording."""
+
+    def __repr__(self):
+        return "ToggleRecordingKeys()"
 
     def __call__(self):
         from keyhac.core.keymap import Keymap
@@ -390,6 +399,9 @@ class PlaybackRecordedKeys:
     The replayed keys run back through the keymap, so recorded bindings expand
     again on playback.
     """
+
+    def __repr__(self):
+        return "PlaybackRecordedKeys()"
 
     def __call__(self):
         from keyhac.core.keymap import Keymap

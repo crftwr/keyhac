@@ -654,6 +654,9 @@ class DateTimeSnippet:
         """
         self.fmt = fmt
 
+    def __repr__(self):
+        return f"DateTimeSnippet({self.fmt!r})"
+
     def __call__(self):
         return datetime.datetime.now().strftime(self.fmt)
 

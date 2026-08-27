@@ -632,3 +632,42 @@ class TestKeyBindingsSource:
             loop["A"] = loop
 
         assert self._rows(engine, configure) == []
+
+    def test_a_built_in_action_reads_as_its_name(self, engine):
+        """The replay actions had no __repr__ and came out as
+        `<keyhac.core.action.ToggleRecordingKeys object at 0x...>`."""
+        from keyhac.core.action import ToggleRecordingKeys, PlaybackRecordedKeys
+
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            table["Fn-R"] = ToggleRecordingKeys()
+            table["Fn-T"] = PlaybackRecordedKeys()
+
+        assert sorted(c.display for c in self._rows(engine, configure)) == [
+            "PlaybackRecordedKeys()", "ToggleRecordingKeys()"]
+
+    def test_an_operators_own_class_reads_as_its_name_too(self, engine):
+        """The built-ins can be given a __repr__; an operator's class often
+        will not have one, and the default repr reads as a failure."""
+        from keyhac.core.action import ThreadedAction
+
+        class MyOwn(ThreadedAction):
+            def run(self):
+                pass
+
+            def finished(self, result):
+                pass
+
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-M"] = MyOwn()
+
+        assert [c.display for c in self._rows(engine, configure)] == ["MyOwn()"]
+
+    def test_a_real_repr_still_wins(self, engine):
+        def configure(keymap):
+            from keyhac.actions import DateTimeSnippet
+            keymap.define_keytable(focus_path_pattern="*")["Fn-D"] = \
+                DateTimeSnippet("%Y-%m-%d")
+
+        assert [c.display for c in self._rows(engine, configure)] == [
+            "DateTimeSnippet('%Y-%m-%d')"]

@@ -684,3 +684,45 @@ class TestDescribeKeymap:
     def test_it_stops_at_the_limit_rather_than_running_long(self, engine):
         text = self._focused(engine).describe_keymap(limit=1)
         assert "stopped at limit=1" in text
+
+
+class TestActionRepr:
+    """Every built-in action names itself. `describe_keymap` renders bindings
+    with `{action!r}` and the candidate window lists them, so a class without
+    one shows as `<module.Class object at 0x...>` in both."""
+
+    def test_the_replay_actions_name_themselves(self):
+        from keyhac.core.action import (
+            PlaybackRecordedKeys, StartRecordingKeys, StopRecordingKeys,
+            ToggleRecordingKeys,
+        )
+        assert repr(StartRecordingKeys()) == "StartRecordingKeys()"
+        assert repr(StopRecordingKeys()) == "StopRecordingKeys()"
+        assert repr(ToggleRecordingKeys()) == "ToggleRecordingKeys()"
+        assert repr(PlaybackRecordedKeys()) == "PlaybackRecordedKeys()"
+
+    def test_a_snippet_shows_its_format(self):
+        from keyhac.actions import DateTimeSnippet
+        assert repr(DateTimeSnippet("%Y-%m-%d")) == "DateTimeSnippet('%Y-%m-%d')"
+
+    def test_no_bindable_built_in_falls_back_to_the_default_repr(self):
+        """Anything a config can bind to a key and the window can list.
+
+        "Bindable" is *instances are callable* - a class defining `__call__`
+        somewhere in its own MRO - not `callable(cls)`, which is true of every
+        class and sweeps in Keymap and the objects a config merely receives.
+        """
+        import keyhac
+        missing = []
+        for name in keyhac.__all__:
+            obj = getattr(keyhac, name, None)
+            if not isinstance(obj, type):
+                continue
+            instances_callable = any("__call__" in vars(base)
+                                     for base in obj.__mro__ if base is not object)
+            if not instances_callable:
+                continue
+            if obj.__module__.startswith("keyhac") and \
+                    obj.__repr__ is object.__repr__:
+                missing.append(name)
+        assert missing == [], f"no __repr__: {missing}"
