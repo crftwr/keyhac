@@ -1074,6 +1074,20 @@ class Keymap:
             self._focus_path = new_focus_path
             self._update_unified_keytable()
 
+    def effective_keytable(self) -> dict:
+        """The bindings in effect right now, as `{KeyCondition: action}`.
+
+        The table the hook itself resolves against, not a re-derivation of
+        it: the tables whose focus condition matches where the user is
+        standing, merged in definition order, or the armed multi-stroke table
+        when there is one.  Anything that answered "what can I press here" by
+        walking the configuration again would be a second implementation of
+        that rule, and the two would drift.
+
+        lazydocs: ignore
+        """
+        return dict(self._unified_keytable)
+
     def _update_unified_keytable(self):
         self._unified_keytable = {}
         if self._multi_stroke_keytable:

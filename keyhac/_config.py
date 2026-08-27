@@ -268,6 +268,13 @@ def configure(keymap):
         # the application (measured: 84 ms for a small app, ~300 ms for a
         # big one), and nothing else here does.
         Scope("Menus", [MenuItemsSource()]),
+        # Every binding in effect *here*, and Enter runs it.  The one list
+        # nothing outside Keyhac can produce - it is the engine's own tables,
+        # resolved the way the hook resolves them - and the answer to running
+        # out of keys: a binding you can run from a list does not need a key
+        # of its own.  Multi-stroke prefixes are expanded, so `Fn-X › A` is
+        # the sequence you would have typed.
+        Scope("Keys", [KeyBindingsSource()]),
         Scope("Windows", [OpenWindows()]),
         Scope("Tools", [ClipboardToolsSource(tools)]),
     ])

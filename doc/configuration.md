@@ -395,6 +395,12 @@ kt["Fn-P"] = ShowCandidates([
 ])
 ```
 
+The built-in sources are `ClipboardHistorySource`, `SnippetsSource`,
+`ClipboardToolsSource`, `MenuItemsSource` (every command in the front
+application's menus, with its shortcut) and `KeyBindingsSource` (every binding
+in effect right here, and Enter runs it — a binding you can run from a list
+does not need a key of its own).
+
 Scopes are also how an expensive source stays affordable: one that has real work
 to do — walking the window's controls, asking a server — costs that work every
 time it is in the scope being opened, so putting it in a scope of its own means

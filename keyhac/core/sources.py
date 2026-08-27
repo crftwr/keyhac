@@ -380,3 +380,112 @@ def _menu_shortcut(element) -> str:
     if mask & 0x01:
         parts.append("Shift")
     return "-".join(parts + [key])
+
+
+#: How deep a chain of multi-stroke prefixes is followed.  Two or three is
+#: already unusual; past this something is recursive.
+_PREFIX_MAX_DEPTH = 6
+
+
+class KeyBindingsSource(CandidateSource):
+    """Every key binding in effect right now, and a way to run one.
+
+    The one source nothing outside Keyhac can offer: it is the engine's own
+    tables, resolved the way the hook resolves them - the tables whose focus
+    condition matches where the user is standing, merged in definition order,
+    or the armed multi-stroke table when there is one.  Re-deriving that from
+    the configuration would be a second implementation of the rule, and the
+    two would drift.
+
+    It is also the cheap one.  There is no traversal and no other process to
+    ask; the answer is a dict the engine already keeps up to date.
+
+    A multi-stroke prefix is **expanded to its leaves**, the way the menu
+    source expands submenus - `Fn-X › A` is the sequence you would type, and
+    those are exactly the bindings nobody remembers.  Rows show what the
+    binding does, with the keys themselves right-aligned, so the list reads
+    as a reference: what can I press here, and what would it do.
+
+    Choosing a row **runs it**, which is the point rather than a bonus - a
+    binding you can run from a list is one that does not need a key of its
+    own, and running out of keys is what the candidate window exists to fix.
+    """
+
+    name = "Key"
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            return []
+        rows = []
+        _walk_bindings(keymap.effective_keytable(), (), rows, 0)
+        return rows
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("keys", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        action = candidate.payload
+        try:
+            if callable(action):
+                action()
+                return
+            items = action if isinstance(action, (list, tuple)) else [action]
+            with keymap.get_input_context() as ctx:
+                for item in items:
+                    ctx.send_key(item)
+        except Exception:
+            logger.error(f"{candidate.display}: running the binding failed.")
+
+
+def _walk_bindings(table, path, rows, depth) -> None:
+    """Flatten a key table onto `rows`, expanding multi-stroke prefixes."""
+    from keyhac.core.key import KeyTable
+
+    if table is None or depth > _PREFIX_MAX_DEPTH:
+        return
+    for key, action in table.items():
+        keys = path + (_key_text(key),)
+        if isinstance(action, KeyTable):
+            _walk_bindings(action.table, keys, rows, depth + 1)
+            continue
+        rows.append(Candidate(
+            icon="⌨", display=_action_text(action), payload=action,
+            match_text=f"{' '.join(keys)} {_action_text(action)}",
+            extras={"keys": " › ".join(keys)}))
+
+
+def _key_text(key) -> str:
+    """A key expression as a configuration would write it.
+
+    `str()` on a condition leads with `D-` for the ordinary key-down case,
+    which is noise in a list where almost everything is a key down; `U-` and
+    `O-` stay, because those *are* the unusual thing about the binding.
+    """
+    text = str(key)
+    return text[2:] if text.startswith("D-") else text
+
+
+def _action_text(action) -> str:
+    """What a binding does, in one line."""
+    if isinstance(action, str):
+        return action
+    if isinstance(action, (list, tuple)):
+        return " ".join(str(item) for item in action)
+    name = getattr(action, "__name__", None)
+    if name:
+        return f"{name}()"
+    return repr(action)

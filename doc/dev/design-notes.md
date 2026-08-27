@@ -347,6 +347,31 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   the merged everything-scope, paid every time" or "on a hotkey of its own",
   and the hotkey is the thing this was trying to save.
 
+## The key-bindings source
+
+- **The one source nothing outside Keyhac can offer.** macOS 26's Spotlight now
+  does menu commands and clipboard history natively, so those two sources are
+  where Keyhac competes worst on that OS; this one it cannot compete with at
+  all, because the data is the engine's own.
+- It reads `Keymap.effective_keytable()` — *the table the hook resolves
+  against*, not a re-derivation. Answering "what can I press here" by walking
+  the configuration again would be a second implementation of the
+  merge-in-definition-order rule, and the two would drift. It also means the
+  armed multi-stroke table is what shows when one is armed, which is the right
+  answer to the question.
+- The cheap one, too: no traversal, no other process, just a dict the engine
+  keeps current. Contrast the menu source's 84–298 ms.
+- **Multi-stroke prefixes are expanded to their leaves**, the same idiom the
+  menu source uses for submenus: `Fn-X › A` is the sequence you would type,
+  and those are exactly the bindings nobody remembers. The prefix itself is
+  not a row — it is not a command.
+- `D-` is stripped from a key expression because almost everything in the list
+  is a key down; `U-` and `O-` stay, because those *are* the unusual thing
+  about the binding.
+- **Choosing a row runs it**, which is the point rather than a bonus: a
+  binding you can run from a list does not need a key of its own, and running
+  out of keys is what this whole window exists to fix.
+
 ## The menu-items source
 
 - **Measured before it was designed.** Walking a window's whole accessibility

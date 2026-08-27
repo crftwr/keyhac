@@ -496,3 +496,139 @@ class TestMenuItemsSource:
             assert src.MenuItemsSource().candidates() == []
         finally:
             src.Keymap.get_instance = original
+
+
+class TestKeyBindingsSource:
+    """The one source nothing outside Keyhac can offer: the engine's own
+    tables, resolved the way the hook resolves them."""
+
+    def _keymap(self, engine, configure):
+        fixture = engine(configure)
+        fixture.keymap._check_focus_change()
+        return fixture.keymap
+
+    def _rows(self, engine, configure):
+        from keyhac.core.sources import KeyBindingsSource
+        self._keymap(engine, configure)
+        return KeyBindingsSource().candidates()
+
+    def test_it_reads_the_table_the_hook_resolves(self, engine):
+        """Not a second walk of the configuration - the engine's own merged
+        table, so the two cannot drift."""
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            table["Fn-V"] = "Down"
+
+        rows = self._rows(engine, configure)
+        assert [(c.display, c.extras["keys"]) for c in rows] == [
+            ("Down", "Fn-V")]
+
+    def test_a_table_that_does_not_apply_here_is_absent(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-V"] = "Down"
+            keymap.define_keytable(focus_path_pattern="/nowhere/*")["Fn-W"] = "Up"
+
+        assert [c.extras["keys"] for c in self._rows(engine, configure)] == [
+            "Fn-V"]
+
+    def test_a_multi_stroke_prefix_is_expanded_to_its_leaves(self, engine):
+        """`Fn-X › A` is the sequence you would type, and those are exactly
+        the bindings nobody remembers."""
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            sub = keymap.define_keytable(name="sub")
+            table["Fn-X"] = sub
+            sub["A"] = "Home"
+            sub["B"] = "End"
+
+        rows = self._rows(engine, configure)
+        assert sorted(c.extras["keys"] for c in rows) == ["Fn-X › A",
+                                                          "Fn-X › B"]
+
+    def test_the_prefix_itself_is_not_a_row(self, engine):
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            sub = keymap.define_keytable(name="sub")
+            table["Fn-X"] = sub
+            sub["A"] = "Home"
+
+        assert "Fn-X" not in [c.extras["keys"] for c in
+                              self._rows(engine, configure)]
+
+    def test_a_key_down_loses_its_prefix_but_a_one_shot_keeps_it(self, engine):
+        """`D-` is noise in a list where almost everything is a key down;
+        `O-` is the unusual thing about the binding."""
+        def configure(keymap):
+            keymap.define_modifier("RCmd", "User0")
+            table = keymap.define_keytable(focus_path_pattern="*")
+            table["Fn-V"] = "Down"
+            table["O-RCmd"] = "Kana"
+
+        keys = sorted(c.extras["keys"] for c in self._rows(engine, configure))
+        assert keys == ["Fn-V", "O-RCmd"]
+
+    def test_what_a_binding_does_reads_in_one_line(self, engine):
+        def named():
+            pass
+
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            table["Fn-A"] = "Home", "Shift-End"
+            table["Fn-B"] = named
+
+        by_keys = {c.extras["keys"]: c.display
+                   for c in self._rows(engine, configure)}
+        assert by_keys["Fn-A"] == "Home Shift-End"
+        assert by_keys["Fn-B"] == "named()"
+
+    def test_the_keys_are_searchable_too(self, engine):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-V"] = "Down"
+
+        row = self._rows(engine, configure)[0]
+        assert "Fn-V" in row.match_text and "Down" in row.match_text
+
+    def test_the_keys_are_the_badge(self, engine):
+        from keyhac.core.sources import KeyBindingsSource
+
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-V"] = "Down"
+
+        row = self._rows(engine, configure)[0]
+        assert KeyBindingsSource().badge(row) == "Fn-V"
+
+    def test_choosing_runs_a_callable_binding(self, engine):
+        from keyhac.core.sources import KeyBindingsSource
+        called = []
+
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-V"] = \
+                lambda: called.append(1)
+
+        row = self._rows(engine, configure)[0]
+        KeyBindingsSource().on_chosen(row, 0)
+        assert called == [1]
+
+    def test_choosing_sends_a_key_output_binding(self, engine):
+        """A binding you can run from a list is one that does not need a key
+        of its own, which is the whole point."""
+        from keyhac.core.sources import KeyBindingsSource
+
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Fn-V"] = "Down"
+
+        fixture = engine(configure)
+        fixture.keymap._check_focus_change()
+        row = KeyBindingsSource().candidates()[0]
+        fixture.hook.sent.clear()
+        KeyBindingsSource().on_chosen(row, 0)
+        assert "D-Down" in fixture.sent_names()
+
+    def test_a_recursive_prefix_does_not_hang_the_walk(self, engine):
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            loop = keymap.define_keytable(name="loop")
+            table["Fn-X"] = loop
+            loop["A"] = loop
+
+        assert self._rows(engine, configure) == []

@@ -20,6 +20,7 @@ from keyhac.core.candidate import Candidate
 from keyhac.core.source import CallableSource, Scope, CandidateSource
 from keyhac.core.sources import (
     ClipboardHistorySource,
+    KeyBindingsSource,
     MenuItemsSource,
     ClipboardToolsSource,
     SnippetsSource,
@@ -71,6 +72,7 @@ __all__ = [
     "CallableSource",
     "Scope",
     "ClipboardHistorySource",
+    "KeyBindingsSource",
     "MenuItemsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
