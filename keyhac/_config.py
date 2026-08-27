@@ -195,13 +195,14 @@ def configure(keymap):
 
     # --- fixed snippets -------------------------------------------------
     # (icon, label) | (icon, label, text) | (icon, label, callable)
-    kt[f"{LEADER}-Shift-V"] = ShowClipboardSnippets([
+    snippets = [
         ("📧", "me@example.com"),
         ("📮", "Mailing address", "400 Broad St, Seattle, WA 98109"),
         ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),
         ("🕒", "Timestamp", DateTimeSnippet("%Y-%m-%d %H:%M:%S")),
         ("🕒", "For filenames", DateTimeSnippet("%Y%m%d_%H%M%S")),
-    ])
+    ]
+    kt[f"{LEADER}-Shift-V"] = ShowClipboardSnippets(snippets)
 
     # --- transform whatever is on the clipboard -------------------------
     # A tool takes the clipboard text and returns the replacement.
@@ -212,7 +213,7 @@ def configure(keymap):
             logger.error("Clipboard content is not valid JSON.")
             return s
 
-    kt[f"{LEADER}-Ctrl-V"] = ShowClipboardTools([
+    tools = [
         ("🔄", "Quote", ShowClipboardTools.quote),
         ("🔄", "Unindent", ShowClipboardTools.unindent),
         ("🔄", "Upper case", str.upper),
@@ -220,7 +221,48 @@ def configure(keymap):
         ("🔄", "Half width", ShowClipboardTools.to_half_width),
         ("🔄", "Full width", ShowClipboardTools.to_full_width),
         ("🔄", "Pretty JSON", pretty_json),
+    ]
+    kt[f"{LEADER}-Ctrl-V"] = ShowClipboardTools(tools)
+
+    # ==================================================================
+    # One window over several sources
+    # ==================================================================
+
+    # The three keys above are three keys.  A key is the scarce thing here —
+    # there are only so many a person can hold — so a *source* is a value you
+    # can hand to one window instead, and one incremental search then runs
+    # across the lot.  Each row is labelled on the right with where it came
+    # from, so a mixed list stays readable.
+
+    kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
+        ClipboardHistorySource(),
+        SnippetsSource(snippets),
+        ClipboardToolsSource(tools),
     ])
+
+    # --- your own source ------------------------------------------------
+    # Anything that returns a list can be one; no class to subclass.  This
+    # lists the open windows and brings the chosen one forward.
+
+    def open_windows():
+        return [Candidate(icon="🪟", display=f"{w.app_name} — {w.title}",
+                          payload=w)
+                for w in keymap.list_windows() if w.title]
+
+    kt[f"{LEADER}-Shift-W"] = ShowCandidates(
+        open_windows, on_chosen=lambda c, mod: c.payload.activate())
+
+    # A source can also be an object, which is what you want once it has a
+    # name to show in a shared window and its own idea of what choosing does:
+    #
+    #     class Branches(Source):
+    #         name = "Branch"
+    #         def candidates(self):
+    #             return [Candidate(display=b) for b in git_branches()]
+    #         def on_chosen(self, candidate, modifier_flags):
+    #             checkout(candidate.display)
+    #
+    #     kt[f"{LEADER}-P"] = ShowCandidates([Branches(), ...])
 
     # ==================================================================
     # Windows and applications

@@ -345,7 +345,44 @@ History behavior is configurable via `keymap.clipboard_history`: `max_items`
 `persist = False` to keep history in memory only. The API is scriptable too:
 `items()`, `get_current()`, `set_current(text)`.
 
-Custom choosers derive from `ChooserAction`: implement
+### One window over several sources
+
+Three choosers is three hotkeys, and a hotkey is the scarce thing — there are only
+so many you can hold. A **source** is a value you hand to one window instead, so
+several kinds of row share one key and one incremental search, each row labelled
+on the right with where it came from:
+
+```python
+kt["Fn-P"] = ShowCandidates([
+    ClipboardHistorySource(),
+    SnippetsSource(my_snippets),
+    ClipboardToolsSource(my_tools),
+])
+```
+
+Anything that returns a list can be a source — no class to subclass:
+
+```python
+def open_windows():
+    return [Candidate(icon="🪟", display=w.title, payload=w)
+            for w in keymap.list_windows() if w.title]
+
+kt["Fn-Shift-W"] = ShowCandidates(open_windows,
+                                  on_chosen=lambda c, mod: c.payload.activate())
+```
+
+Give it a class once it wants a name in a shared window and its own idea of what
+choosing does — `Source` with `name`, `candidates()` and `on_chosen()`. Enter runs
+whatever the chosen row's source says, so rows from different sources can mean
+different things in the same window: paste this, activate that, press the other.
+A single row can override even that with `Candidate(action=...)`.
+
+`ShowClipboardHistory()` and its two siblings are presets over exactly these
+sources.
+
+### Writing a chooser as a class
+
+Custom choosers may also derive from `ChooserAction`: implement
 `list_items() -> [(icon, label, ...)]` and `on_chosen(item, modifier_flags)`; the
 open/filter flow is inherited. Two class attributes tune it: `matcher` (default
 substring + Migemo; `WildcardMatcher()` for `*` and `?`) and `activates` (default

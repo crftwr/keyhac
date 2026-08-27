@@ -148,3 +148,45 @@ def test_the_ime_sample_leaves_an_unreadable_ime_alone(shipped, caplog):
         shipped_action(shipped, "toggle_ime")()
     assert "No IME to toggle" in caplog.text
     assert shipped.get_ime_status() is None
+
+
+def test_the_template_binds_no_key_twice(request, tmp_path, caplog,
+                                         monkeypatch):
+    """A second binding for a key silently replaces the first, and the
+    template is long enough that it happened: the unified-window sample took
+    Fn-Space and Fn-W, both of which were already spoken for. Nothing else
+    would have said so - the IME test only noticed because the function it
+    looks for vanished along with its binding.
+
+    Recorded at *assignment* time, not from the finished tables: a dict cannot
+    hold the same key twice, so by the time the template has run the loser is
+    already gone and nothing is left to find.
+    """
+    from keyhac.core.key import KeyTable
+
+    assignments = []
+    original = KeyTable.__setitem__
+
+    def record(self, key, value):
+        # The table object itself, not id(): a freed table's id is handed
+        # straight back to the next one, and two tables then look like one.
+        assignments.append((self, str(key)))
+        original(self, key, value)
+
+    monkeypatch.setattr(KeyTable, "__setitem__", record)
+
+    keymap = Keymap(FakeInputHook("ansi"), FakeFocusProvider(), "mac",
+                    config_path=str(tmp_path / "config.py"))
+    keymap._clipboard_history = ClipboardHistory(
+        FakeClipboardProvider(), str(tmp_path / "clipboard.json"))
+    with caplog.at_level("ERROR"):
+        keymap.configure()
+    assert not caplog.records, caplog.text
+
+    seen = {}
+    for table, key in assignments:
+        keys = seen.setdefault(id(table), (table, set()))[1]
+        assert key not in keys, \
+            f"{key} is bound twice in key table {table.name!r}"
+        keys.add(key)
+    assert len(assignments) > 30, "the template stopped binding anything"
