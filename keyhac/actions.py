@@ -417,7 +417,7 @@ class ShowCandidates(ChooserAction):
         """Build the action.
 
         Args:
-            sources: A `Source`, a plain callable returning candidates, or a
+            sources: A `CandidateSource`, a plain callable returning candidates, or a
                 list of either.  A callable is wrapped, so anything that can
                 produce a list can be a source without subclassing.  A list
                 of `Scope` objects instead gives the window a cycle Tab and
@@ -439,7 +439,7 @@ class ShowCandidates(ChooserAction):
             self._scopes = list(listed)
         else:
             # A bare callable has no opinion about what choosing does, so it
-            # inherits this action's; a real Source keeps its own.
+            # inherits this action's; a real CandidateSource keeps its own.
             self._scopes = [Scope("", [as_source(s, on_chosen=self._chosen_here)
                                        for s in listed])]
         if matcher is not None:

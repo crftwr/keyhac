@@ -264,6 +264,12 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Candidate sources
 
+- The base class is `CandidateSource`, not `Source`. `from keyhac import *` is
+  flat, and a config writes `class Branches(CandidateSource)` with no
+  surrounding call to say which kind of source is meant. `Scope` keeps the
+  short name because it is only ever written inside `ShowCandidates([...])`,
+  where the context is right there — the test is whether the name appears
+  somewhere that supplies its own context, not whether the word is generic.
 - **A source is a value, not a subclass** (`keyhac/core/source.py`). While the
   only way to offer a new kind of row was to override `list_items`, every new
   capability cost an action class *and a hotkey to reach it* — and the hotkey
@@ -300,7 +306,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - `ShowClipboardHistory` and its siblings are presets over
   `keyhac/core/sources.py`. Porting them was the point as much as the result:
   they are the sources that already existed, so if they had not fitted, the
-  shape would have been wrong. The `Source` suffix on the source classes is not
+  shape would have been wrong. The `CandidateSource` suffix on the source classes is not
   decoration — `ClipboardHistory` is already the name of the history *store*,
   and two public things with one name in a flat `from keyhac import *` is a
   trap.
@@ -316,10 +322,16 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   letter labels and romaji filtering.
 - Tab is **intercepted before the Panel**, which would otherwise spend it on
   focus traversal between the field and the list.
-- The scope name is drawn as `‹ Name ›` at the right of the search row. The
-  arrows are not decoration: a key-driven switch has no visible affordance of
-  its own, and they are what says one exists — which is the discoverability
-  cost of choosing a key over a prefix, paid back.
+- The scope name is drawn as `‹ Name ›` at the right of the search row
+  (`keyhac/ui/scope_switcher.py`). The arrows are not decoration: a key-driven
+  switch has no visible affordance of its own, and they are what says one
+  exists — the discoverability cost of choosing a key over a prefix, paid
+  back. They are also **clickable**, for when the pointer is already in hand;
+  the popup receives clicks (`overlay_input="mouse"` / `WS_EX_NOACTIVATE`)
+  without the application underneath losing anything. Which *half* was clicked
+  decides the direction, not which glyph — an arrow is one character wide and
+  nobody aims at a chevron. The widget is deliberately **not focusable**: a
+  click there must not pull the focus out of the filter field.
 - Switching **re-proposes nothing** (focus returns to the field, no row
   selected): the rows are different ones, so the rule a changed query follows
   applies here too.

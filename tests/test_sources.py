@@ -11,10 +11,10 @@ import pytest
 from tests.test_chooser import keyhac_engine, ui_backend  # noqa: F401
 
 from keyhac.core.candidate import Candidate
-from keyhac.core.source import CallableSource, Source, as_source
+from keyhac.core.source import CallableSource, CandidateSource, as_source
 
 
-class _Fruit(Source):
+class _Fruit(CandidateSource):
     name = "Fruit"
 
     def __init__(self):
@@ -27,7 +27,7 @@ class _Fruit(Source):
         self.chosen.append((candidate.display, modifier_flags))
 
 
-class _Tool(Source):
+class _Tool(CandidateSource):
     name = "Tool"
 
     def __init__(self):
@@ -72,7 +72,7 @@ class TestSource:
     def test_as_source_passes_a_source_through(self):
         source = _Fruit()
         assert as_source(source) is source
-        assert isinstance(as_source(lambda: []), Source)
+        assert isinstance(as_source(lambda: []), CandidateSource)
 
 
 class TestShowCandidates:
@@ -236,9 +236,9 @@ class TestScopes:
 
     def test_the_current_scope_is_named_on_screen(self, ui_backend):
         _action, chooser = self._open(self._scopes())
-        assert chooser._scope_label.text == "‹ All ›"
+        assert chooser._scope_label.text() == "‹ All ›"
         self._tab(chooser)
-        assert chooser._scope_label.text == "‹ Fruit only ›"
+        assert chooser._scope_label.text() == "‹ Fruit only ›"
         rows = ["".join(r) for r in chooser.window.snapshot()]
         assert any("Fruit only" in r for r in rows), rows
 
@@ -269,4 +269,55 @@ class TestScopes:
     def test_one_scope_shows_no_switcher(self, ui_backend):
         _action, chooser = self._open([_Fruit(), _Tool()])
         assert chooser._scopes == []
-        assert chooser._scope_label.text == ""
+        assert chooser._scope_label.text() == ""
+
+    def test_the_arrows_are_clickable(self, ui_backend):
+        """The pointer is sometimes already in hand. A click reaches the
+        popup (overlay_input="mouse" on macOS, WS_EX_NOACTIVATE on Windows)
+        without the application underneath losing anything."""
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        switcher = chooser._scope_label
+        chooser.panel.render()                 # the widget learns its width
+        width = switcher._width
+        assert width > 0
+
+        switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
+                                    x=width - 1, y=0, button="left"))
+        assert chooser._scope == 1, "the right arrow moves forward"
+
+        switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
+                                    x=0, y=0, button="left"))
+        assert chooser._scope == 0, "the left arrow moves back"
+
+    def test_clicking_the_switcher_keeps_the_query(self, ui_backend):
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        chooser._on_event(Event(type=EventType.KEY, key="a", char="a"))
+        chooser.panel.render()
+        chooser._scope_label.handle_event(
+            Event(type=EventType.MOUSE_CLICK,
+                  x=chooser._scope_label._width - 1, y=0, button="left"))
+        assert chooser._edit.text == "a"
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+
+    def test_the_switcher_does_not_take_the_focus(self, ui_backend):
+        """Clicking it must not pull the focus out of the filter field."""
+        assert not getattr(
+            __import__("keyhac.ui.scope_switcher", fromlist=["ScopeSwitcher"])
+            .ScopeSwitcher, "focusable", False)
+
+    def test_a_click_routes_through_the_window(self, ui_backend):
+        """Not just the widget in isolation: the search row has to place it
+        where a click can find it."""
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        line = next(i for i, r in enumerate(rows) if "All" in r)
+        column = rows[line].index("All")
+        chooser._on_event(Event(type=EventType.MOUSE_DOWN, x=column, y=line,
+                                button="left"))
+        chooser._on_event(Event(type=EventType.MOUSE_UP, x=column, y=line,
+                                button="left"))
+        assert chooser._scope != 0, "the click never reached the switcher"

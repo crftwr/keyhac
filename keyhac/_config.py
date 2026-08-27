@@ -238,7 +238,7 @@ def configure(keymap):
     # Anything that returns a list can be one; no class to subclass.  This
     # lists the open windows and brings the chosen one forward.
 
-    class OpenWindows(Source):
+    class OpenWindows(CandidateSource):
         name = "Window"
 
         def candidates(self):

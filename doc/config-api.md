@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [Source](#class-source) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1563,7 +1563,7 @@ Build the action.
 
 **Args:**
  
- - <b>`sources`</b>:  A `Source`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing.  A list  of `Scope` objects instead gives the window a cycle Tab and  Shift-Tab move along, keeping the query as they go. 
+ - <b>`sources`</b>:  A `CandidateSource`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing.  A list  of `Scope` objects instead gives the window a cycle Tab and  Shift-Tab move along, keeping the query as they go. 
  - <b>`on_chosen`</b>:  Called as `on_chosen(candidate, modifier_flags)` for  rows whose source does not say what to do itself - which is  every row when the source is a bare callable. 
  - <b>`matcher`</b>:  How the filter text is matched; the default is  case-insensitive substring unioned with Migemo. 
  - <b>`activates`</b>:  Whether the window takes OS keyboard focus.  Leave it  alone unless the filter field genuinely needs an input method 
@@ -1612,15 +1612,17 @@ Adapt the `(icon, label, *payload)` tuple `ChooserAction.list_items` returns.  T
 ---
 
 
-## <kbd>class</kbd> `Source`
+## <kbd>class</kbd> `CandidateSource`
 A named set of candidates, and what choosing one does. 
+
+Named for what it is a source *of*: `keyhac import *` is flat, and a config writes `class Branches(CandidateSource)` with no surrounding call to say which kind of source is meant.  `Scope` keeps the shorter name because it is only ever written inside `ShowCandidates([...])`, where the context is right there. 
 
 
 
 
 ---
 
-### <kbd>method</kbd> `Source.candidates`
+### <kbd>method</kbd> `CandidateSource.candidates`
 
 ```python
 candidates() → list[keyhac.core.candidate.Candidate]
@@ -1632,7 +1634,7 @@ Called on every invocation rather than cached: a source reading the screen - the
 
 ---
 
-### <kbd>method</kbd> `Source.on_chosen`
+### <kbd>method</kbd> `CandidateSource.on_chosen`
 
 ```python
 on_chosen(
@@ -1693,7 +1695,7 @@ Build a scope.
 **Args:**
  
  - <b>`name`</b>:  Shown in the window while this scope is the current one. 
- - <b>`sources`</b>:  The sources it draws from - `Source` objects, plain  callables, or a mix. 
+ - <b>`sources`</b>:  The sources it draws from - `CandidateSource` objects,  plain callables, or a mix. 
 
 ---
 

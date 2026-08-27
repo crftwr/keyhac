@@ -372,7 +372,7 @@ kt["Fn-Shift-W"] = ShowCandidates(open_windows,
 ```
 
 Give it a class once it wants a name in a shared window and its own idea of what
-choosing does — `Source` with `name`, `candidates()` and `on_chosen()`. Enter runs
+choosing does — `CandidateSource` with `name`, `candidates()` and `on_chosen()`. Enter runs
 whatever the chosen row's source says, so rows from different sources can mean
 different things in the same window: paste this, activate that, press the other.
 A single row can override even that with `Candidate(action=...)`.

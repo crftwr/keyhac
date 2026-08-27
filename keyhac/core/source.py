@@ -26,8 +26,15 @@ from typing import Any, Callable
 from keyhac.core.candidate import Candidate
 
 
-class Source:
-    """A named set of candidates, and what choosing one does."""
+class CandidateSource:
+    """A named set of candidates, and what choosing one does.
+
+    Named for what it is a source *of*: `keyhac import *` is flat, and a
+    config writes `class Branches(CandidateSource)` with no surrounding call
+    to say which kind of source is meant.  `Scope` keeps the shorter name
+    because it is only ever written inside `ShowCandidates([...])`, where the
+    context is right there.
+    """
 
     #: Shown beside each row when more than one source is in the window.
     name: str = ""
@@ -66,7 +73,7 @@ class Source:
         return f"{type(self).__name__}({self.name!r})"
 
 
-class CallableSource(Source):
+class CallableSource(CandidateSource):
     """A source built from a plain callable, so anything that can produce a
     list can be one without subclassing - SSH hosts, git branches, records
     out of a line-of-business system.
@@ -97,10 +104,11 @@ class CallableSource(Source):
 
 
 def as_source(source: Any, name: str = "",
-              on_chosen: Callable[[Candidate, int], None] = None) -> Source:
-    """Coerce a `Source`, or a bare callable, into a `Source`.
+              on_chosen: Callable[[Candidate, int], None] = None
+              ) -> CandidateSource:
+    """Coerce a `CandidateSource`, or a bare callable, into one.
 
-    A `Source` is returned untouched, `on_chosen` included: it already says
+    A `CandidateSource` is returned untouched, `on_chosen` included: it says
     what choosing one of its rows does, and overriding that from outside is
     how a source ends up meaning something different depending on which
     window it was opened from.  A bare callable has no such opinion, so it
@@ -108,7 +116,7 @@ def as_source(source: Any, name: str = "",
 
     lazydocs: ignore
     """
-    if isinstance(source, Source):
+    if isinstance(source, CandidateSource):
         return source
     return CallableSource(source, name, on_chosen)
 
@@ -142,8 +150,8 @@ class Scope:
 
         Args:
             name: Shown in the window while this scope is the current one.
-            sources: The sources it draws from - `Source` objects, plain
-                callables, or a mix.
+            sources: The sources it draws from - `CandidateSource` objects,
+                plain callables, or a mix.
         """
         self.name = name
         listed = sources if isinstance(sources, (list, tuple)) else [sources]

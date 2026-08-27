@@ -172,9 +172,9 @@ class ChooserWindow:
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
         # and the search-row/list gap collapse to nothing on a character grid.
-        # ‹ › rather than just the name: a key-driven switch has no visible
-        # affordance of its own, so the arrows are what say one exists.
-        self._scope_label = Label(self._scope_text())
+        from keyhac.ui.scope_switcher import ScopeSwitcher
+        self._scope_label = ScopeSwitcher(
+            self._scope_name(), on_switch=self._switch_clicked)
         search_row = [
             Item(Label("🔍"), size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
@@ -302,10 +302,12 @@ class ChooserWindow:
 
     # --- scopes -----------------------------------------------------------
 
-    def _scope_text(self) -> str:
-        if not self._scopes:
-            return ""
-        return f"‹ {self._scopes[self._scope]} ›"
+    def _scope_name(self) -> str:
+        return self._scopes[self._scope] if self._scopes else ""
+
+    def _switch_clicked(self, delta: int) -> None:
+        self.switch_scope(delta)
+        self.panel.render()
 
     def switch_scope(self, delta: int) -> None:
         """Move `delta` steps along the scope cycle, keeping the query.
@@ -318,7 +320,7 @@ class ChooserWindow:
         rows, badge_of = self._on_scope(self._scope)
         self._items = [Candidate.from_item(row) for row in rows]
         self._badge_of = badge_of
-        self._scope_label.text = self._scope_text()
+        self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
         self._focus_edit()

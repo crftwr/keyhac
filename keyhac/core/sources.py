@@ -17,10 +17,10 @@ things with one name in a flat ``from keyhac import *`` namespace is a trap.
 from keyhac.core.candidate import Candidate
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
-from keyhac.core.source import Source
+from keyhac.core.source import CandidateSource
 from keyhac.core import log
 
-logger = log.getLogger("Source")
+logger = log.getLogger("CandidateSource")
 
 #: Delay between re-activating the target app and sending the paste
 #: keystroke.  Only an *activating* chooser pays it - see
@@ -28,7 +28,7 @@ logger = log.getLogger("Source")
 _PASTE_DELAY = 0.15
 
 
-class _PastingSource(Source):
+class _PastingSource(CandidateSource):
     """Shared by the sources whose rows end up in the clipboard.
 
     Shift-Enter sets the clipboard without pasting, which is the one thing
