@@ -28,6 +28,7 @@ import sys
 from typing import Any
 
 from keyhac.core import log
+from keyhac.core.uitree import _first_name
 
 logger = log.getLogger("WinUIElement")
 
@@ -99,6 +100,7 @@ class _IUIAutomationElement:
     get_CurrentHasKeyboardFocus = 26
     get_CurrentAutomationId = 29
     get_CurrentClassName = 30
+    get_CurrentHelpText = 31
     get_CurrentNativeWindowHandle = 36
     get_CurrentIsOffscreen = 38
     get_CurrentFrameworkId = 40
@@ -353,6 +355,7 @@ class UIElement:
         "Name": _IUIAutomationElement.get_CurrentName,
         "ClassName": _IUIAutomationElement.get_CurrentClassName,
         "AutomationId": _IUIAutomationElement.get_CurrentAutomationId,
+        "HelpText": _IUIAutomationElement.get_CurrentHelpText,
         "LocalizedControlType": _IUIAutomationElement.get_CurrentLocalizedControlType,
         "FrameworkId": _IUIAutomationElement.get_CurrentFrameworkId,
     }
@@ -546,9 +549,17 @@ class UIElement:
 
     def describe(self) -> dict:
         """The portable projection consumed by keyhac.core.uitree.UINode."""
+        # Name is the label; HelpText is the tooltip, which is where an
+        # icon-only toolbar button often puts the only words it has.  Which
+        # one answered travels as `name_source` - see the macOS twin.
+        name, name_source = _first_name(
+            ("label", self.get_attribute_value("Name")),
+            ("help", self.get_attribute_value("HelpText")),
+        )
         return {
             "role": self.get_attribute_value("ControlType"),
-            "name": self.get_attribute_value("Name"),
+            "name": name,
+            "name_source": name_source,
             "value": self.get_attribute_value("Value"),
             "identifier": self.get_attribute_value("AutomationId"),
             "rect": self.get_attribute_value("BoundingRectangle"),

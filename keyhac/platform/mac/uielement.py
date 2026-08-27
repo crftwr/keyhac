@@ -6,6 +6,8 @@ import Quartz
 from AppKit import NSWorkspace
 from Foundation import NSArray, NSDictionary
 
+from keyhac.core.uitree import _first_name
+
 _AX_TYPES = {
     "point": AS.kAXValueCGPointType, "size": AS.kAXValueCGSizeType,
     "rect": AS.kAXValueCGRectType, "range": AS.kAXValueCFRangeType,
@@ -13,7 +15,7 @@ _AX_TYPES = {
 
 #: What UIElement.describe() reads, in one batched call.  Order matters only
 #: in that the results come back positionally.
-_DESCRIBE_ATTRS = ["AXRole", "AXTitle", "AXValue", "AXDescription",
+_DESCRIBE_ATTRS = ["AXRole", "AXTitle", "AXValue", "AXDescription", "AXHelp",
                    "AXDOMIdentifier", "AXIdentifier", "AXPosition", "AXSize"]
 
 #: Descent bound for UIElement.get_text()'s leaf collection.
@@ -269,12 +271,22 @@ class UIElement:
             # The level is still there for anyone who wants it, on .element.
             value = None
 
+        # AXTitle is the label; AXDescription is what an unlabelled control
+        # (an icon button) offers instead; AXHelp is the tooltip, the last
+        # thing left before an element has no name at all.  Content stays out
+        # of all three - it is `value`.  Which one answered is reported as
+        # `name_source`, because it decides what an action can do with it: a
+        # title is a label the user can see, a description is one only
+        # assistive tech sees, and a tooltip may say something else entirely.
+        name, name_source = _first_name(
+            ("label", got.get("AXTitle")),
+            ("description", got.get("AXDescription")),
+            ("help", got.get("AXHelp")),
+        )
         return {
             "role": got.get("AXRole"),
-            # AXTitle is the label; AXDescription is what an unlabelled
-            # control (an icon button) offers instead.  Content stays out of
-            # both - it is `value`.
-            "name": got.get("AXTitle") or got.get("AXDescription"),
+            "name": name,
+            "name_source": name_source,
             "value": value,
             # The DOM id in web content, AXIdentifier in native AppKit UI.
             "identifier": got.get("AXDOMIdentifier") or got.get("AXIdentifier"),

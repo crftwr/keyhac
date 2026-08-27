@@ -90,6 +90,11 @@ class UINode:
             labelled Query).
         value: The element's content (what is typed into the field, "0"/"1" for
             a checkbox).
+        name_source: Which attribute `name` came from - "label",
+            "description", "help", or None when the element has no name.
+            An icon-only button typically has no label and answers one of the
+            other two; nothing at all means it can be addressed only by role
+            and position.
         identifier: A stable identifier where the platform has one - the DOM id
             in web content, AXIdentifier in native macOS UI, AutomationId on
             Windows.  The best thing to address an element by when present,
@@ -104,6 +109,12 @@ class UINode:
 
     role: str | None = None
     name: str | None = None
+    #: Where `name` came from - "label" (AXTitle / UIA Name), "description"
+    #: (AXDescription, what an unlabelled control offers instead), "help"
+    #: (AXHelp / UIA HelpText, the tooltip), or None when there is no name.
+    #: An icon-only button usually answers "description" or "help", and the
+    #: difference matters: only "label" is words the user can actually see.
+    name_source: str | None = None
     value: str | None = None
     identifier: str | None = None
     rect: tuple | None = None
@@ -549,3 +560,15 @@ def match_role(role: str | None, pattern: str) -> bool:
         return True
     stripped = role[2:] if role.startswith("AX") else role
     return match_pattern(stripped, pattern)
+
+
+def _first_name(*candidates) -> tuple[str | None, str | None]:
+    """The first non-empty name among ``(source, text)`` pairs, with the source
+    that answered.  ``(None, None)`` when an element offers no name at all -
+    which is a fact worth carrying, not a blank to paper over: such an element
+    cannot be addressed by name, only by role and position.
+    """
+    for source, text in candidates:
+        if text:
+            return str(text), source
+    return None, None

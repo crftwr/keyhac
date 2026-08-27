@@ -250,3 +250,42 @@ def test_all_text_keeps_non_adjacent_repeats():
     row = FakeElement("AXRow", key="r", children=[
         cell("37", "c1"), cell("x", "c2"), cell("37", "c3")])
     assert get_ui_tree(row).all_text == "37 x 37"
+
+
+class TestNameProvenance:
+    """`name_source` says which attribute answered - the difference between a
+    label the user can read and a tooltip only assistive tech sees. An
+    icon-only button has no label at all, and knowing that is what tells a
+    caller it can be addressed only by role and position."""
+
+    def test_a_label_wins(self):
+        from keyhac.core.uitree import _first_name
+        assert _first_name(("label", "Save"), ("description", "Save file"),
+                           ("help", "Saves")) == ("Save", "label")
+
+    def test_a_description_stands_in_for_a_missing_label(self):
+        from keyhac.core.uitree import _first_name
+        assert _first_name(("label", None), ("description", "Bold"),
+                           ("help", "Make bold")) == ("Bold", "description")
+
+    def test_a_tooltip_is_the_last_resort(self):
+        from keyhac.core.uitree import _first_name
+        assert _first_name(("label", ""), ("description", None),
+                           ("help", "Toggle sidebar")) == ("Toggle sidebar",
+                                                           "help")
+
+    def test_no_name_at_all_is_reported_as_such(self):
+        from keyhac.core.uitree import _first_name
+        assert _first_name(("label", None), ("description", ""),
+                           ("help", None)) == (None, None)
+
+    def test_an_empty_string_is_not_a_name(self):
+        # An unlabelled control frequently answers "" rather than nothing.
+        from keyhac.core.uitree import _first_name
+        assert _first_name(("label", ""), ("description", "Close"))[1] == \
+            "description"
+
+    def test_a_node_defaults_to_no_provenance(self):
+        from keyhac.core.uitree import UINode
+        assert UINode().name_source is None
+        assert UINode(name="Save", name_source="label").name_source == "label"

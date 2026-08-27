@@ -215,6 +215,7 @@ Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and t
  - <b>`role`</b>:  Control role - "AXTextField" (macOS) or "Edit" (Windows).  The  OS's own name; match it with `role=` patterns, which accept the  macOS names with or without their "AX" prefix. 
  - <b>`name`</b>:  The element's label, not its content ("Query" for a field  labelled Query). 
  - <b>`value`</b>:  The element's content (what is typed into the field, "0"/"1" for  a checkbox). 
+ - <b>`name_source`</b>:  Which attribute `name` came from - "label",  "description", "help", or None when the element has no name.  An icon-only button typically has no label and answers one of the  other two; nothing at all means it can be addressed only by role  and position. 
  - <b>`identifier`</b>:  A stable identifier where the platform has one - the DOM id  in web content, AXIdentifier in native macOS UI, AutomationId on  Windows.  The best thing to address an element by when present,  since it survives relabelling and localisation. 
  - <b>`rect`</b>:  (x, y, w, h) in screen coordinates, or None. 
  - <b>`depth`</b>:  Distance below the root the walk started from. 
