@@ -59,6 +59,19 @@ class CandidateSource:
                 "copy this" from "paste it".
         """
 
+    def badge(self, candidate: Candidate) -> str:
+        """What to show quietly at the right of this row, when the window is
+        showing only this source.
+
+        With several sources the window shows which one a row came from,
+        because that is the thing a mixed list hides.  With one there is no
+        such question, and the slot is free for whatever *this* source thinks
+        annotates a row - the menu source puts the keyboard shortcut there,
+        so choosing a command from the list twice teaches the key the third
+        time.
+        """
+        return ""
+
     def choose(self, candidate: Candidate, modifier_flags: int) -> None:
         """Run the candidate's own action if it has one, else `on_chosen`.
 

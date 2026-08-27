@@ -321,3 +321,138 @@ class TestScopes:
         chooser._on_event(Event(type=EventType.MOUSE_UP, x=column, y=line,
                                 button="left"))
         assert chooser._scope != 0, "the click never reached the switcher"
+
+
+class _FakeMenuElement:
+    """A menu tree in the shape both platforms expose: a bar of items, each
+    opening a menu of items, some of which open another."""
+
+    def __init__(self, role, name="", kids=(), enabled=True, shortcut=None):
+        self._role = role
+        self._name = name
+        self._kids = list(kids)
+        self._enabled = enabled
+        self._shortcut = shortcut or {}
+        self.pressed = []
+
+    def describe(self):
+        return {"role": self._role, "name": self._name}
+
+    def children(self):
+        return self._kids
+
+    def get_attribute_value(self, name):
+        if name in ("AXEnabled", "IsEnabled"):
+            return self._enabled
+        return self._shortcut.get(name)
+
+    def perform_action(self, name):
+        self.pressed.append(name)
+        return name == "AXPress"
+
+
+def _menu(*kids):
+    return _FakeMenuElement("AXMenu", kids=kids)
+
+
+def _item(name, kids=(), **kw):
+    return _FakeMenuElement("AXMenuItem", name, kids=kids, **kw)
+
+
+class TestMenuItemsSource:
+    """Every command in the front application's menus, flattened."""
+
+    def _bar(self):
+        self.save_as = _item("Save As…", shortcut={
+            "AXMenuItemCmdChar": "S", "AXMenuItemCmdModifiers": 1})
+        return _FakeMenuElement("AXMenuBar", kids=[
+            _FakeMenuElement("AXMenuBarItem", "File", kids=[_menu(
+                _item("New", shortcut={"AXMenuItemCmdChar": "N",
+                                       "AXMenuItemCmdModifiers": 0}),
+                _item("Export", kids=[_menu(self.save_as,
+                                            _item("As PDF…"))]),
+                _item("Print", enabled=False),
+            )]),
+            _FakeMenuElement("AXMenuBarItem", "Edit", kids=[_menu(
+                _item("Undo"),
+            )]),
+        ])
+
+    def _rows(self):
+        from keyhac.core.sources import _walk_menu
+        rows = []
+        _walk_menu(self._bar(), (), rows, 0)
+        return rows
+
+    def test_only_leaves_are_offered(self):
+        """A row that merely opens another menu is not a command, and a list
+        of them would be a worse menu bar rather than a better one."""
+        displays = [c.display for c in self._rows()]
+        assert "File › Export" not in displays
+        assert "File › Export › As PDF…" in displays
+
+    def test_a_row_reads_as_the_path_to_it(self):
+        assert "File › Export › Save As…" in [c.display for c in self._rows()]
+
+    def test_a_disabled_item_is_skipped(self):
+        assert "File › Print" not in [c.display for c in self._rows()]
+
+    def test_every_menu_is_walked(self):
+        assert "Edit › Undo" in [c.display for c in self._rows()]
+
+    def test_the_shortcut_travels_with_the_row(self):
+        by_name = {c.display: c for c in self._rows()}
+        assert by_name["File › New"].extras["shortcut"] == "Cmd-N"
+        assert by_name["File › Export › Save As…"].extras["shortcut"] == \
+            "Cmd-Shift-S"
+
+    def test_an_item_without_a_shortcut_says_so(self):
+        by_name = {c.display: c for c in self._rows()}
+        assert by_name["File › Export › As PDF…"].extras["shortcut"] == ""
+
+    def test_the_modifier_mask_clears_command_rather_than_setting_it(self):
+        """0x08 is *not Command* - read off real menus, because a plain Cmd-D
+        reports 0 and Ctrl-Tab reports 0x08 | 0x04."""
+        from keyhac.core.sources import _menu_shortcut
+        item = _FakeMenuElement("AXMenuItem", "x", shortcut={
+            "AXMenuItemCmdChar": "T", "AXMenuItemCmdModifiers": 0x08 | 0x04})
+        assert _menu_shortcut(item) == "Ctrl-T"
+
+    def test_fn_is_the_high_bit(self):
+        from keyhac.core.sources import _menu_shortcut
+        item = _FakeMenuElement("AXMenuItem", "x", shortcut={
+            "AXMenuItemCmdChar": "F", "AXMenuItemCmdModifiers": 0x18})
+        assert _menu_shortcut(item) == "Fn-F"
+
+    def test_a_glyph_key_is_named_from_its_virtual_key(self):
+        """Home reports a private-use character that would print as a box,
+        but also a vk - and that goes through Keyhac's own name table, so it
+        reads the way a key table would spell it."""
+        from keyhac.core.vk import init_key_names
+        from keyhac.core.sources import _menu_shortcut
+        init_key_names("mac")
+        item = _FakeMenuElement("AXMenuItem", "x", shortcut={
+            "AXMenuItemCmdChar": "", "AXMenuItemCmdVirtualKey": 115,
+            "AXMenuItemCmdModifiers": 0})
+        assert _menu_shortcut(item) == "Cmd-Home"
+
+    def test_choosing_presses_the_item(self):
+        from keyhac.core.sources import MenuItemsSource
+        rows = self._rows()
+        row = next(c for c in rows if c.display.endswith("Save As…"))
+        MenuItemsSource().on_chosen(row, 0)
+        assert row.payload.pressed == ["AXPress"]
+
+    def test_the_shortcut_is_the_badge_when_it_is_the_only_source(self):
+        from keyhac.core.sources import MenuItemsSource
+        row = self._rows()[0]
+        assert MenuItemsSource().badge(row) == row.extras["shortcut"]
+
+    def test_a_recursive_menu_does_not_hang_the_walk(self):
+        from keyhac.core.sources import _walk_menu
+        menu = _menu()
+        loop = _item("Loop", kids=[menu])
+        menu._kids.append(loop)
+        rows = []
+        _walk_menu(_FakeMenuElement("AXMenuBar", kids=[loop]), (), rows, 0)
+        assert rows == []

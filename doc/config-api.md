@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [MenuItemsSource](#class-menuitemssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1622,6 +1622,18 @@ Named for what it is a source *of*: `keyhac import *` is flat, and a config writ
 
 ---
 
+### <kbd>method</kbd> `CandidateSource.badge`
+
+```python
+badge(candidate: keyhac.core.candidate.Candidate) → str
+```
+
+What to show quietly at the right of this row, when the window is showing only this source. 
+
+With several sources the window shows which one a row came from, because that is the thing a mixed list hides.  With one there is no such question, and the slot is free for whatever *this* source thinks annotates a row - the menu source puts the keyboard shortcut there, so choosing a command from the list twice teaches the key the third time. 
+
+---
+
 ### <kbd>method</kbd> `CandidateSource.candidates`
 
 ```python
@@ -1702,6 +1714,32 @@ Build a scope.
 
 ## <kbd>class</kbd> `ClipboardHistorySource`
 Everything the clipboard has held, most recent first. 
+
+---
+
+
+## <kbd>class</kbd> `MenuItemsSource`
+Every command in the front application's menus, as one flat list. 
+
+This is the long tail the candidate window is for: the commands that have no keyboard shortcut, in an application whose menus you do not know by heart.  Rows read as the path to them - `File › Export › As PDF…` - and carry the shortcut where there is one, so choosing from here twice teaches the key the third time. 
+
+Only leaves are offered.  A row that merely opens another menu is not a command, and a list of them would be a worse menu bar rather than a better one.  Disabled items are skipped: they are visible in the menu for the shape of it, and unchoosable here. 
+
+**It costs a real traversal.**  Measured on macOS: 79 ms for a small application, 396 ms for Chrome, for 161 and 331 items - so this belongs in a `Scope` of its own, where it is paid for when asked for, rather than in a merged scope opened on every keystroke. 
+
+### <kbd>method</kbd> `MenuItemsSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
 
 ---
 

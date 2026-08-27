@@ -347,6 +347,39 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   the merged everything-scope, paid every time" or "on a hotkey of its own",
   and the hotkey is the thing this was trying to save.
 
+## The menu-items source
+
+- **Measured before it was designed.** Walking a window's whole accessibility
+  tree costs 460 ms on VS Code and is still truncated at 3000 nodes, of which
+  only 303 have a name; `roles=` does *not* help (495 ms — the walk is the
+  cost, and filtering only changes what is reported), nor does pruning content
+  subtrees (433 ms). Depth is the only lever, and at depth 6 VS Code yields 4
+  elements instead of 117. There is no cheap way to enumerate a heavy app's
+  controls. The menu bar, by contrast, is bounded and almost entirely named:
+  77–202 items in 84–298 ms. That is why menus came first.
+- **It belongs in a `Scope` of its own** for the same reason — a merged scope
+  opened on every keystroke cannot afford a quarter of a second.
+- Only **leaves** are offered. A row that merely opens another menu is not a
+  command, and a list of those would be a worse menu bar rather than a better
+  one. Disabled items are skipped; "cannot tell" counts as enabled, so a
+  platform that does not answer never silently empties the list.
+- **The modifier mask was read off real menus, not a header**, because two
+  bits are not what one would guess: `0x08` *clears* the otherwise implicit
+  Command, and `0x10` is Fn. Terminal's Split Pane (Cmd-D) reports 0, Show
+  Next Tab (Ctrl-Tab) reports `0x08|0x04`, Fill (Fn-Ctrl-F) reports 28.
+- A key with no character — Home, Page Up, Tab — reports a private-use glyph
+  that prints as a box, and also a **virtual key code**, which goes through
+  Keyhac's own name table. The shortcut then reads in exactly the spelling a
+  config would write.
+- **A lone source owns the badge slot.** With several sources the window shows
+  which one a row came from, because that is what a mixed list hides; with one
+  there is no such question and the source annotates its own rows — the menu
+  source puts the shortcut there, so picking a command twice teaches the key
+  the third time.
+- Worth knowing: **a custom-drawn application exposes almost nothing.** XeFM,
+  a PuiKit app, offers 4 elements and 7 nodes — and Keyhac's own windows are
+  the same. This source is for other people's applications.
+
 ## Migemo
 
 - Engine: oguna's `pymigemo` — pure Python, BSD-3, dictionary bundled in the wheel.

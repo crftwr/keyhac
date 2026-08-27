@@ -88,6 +88,7 @@ API_NAMES = [
     "CallableSource",
     "Scope",
     "ClipboardHistorySource",
+    "MenuItemsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
     "ShowClipboardHistory",

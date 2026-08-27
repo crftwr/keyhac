@@ -259,9 +259,15 @@ def configure(keymap):
     # you ask for it, not every time the window opens.
 
     kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
-        Scope("All", [ClipboardHistorySource(), SnippetsSource(snippets),
-                      ClipboardToolsSource(tools), OpenWindows()]),
         Scope("Clipboard", [ClipboardHistorySource(), SnippetsSource(snippets)]),
+        # Every command in the front application's menus, as one flat list —
+        # the long tail with no shortcut, in an app whose menus you do not
+        # know by heart.  Rows read `File › Export › As PDF…` and show the
+        # key where there is one, so picking it twice teaches it the third
+        # time.  In a scope of its own on purpose: it costs a real read of
+        # the application (measured: 84 ms for a small app, ~300 ms for a
+        # big one), and nothing else here does.
+        Scope("Menus", [MenuItemsSource()]),
         Scope("Windows", [OpenWindows()]),
         Scope("Tools", [ClipboardToolsSource(tools)]),
     ])

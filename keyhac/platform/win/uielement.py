@@ -547,6 +547,25 @@ class UIElement:
         """
         return None
 
+    def menu_bar(self) -> "UIElement | None":
+        """The window's menu bar, or None.
+
+        Windows has no application-level menu bar the way macOS does - a menu
+        lives inside its window - so this searches the subtree for the first
+        MenuBar, and falls back to a Menu where an application draws one
+        without the bar role (the ribbon-era apps, and anything owner-drawn,
+        expose neither and correctly answer None).
+
+        lazydocs: ignore
+        """
+        from keyhac.core.uitree import find_elements
+
+        for role in ("MenuBar", "Menu"):
+            found = find_elements(self, role=role, max_nodes=400)
+            if found:
+                return found[0].element
+        return None
+
     def describe(self) -> dict:
         """The portable projection consumed by keyhac.core.uitree.UINode."""
         # Name is the label; HelpText is the tooltip, which is where an

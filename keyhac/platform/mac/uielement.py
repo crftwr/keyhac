@@ -353,6 +353,26 @@ class UIElement:
         err, _ = AS.AXUIElementCopyAttributeValue(self._ref, "AXRole", None)
         return err == AS.kAXErrorInvalidUIElement
 
+    def menu_bar(self) -> "UIElement | None":
+        """The application's menu bar, from any element inside it.
+
+        macOS hangs `AXMenuBar` off the *application* element, so this walks
+        up to it first; on an element already at the top the walk stops
+        immediately.
+
+        lazydocs: ignore
+        """
+        current = self
+        for _ in range(32):
+            bar = current.get_attribute_value("AXMenuBar")
+            if bar is not None:
+                return bar
+            parent = current.parent()
+            if parent is None:
+                return None
+            current = parent
+        return None
+
     @staticmethod
     def get_focused_application() -> "UIElement | None":
         app = NSWorkspace.sharedWorkspace().frontmostApplication()

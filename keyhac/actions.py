@@ -317,6 +317,7 @@ class ChooserAction:
         the same word.
         """
         from keyhac.core.candidate import Candidate
+        from keyhac.core.source import CandidateSource
 
         sources = self.sources()
         rows, owners = [], {}
@@ -327,7 +328,12 @@ class ChooserAction:
                 owners[id(candidate)] = source
         self._owners = owners
         if len(sources) < 2:
-            return rows, None
+            # No "which source" question to answer, so the slot belongs to
+            # the source itself - the menu source puts the shortcut there.
+            single = sources[0] if sources else None
+            if single is None or type(single).badge is CandidateSource.badge:
+                return rows, None
+            return rows, lambda c: single.badge(c)
         return rows, lambda c: getattr(owners.get(id(c)), "name", "")
 
     def _scope_rows(self, index: int):

@@ -161,3 +161,200 @@ class ClipboardToolsSource(_PastingSource):
         if converted is None:
             return
         self.paste(str(converted), modifier_flags)
+
+
+#: Roles a menu tree uses, in the two OSes' own vocabularies.  A menu bar's
+#: shape is the same on both - a bar of top-level items, each opening a menu
+#: of items, some of which open another menu - only the names differ.
+_MENU_ITEM_ROLES = ("AXMenuItem", "AXMenuBarItem", "MenuItem")
+_MENU_ROLES = ("AXMenu", "AXMenuBar", "Menu", "MenuBar")
+
+#: How deep a submenu chain is followed.  Real menus are three or four deep;
+#: past that something is recursive and the walk should stop rather than
+#: discover it the slow way.
+_MENU_MAX_DEPTH = 8
+
+
+class MenuItemsSource(CandidateSource):
+    """Every command in the front application's menus, as one flat list.
+
+    This is the long tail the candidate window is for: the commands that have
+    no keyboard shortcut, in an application whose menus you do not know by
+    heart.  Rows read as the path to them - `File › Export › As PDF…` - and
+    carry the shortcut where there is one, so choosing from here twice teaches
+    the key the third time.
+
+    Only leaves are offered.  A row that merely opens another menu is not a
+    command, and a list of them would be a worse menu bar rather than a
+    better one.  Disabled items are skipped: they are visible in the menu for
+    the shape of it, and unchoosable here.
+
+    **It costs a real traversal.**  Measured on macOS: 79 ms for a small
+    application, 396 ms for Chrome, for 161 and 331 items - so this belongs
+    in a `Scope` of its own, where it is paid for when asked for, rather than
+    in a merged scope opened on every keystroke.
+    """
+
+    name = "Menu"
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        focus = keymap.focus
+        element = getattr(focus, "element", None) if focus else None
+        if element is None:
+            logger.debug("No focused element; the menu bar cannot be found.")
+            return []
+        try:
+            bar = element.menu_bar()
+        except Exception:
+            logger.debug("This platform does not expose a menu bar.")
+            return []
+        if bar is None:
+            return []
+        rows = []
+        _walk_menu(bar, (), rows, 0)
+        return rows
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("shortcut", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        element = candidate.payload
+        try:
+            if not element.perform_action("AXPress") and \
+                    not element.perform_action("Invoke"):
+                logger.error(f"{candidate.display}: the menu item refused to "
+                             f"be pressed.")
+        except Exception:
+            logger.error(f"{candidate.display}: pressing it failed.")
+
+
+def _walk_menu(node, path, rows, depth) -> None:
+    """Flatten a menu tree onto `rows`, keeping the path to each leaf."""
+    if depth > _MENU_MAX_DEPTH:
+        return
+    try:
+        children = node.children()
+    except Exception:
+        return
+    for child in children or []:
+        try:
+            role = child.describe().get("role")
+        except Exception:
+            continue
+        if role in _MENU_ROLES:
+            _walk_menu(child, path, rows, depth + 1)
+            continue
+        if role not in _MENU_ITEM_ROLES:
+            continue
+        title = _menu_title(child)
+        here = path + (title,) if title else path
+        submenus = [c for c in (child.children() or [])
+                    if _role_of(c) in _MENU_ROLES]
+        if submenus:
+            for submenu in submenus:
+                _walk_menu(submenu, here, rows, depth + 1)
+            continue
+        if not title or not _menu_enabled(child):
+            continue
+        rows.append(Candidate(
+            icon="≡", display=" › ".join(here), payload=child,
+            extras={"shortcut": _menu_shortcut(child)}))
+
+
+def _role_of(element):
+    try:
+        return element.describe().get("role")
+    except Exception:
+        return None
+
+
+def _menu_title(element) -> str:
+    try:
+        return element.describe().get("name") or ""
+    except Exception:
+        return ""
+
+
+def _menu_enabled(element) -> bool:
+    """A disabled item is unchoosable, so it is not offered.  Unknown counts
+    as enabled: a platform that does not say must not silently empty the
+    list."""
+    for attribute in ("AXEnabled", "IsEnabled"):
+        try:
+            value = element.get_attribute_value(attribute)
+        except Exception:
+            continue
+        if value is not None:
+            return bool(value)
+    return True
+
+
+def _menu_shortcut(element) -> str:
+    """The item's keyboard shortcut, spelled the way a key table would.
+
+    The modifier mask was read off real menus rather than a header, because
+    two of its bits are not what one would guess:
+
+    ====  ==============================================
+    0x01  Shift
+    0x02  Option / Alt
+    0x04  Control
+    0x08  **clears** the otherwise implicit Command
+    0x10  Fn
+    ====  ==============================================
+
+    So a plain `Cmd-D` reports 0, and `Ctrl-Tab` - which has no Command -
+    reports 0x08 | 0x04.  The evidence: Terminal's Split Pane (Cmd-D) is 0,
+    Close Split Pane (Cmd-Shift-D) is 1, Show Next Tab (Ctrl-Tab) is 12, and
+    Fill (Fn-Ctrl-F) is 28.
+
+    A key with no character - Home, Page Up, Tab - reports a private-use
+    glyph that would print as a box, but also a virtual key code, and that
+    goes through Keyhac's own name table.  The shortcut then reads in exactly
+    the spelling a config would write it in.
+    """
+    try:
+        char = element.get_attribute_value("AXMenuItemCmdChar") or ""
+        virtual_key = element.get_attribute_value("AXMenuItemCmdVirtualKey")
+        modifiers = element.get_attribute_value("AXMenuItemCmdModifiers")
+    except Exception:
+        return ""
+    key = ""
+    if virtual_key is not None:
+        try:
+            from keyhac.core.vk import get_key_names
+            key = get_key_names().vk_to_str(int(virtual_key))
+        except Exception:
+            key = ""
+        if key.startswith("("):        # vk_to_str's "unknown" spelling
+            key = ""
+    if not key:
+        if not char or not str(char).isprintable():
+            return ""
+        key = str(char)
+    mask = int(modifiers or 0)
+    parts = []
+    if not mask & 0x08:
+        parts.append("Cmd")
+    if mask & 0x10:
+        parts.append("Fn")
+    if mask & 0x04:
+        parts.append("Ctrl")
+    if mask & 0x02:
+        parts.append("Alt")
+    if mask & 0x01:
+        parts.append("Shift")
+    return "-".join(parts + [key])
