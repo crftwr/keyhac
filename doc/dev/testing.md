@@ -454,6 +454,47 @@ have — a JIS keyboard, and a Japanese IME driving the chooser — were passed 
 hand on 2026-08-07 and stay on the list for the next release rather than being
 struck off.
 
+- **The chooser on Windows, after the non-activating rework** *(new, not yet
+  passed)* — this branch changed the chooser on both OSes but was developed and
+  live-checked only on macOS, and **Windows takes the other code path**:
+  `overlay_input` has no Windows equivalent and is inert, so the window is a
+  plain `WS_EX_NOACTIVATE` + `WS_POPUP` one with no panel behind it. Nothing
+  below is covered by the harnesses, because all of it is about what the OS does
+  with a window that never takes focus.
+
+  - *Symbols in the filter field.* `tests/test_win_char_for_key.py` covers the
+    mechanism (`ToUnicodeEx`) and runs on any layout; what it cannot reach is a
+    layout with an **AltGr layer** (`@` and the backslash on German/Nordic) or a
+    **dead key**. If such a keyboard is available, type both; if not, skip it
+    honestly — the dead-key path deliberately calls `ToUnicodeEx` twice for the
+    builds that ignore `TOUNICODE_NO_STATE`, and only real hardware proves the
+    next keystroke is not left composing.
+  - *The window never takes focus.* Opening the chooser leaves the foreground
+    window's title bar active and its caret blinking; typing reaches the filter
+    (through the hook, not the window); clicking a row selects it without the
+    window underneath deactivating; **Enter pastes with no settle delay** —
+    `_PASTE_DELAY` is now skipped entirely on this path, so a paste that lands
+    in the wrong place or not at all is this check failing.
+  - *It looks right without a title bar.* `frameless` is set on both OSes
+    because macOS needs it to hide the title bar its panel mask forces; on
+    Windows that means `WS_POPUP`, so the chooser lost the frame it had in
+    2.x. Confirm it still reads as a window and not as a floating rectangle.
+  - *Auto-dismiss.* Switch virtual desktops (Win+Ctrl+arrow) and the chooser
+    closes — then the hotkey opens a fresh one *on the new desktop*, which is
+    the bug that started this. Clicking another window closes it; scrolling a
+    background window with the wheel or trackpad does **not**.
+  - *Two panes.* Down steps from the field into the list, Up off the first row
+    steps back, typing anywhere returns to the field, and the selection draws
+    in the accent colour while the list has focus and not at all while the
+    field does.
+  - *The console stays put.* It never came forward on Windows (the macOS cause
+    was app-scoped activation, which `WS_EX_NOACTIVATE` never did), so this is
+    confirming nothing regressed rather than checking a fix.
+  - *Migemo loads.* `pymigemo` is a hard dependency now. The LP64 dictionary
+    patch is inert on Windows (`array('L')` is already 4 bytes there), so this
+    is confirming the engine reports itself loaded and that romaji finds
+    Japanese in the filter — not the patch.
+
 - **The `Keyhac.exe` bundle** — `tools/bundle_pass.py` does the mechanizable
   half; run it with no Keyhac running, or the instance guard makes every check
   fail for the wrong reason. 11/11 for 2.2.1, on a bundle rebuilt against the

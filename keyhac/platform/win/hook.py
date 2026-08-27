@@ -392,23 +392,23 @@ class WinInputHook(InputHook):
 
         state = (ctypes.c_ubyte * 256)()
         if mod & (MODKEY_SHIFT | MODKEY_SHIFT_L | MODKEY_SHIFT_R):
-            state[self.VK_SHIFT] = 0x80
+            state[VK_SHIFT] = 0x80
         if alt:
-            state[self.VK_CONTROL] = 0x80
-            state[self.VK_MENU] = 0x80
+            state[VK_CONTROL] = 0x80
+            state[VK_MENU] = 0x80
 
-        scan = user32.MapVirtualKeyW(vk, self.MAPVK_VK_TO_VSC)
+        scan = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)
         layout = user32.GetKeyboardLayout(0)
         buffer = ctypes.create_unicode_buffer(8)
         count = user32.ToUnicodeEx(vk, scan, ctypes.byref(state), buffer,
-                                   len(buffer), self.TOUNICODE_NO_STATE, layout)
+                                   len(buffer), TOUNICODE_NO_STATE, layout)
         if count < 0:
             # A dead key. The flag above leaves the state alone on Windows 10
             # 1607+; on anything older the state is now armed, so translate
             # again to consume it rather than leaving the next real keystroke
             # to be composed against it.
             user32.ToUnicodeEx(vk, scan, ctypes.byref(state), buffer,
-                               len(buffer), self.TOUNICODE_NO_STATE, layout)
+                               len(buffer), TOUNICODE_NO_STATE, layout)
             return None
         if count != 1:
             return None
