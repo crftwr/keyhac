@@ -1680,6 +1680,8 @@ branches = CallableSource(git_branches, "Branches", on_chosen=checkout)
 
 The callable returns `Candidate` objects, or the `(icon, label, *rest)` tuples `ChooserAction.list_items` has always returned - those are adapted, and `on_chosen` then receives a candidate whose payload is the tuple. 
 
+A callable that **yields** is a streaming source and stays one; one that returns a list stays a list. 
+
 ---
 
 
