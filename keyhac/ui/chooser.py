@@ -6,10 +6,12 @@ a search field + filtered list.
 **Two panes, one focus.** The filter field holds it to begin with, and while
 it does the list shows no selection at all - it is a preview of what matches,
 not a proposal. Down steps into the list; Up off its first row steps back
-out, as does typing any character, so the field is never more than one
-keystroke away. Enter chooses the selected row, or the top match when the
-field still has the focus - typing a few letters and pressing Enter is the
-flow this window exists for. Escape cancels. A click picks a row without
+out, as does anything addressed to the query - typing a character, editing it
+(Backspace, Delete) or moving its caret (Left/Right and their modifier forms)
+- so the field is never more than one keystroke away, and that keystroke is
+never spent getting there. Enter chooses the selected row, or the top match
+when the field still has the focus - typing a few letters and pressing Enter
+is the flow this window exists for. Escape cancels. A click picks a row without
 choosing it: the payload can be a destructive action.
 
 Filtering goes through a pluggable ``Matcher`` (discussion #112): the
@@ -86,6 +88,15 @@ _PROGRESS_STYLE = Style(fg=(130, 130, 140))
 _POINTER_STYLE = Style(fg=(255, 90, 90))
 _POINTER_WIDTH = 3.0
 _POINTER_RADIUS = 4.0
+
+#: Keys that address the *query* rather than the list: they edit it or move
+#: its caret, so pressing one in the list means the field, exactly as typing
+#: does. Modifier forms arrive under these same names - Ctrl-Left is word-wise,
+#: Shift-Left selects, Cmd-Left is the line start on macOS - so naming the bare
+#: keys covers the derivatives with them. Home and End are deliberately absent:
+#: the list uses those for its first and last row, which is what a list long
+#: enough to need them wants them for.
+_FIELD_KEYS = frozenset({"backspace", "delete", "left", "right"})
 
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
@@ -528,13 +539,23 @@ class ChooserWindow:
                         mod |= _EVENT_MODKEYS.get(name, 0)
                     self._finish(self._filtered[index], mod)
                 return
-            if event.key in ("up", "down", "pageup", "pagedown"):
+            if event.key in ("up", "down", "pageup", "pagedown") or (
+                    self.in_list and event.key in ("home", "end")):
+                # Home/End only once the list has the focus - in the field
+                # they are the caret's, and the field keeps them. Routing them
+                # here rather than letting the ListView answer them itself is
+                # what keeps the outline on screen in step: every move of the
+                # selection has to go through _navigate, or the mark stays on
+                # the row the selection just left.
                 self._navigate(event.key)
                 self.panel.render()
                 return
-            if self.in_list and event.char:
-                # Typing anywhere goes to the field, which means leaving the
-                # list first - then the character is dispatched as usual.
+            if self.in_list and (event.char or event.key in _FIELD_KEYS):
+                # Anything addressed to the query goes to the field, which
+                # means leaving the list first - then the key is dispatched as
+                # usual and lands there. Backspace with the focus still in the
+                # list did nothing at all, which reads as the window ignoring
+                # you: the query is right there on screen with a caret in it.
                 self._focus_edit()
         self.panel.dispatch_event(event)
         self.panel.render()
@@ -548,8 +569,13 @@ class ChooserWindow:
             if key in ("down", "pagedown"):
                 self._focus_list(0)
             return
-        delta = {"up": -1, "down": 1, "pageup": -10, "pagedown": 10}[key]
-        index = self._list.selected + delta
+        if key == "home":
+            index = 0
+        elif key == "end":
+            index = len(self._filtered) - 1
+        else:
+            index = self._list.selected + {
+                "up": -1, "down": 1, "pageup": -10, "pagedown": 10}[key]
         if index < 0:
             # Off the top of the list is back to the field, whether it was one
             # row up or a whole page.

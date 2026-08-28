@@ -1574,6 +1574,19 @@ class TestPointingAtTheSelection:
         assert (marks.made[1].x, marks.made[1].y) == (50, 60)
         chooser.dismiss()
 
+    def test_jumping_to_the_last_row_moves_the_mark_with_it(self, ui_backend):
+        """Every move of the selection goes through the window's own
+        _navigate, so the outline follows. Letting the ListView answer
+        Home/End itself moved the highlight and left the mark on the row the
+        selection had just left."""
+        from puikit.event import Event, EventType
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        chooser._on_event(Event(type=EventType.KEY, key="end"))
+        assert chooser._list.selected == 1
+        assert (marks.made[-1].x, marks.made[-1].y) == (50, 60)
+        chooser.dismiss()
+
     def test_leaving_the_list_stops_pointing(self, ui_backend):
         chooser, marks = self._chooser(ui_backend, self._rows())
         chooser._navigate("down")

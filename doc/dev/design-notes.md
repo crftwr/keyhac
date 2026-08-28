@@ -156,8 +156,20 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - **Two panes, one focus.** The filter field starts with it, and while it has it
   the list shows *no* selection (`ListView(allow_no_selection=True)`, puikit
   PR #126) — not the muted unfocused highlight, which still reads as a proposal.
-  Down steps into the list, Up off its first row steps back out, and typing any
-  character does too, so the field is never more than one keystroke away. Enter
+  Down steps into the list, Up off its first row steps back out, and so does
+  anything addressed to the *query*: typing a character, editing it (Backspace,
+  Delete) or moving its caret (Left/Right, and their modifier forms — Ctrl for
+  a word, Shift to select, Cmd for the line start on macOS — which arrive under
+  the same key names, so naming the bare keys covers the derivatives). The key
+  is then dispatched as usual and lands in the field, so the keystroke that got
+  you there is not spent on getting there. Backspace used to do *nothing* with
+  the focus in the list, which reads as the window ignoring you when the query
+  is on screen with a caret in it. Home and End are the exception, and belong
+  to the list: a list long enough to want a first and last row wants them for
+  that. They are routed through the window's own `_navigate` rather than
+  answered by the `ListView`, because every move of the selection has to update
+  the screen mark too — the ListView answering them itself moved the highlight
+  and left the outline on the row the selection had just left. Enter
   takes the selected row, or the top match while the field has the focus: typing
   a few letters and pressing Enter is the flow the window exists for, and making
   Enter inert there would have been a regression. A click picks a row and moves

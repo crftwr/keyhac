@@ -608,9 +608,10 @@ class TestChooserFocus:
         items = [("*", "alpha", 1), ("*", "beta", 2), ("*", "alpine", 3)]
         return ChooserWindow(ui_backend, items, **kwargs)
 
-    def _key(self, chooser, key, char=None):
+    def _key(self, chooser, key, char=None, modifiers=()):
         from puikit.event import Event, EventType
-        chooser._on_event(Event(type=EventType.KEY, key=key, char=char))
+        chooser._on_event(Event(type=EventType.KEY, key=key, char=char,
+                                modifiers=frozenset(modifiers)))
 
     def test_nothing_is_selected_while_typing(self, ui_backend):
         chooser = self._chooser(ui_backend)
@@ -655,6 +656,58 @@ class TestChooserFocus:
         assert not chooser.in_list
         assert chooser._edit.text == "b"
         assert [c.display for c in chooser._filtered] == ["beta"]
+
+    def test_editing_the_query_from_the_list_returns_to_the_field(
+            self, ui_backend):
+        """Backspace with the focus still in the list did nothing at all,
+        which reads as the window ignoring you - the query is on screen with
+        a caret in it. Anything addressed to the query goes to the field, and
+        the keystroke that got there is not spent on getting there."""
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "b", char="b")
+        self._key(chooser, "e", char="e")
+        self._key(chooser, "down")
+        assert chooser.in_list
+        self._key(chooser, "backspace")
+        assert not chooser.in_list
+        assert chooser._edit.text == "b", "the key edits, it does not only move"
+
+    def test_moving_the_caret_from_the_list_returns_to_the_field(
+            self, ui_backend):
+        """Left/Right and their modifier forms - Ctrl-Left for a word,
+        Shift-Left to select, Cmd-Left for the line start - all arrive under
+        these names, so naming the bare keys covers the derivatives."""
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "a", char="a")
+        for key, modifiers in (("left", ()), ("right", ("ctrl",)),
+                               ("delete", ()), ("left", ("shift",))):
+            self._key(chooser, "down")
+            assert chooser.in_list
+            self._key(chooser, key, modifiers=modifiers)
+            assert not chooser.in_list, f"{key} {modifiers} should leave the list"
+
+    def test_home_and_end_stay_with_the_list(self, ui_backend):
+        """The one pair that is not the caret's: a list long enough to want a
+        first and last row wants them for that. They move the selection
+        through _navigate like every other move, so the outline on screen
+        follows instead of staying on the row it just left."""
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        self._key(chooser, "end")
+        assert chooser.in_list
+        assert chooser._list.selected == len(chooser._filtered) - 1
+        self._key(chooser, "home")
+        assert chooser.in_list
+        assert chooser._list.selected == 0
+
+    def test_home_and_end_in_the_field_are_the_caret_s(self, ui_backend):
+        """They must not step into the list from the field - there they are
+        the line start and end of the query."""
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "end")
+        assert not chooser.in_list
+        self._key(chooser, "home")
+        assert not chooser.in_list
 
     def test_changing_the_filter_deselects(self, ui_backend):
         chooser = self._chooser(ui_backend)
