@@ -6,6 +6,7 @@ they are the user-facing glue between the two.
 
 import datetime
 import os
+import traceback
 
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.action import ThreadedAction
@@ -182,6 +183,12 @@ class ChooserAction:
     #: The _DismissWatch guarding it, cleared with it.
     _watch = None
 
+    #: The open that has been asked for but not built yet, as (action, token).
+    #: A chooser is never built inside the key hook's callback - see
+    #: __call__ - so between the key and the window there is one turn of the
+    #: loop in which a second press has to find something to toggle.
+    _pending = None
+
     #: How the filter text is matched against the rows.  None means the
     #: default: case-insensitive substring, unioned with Migemo so romaji
     #: finds Japanese.  Set it per action to pick something else -
@@ -202,13 +209,20 @@ class ChooserAction:
 
     def __call__(self):
         from keyhac.ui import runtime
-        from keyhac.ui.chooser import ChooserWindow
 
         if runtime.backend is None:
             logger.error(f"{self!r} requires the UI (running with --no-ui?).")
             return
 
         keymap = Keymap.get_instance()
+
+        # A second press while the first one's window is still queued is that
+        # same press twice - there is no window on screen for it to toggle
+        # yet. Drop the queued open; for this action that *is* the toggle, and
+        # nothing is left to close.
+        pending, ChooserAction._pending = ChooserAction._pending, None
+        if pending is not None and pending[0] is self:
+            return
 
         # Only one chooser at a time (issue #3): pressing the same action's
         # key again toggles its chooser closed; a different chooser action
@@ -231,6 +245,88 @@ class ChooserAction:
                 focus = keymap.focus
                 original_pid = focus.pid if focus else None
 
+        # Center the chooser on the focused window (issue #4). Both frames are
+        # portable top-left screen coordinates on both OSes; clamp to the
+        # screen the window mostly lives on. UI thread here, so the window
+        # accessors are allowed.
+        center_on = clamp_to = None
+        active = keymap.get_active_window()
+        if active is not None:
+            center_on = active.get_frame()
+        if center_on is not None and keymap.window_provider is not None:
+            clamp_to = MoveWindow._get_best_screen(
+                center_on, keymap.window_provider.screen_frames())
+
+        # **The window is not built here**, because everything above runs
+        # inside the key hook's callback and building it is neither quick nor
+        # certain to succeed.
+        #
+        # Certain first, because that is the reported bug: the engine passes
+        # the key through to the application when handling it *raises* (a
+        # deliberate rule - a broken config must not swallow the keyboard), so
+        # a source that could not be read, or a window that could not be
+        # created, sent the "P" of the key that opened the chooser into
+        # whatever the user was typing in. When the failure came after the
+        # window existed - the dismissal watch, the activation - the chooser
+        # was on screen *and* the key had leaked, which is exactly what was
+        # reported.
+        #
+        # Quick, second: a low-level hook has a deadline. Windows drops a hook
+        # whose callback overruns LowLevelHooksTimeout (300 ms unless the
+        # registry says otherwise) and delivers the event that overran to the
+        # application anyway; macOS disables a slow event tap in the same
+        # spirit. Building a chooser is past that budget - 390 ms for this
+        # module's import of the chooser alone on the first press, before any
+        # source is read (84 ms for a small menu bar, 590 ms for a heavy
+        # window's controls). Measured on one Windows 11 build a 1.5 s stall
+        # was still honoured, so this is the risk rather than the proven
+        # cause; it is a real one on any machine that has that timeout set.
+        #
+        # So the key is consumed and the callback returns now; the window is
+        # built on the next turn of the loop, a millisecond later and none of
+        # it on the hook's clock or in the reach of its pass-through.
+        token = object()
+        ChooserAction._pending = (self, token)
+
+        def _open_now():
+            if ChooserAction._pending is None \
+                    or ChooserAction._pending[1] is not token:
+                return                  # a later press superseded this one
+            ChooserAction._pending = None
+            try:
+                self._open_window(original_pid, center_on, clamp_to)
+            except Exception:
+                # A source that could not be read is this action's failure
+                # to report. Nothing catches for us out here - the loop's
+                # queue drain does not - and the engine's own catch, which
+                # would have logged it, is no longer on the stack: it
+                # passes the key through to the application when handling
+                # raises, which is the leak this whole detour avoids.
+                logger.error(f"{self!r} could not open:\n"
+                             f"{traceback.format_exc()}")
+
+        if keymap is not None:
+            # Queued, never inline: both backends post to the loop rather than
+            # calling back on the spot. With no loop wired (a library use, or
+            # a test) it does run inline, which is the behaviour those callers
+            # already had everywhere else.
+            keymap.call_on_main_thread(_open_now)
+        else:
+            _open_now()
+
+    def _open_window(self, original_pid, center_on, clamp_to) -> None:
+        """Build and show the window, one turn of the loop after the key that
+        asked for it (see __call__).
+
+        lazydocs: ignore
+        """
+        from keyhac.ui import runtime
+        from keyhac.ui.chooser import ChooserWindow
+
+        if runtime.backend is None:
+            return
+        keymap = Keymap.get_instance()
+
         def _refocus_original_app():
             self._refocus(original_pid)
 
@@ -244,18 +340,6 @@ class ChooserAction:
             ChooserAction._open = None
             ChooserAction._stop_watch()
             _refocus_original_app()
-
-        # Center the chooser on the focused window (issue #4). Both frames are
-        # portable top-left screen coordinates on both OSes; clamp to the
-        # screen the window mostly lives on. UI thread here, so the window
-        # accessors are allowed.
-        center_on = clamp_to = None
-        active = keymap.get_active_window()
-        if active is not None:
-            center_on = active.get_frame()
-        if center_on is not None and keymap.window_provider is not None:
-            clamp_to = MoveWindow._get_best_screen(
-                center_on, keymap.window_provider.screen_frames())
 
         # Always open on the first scope: a window that reopened wherever it
         # was last left would make the same key mean different things on
@@ -282,7 +366,7 @@ class ChooserAction:
 
         ChooserAction._watch = _DismissWatch(chooser, _dismiss)
 
-        if self.activates and keymap.app_control is not None:
+        if self.activates and keymap is not None and keymap.app_control is not None:
             # Keyhac runs as an accessory (agent) app, so an activating
             # chooser has to activate our own process to be typed into; the
             # original app is re-activated on selection/cancel above. This

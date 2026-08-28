@@ -339,6 +339,41 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - An unchanged selection redraws nothing, the mark goes on every exit the
   window has, and a platform that cannot mark logs at debug and carries on.
 
+## A chooser is never built inside the hook callback
+
+- `ChooserAction.__call__` runs on the hook's stack, and the engine **passes
+  the key through when handling it raises** — a deliberate rule (a broken
+  config must not swallow the keyboard) that turns any failure while building
+  the window into the key that opened it arriving in the user's document. When
+  the failure came *after* the window existed (the dismissal watch, the
+  activation) the chooser was on screen **and** the "P" of `User0-P` had
+  leaked, which is exactly what was reported.
+- So the callback does only the cheap, certain part — the one-at-a-time
+  bookkeeping, dismissing whatever is open, reading the frame to centre on —
+  and hands the rest to `keymap.call_on_main_thread`. Both backends queue that
+  rather than calling back on the spot, so the window is built a millisecond
+  later with nothing left on the hook's stack to fail into. With no dispatcher
+  wired (a library use, or a test) it runs inline, which is what every caller
+  there already had.
+- A press while an open is still queued is that same press twice, and there is
+  no window yet to toggle: the queued open is dropped, and for the same action
+  that *is* the toggle. A different action's press supersedes it — the token in
+  `_pending` is what the queued callback checks before building anything.
+- The failure is now the action's to report, so the deferred body logs it. The
+  loop's queue drain does not catch, and the engine's catch — the one that
+  would have logged it — is no longer on the stack.
+- **The other reason, unproven here.** A low-level hook has a deadline:
+  Windows drops a hook whose callback overruns `LowLevelHooksTimeout` (300 ms
+  unless the registry says otherwise) and delivers the event that overran to
+  the application anyway; macOS disables a slow tap in the same spirit.
+  Building a chooser is past that budget — measured: 390 ms for the chooser
+  module's import alone on the first press, before a source is read (84 ms for
+  a small menu bar, 590 ms for a heavy window's controls). A/B on this
+  Windows 11 build, though, a stall of 0.4 s and even 1.5 s, repeated, still
+  had the consume honoured — the same build that (per `platform/win/hook.py`)
+  did not remove the hook after a 0.6 s stall. So it is the standing risk on a
+  machine whose timeout is set, not the demonstrated cause.
+
 ## An element source reads `window.element`, never `window.native`
 
 - Both element-reading sources (`MenuItemsSource`, `WindowControlsSource`) go

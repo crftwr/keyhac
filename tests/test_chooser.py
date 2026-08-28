@@ -41,8 +41,97 @@ def ui_backend(keyhac_engine):
     yield backend
     runtime.backend = None
     ChooserAction._open = None
+    ChooserAction._pending = None
     ChooserAction._stop_watch()
     backend.close()
+
+
+class TestOpeningLeavesTheHookCallback:
+    """A key hook's callback has a deadline, and overrunning it does not just
+    make things slow: Windows drops the hook and hands the event that overran
+    to the application anyway, so the key that opened the chooser turns up in
+    whatever the user was typing in (macOS disables a slow tap the same way).
+    Building the window is well past that budget - the chooser module's import
+    alone is 390 ms on the first press - so the callback returns first and the
+    window is built on the next turn of the loop.
+
+    These tests wire a dispatcher, which is what production has; without one
+    the callback runs inline, which is what every other test here relies on.
+    """
+
+    def _queue(self, keyhac_engine):
+        queued = []
+        keyhac_engine.keymap.set_main_thread_dispatcher(queued.append)
+        return queued
+
+    def test_nothing_is_built_until_the_loop_turns(self, ui_backend,
+                                                   keyhac_engine):
+        queued = self._queue(keyhac_engine)
+        action = _Items()
+        action()
+        assert ChooserAction._open is None, "built inside the hook callback"
+        assert len(queued) == 1
+        queued[0]()
+        assert ChooserAction._open is not None
+        assert ChooserAction._pending is None
+
+    def test_a_second_press_before_it_opens_is_still_the_toggle(
+            self, ui_backend, keyhac_engine):
+        """The window has not appeared, so there is nothing on screen to
+        close - dropping the queued open is what closing means here."""
+        queued = self._queue(keyhac_engine)
+        action = _Items()
+        action()
+        action()
+        for callback in queued:
+            callback()
+        assert ChooserAction._open is None
+
+    def test_another_action_pressed_meanwhile_takes_over(
+            self, ui_backend, keyhac_engine):
+        queued = self._queue(keyhac_engine)
+        first, second = _Items(), _Items()
+        first()
+        second()
+        for callback in queued:
+            callback()
+        assert ChooserAction._open is not None
+        assert ChooserAction._open[0] is second
+
+    def test_a_failure_while_opening_no_longer_leaks_the_key(
+            self, ui_backend, keyhac_engine):
+        """What the leak actually looked like. The engine passes a key through
+        when handling it *raises* - deliberately, so a broken config cannot
+        swallow the keyboard - so while the window was built inside the
+        callback, any failure in building it (a source that could not be read,
+        a window that could not be created) sent the key that opened the
+        chooser to the application underneath: the P of a `User0-P` arriving
+        in whatever the user was typing in. Out of the callback, the key is
+        consumed either way and the failure is reported as the action's."""
+        class _Broken(ChooserAction):
+            def list_items(self):
+                raise RuntimeError("a source that could not be read")
+
+        keymap = keyhac_engine.keymap
+        table = keymap.define_keytable(focus_path_pattern="*")
+        table["A"] = _Broken()
+        assert keyhac_engine.down("A") is True, "the key must not reach the app"
+        assert ChooserAction._open is None
+        keyhac_engine.up("A")
+
+    def test_an_open_window_is_closed_in_the_callback_not_deferred(
+            self, ui_backend, keyhac_engine):
+        """Only *building* one is expensive; dismissing is a window close, and
+        leaving it queued would let a second chooser be built over the first."""
+        queued = self._queue(keyhac_engine)
+        action = _Items()
+        action()
+        queued.pop()()
+        chooser = ChooserAction._open[1]
+        action()
+        assert chooser._done
+        assert ChooserAction._open is None
+        assert not queued, "closing needs no turn of the loop"
 
 
 class TestChooserSingleInstance:
