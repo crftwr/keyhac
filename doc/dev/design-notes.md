@@ -327,6 +327,54 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - An unchanged selection redraws nothing, the mark goes on every exit the
   window has, and a platform that cannot mark logs at debug and carries on.
 
+## An element source reads `window.element`, never `window.native`
+
+- Both element-reading sources (`MenuItemsSource`, `WindowControlsSource`) go
+  from the front window to an element. `native` is *the platform's own
+  object*, and that is an AX element on macOS but the **HWND wrapper** on
+  Windows — which has no `children()`, no `role()` and no `menu_bar()`. Both
+  sources caught the resulting `AttributeError`, logged at debug and returned
+  nothing, so on Windows the Control and Menu scopes were silently empty while
+  the identical code worked on macOS.
+- `Window.element` is the documented bridge for exactly this ("macOS already
+  holds the AX element; Windows resolves the HWND through UI Automation") and
+  answers an element on both. The tests missed it because the fake window
+  offered `native`, i.e. the macOS shape; they now offer the Windows one
+  (`native` *is* the window) and would fail on the old code.
+- Same trap, same shape as reading the menu bar from `keymap.focus`: a source
+  that reaches for a platform object gets a *different* platform object on the
+  other OS, and every one of these has surfaced as an empty list rather than
+  an error.
+
+## Pressing what a row stands for
+
+- One `_press(element)` for both sources, and it asks the element which
+  actions it *has* before trying any. "AXPress" is not a Windows action name
+  that happens to be unavailable — it is one UIA has never heard of, and the
+  Windows element logs a warning for each unknown name, so probing the pair
+  blind put `Unknown UI Automation action: 'AXPress'` in the console on every
+  single press. An element that cannot say is still probed in order.
+
+## The Windows menu bar is not the first one found
+
+- A window with a menu bar has **two**: UIA bridges the title-bar menu as
+  MenuBar "System" and the application's own as MenuBar "Application", and the
+  system one comes first in the tree. Taking the first therefore offered a
+  single row reading "System" (seen on a tk window whose real bar holds
+  File/Edit/Shell/Debug/Options/Window/Help). Those two names come from the
+  OBJID the bridge wrapped rather than from the application, so they read the
+  same on a localized Windows — verified on ja-JP.
+- **What is still missing there:** a Windows menu is populated when it opens.
+  An unopened `MenuItem` reports no children (measured: Notepad and tk alike),
+  so the Menu scope lists the *top level* — choosing "File" opens the File
+  menu rather than running a command. Reading the leaves would mean expanding
+  each item, finding the popup menu (which is hosted outside the item, not
+  under it), reading it and collapsing again: menus visibly flashing open, a
+  cost per top-level item, and a modal menu loop in the target application
+  while it happens. macOS needs none of that — AX exposes the whole tree
+  closed — so this is the one place the two platforms do not offer the same
+  list, and it is a deliberate hold rather than an oversight.
+
 ## Candidate scopes
 
 - **The switch is a key (Tab / Shift-Tab), not a typed prefix**, for one

@@ -233,6 +233,12 @@ class MenuItemsSource(CandidateSource):
         bar from that gets Keyhac's, which as an accessory app has none. The
         symptom is an empty list. `get_active_window()` reads the frontmost
         application throughout, and nothing about the popup moves it.
+
+        `window.element`, not `window.native`: `native` is *the platform's own
+        object*, which is an AX element on macOS but the HWND wrapper on
+        Windows, and an HWND wrapper has no menu bar to find. `element` is the
+        documented bridge from a window to element introspection and answers
+        an element on both (`Window.element`).
         """
         keymap = Keymap.get_instance()
         if keymap is None:
@@ -241,7 +247,7 @@ class MenuItemsSource(CandidateSource):
             window = keymap.get_active_window()
         except Exception:
             return None
-        return getattr(window, "native", None) if window is not None else None
+        return getattr(window, "element", None) if window is not None else None
 
     def badge(self, candidate) -> str:
         """lazydocs: ignore"""
@@ -249,14 +255,39 @@ class MenuItemsSource(CandidateSource):
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
-        element = candidate.payload
+        if not _press(candidate.payload):
+            logger.error(f"{candidate.display}: the menu item refused to "
+                         f"be pressed.")
+
+
+#: What "press this" is called, in the order to try it - the AX names and the
+#: UIA one in one list, since a row can come from either platform.
+_PRESS_ACTIONS = ("AXPress", "Invoke", "AXOpen")
+
+
+def _press(element) -> bool:
+    """Press `element`, whatever this platform calls that.
+
+    It asks the element which actions it *has* before trying any, because a
+    name from the other platform is not a miss to try past - it is a name this
+    platform has never heard of, and Windows logs a warning for each one.
+    Probing blind therefore put "Unknown UI Automation action: 'AXPress'" in
+    the console on every press there. An element that cannot say (a platform
+    without the query) is probed in order, as before.
+    """
+    try:
+        available = set(element.get_action_names() or ())
+    except Exception:
+        available = None
+    for action in _PRESS_ACTIONS:
+        if available is not None and action not in available:
+            continue
         try:
-            if not element.perform_action("AXPress") and \
-                    not element.perform_action("Invoke"):
-                logger.error(f"{candidate.display}: the menu item refused to "
-                             f"be pressed.")
+            if element.perform_action(action):
+                return True
         except Exception:
-            logger.error(f"{candidate.display}: pressing it failed.")
+            continue
+    return False
 
 
 def _walk_menu(node, path, depth):
@@ -642,7 +673,9 @@ class WindowControlsSource(CandidateSource):
             window = keymap.get_active_window()
         except Exception:
             window = None
-        element = getattr(window, "native", None) if window else None
+        # `element`, not `native` - see MenuItemsSource._front_element: on
+        # Windows `native` is the HWND wrapper, which has no tree to walk.
+        element = getattr(window, "element", None) if window else None
         if element is None:
             logger.debug("No front window; there are no controls to read.")
             return
@@ -654,14 +687,9 @@ class WindowControlsSource(CandidateSource):
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
-        element = candidate.payload
-        for action in ("AXPress", "Invoke", "AXOpen"):
-            try:
-                if element.perform_action(action):
-                    return
-            except Exception:
-                continue
-        logger.error(f"{candidate.display}: the control refused to be pressed.")
+        if not _press(candidate.payload):
+            logger.error(f"{candidate.display}: the control refused to be "
+                         f"pressed.")
 
 
 def _walk_controls(root):

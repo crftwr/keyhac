@@ -465,15 +465,49 @@ class TestMenuItemsSource:
         import keyhac.core.sources as src
 
         class _Win:
-            native = _FakeMenuElement("AXWindow")
+            element = _FakeMenuElement("AXWindow")
 
-        _Win.native.menu_bar = lambda: _FakeMenuElement("AXMenuBar", kids=[
+        _Win.element.menu_bar = lambda: _FakeMenuElement("AXMenuBar", kids=[
             _FakeMenuElement("AXMenuBarItem", "File",
                              kids=[_menu(_item("New"))])])
 
         class _Keymap:
             focus = None                      # the route that used to be used
             get_active_window = staticmethod(lambda: _Win())
+
+        original = src.Keymap.get_instance
+        src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+        try:
+            rows = list(src.MenuItemsSource().candidates())
+        finally:
+            src.Keymap.get_instance = original
+        assert [c.display for c in rows] == ["File › New"]
+
+    def test_the_menu_bar_comes_from_element_and_not_from_native(self):
+        """`native` is *the platform's own object*: an AX element on macOS,
+        but the HWND wrapper on Windows, which has no menu bar to find. That
+        is why the Menu scope came up empty on Windows while the same code
+        worked on macOS - the tests faked the macOS shape too. `element` is
+        the documented bridge from a window to element introspection, and it
+        answers an element on both."""
+        import keyhac.core.sources as src
+
+        bar = _FakeMenuElement("MenuBar", kids=[
+            _FakeMenuElement("MenuItem", "File", kids=[
+                _FakeMenuElement("Menu", kids=[
+                    _FakeMenuElement("MenuItem", "New")])])])
+
+        class _Win:  # the Windows shape: native is the window itself
+            def __init__(self):
+                self.element = _FakeMenuElement("Window")
+                self.element.menu_bar = lambda: bar
+
+            @property
+            def native(self):
+                return self
+
+        class _Keymap:
+            get_active_window = staticmethod(_Win)
 
         original = src.Keymap.get_instance
         src.Keymap.get_instance = staticmethod(lambda: _Keymap())
@@ -1195,6 +1229,32 @@ class TestWindowControlsSource:
         ])
         assert [c.display for c in self._rows(root)] == ["Cell"]
 
+    def test_the_tree_comes_from_element_and_not_from_native(self):
+        """The Control scope's half of the same bug: on Windows `native` is
+        the HWND wrapper, which has no children to walk, so the scope came up
+        empty. See TestMenuItemsSource's twin."""
+        import keyhac.core.sources as src
+
+        tree = _FakeControl("Window", kids=[_FakeControl("Button", "Save")])
+
+        class _Win:  # the Windows shape: native is the window itself
+            element = tree
+
+            @property
+            def native(self):
+                return self
+
+        class _Keymap:
+            get_active_window = staticmethod(_Win)
+
+        original = src.Keymap.get_instance
+        src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+        try:
+            rows = list(src.WindowControlsSource().candidates())
+        finally:
+            src.Keymap.get_instance = original
+        assert [c.display for c in rows] == ["Save"]
+
     def test_a_platform_without_identities_is_not_deduped_away(self):
         """UI Automation's control view is a real tree and returns no key;
         two distinct buttons must not collapse into one."""
@@ -1552,3 +1612,42 @@ class _FakeMark:
 
     def close(self):
         self.closed = True
+
+
+class TestPressingAChosenElement:
+    """`_press`: the one "press this" both element sources use."""
+
+    class _Element:
+        def __init__(self, offers, presses=()):
+            self._offers = offers
+            self._presses = presses
+            self.tried = []
+
+        def get_action_names(self):
+            if self._offers is None:
+                raise AttributeError("this platform does not say")
+            return list(self._offers)
+
+        def perform_action(self, name):
+            self.tried.append(name)
+            return name in self._presses
+
+    def test_only_the_actions_the_element_offers_are_tried(self):
+        """A name from the other platform is not a miss to try past - it is
+        one this platform has never heard of, and Windows logs a warning for
+        each. Probing blind put "Unknown UI Automation action: 'AXPress'" in
+        the console on every press there."""
+        from keyhac.core.sources import _press
+        element = self._Element(["Invoke", "Expand"], presses=["Invoke"])
+        assert _press(element)
+        assert element.tried == ["Invoke"], "AXPress is not a Windows action"
+
+    def test_an_element_that_cannot_say_is_probed_in_order(self):
+        from keyhac.core.sources import _press
+        element = self._Element(None, presses=["Invoke"])
+        assert _press(element)
+        assert element.tried == ["AXPress", "Invoke"]
+
+    def test_an_element_nothing_presses_says_so(self):
+        from keyhac.core.sources import _press
+        assert not _press(self._Element(["Invoke"]))

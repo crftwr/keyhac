@@ -195,6 +195,11 @@ class _TextUnit:
 #: Action name -> (pattern id, vtable slot).  Named after the UIA patterns
 #: rather than AX's "AXPress" etc., for the same reason attributes are (see the
 #: module docstring).
+#: What UIA calls the title-bar menu every window has, as opposed to
+#: "Application" for the one the application put there. See menu_bar().
+_SYSTEM_MENU_NAME = "System"
+
+
 _ACTIONS = {
     "Invoke": (_PatternId.Invoke, _IUIAutomationInvokePattern.Invoke),
     "Toggle": (_PatternId.Toggle, _IUIAutomationTogglePattern.Toggle),
@@ -558,19 +563,28 @@ class UIElement:
         """The window's menu bar, or None.
 
         Windows has no application-level menu bar the way macOS does - a menu
-        lives inside its window - so this searches the subtree for the first
-        MenuBar, and falls back to a Menu where an application draws one
-        without the bar role (the ribbon-era apps, and anything owner-drawn,
-        expose neither and correctly answer None).
+        lives inside its window - so this searches the subtree for a MenuBar,
+        and falls back to a Menu where an application draws one without the
+        bar role (the ribbon-era apps, and anything owner-drawn, expose
+        neither and correctly answer None).
+
+        **The system menu is not it.** A window with a menu bar has two: UIA
+        bridges the title-bar menu as MenuBar "System" and the application's
+        own as MenuBar "Application". Those names come from the OBJID the
+        bridge wrapped rather than from the application, so they read the same
+        on a localized Windows (verified on ja-JP), and the system one sits
+        earlier in the tree - so "the first MenuBar" was reliably the wrong
+        one, and the Menu scope offered a single row reading "System".
 
         lazydocs: ignore
         """
         from keyhac.core.uitree import find_elements
 
         for role in ("MenuBar", "Menu"):
-            found = find_elements(self, role=role, max_nodes=400)
-            if found:
-                return found[0].element
+            for found in find_elements(self, role=role, max_nodes=400):
+                if found.name == _SYSTEM_MENU_NAME:
+                    continue
+                return found.element
         return None
 
     def describe(self) -> dict:
