@@ -558,6 +558,15 @@ What exists instead:
   left alone for the same reason: an imported class keeps running out of memory,
   so a run started before the delete stays readable and cancellable, and the
   operator's key works until they reload.
+- **Subdirectories count.** `extensions/` is on `sys.path`, so
+  `extensions/pkg/nested.py` is importable as `pkg.nested` from a `config.py`;
+  the scan walks it and addresses the class as `pkg.nested.Nested`. Listing
+  only the top level made a file Keyhac would happily import invisible to
+  everything that lists, and "I can bind it but it does not appear" is the
+  worst kind of inconsistency — nothing about it looks like a rule. The
+  helper rule applies per component, so `_helpers/` is skipped as a package
+  the same way `_helpers.py` is skipped as a file, and `__init__.py` falls out
+  of it without a special case.
 - **Discovery is an AST scan**, which is what made this layer safe to build at
   all. `ast.parse` gives the catalogue without executing anything, so listing is
   free and a class runs at exactly one moment: when something names it. Every

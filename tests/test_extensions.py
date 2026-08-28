@@ -203,3 +203,102 @@ def test_configure_actually_calls_it(engine, tmp_path, clean_imports):
 
     assert seen["value"] == "loaded from extensions", \
         "configure() no longer puts extensions/ on sys.path"
+
+
+class TestSubdirectories:
+    """`_prepare_extensions` puts the directory on `sys.path`, so
+    `extensions/pkg/nested.py` is importable as `pkg.nested` from a
+    `config.py`. Listing only the top level made a file Keyhac would happily
+    import invisible to everything that lists - and "I can bind it but it does
+    not appear" is the worst kind of inconsistency, because nothing about it
+    looks like a rule.
+    """
+
+    ACTION = """
+        from keyhac.core.action import ThreadedAction
+
+        class {name}(ThreadedAction):
+            \"\"\"{doc}\"\"\"
+            def run(self):
+                return "{name}"
+            def finished(self, result):
+                pass
+    """
+
+    def _tree(self, extensions):
+        package = extensions / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        write(extensions, "top", self.ACTION.format(name="Top", doc="At the top."))
+        write(package, "nested", self.ACTION.format(name="Nested",
+                                                    doc="In a package."))
+        return extensions
+
+    def test_a_nested_action_is_listed_by_its_dotted_name(self, extensions):
+        from keyhac.mcp.extensions import discover
+        names = [a.name for a in discover(str(self._tree(extensions)))]
+        assert "pkg.nested.Nested" in names
+        assert "top.Top" in names
+
+    def test_a_package_init_is_not_offered(self, extensions):
+        """`__init__` starts with `_`, so the helper rule already covers it."""
+        from keyhac.mcp.extensions import discover
+        names = [a.name for a in discover(str(self._tree(extensions)))]
+        assert not any(".__init__." in name for name in names)
+
+    def test_an_underscored_package_is_a_helper(self, extensions):
+        """The same rule a `_helpers.py` file gets, applied per component."""
+        from keyhac.mcp.extensions import discover
+        helpers = extensions / "_helpers"
+        helpers.mkdir()
+        (helpers / "__init__.py").write_text("")
+        write(helpers, "shared", self.ACTION.format(name="Helper", doc="Helper."))
+        assert [a.name for a in discover(str(extensions))] == []
+
+    def test_a_base_class_in_a_package_is_still_followed(self, extensions):
+        """The cross-file graph has to survive dotted module names, or
+        subclassing a shared base becomes the one way to write an action this
+        cannot see - which is issue #43 again."""
+        from keyhac.mcp.extensions import discover
+        self._tree(extensions)
+        write(extensions, "derived", """
+            from pkg.nested import Nested
+
+            class Derived(Nested):
+                \"\"\"Subclassed across a package boundary.\"\"\"
+                pass
+        """)
+        names = [a.name for a in discover(str(extensions))]
+        assert "derived.Derived" in names
+
+    def test_a_nested_action_can_be_loaded_and_run(self, extensions):
+        from keyhac.mcp.extensions import Loader, discover
+        Keymap._prepare_extensions(str(self._tree(extensions)))
+        found = {a.name: a for a in discover(str(extensions))}
+        instance = Loader().instantiate(found["pkg.nested.Nested"])
+        assert type(instance).__module__ == "pkg.nested"
+        assert instance.run() == "Nested"
+
+    def test_the_parent_package_is_imported_first(self, extensions):
+        """Loading `pkg.nested` by file location without `pkg` in sys.modules
+        leaves a module whose parent is missing, and a relative import inside
+        it fails on a name that is right there on disk."""
+        from keyhac.mcp.extensions import Loader, discover
+        package = extensions / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text("VALUE = 'from the package'\n")
+        write(package, "uses_parent", """
+            from keyhac.core.action import ThreadedAction
+            from . import VALUE
+
+            class UsesParent(ThreadedAction):
+                \"\"\"Imports from its own package.\"\"\"
+                def run(self):
+                    return VALUE
+                def finished(self, result):
+                    pass
+        """)
+        Keymap._prepare_extensions(str(extensions))
+        found = {a.name: a for a in discover(str(extensions))}
+        instance = Loader().instantiate(found["pkg.uses_parent.UsesParent"])
+        assert instance.run() == "from the package"

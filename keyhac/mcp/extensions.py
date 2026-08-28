@@ -79,17 +79,18 @@ class ActionClass:
 def discover(extensions_dir: str) -> list[ActionClass]:
     """Every action class under `extensions_dir`, found without importing.
 
-    Files whose names start with `_` are skipped **as candidates**: an
-    extension named that way is a helper the operator split out, not something
-    to offer as runnable. They are still parsed, because a helper is exactly
-    where a shared base class lives and a subclass of one is an action.
-    A file that does not parse is skipped rather than reported - it is being
-    edited, and half a file is not a finding.
+    Names starting with `_` are skipped **as candidates** - a file or a
+    package named that way is a helper the operator split out, not something
+    to offer as runnable. `pkg/__init__.py` falls out of the same rule, which
+    is why a package's own `__init__` never appears. They are all still
+    parsed, because a helper is exactly where a shared base class lives and a
+    subclass of one is an action. A file that does not parse is skipped rather
+    than reported - it is being edited, and half a file is not a finding.
     """
     parsed = _parse_directory(extensions_dir)
     found: list[ActionClass] = []
     for module in sorted(parsed):
-        if module.startswith("_"):
+        if any(part.startswith("_") for part in module.split(".")):
             continue
         source = parsed[module]
         for name, classdef in source.classes.items():
@@ -112,21 +113,37 @@ class _Parsed:
 
 
 def _parse_directory(extensions_dir: str) -> dict[str, _Parsed]:
+    """Every `.py` under the directory, keyed by its dotted module name.
+
+    Subdirectories are walked, because `_prepare_extensions` puts the
+    directory on `sys.path` and `extensions/pkg/nested.py` is therefore
+    importable as `pkg.nested` from a `config.py`. Listing only the top level
+    made a file that Keyhac would happily import invisible to everything that
+    lists - "I can bind it but it does not appear" being the worst kind of
+    inconsistency, since nothing about it looks like a rule.
+    """
     parsed: dict[str, _Parsed] = {}
     try:
-        entries = sorted(os.listdir(extensions_dir))
+        walked = sorted(os.walk(extensions_dir))
     except OSError:
         return parsed
-    for entry in entries:
-        if not entry.endswith(".py"):
-            continue
-        path = os.path.join(extensions_dir, entry)
-        try:
-            with open(path, encoding="utf-8") as handle:
-                tree = ast.parse(handle.read(), path)
-        except (OSError, SyntaxError):
-            continue
-        parsed[entry[:-3]] = _read_module(tree, path)
+    for directory, subdirectories, entries in walked:
+        # __pycache__ and the like hold no source worth reading, and walking
+        # into them costs a stat per file for nothing.
+        subdirectories[:] = sorted(d for d in subdirectories
+                                   if not d.startswith("."))
+        relative = os.path.relpath(directory, extensions_dir)
+        package = () if relative == "." else tuple(relative.split(os.sep))
+        for entry in sorted(entries):
+            if not entry.endswith(".py"):
+                continue
+            path = os.path.join(directory, entry)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    tree = ast.parse(handle.read(), path)
+            except (OSError, SyntaxError):
+                continue
+            parsed[".".join(package + (entry[:-3],))] = _read_module(tree, path)
     return parsed
 
 
@@ -137,10 +154,14 @@ def _read_module(tree, path: str) -> _Parsed:
             source.classes[node.name] = node
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                root = alias.name.split(".")[0]
-                source.modules[alias.asname or root] = root
+                # The full dotted name, so `import pkg.nested` reaches the
+                # module the walk keyed as `pkg.nested`. A name that leads out
+                # of extensions/ is simply absent from `parsed` and ends the
+                # walk, exactly as a truncated one did.
+                name = alias.name
+                source.modules[alias.asname or name.split(".")[0]] = name
         elif isinstance(node, ast.ImportFrom) and not node.level:
-            origin = (node.module or "").split(".")[0]
+            origin = node.module or ""
             for alias in node.names:
                 source.from_imports[alias.asname or alias.name] = (origin,
                                                                    alias.name)
@@ -373,6 +394,14 @@ def _import_file(module_name: str, path: str):
     reuses it rather than making a second copy (issue #40).
     """
     from keyhac.core.keymap import stamp_extension_module
+
+    # A dotted name needs its packages present first: loading `pkg.nested`
+    # into sys.modules without `pkg` leaves a module whose parent is missing,
+    # and anything in it that imports relatively fails on a name that is
+    # right there on disk. The packages themselves come through the normal
+    # path, which `_prepare_extensions` has already prepared.
+    if "." in module_name:
+        importlib.import_module(module_name.rsplit(".", 1)[0])
 
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
