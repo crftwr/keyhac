@@ -564,6 +564,22 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   attribute answered matters because it decides what else can find the
   element: one reachable only through its tooltip cannot be found by
   `find(name=...)` in an action either.
+- **The chain is not worth widening, measured.** A status-bar control reading
+  `UTF-8` whose tooltip says *Select Encoding* is the obvious argument for
+  preferring the tooltip, or for searching both. Neither survives the data.
+  That particular tooltip is **not in the accessibility tree at all** — the
+  button carries `AXDescription = "UTF-8"` and an empty `AXHelp`; VS Code
+  draws its own, so nothing reachable holds the better name. And across every
+  running application, the controls whose names *do* disagree fall into three
+  shapes and none of them is a better name: identical text, one a truncation
+  or continuation of the other (`Copy code` against `Copy code to clipboard`),
+  or boilerplate that belongs to the page rather than the control — GitHub
+  puts *"This path skips through empty directories"* on a path segment, and
+  making it searchable would match that link on a query about empty
+  directories. In a ranked merged list a false positive costs more than a
+  missing alternative name. The sample is Chromium-heavy, which is not an
+  accident: there `AXHelp` is the HTML `title` attribute, so duplication and
+  boilerplate are what it is *for*.
 - A `help`-derived name is the weakest of the three and it shows — macOS's
   window zoom button lists as *"this button also has an action to zoom"*,
   which is a tooltip sentence rather than a label. Kept, because a bad name
