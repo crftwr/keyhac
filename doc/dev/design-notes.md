@@ -377,6 +377,35 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   binding you can run from a list does not need a key of its own, and running
   out of keys is what this whole window exists to fix.
 
+## Making a slow source feel fast
+
+- Measured first, and it moved the target: the first control is on screen in
+  **16 ms and the thirtieth in 39**, out of ~370 for the lot. Raw speed was
+  not the problem by then; not being able to tell an unfinished list from a
+  finished one was. A query that has not matched *yet* reads as one that never
+  will.
+- So the search row carries a **"… n" note while a source is still
+  producing**, and goes quiet when it stops. No milliseconds saved; it is the
+  difference between "there is nothing" and "not yet".
+- **Breadth-first was tried and rejected.** It reaches the first rows sooner
+  (3 ms against 16) and is worse at everything else: within the same node
+  budget it found 96 controls against 152, because breadth spends the budget
+  on wide shallow layers and never reaches the deep ones — and its first rows
+  were status-bar noise where depth-first gives the toolbar.
+- **Each scope is read once per window.** Tabbing between them used to
+  re-walk. What makes keeping the rows safe is not a judgement about
+  staleness: the dismissal watch closes the window the moment the front
+  window changes, so nothing a scope read can have gone stale while the
+  window is still up. A half-read scope keeps its generator too, so tabbing
+  away and back resumes rather than restarting.
+- The cache is the **window's, not the process's**. A reopened window is a new
+  question about a screen that has had time to move.
+- Background prefetching was considered and is not available in the shape it
+  is usually meant: accessibility calls must stay on the main thread, so
+  "fetch it on a worker beforehand" cannot be done at all, and doing it on the
+  main thread on every focus change would spend ~370 ms for windows the user
+  never asks about — moving the cost rather than removing it.
+
 ## Ranking a merged list
 
 - **A hit has a quality, not only a yes.** Concatenating sources buries the

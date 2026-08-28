@@ -1256,3 +1256,144 @@ class TestWindowControlsSource:
         self._rows(root)
         assert passed_through.described == 0
         assert button.described == 1
+
+
+class TestScopeCaching:
+    """Tabbing between scopes used to re-read each one. What makes keeping
+    them safe is not a guess about staleness: the dismissal watch closes the
+    window the moment the front window changes, so nothing a scope read can
+    have gone stale while the window is still up."""
+
+    class _Counting(CandidateSource):
+        def __init__(self, name, rows):
+            self.name = name
+            self.rows = rows
+            self.reads = 0
+
+        def candidates(self):
+            self.reads += 1
+            return [Candidate(display=r) for r in self.rows]
+
+    def _open(self, sources):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        from keyhac.core.source import Scope
+        action = ShowCandidates([Scope(s.name, [s]) for s in sources])
+        action()
+        return action, ChooserAction._open[1]
+
+    def _tab(self, chooser, shift=False):
+        from puikit.event import Event, EventType
+        chooser._on_event(Event(type=EventType.KEY, key="tab",
+                                modifiers=frozenset({"shift"} if shift else ())))
+
+    def test_a_scope_is_read_once_per_window(self, ui_backend):
+        slow = self._Counting("Slow", ["a", "b"])
+        other = self._Counting("Other", ["c"])
+        _action, chooser = self._open([slow, other])
+        assert slow.reads == 1
+        self._tab(chooser)                      # to Other
+        self._tab(chooser)                      # back to Slow
+        assert slow.reads == 1, "tabbing back re-read it"
+        assert [c.display for c in chooser._items] == ["a", "b"]
+
+    def test_reopening_the_window_does_read_again(self, ui_backend):
+        """The cache is the window's, not the process's - a new window is a
+        new question about a screen that has had time to move."""
+        source = self._Counting("Slow", ["a"])
+        action, _chooser = self._open([source, self._Counting("Other", ["c"])])
+        action()                                # closes
+        action()                                # opens again
+        assert source.reads == 2
+
+    def test_a_half_read_scope_resumes_rather_than_restarting(self,
+                                                              ui_backend):
+        from keyhac.core.source import Scope
+        from keyhac.actions import ChooserAction, ShowCandidates
+
+        produced = []
+
+        class _Streaming(CandidateSource):
+            name = "Streaming"
+
+            def candidates(self):
+                for index in range(6):
+                    produced.append(index)
+                    yield Candidate(display=f"row {index}")
+
+        action = ShowCandidates([Scope("Streaming", [_Streaming()]),
+                                 Scope("Other", [_Fruit()])])
+        action()
+        chooser = ChooserAction._open[1]
+        ui_backend.run_animation_ticks()
+        seen = len(produced)
+        assert seen > 0
+        self._tab(chooser)
+        self._tab(chooser, shift=True)          # back
+        for _ in range(40):
+            ui_backend.run_animation_ticks()
+        assert produced == list(range(6)), "the generator restarted"
+
+
+class TestProgress:
+    """Without a sign that a list is still filling, a query that has not
+    matched *yet* reads as one that never will."""
+
+    def _open(self, produce):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        action = ShowCandidates(produce)
+        action()
+        return ChooserAction._open[1]
+
+    def test_it_says_how_far_it_has_got_while_reading(self, ui_backend):
+        def produce():
+            for index in range(10):
+                # Enough per row that one slice cannot swallow the lot, which
+                # is the state this note exists to describe.
+                time.sleep(0.001)
+                yield Candidate(display=f"row {index}")
+
+        chooser = self._open(produce)
+        ui_backend.run_animation_ticks()
+        assert chooser._pending is not None, "it finished in one slice"
+        assert chooser._progress.text.startswith("…")
+        assert chooser._progress.text.split()[-1] == str(len(chooser._items))
+
+    def test_it_goes_quiet_when_there_is_nothing_left(self, ui_backend):
+        def produce():
+            yield Candidate(display="only")
+
+        chooser = self._open(produce)
+        for _ in range(10):
+            ui_backend.run_animation_ticks()
+        assert chooser._progress.text == ""
+
+    def test_a_list_source_never_says_anything(self, ui_backend):
+        chooser = self._open(lambda: [Candidate(display="a")])
+        assert chooser._progress.text == ""
+
+
+class TestCallableShape:
+    """A bare callable keeps the shape it produced. Materialising a generator
+    here would throw its streaming away silently, and turning a list into one
+    would make every list source stream for nothing."""
+
+    def test_a_callable_that_yields_streams(self, ui_backend):
+        from keyhac.actions import ChooserAction, ShowCandidates
+
+        def produce():
+            yield Candidate(display="a")
+            yield Candidate(display="b")
+
+        ShowCandidates(produce)()
+        chooser = ChooserAction._open[1]
+        assert chooser._pending is not None
+        assert chooser._items == []
+        ui_backend.run_animation_ticks()
+        assert [c.display for c in chooser._items] == ["a", "b"]
+
+    def test_a_callable_that_returns_a_list_does_not(self, ui_backend):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        ShowCandidates(lambda: [Candidate(display="a")])()
+        chooser = ChooserAction._open[1]
+        assert chooser._pending is None
+        assert [c.display for c in chooser._items] == ["a"]

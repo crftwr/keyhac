@@ -51,7 +51,7 @@ A source that genuinely needs an input method in the filter field asks for
 
 import time
 
-from puikit import Panel, WindowStyle
+from puikit import Panel, Style, WindowStyle
 from puikit.event import EventType
 from puikit.layout import HSplit, Item, VSplit
 from puikit.widgets import Label, LayoutView, ListView, TextEdit
@@ -76,6 +76,9 @@ _LIST_PAD_PX = 3
 #: keystroke lands between slices; large enough that a cheap source finishes in
 #: one.
 _SLICE_SECONDS = 0.002
+
+#: The progress note is context, not content: quieter than the query.
+_PROGRESS_STYLE = Style(fg=(130, 130, 140))
 
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
@@ -160,6 +163,12 @@ class ChooserWindow:
         self._scopes = list(scopes) if scopes else []
         self._on_scope = on_scope
         self._scope = 0
+        # What each scope had read, kept for the life of this window.  Safe
+        # because the dismissal watch closes the window the moment the front
+        # window changes, so nothing a scope read can have gone stale while
+        # this window is still up - and a scope left half-read keeps its
+        # generator, so tabbing back resumes rather than starting again.
+        self._scope_cache = {}
         self._badge_of = badge_of
         # With scopes, the row widget is used throughout even where the
         # current scope draws no badge: switching would otherwise have to
@@ -191,10 +200,18 @@ class ChooserWindow:
         from keyhac.ui.scope_switcher import ScopeSwitcher
         self._scope_label = ScopeSwitcher(
             self._scope_name(), on_switch=self._switch_clicked)
+        # "Still reading", and how much of it so far.  Without this an
+        # unfinished list is indistinguishable from a finished one, so a query
+        # that has not matched *yet* reads as one that never will - which is
+        # the whole of what makes a streaming source feel slow, rather than
+        # the milliseconds.
+        self._progress = Label("", style=_PROGRESS_STYLE)
         search_row = [
             Item(Label("🔍"), size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
+            Item(Label(""), size_px=_MARGIN_PX),
+            Item(self._progress, size="content", align="center"),
         ]
         if self._scopes:
             search_row.append(Item(Label(""), size_px=_MARGIN_PX))
@@ -345,10 +362,18 @@ class ChooserWindow:
             self._pending = None
         if arrived:
             self._append(arrived)
+        self._show_progress()
         if self._pending is None:
             self._streaming = False
             return False
         return True
+
+    def _show_progress(self) -> None:
+        """Say whether the list is still filling, and how far it has got."""
+        text = f"… {len(self._items)}" if self._pending is not None else ""
+        if self._progress.text != text:
+            self._progress.text = text
+            self.panel.render()
 
     def _ranked(self, candidates) -> list:
         """Best first, and stable - so rows the query cannot tell apart keep
@@ -416,13 +441,21 @@ class ChooserWindow:
         """
         if len(self._scopes) < 2 or self._on_scope is None:
             return
+        self._scope_cache[self._scope] = (self._items, self._pending,
+                                          self._badge_of)
         self._scope = (self._scope + delta) % len(self._scopes)
-        rows, pending, badge_of = self._on_scope(self._scope)
-        # Whatever the previous scope had left to produce is abandoned here,
-        # by dropping the iterator: nothing has to be told to stop.
-        self._items = [Candidate.from_item(row) for row in rows]
-        self._pending = pending
-        self._badge_of = badge_of
+        cached = self._scope_cache.get(self._scope)
+        if cached is not None:
+            # Including a generator that was mid-walk: it resumes where it
+            # stopped, so cycling through the scopes does not restart the
+            # expensive ones.
+            self._items, self._pending, self._badge_of = cached
+            self._show_progress()
+        else:
+            rows, pending, badge_of = self._on_scope(self._scope)
+            self._items = [Candidate.from_item(row) for row in rows]
+            self._pending = pending
+            self._badge_of = badge_of
         self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.

@@ -110,6 +110,9 @@ class CallableSource(CandidateSource):
     The callable returns `Candidate` objects, or the `(icon, label, *rest)`
     tuples `ChooserAction.list_items` has always returned - those are adapted,
     and `on_chosen` then receives a candidate whose payload is the tuple.
+
+    A callable that **yields** is a streaming source and stays one; one that
+    returns a list stays a list.
     """
 
     def __init__(self, produce: Callable[[], Any], name: str = "",
@@ -118,9 +121,16 @@ class CallableSource(CandidateSource):
         self.name = name
         self._on_chosen = on_chosen
 
-    def candidates(self) -> list[Candidate]:
+    def candidates(self):
         """lazydocs: ignore"""
-        return [Candidate.from_item(item) for item in self._produce()]
+        produced = self._produce()
+        if isinstance(produced, (list, tuple)):
+            return [Candidate.from_item(item) for item in produced]
+        # The shape is preserved rather than normalised: a callable that
+        # yields is a streaming source and materialising it here would have
+        # thrown that away silently, while turning a plain list into a
+        # generator would make every list source stream for nothing.
+        return (Candidate.from_item(item) for item in produced)
 
     def on_chosen(self, candidate: Candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""

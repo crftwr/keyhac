@@ -261,6 +261,7 @@ class ChooserAction:
         # was last left would make the same key mean different things on
         # different presses.
         self._scope = 0
+        self._owners = {}
         rows, pending, badge_of = self._collect()
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
@@ -320,7 +321,10 @@ class ChooserAction:
         from keyhac.core.source import CandidateSource
 
         sources = self.sources()
-        owners = self._owners = {}
+        # Accumulated across scopes, not reset per collect: a window keeps
+        # what each scope read, so rows collected earlier must still know
+        # which source owns them.
+        owners = self._owners
 
         def adopt(source, item):
             candidate = Candidate.from_item(item)
