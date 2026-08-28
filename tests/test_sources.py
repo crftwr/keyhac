@@ -955,7 +955,9 @@ class TestStreaming:
         chooser._on_filter_change("al")
         chooser._append([Candidate(display="zulu"), Candidate(display="also")])
         shown = [c.display for c in chooser._filtered]
-        assert shown == ["alpha", "also"]
+        # Ranked, not appended in arrival order: both start with the query, so
+        # the shorter one wins.
+        assert shown == ["also", "alpha"]
         assert len(chooser._items) == 3, "it is still a candidate, just filtered"
         chooser.dismiss()
 
@@ -991,3 +993,113 @@ class TestStreaming:
 
         _action, chooser = self._open(_Empty(), ui_backend)
         assert chooser._items == []
+
+
+class TestRanking:
+    """A window merging several sources cannot show them concatenated: a
+    thousand clipboard entries would bury every menu command behind them."""
+
+    def _chooser(self, ui_backend, displays):
+        from keyhac.ui.chooser import ChooserWindow
+        return ChooserWindow(
+            ui_backend, [Candidate(display=d) for d in displays])
+
+    def _shown(self, chooser, query):
+        chooser._edit.text = query
+        chooser._on_filter_change(query)
+        return [c.display for c in chooser._filtered]
+
+    def test_a_prefix_beats_a_word_start_beats_the_middle(self, ui_backend):
+        chooser = self._chooser(ui_backend, [
+            "autosaved backup",          # inside a word
+            "File › Save As…",           # starts a word
+            "Save As…",                  # starts the text
+        ])
+        assert self._shown(chooser, "save") == [
+            "Save As…", "File › Save As…", "autosaved backup"]
+        chooser.dismiss()
+
+    def test_an_earlier_match_beats_a_later_one(self, ui_backend):
+        chooser = self._chooser(ui_backend, [
+            "a very long clipboard entry that mentions save at the end",
+            "File › Save As…",
+        ])
+        assert self._shown(chooser, "save")[0] == "File › Save As…"
+        chooser.dismiss()
+
+    def test_a_shorter_row_wins_an_otherwise_equal_match(self, ui_backend):
+        chooser = self._chooser(ui_backend, ["saved搜索 nonsense", "save"])
+        assert self._shown(chooser, "save")[0] == "save"
+        chooser.dismiss()
+
+    def test_an_empty_query_keeps_the_order_the_sources_produced(
+            self, ui_backend):
+        """Clipboard history newest first, and so on. There is no match to
+        judge the quality of."""
+        order = ["third", "second", "first"]
+        chooser = self._chooser(ui_backend, order)
+        assert self._shown(chooser, "") == order
+        chooser.dismiss()
+
+    def test_rows_the_query_cannot_tell_apart_keep_their_order(self,
+                                                               ui_backend):
+        chooser = self._chooser(ui_backend, ["save one", "save two",
+                                             "save three"])
+        assert self._shown(chooser, "save") == ["save one", "save two",
+                                                "save three"]
+        chooser.dismiss()
+
+    def test_a_streamed_row_is_ranked_into_place_not_appended(self,
+                                                              ui_backend):
+        """The point of ranking while streaming: a late arrival that is the
+        best match must not sit at the bottom."""
+        chooser = self._chooser(ui_backend, ["autosaved backup"])
+        self._shown(chooser, "save")
+        chooser._append([Candidate(display="Save As…")])
+        assert [c.display for c in chooser._filtered][0] == "Save As…"
+        chooser.dismiss()
+
+    def test_the_row_under_the_selection_does_not_move(self, ui_backend):
+        """Ranking wants to reorder and a list being chosen from must not
+        shift, so what is kept is the candidate, not its index."""
+        chooser = self._chooser(ui_backend, ["autosaved one", "autosaved two"])
+        self._shown(chooser, "save")
+        chooser._list.selected = 1
+        standing_on = chooser._filtered[1]
+        chooser._append([Candidate(display="Save As…")])   # ranks to the top
+        assert chooser._filtered[0].display == "Save As…"
+        assert chooser._filtered[chooser._list.selected] is standing_on
+        chooser.dismiss()
+
+    def test_nothing_is_selected_while_the_field_has_the_focus(self,
+                                                              ui_backend):
+        """Why the two rules do not actually conflict: rows arrive during
+        exactly the window in which no row is selected."""
+        chooser = self._chooser(ui_backend, ["alpha"])
+        assert chooser._list.selected == -1
+        chooser._append([Candidate(display="beta")])
+        assert chooser._list.selected == -1
+        chooser.dismiss()
+
+    def test_the_query_is_compiled_once_per_change_not_once_per_slice(
+            self, ui_backend):
+        """Migemo's whole cost is building the regex; paying it on every
+        frame of a streaming source would be paying it dozens of times."""
+        from keyhac.core.matcher import SubstringMatcher
+        from keyhac.ui.chooser import ChooserWindow
+
+        compiles = []
+
+        class _Counting(SubstringMatcher):
+            def compile(self, query):
+                compiles.append(query)
+                return super().compile(query)
+
+        chooser = ChooserWindow(ui_backend, [Candidate(display="alpha")],
+                                matcher=_Counting())
+        chooser._on_filter_change("a")
+        before = len(compiles)
+        for _ in range(5):
+            chooser._append([Candidate(display="another")])
+        assert len(compiles) == before
+        chooser.dismiss()

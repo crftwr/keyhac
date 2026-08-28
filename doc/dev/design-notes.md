@@ -377,6 +377,35 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   binding you can run from a list does not need a key of its own, and running
   out of keys is what this whole window exists to fix.
 
+## Ranking a merged list
+
+- **A hit has a quality, not only a yes.** Concatenating sources buries the
+  small ones: a thousand clipboard entries in front of every menu command, and
+  typing `save` listing every clipboard entry containing "save" before
+  `File › Save`. `Match.rank(text)` is the sort key, lower first.
+- **A tuple, not a number.** Weighing "starts with" against "is shorter" as
+  floats means inventing constants nobody can defend; ordered fields say the
+  same thing without them — bucket, then position, then length. Buckets: 0 the
+  text starts with the match, 1 the match starts a word, 2 it is inside a word,
+  3 it hit but cannot say where.
+- **Derived from `spans()`**, so a matcher earns ranking by being able to
+  localise its hit and needs no separate implementation. The empty query ranks
+  everything equal, so an unfiltered window keeps the order its sources
+  produced — clipboard history newest first.
+- **Sorted stably**, so rows the query cannot tell apart keep source order.
+- **Ranking and "appending never reorders" only appear to conflict.** What is
+  held still is the *candidate*, not its index: it is found again wherever the
+  new order puts it. And the window in which rows arrive is exactly the window
+  in which nothing is selected — the list proposes no row while the filter
+  field holds the focus — so during streaming there is usually nothing to
+  hold still at all.
+- `set_items` drops the viewport, so `_append` restores the offset *before*
+  moving the selection. The other order leaves the selection off-screen
+  whenever ranking moved it.
+- The compiled `Match` is **kept on the window**. Recompiling per arriving
+  slice would pay Migemo's whole cost — the regex build — dozens of times
+  while one source streams.
+
 ## Streaming a source
 
 - A source may **yield** instead of returning a list. The window drains the

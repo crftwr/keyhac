@@ -49,12 +49,54 @@ class Match:
         localise its hit simply does not offer one."""
         return []
 
+    def rank(self, text: str) -> tuple:
+        """Sort key for a row that hit, **lower first**.
+
+        A window merging several sources cannot show them concatenated: a
+        thousand clipboard entries would bury every menu command behind them,
+        and typing `save` would list every clipboard entry containing "save"
+        before `File › Save`.  So a hit is not only yes or no, it has a
+        quality, and the quality is where the match landed.
+
+        A tuple rather than a number, deliberately.  Weighing "starts with"
+        against "is shorter" as floats means inventing constants nobody can
+        defend; ordered fields say the same thing without them - the bucket
+        decides, ties break on position, then on length.
+
+        - **0** the text starts with the match
+        - **1** the match starts a word (the character before it is not
+          alphanumeric)
+        - **2** it is somewhere inside a word
+        - **3** it hit but cannot say where, which a matcher is allowed not
+          to know
+
+        The default reads it off :meth:`spans`, so a matcher gains ranking by
+        being able to localise its hit and needs no separate implementation.
+        """
+        spans = self.spans(text)
+        if not spans:
+            return (3, 0, len(text))
+        start = spans[0][0]
+        if start == 0:
+            bucket = 0
+        elif not text[start - 1].isalnum():
+            bucket = 1
+        else:
+            bucket = 2
+        return (bucket, start, len(text))
+
 
 class _MatchAll(Match):
     """The empty query: every candidate passes, nothing is highlighted."""
 
     def hit(self, text: str) -> bool:
         return True
+
+    def rank(self, text: str) -> tuple:
+        """One key for everything, so an unfiltered window keeps the order its
+        sources produced - clipboard history newest first, and so on. There is
+        no match to judge the quality of."""
+        return ()
 
 
 MATCH_ALL = _MatchAll()

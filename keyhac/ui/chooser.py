@@ -125,6 +125,7 @@ class ChooserWindow:
         # to give, and nothing about it should become asynchronous.
         self._pending = pending
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
+        self._match = self._matcher.compile("")
         self._filtered = list(self._items)
         self._on_selected = on_selected
         self._on_canceled = on_canceled
@@ -349,32 +350,51 @@ class ChooserWindow:
             return False
         return True
 
-    def _append(self, arrived) -> None:
-        """Add rows below the existing ones, keeping the filter applied.
+    def _ranked(self, candidates) -> list:
+        """Best first, and stable - so rows the query cannot tell apart keep
+        the order their sources produced them in."""
+        return sorted(candidates, key=lambda c: self._match.rank(c.match_text))
 
-        **Appending never reorders.** Rows already passing the filter keep
-        their indices, so the selection and the scroll position carry over -
-        unlike a changed query, which resets both deliberately. Without that
-        asymmetry a list that is still filling moves under the hand that is
-        choosing from it.
+    def _append(self, arrived) -> None:
+        """Add rows to a window that is still filling, keeping the filter
+        applied and the best matches on top.
+
+        **The row under the selection does not move.** Ranking wants to
+        reorder and a list being chosen from must not shift, so what is kept
+        is the *candidate*, not its index - it is found again wherever the
+        new order puts it. The two rules only appear to conflict: while the
+        filter field holds the focus nothing is selected at all (the list
+        shows no row until Down steps into it), and that is exactly the
+        window during which rows are still arriving. A changed query is
+        different again and resets the selection deliberately.
         """
         self._items.extend(arrived)
-        match = self._matcher.compile(self._edit.text)
-        matched = [c for c in arrived if match.hit(c.match_text)]
+        matched = [c for c in arrived if self._match.hit(c.match_text)]
         if not matched:
             return
-        self._filtered.extend(matched)
-        selected, offset = self._list.selected, self._list.offset
+        index = self._list.selected
+        pinned = self._filtered[index] if 0 <= index < len(self._filtered) \
+            else None
+        offset = self._list.offset
+        self._filtered = self._ranked(self._filtered + matched)
         self._list.set_items(self._items_for_list())
-        self._list.selected = selected
+        # set_items drops the viewport, so put it back first; then move the
+        # selection, which scrolls itself into view if the row actually went
+        # somewhere. Restoring in the other order would leave the selection
+        # off-screen whenever ranking moved it.
         self._list.offset = offset
+        if pinned is not None:
+            self._list.selected = self._filtered.index(pinned)
         self.panel.render()
 
     def _on_filter_change(self, text: str) -> None:
         # The query is compiled once here, not once per candidate: Migemo's
         # whole cost is in building its alternation regex (discussion #112).
-        match = self._matcher.compile(text)
-        self._filtered = [c for c in self._items if match.hit(c.match_text)]
+        # Kept, too, so an arriving slice re-uses it rather than paying that
+        # cost again on every frame of a streaming source.
+        self._match = self._matcher.compile(text)
+        self._filtered = self._ranked(
+            c for c in self._items if self._match.hit(c.match_text))
         self._list.set_items(self._items_for_list())
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.

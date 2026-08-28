@@ -371,6 +371,12 @@ kt["Fn-Shift-W"] = ShowCandidates(open_windows,
                                   on_chosen=lambda c, mod: c.payload.activate())
 ```
 
+Rows are ordered by how well they match, not by which source produced them: a
+match at the start of a row beats one starting a word, which beats one inside a
+word, and an earlier or shorter match wins a tie. With an empty query there is
+nothing to judge, so the sources' own order stands — clipboard history newest
+first.
+
 A source with real work to do can **yield** instead of returning a list. Its
 first rows appear immediately and the rest arrive while the window is already
 open, and closing it or switching scope simply stops asking. Yield often, and
