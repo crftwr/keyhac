@@ -259,6 +259,11 @@ def configure(keymap):
     # you ask for it, not every time the window opens.
 
     kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
+        # Everything at once.  The expensive sources stream — their first
+        # rows are on screen while the rest are still being read — so a slow
+        # one no longer holds the window shut for everybody.
+        Scope("All", [ClipboardHistorySource(), SnippetsSource(snippets),
+                      MenuItemsSource(), KeyBindingsSource(), ActionsSource()]),
         Scope("Clipboard", [ClipboardHistorySource(), SnippetsSource(snippets)]),
         # Every command in the front application's menus, as one flat list —
         # the long tail with no shortcut, in an app whose menus you do not

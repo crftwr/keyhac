@@ -1637,12 +1637,16 @@ With several sources the window shows which one a row came from, because that is
 ### <kbd>method</kbd> `CandidateSource.candidates`
 
 ```python
-candidates() → list[keyhac.core.candidate.Candidate]
+candidates()
 ```
 
 The rows this source offers *right now*.  Override this. 
 
 Called on every invocation rather than cached: a source reading the screen - the windows that exist, the controls in the front window - is describing something that has already moved on by the time it is asked again. 
+
+Return a list, or - for a source with real work to do - **yield**. A generator is drained a slice at a time between renders, so its first rows are on screen while it is still finding the rest, and abandoning it (the window closed, the scope changed) simply stops pulling. 
+
+A generator runs on the **main thread**, in slices, and not on a worker.  That is not a simplification: on macOS an accessibility call off the main thread crashes the process, and accessibility is what the sources needing this are made of.  Yield often, and do not block - a slice that does not return holds the keyboard as surely as any other main-thread work would. 
 
 ---
 

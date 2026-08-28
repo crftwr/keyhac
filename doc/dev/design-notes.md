@@ -377,6 +377,41 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   binding you can run from a list does not need a key of its own, and running
   out of keys is what this whole window exists to fix.
 
+## Streaming a source
+
+- A source may **yield** instead of returning a list. The window drains the
+  generator a slice at a time between renders, so its first rows are on screen
+  while it is still finding the rest. Measured on a live menu bar: **first row
+  at 16 ms, all 89 over 344 ms** — the difference between a window that opens
+  and one that appears a third of a second later.
+- **On the main thread, in slices — not on a worker.** This is where the design
+  parts company with XeFM's, which streams from a daemon thread drained on the
+  animation tick. It cannot work here: on macOS an accessibility call off the
+  main thread crashes the process (`platform/base.py`'s Window contract), and
+  accessibility is what the sources needing this are made of. A generator
+  suspends at each `yield`, which is exactly the chunking a main-thread walk
+  needs, and it stays on the right thread by construction.
+- **Time-boxed, not counted.** An accessibility call's cost varies by orders of
+  magnitude between a menu item and a node inside a web area, so "twenty rows
+  per tick" is a different amount of frozen keyboard every time and "two
+  milliseconds" is not.
+- **A list source does not stream at all.** There is nothing to gain by
+  deferring rows already in hand and much to lose in making every caller wait
+  for them, so `ChooserAction._collect` splits at the source level: lists go
+  straight into the window, generators are left for it to drain.
+- **Appending never reorders.** Rows already passing the filter keep their
+  indices, so the selection and scroll position carry over — unlike a changed
+  query, which resets both deliberately. Without that asymmetry a list that is
+  still filling moves under the hand choosing from it. Ported from XeFM's
+  `add_items`, which is the one part of its shape that transfers unchanged.
+- **Abandoning is dropping the iterator.** A scope switch or a close simply
+  stops pulling; nothing has to be told to stop, and there is no thread to
+  join. The cancellation question discussion #112 raises for the iterator
+  interface answers itself once the producer is a generator.
+- Opening a window **registers** the drain, it does not run it. Tests turn the
+  handle themselves (`MemoryBackend.run_animation_ticks`), which is also what
+  proves the rows arrive through the pump rather than from the constructor.
+
 ## The actions source
 
 - **Listing does not import**, which is the whole reason this can exist:

@@ -220,11 +220,7 @@ class MenuItemsSource(CandidateSource):
         if bar is None:
             logger.debug("The front application exposes no menu bar.")
             return []
-        rows = []
-        _walk_menu(bar, (), rows, 0)
-        if not rows:
-            logger.debug("The front application's menu bar walked to nothing.")
-        return rows
+        return _walk_menu(bar, (), 0)
 
     @staticmethod
     def _front_element():
@@ -263,8 +259,15 @@ class MenuItemsSource(CandidateSource):
             logger.error(f"{candidate.display}: pressing it failed.")
 
 
-def _walk_menu(node, path, rows, depth) -> None:
-    """Flatten a menu tree onto `rows`, keeping the path to each leaf."""
+def _walk_menu(node, path, depth):
+    """Yield a menu tree's leaves, keeping the path to each.
+
+    A generator rather than a list: the window pulls a slice at a time, so
+    the File menu is on screen while Help is still being read.  Each `yield`
+    is a place the walk can be abandoned - the AX calls stay on the main
+    thread, where they have to be, and the thread is handed back between
+    slices instead of being held for the whole traversal.
+    """
     if depth > _MENU_MAX_DEPTH:
         return
     try:
@@ -277,7 +280,7 @@ def _walk_menu(node, path, rows, depth) -> None:
         except Exception:
             continue
         if role in _MENU_ROLES:
-            _walk_menu(child, path, rows, depth + 1)
+            yield from _walk_menu(child, path, depth + 1)
             continue
         if role not in _MENU_ITEM_ROLES:
             continue
@@ -287,13 +290,13 @@ def _walk_menu(node, path, rows, depth) -> None:
                     if _role_of(c) in _MENU_ROLES]
         if submenus:
             for submenu in submenus:
-                _walk_menu(submenu, here, rows, depth + 1)
+                yield from _walk_menu(submenu, here, depth + 1)
             continue
         if not title or not _menu_enabled(child):
             continue
-        rows.append(Candidate(
+        yield Candidate(
             icon="≡", display=" › ".join(here), payload=child,
-            extras={"shortcut": _menu_shortcut(child)}))
+            extras={"shortcut": _menu_shortcut(child)})
 
 
 def _role_of(element):

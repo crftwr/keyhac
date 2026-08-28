@@ -382,9 +382,7 @@ class TestMenuItemsSource:
 
     def _rows(self):
         from keyhac.core.sources import _walk_menu
-        rows = []
-        _walk_menu(self._bar(), (), rows, 0)
-        return rows
+        return list(_walk_menu(self._bar(), (), 0))
 
     def test_only_leaves_are_offered(self):
         """A row that merely opens another menu is not a command, and a list
@@ -455,9 +453,8 @@ class TestMenuItemsSource:
         menu = _menu()
         loop = _item("Loop", kids=[menu])
         menu._kids.append(loop)
-        rows = []
-        _walk_menu(_FakeMenuElement("AXMenuBar", kids=[loop]), (), rows, 0)
-        assert rows == []
+        assert list(_walk_menu(
+            _FakeMenuElement("AXMenuBar", kids=[loop]), (), 0)) == []
 
     def test_the_menu_bar_is_read_from_the_front_window_not_the_focus(self):
         """The second time this trap has bitten. A `Focus` mixes its sources -
@@ -481,7 +478,7 @@ class TestMenuItemsSource:
         original = src.Keymap.get_instance
         src.Keymap.get_instance = staticmethod(lambda: _Keymap())
         try:
-            rows = src.MenuItemsSource().candidates()
+            rows = list(src.MenuItemsSource().candidates())
         finally:
             src.Keymap.get_instance = original
         assert [c.display for c in rows] == ["File › New"]
@@ -495,7 +492,7 @@ class TestMenuItemsSource:
         original = src.Keymap.get_instance
         src.Keymap.get_instance = staticmethod(lambda: _Keymap())
         try:
-            assert src.MenuItemsSource().candidates() == []
+            assert list(src.MenuItemsSource().candidates()) == []
         finally:
             src.Keymap.get_instance = original
 
@@ -854,3 +851,143 @@ class TestActionsSource:
         from keyhac.core.sources import ActionsSource
         engine(lambda keymap: keymap.define_keytable(focus_path_pattern="*"))
         assert ActionsSource().candidates() == []
+
+
+class TestStreaming:
+    """A source with real work to do yields, and the window drains it a slice
+    at a time between renders - so its first rows are on screen while it is
+    still finding the rest."""
+
+    class _Slow(CandidateSource):
+        name = "Slow"
+
+        def __init__(self, count=6):
+            self.count = count
+            self.produced = 0
+            self.finished = False
+            self.chosen = []
+
+        def candidates(self):
+            for index in range(self.count):
+                self.produced += 1
+                yield Candidate(display=f"row {index}")
+            self.finished = True
+
+        def on_chosen(self, candidate, modifier_flags):
+            self.chosen.append(candidate.display)
+
+    def _open(self, sources, ui_backend=None):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        action = ShowCandidates(sources)
+        action()
+        chooser = ChooserAction._open[1]
+        if ui_backend is not None:
+            self._pump(ui_backend)
+        return action, chooser
+
+    @staticmethod
+    def _pump(backend, frames=40):
+        """Drive the animation ticks the real event loop would.
+
+        The pump is registered, not run, by opening the window - so a test
+        that wants the streamed rows has to turn the handle, which is also
+        what proves they arrive through the pump rather than from the
+        constructor's argument list.
+        """
+        for _ in range(frames):
+            backend.run_animation_ticks()
+
+    def test_a_list_source_does_not_stream_at_all(self, ui_backend):
+        """Nothing is gained by deferring rows already in hand, and much is
+        lost in making every caller wait for them."""
+        _action, chooser = self._open(_Fruit())
+        assert chooser._pending is None
+        assert len(chooser._items) == 2
+
+    def test_a_yielding_source_arrives_through_the_pump(self, ui_backend):
+        source = self._Slow()
+        _action, chooser = self._open(source)
+        assert chooser._items == [], "nothing should arrive before a tick"
+        self._pump(ui_backend)
+        assert [c.display for c in chooser._items] == [
+            f"row {i}" for i in range(6)]
+
+    def test_the_window_opens_before_the_rows_are_all_known(self, ui_backend):
+        """The point of the exercise: a slice at a time, not one long wait."""
+        from keyhac.ui.chooser import ChooserWindow
+        seen = []
+
+        def produce():
+            for index in range(4):
+                seen.append(index)
+                yield Candidate(display=f"row {index}")
+
+        chooser = ChooserWindow(ui_backend, [], pending=produce())
+        assert seen == [], "the window is up before the source has been read"
+        self._pump(ui_backend)
+        assert seen == [0, 1, 2, 3]
+        assert len(chooser._items) == 4
+        chooser.dismiss()
+
+    def test_appending_keeps_the_selection_and_the_scroll(self, ui_backend):
+        """Appending never reorders: rows already passing the filter keep
+        their indices, so a list still filling does not move under the hand
+        choosing from it. A changed query resets both, deliberately."""
+        from keyhac.ui.chooser import ChooserWindow
+
+        rows = [Candidate(display=f"row {i}") for i in range(60)]
+        chooser = ChooserWindow(ui_backend, rows)
+        chooser._list.selected = 30
+        chooser.panel.render()
+        offset = chooser._list.offset
+        assert offset > 0, "the list has to be scrolled for this to mean anything"
+        chooser._append([Candidate(display="row 60")])
+        assert chooser._list.selected == 30
+        assert chooser._list.offset == offset
+        assert [c.display for c in chooser._filtered][-1] == "row 60"
+        chooser.dismiss()
+
+    def test_an_arriving_row_that_does_not_match_is_not_shown(self, ui_backend):
+        from keyhac.ui.chooser import ChooserWindow
+
+        chooser = ChooserWindow(ui_backend, [Candidate(display="alpha")])
+        chooser._edit.text = "al"
+        chooser._on_filter_change("al")
+        chooser._append([Candidate(display="zulu"), Candidate(display="also")])
+        shown = [c.display for c in chooser._filtered]
+        assert shown == ["alpha", "also"]
+        assert len(chooser._items) == 3, "it is still a candidate, just filtered"
+        chooser.dismiss()
+
+    def test_switching_scope_abandons_what_the_last_one_was_producing(
+            self, ui_backend):
+        """By dropping the iterator - nothing has to be told to stop."""
+        from keyhac.core.source import Scope
+        from puikit.event import Event, EventType
+        source = self._Slow(count=200)
+        _action, chooser = self._open([Scope("Slow", [source]),
+                                       Scope("Fruit", [_Fruit()])])
+        # Deliberately without pumping: opening registers the drain, it does
+        # not run it, so the switch lands while the source is untouched.
+        assert source.produced == 0
+        chooser._on_event(Event(type=EventType.KEY, key="tab"))
+        assert chooser._pending is None
+        assert [c.display for c in chooser._items] == ["apple", "apricot"]
+        # And it stays abandoned: the ticks that follow belong to the scope
+        # now showing, and the old generator is simply never asked again.
+        self._pump(ui_backend)
+        assert source.produced == 0 and source.finished is False
+
+    def test_choosing_a_streamed_row_still_reaches_its_source(self, ui_backend):
+        source = self._Slow()
+        _action, chooser = self._open(source, ui_backend)
+        chooser._finish(chooser._filtered[2], 0)
+        assert source.chosen == ["row 2"]
+
+    def test_a_source_that_yields_nothing_is_not_an_error(self, ui_backend):
+        class _Empty(CandidateSource):
+            def candidates(self):
+                return iter(())
+
+        _action, chooser = self._open(_Empty(), ui_backend)
+        assert chooser._items == []

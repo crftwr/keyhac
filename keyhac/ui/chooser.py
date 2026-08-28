@@ -49,6 +49,8 @@ A source that genuinely needs an input method in the filter field asks for
 ``activates=True`` and gets the old behaviour back, with the old costs.
 """
 
+import time
+
 from puikit import Panel, WindowStyle
 from puikit.event import EventType
 from puikit.layout import HSplit, Item, VSplit
@@ -70,6 +72,11 @@ logger = log.getLogger("Chooser")
 _MARGIN_PX = 5
 _LIST_PAD_PX = 3
 
+#: How long one streaming slice may hold the main thread.  Small enough that a
+#: keystroke lands between slices; large enough that a cheap source finishes in
+#: one.
+_SLICE_SECONDS = 0.002
+
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
     "cmd": MODKEY_CMD, "win": MODKEY_WIN,
@@ -86,6 +93,9 @@ class ChooserWindow:
     since with clipboard entries, windows and on-screen controls in one list
     a row without its provenance is a guess.  None (or a function returning
     "" for everything) draws plain rows.
+
+    pending: an iterator of further rows, drained a slice at a time between
+    renders.  None for a window whose rows are all already known.
 
     scopes: names of the scopes Tab / Shift-Tab move between, or None for a
     window with only one.  `on_scope(index)` is asked for the rows of the
@@ -108,14 +118,19 @@ class ChooserWindow:
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
-                 scopes=None, on_scope=None):
+                 scopes=None, on_scope=None, pending=None):
         self._items = [Candidate.from_item(item) for item in items]
+        # Rows still being produced, drained in slices between renders.  None
+        # is the ordinary case: a source that returns a list has nothing left
+        # to give, and nothing about it should become asynchronous.
+        self._pending = pending
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._filtered = list(self._items)
         self._on_selected = on_selected
         self._on_canceled = on_canceled
         self._done = False
         self._grabbed = False
+        self._streaming = False
 
         self.window = backend.create_window(
             72, 20, title=title,
@@ -197,6 +212,10 @@ class ChooserWindow:
 
         if not activates:
             self._grab_keys()
+
+        # After the window is on screen, so streamed rows land in something
+        # the user is already looking at rather than delaying its first paint.
+        self._start_streaming()
 
     # --- non-activating input (spike - discussion #112) -------------------
 
@@ -290,6 +309,67 @@ class ChooserWindow:
         destructive action, so choosing stays an explicit Enter."""
         self._focus_list(index)
 
+    # --- streaming --------------------------------------------------------
+
+    def _start_streaming(self) -> None:
+        """Pump the pending rows in slices until there are none left."""
+        if self._pending is None or self._streaming:
+            return
+        self._streaming = True
+        if not self.panel.request_animation_ticks(self._drain):
+            # A still backend registers nothing, so drain in one go rather
+            # than leaving the rows on the floor.  Tests take this path.
+            while self._drain():
+                pass
+            self._streaming = False
+
+    def _drain(self) -> bool:
+        """One slice.  Returns whether there is more to come.
+
+        Time-boxed rather than counted: an accessibility call's cost varies by
+        orders of magnitude between a menu item and a node inside a web area,
+        so "twenty rows" is a different amount of frozen keyboard every time
+        and "two milliseconds" is not.
+        """
+        if self._done or self._pending is None:
+            self._streaming = False
+            return False
+        deadline = time.monotonic() + _SLICE_SECONDS
+        arrived = []
+        for candidate in self._pending:
+            arrived.append(Candidate.from_item(candidate))
+            if time.monotonic() >= deadline:
+                break
+        else:
+            self._pending = None
+        if arrived:
+            self._append(arrived)
+        if self._pending is None:
+            self._streaming = False
+            return False
+        return True
+
+    def _append(self, arrived) -> None:
+        """Add rows below the existing ones, keeping the filter applied.
+
+        **Appending never reorders.** Rows already passing the filter keep
+        their indices, so the selection and the scroll position carry over -
+        unlike a changed query, which resets both deliberately. Without that
+        asymmetry a list that is still filling moves under the hand that is
+        choosing from it.
+        """
+        self._items.extend(arrived)
+        match = self._matcher.compile(self._edit.text)
+        matched = [c for c in arrived if match.hit(c.match_text)]
+        if not matched:
+            return
+        self._filtered.extend(matched)
+        selected, offset = self._list.selected, self._list.offset
+        self._list.set_items(self._items_for_list())
+        self._list.selected = selected
+        self._list.offset = offset
+        self.panel.render()
+
     def _on_filter_change(self, text: str) -> None:
         # The query is compiled once here, not once per candidate: Migemo's
         # whole cost is in building its alternation regex (discussion #112).
@@ -317,14 +397,18 @@ class ChooserWindow:
         if len(self._scopes) < 2 or self._on_scope is None:
             return
         self._scope = (self._scope + delta) % len(self._scopes)
-        rows, badge_of = self._on_scope(self._scope)
+        rows, pending, badge_of = self._on_scope(self._scope)
+        # Whatever the previous scope had left to produce is abandoned here,
+        # by dropping the iterator: nothing has to be told to stop.
         self._items = [Candidate.from_item(row) for row in rows]
+        self._pending = pending
         self._badge_of = badge_of
         self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
         self._focus_edit()
         self._on_filter_change(self._edit.text)
+        self._start_streaming()
 
     def _on_event(self, event) -> None:
         if event.type is EventType.KEY:

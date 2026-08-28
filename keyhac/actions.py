@@ -261,8 +261,8 @@ class ChooserAction:
         # was last left would make the same key mean different things on
         # different presses.
         self._scope = 0
-        rows, badge_of = self._collect()
-        chooser = ChooserWindow(runtime.backend, rows,
+        rows, pending, badge_of = self._collect()
+        chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
                                 matcher=self.matcher, activates=self.activates,
@@ -320,21 +320,41 @@ class ChooserAction:
         from keyhac.core.source import CandidateSource
 
         sources = self.sources()
-        rows, owners = [], {}
+        owners = self._owners = {}
+
+        def adopt(source, item):
+            candidate = Candidate.from_item(item)
+            owners[id(candidate)] = source
+            return candidate
+
+        # A source that returns a list is finished, and its rows go straight
+        # into the window; one that yields is left to the window to drain.
+        # Splitting here rather than making everything lazy keeps the common
+        # case synchronous - there is nothing to gain by deferring rows that
+        # are already in hand, and much to lose in making every caller wait
+        # for them.
+        rows, streaming = [], []
         for source in sources:
-            for candidate in source.candidates():
-                candidate = Candidate.from_item(candidate)
-                rows.append(candidate)
-                owners[id(candidate)] = source
-        self._owners = owners
+            produced = source.candidates()
+            if isinstance(produced, (list, tuple)):
+                rows.extend(adopt(source, item) for item in produced)
+            else:
+                streaming.append((source, produced))
+
+        def remainder():
+            for source, produced in streaming:
+                for item in produced:
+                    yield adopt(source, item)
+
+        pending = remainder() if streaming else None
         if len(sources) < 2:
             # No "which source" question to answer, so the slot belongs to
             # the source itself - the menu source puts the shortcut there.
             single = sources[0] if sources else None
             if single is None or type(single).badge is CandidateSource.badge:
-                return rows, None
-            return rows, lambda c: single.badge(c)
-        return rows, lambda c: getattr(owners.get(id(c)), "name", "")
+                return rows, pending, None
+            return rows, pending, lambda c: single.badge(c)
+        return rows, pending, lambda c: getattr(owners.get(id(c)), "name", "")
 
     def _scope_rows(self, index: int):
         """The rows of the scope the window is moving to.

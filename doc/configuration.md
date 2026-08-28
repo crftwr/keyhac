@@ -371,6 +371,12 @@ kt["Fn-Shift-W"] = ShowCandidates(open_windows,
                                   on_chosen=lambda c, mod: c.payload.activate())
 ```
 
+A source with real work to do can **yield** instead of returning a list. Its
+first rows appear immediately and the rest arrive while the window is already
+open, and closing it or switching scope simply stops asking. Yield often, and
+do not block: a source runs on the main thread, in slices, and one that does
+not return holds the keyboard.
+
 Give it a class once it wants a name in a shared window and its own idea of what
 choosing does — `CandidateSource` with `name`, `candidates()` and `on_chosen()`. Enter runs
 whatever the chosen row's source says, so rows from different sources can mean
