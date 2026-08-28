@@ -362,17 +362,37 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - The failure is now the action's to report, so the deferred body logs it. The
   loop's queue drain does not catch, and the engine's catch — the one that
   would have logged it — is no longer on the stack.
-- **The other reason, unproven here.** A low-level hook has a deadline:
-  Windows drops a hook whose callback overruns `LowLevelHooksTimeout` (300 ms
-  unless the registry says otherwise) and delivers the event that overran to
-  the application anyway; macOS disables a slow tap in the same spirit.
-  Building a chooser is past that budget — measured: 390 ms for the chooser
-  module's import alone on the first press, before a source is read (84 ms for
-  a small menu bar, 590 ms for a heavy window's controls). A/B on this
-  Windows 11 build, though, a stall of 0.4 s and even 1.5 s, repeated, still
-  had the consume honoured — the same build that (per `platform/win/hook.py`)
-  did not remove the hook after a 0.6 s stall. So it is the standing risk on a
-  machine whose timeout is set, not the demonstrated cause.
+- **The other reason: the callback has a deadline.** `LowLevelKeyboardProc`'s
+  documentation: the callback must finish inside `LowLevelHooksTimeout`
+  (`HKCU\Control Panel\Desktop`, in ms; capped at 1000 ms since Windows 10
+  1709), and past it "the hook is silently removed without being called. There
+  is no way for the application to know whether the hook is removed" — the
+  event that overran reaches the application regardless. Its own advice is the
+  shape used here: return immediately and hand the work off. Building a
+  chooser is past that budget — measured: 390 ms for this module's import of
+  the chooser alone on a first press, before a source is read (84 ms for a
+  small menu bar, 590 ms for a heavy window's controls). macOS disables a slow
+  tap in the same spirit, but *says so* (`kCGEventTapDisabledByTimeout`), which
+  is why the asymmetry below is Windows-only.
+- **Not reproducible on this machine, though.** A/B against a disposable
+  Notepad, hook installed and consuming: stalls of 0.4, 1.5, 2, 4 and 6
+  seconds, repeated, all had the consume honoured and left the hook working
+  (the control key, not consumed, typed as expected each time). `LowLevelHooks
+  Timeout` is unset here. The caveat is that the keys were *injected*
+  (`SendInput`); a physical key may be judged differently, and the symptom was
+  reported for physical ones. So: the documented hazard, not the demonstrated
+  cause.
+- **Neither did Keyhac 1.x customise it.** No `LowLevelHooksTimeout`, and no
+  registry write of any kind, anywhere in keyhac-win; `pyauto`'s `kbhook.cpp`
+  has none either and calls the Python hook synchronously inside the hook proc
+  exactly as this port does. Its answer was recovery, not prevention — 1.x's
+  changelog: 「キーフックが強制解除されたことを検出し、フックを再設定するように
+  した」 — which is `checkSanity`, ported here as `InputHook.check_health()`.
+- **So the callback times itself** (`WinInputHook.SLOW_CALLBACK_SECONDS`, 200
+  ms) and warns. The sanity check recovers *after* a silent unhook; the
+  warning is the only evidence available that a key which leaked was a key
+  that overran, and the only notice at all *before* the recovery. It is
+  Windows-only because macOS's tap reports its own timeout.
 
 ## An element source reads `window.element`, never `window.native`
 

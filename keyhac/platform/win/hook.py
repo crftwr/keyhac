@@ -27,6 +27,7 @@ SetWindowsHookExW fail with ERROR_MOD_NOT_FOUND (126) on a truncated HMODULE.
 
 import ctypes
 import sys
+import time
 from typing import Callable, Sequence
 
 from keyhac.platform.base import InputHook, KeyEvent
@@ -205,6 +206,17 @@ class WinInputHook(InputHook):
 
     SANITY_CHECK_STRIKES = 4  # from keyhac-win: 4 changes without callbacks
 
+    #: A callback slower than this is logged, because nothing else will say
+    #: so. Windows removes a low-level hook whose callback overruns
+    #: LowLevelHooksTimeout (HKCU\Control Panel\Desktop, capped at 1000 ms
+    #: since Windows 10 1709) and hands the event that overran to the
+    #: application regardless of what we would have returned - and, in the
+    #: documentation's own words, "there is no way for the application to know
+    #: whether the hook is removed". The sanity check above recovers from that
+    #: afterwards; this is the only warning available *before* it, and the
+    #: only evidence afterwards that a key that leaked was a key that overran.
+    SLOW_CALLBACK_SECONDS = 0.2
+
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinInputHook requires Windows")
@@ -293,11 +305,19 @@ class WinInputHook(InputHook):
             return user32.CallNextHookEx(None, n_code, w_param, l_param)
         kind = "replay" if extra == EXTRA_INFO_REPLAY else "real"
 
+        started = time.perf_counter()
         try:
             consumed = self._on_key(KeyEvent(vk, down, kind)) if self._on_key else False
         except Exception:
             logger.error("Key handler raised; passing event through.")
             consumed = False
+        elapsed = time.perf_counter() - started
+        if elapsed >= WinInputHook.SLOW_CALLBACK_SECONDS:
+            logger.warning(
+                f"Key handler took {elapsed * 1000:.0f} ms for vk {vk} - past "
+                f"the hook's budget. Windows may have dropped the hook and "
+                f"passed the key to the application; move slow work off the "
+                f"callback (ThreadedAction, or call_on_main_thread).")
 
         if consumed:
             return 1

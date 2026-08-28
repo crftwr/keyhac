@@ -98,6 +98,26 @@ class TestOpeningLeavesTheHookCallback:
         assert ChooserAction._open is not None
         assert ChooserAction._open[0] is second
 
+    def test_the_press_and_its_release_open_exactly_one_window(
+            self, ui_backend, keyhac_engine):
+        """The whole flow a key performs, not just the action call: the down
+        runs the action and the up fires the one-shot condition behind it.
+        Neither may cancel the open the other queued - a queued open that a
+        release drops is a chooser that never appears."""
+        queued = self._queue(keyhac_engine)
+        action = _Items()
+        table = keyhac_engine.keymap.define_keytable(focus_path_pattern="*")
+        table["A"] = action
+
+        assert keyhac_engine.down("A") is True
+        keyhac_engine.up("A")
+        for callback in queued:
+            callback()
+
+        assert ChooserAction._open is not None
+        assert ChooserAction._open[0] is action
+        assert not ChooserAction._open[1]._done
+
     def test_a_failure_while_opening_no_longer_leaks_the_key(
             self, ui_backend, keyhac_engine):
         """What the leak actually looked like. The engine passes a key through
