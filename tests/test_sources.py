@@ -1103,3 +1103,139 @@ class TestRanking:
             chooser._append([Candidate(display="another")])
         assert len(compiles) == before
         chooser.dismiss()
+
+
+class _FakeControl:
+    """An element in the shape both platforms' describe() produces."""
+
+    def __init__(self, role, name=None, name_source=None, rect=None,
+                 kids=(), key=None):
+        self._described = {"role": role, "name": name,
+                           "name_source": name_source, "rect": rect}
+        self._kids = list(kids)
+        self._key = key
+        self.pressed = []
+
+    def describe(self):
+        return dict(self._described)
+
+    def children(self):
+        return self._kids
+
+    def identity_key(self):
+        return self._key
+
+    def perform_action(self, action):
+        self.pressed.append(action)
+        return action == "AXPress"
+
+
+class TestWindowControlsSource:
+    """Discussion #112's original target, and the reason the window had to
+    stop taking the keyboard focus."""
+
+    def _rows(self, root):
+        from keyhac.core.sources import _walk_controls
+        return list(_walk_controls(root))
+
+    def test_a_named_control_is_offered(self):
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", "Save", name_source="label")])
+        assert [c.display for c in self._rows(root)] == ["Save"]
+
+    def test_content_is_not_a_control(self):
+        """The measured tree of a heavy application is overwhelmingly groups
+        and static text - the page, not the buttons on it."""
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXStaticText", "Some prose"),
+            _FakeControl("AXGroup", "A group", kids=[
+                _FakeControl("AXButton", "Inside")]),
+        ])
+        assert [c.display for c in self._rows(root)] == ["Inside"]
+
+    def test_an_unnamed_control_is_not_offered(self):
+        """There is no text to filter on, so the row would be one nobody can
+        reach."""
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", None),
+            _FakeControl("AXButton", "")])
+        assert self._rows(root) == []
+
+    def test_where_the_name_came_from_travels_with_the_row(self):
+        """It decides what else can find the element: one reachable only
+        through its tooltip cannot be found by find(name=...) either."""
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", "Bold", name_source="description")])
+        assert self._rows(root)[0].provenance == "description"
+
+    def test_the_screen_rectangle_travels_too(self):
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", "Save", rect=(10, 20, 30, 40))])
+        assert self._rows(root)[0].rect == (10, 20, 30, 40)
+
+    def test_the_role_is_the_badge(self):
+        from keyhac.core.sources import WindowControlsSource
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXCheckBox", "Wrap")])
+        row = self._rows(root)[0]
+        assert WindowControlsSource().badge(row) == "AXCheckBox"
+
+    def test_an_element_reached_twice_is_reported_once(self):
+        """A table's cells are children of their row *and* of their column, so
+        without the dedupe every cell of every table appears twice."""
+        cell = _FakeControl("AXButton", "Cell", key="cell-1")
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXGroup", "row", kids=[cell]),
+            _FakeControl("AXGroup", "column", kids=[cell]),
+        ])
+        assert [c.display for c in self._rows(root)] == ["Cell"]
+
+    def test_a_platform_without_identities_is_not_deduped_away(self):
+        """UI Automation's control view is a real tree and returns no key;
+        two distinct buttons must not collapse into one."""
+        root = _FakeControl("Window", kids=[
+            _FakeControl("Button", "One"), _FakeControl("Button", "Two")])
+        assert [c.display for c in self._rows(root)] == ["One", "Two"]
+
+    def test_it_yields_before_it_has_finished_walking(self):
+        """The whole reason it can be used at all: a heavy application takes
+        hundreds of milliseconds, and the first controls should not wait."""
+        from keyhac.core.sources import _walk_controls
+        deep = _FakeControl("AXButton", "Last")
+        for _ in range(20):
+            deep = _FakeControl("AXGroup", "g", kids=[deep])
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", "First"), deep])
+        walk = _walk_controls(root)
+        assert next(walk).display == "First"
+
+    def test_the_walk_is_bounded(self):
+        from keyhac.core import sources
+        root = _FakeControl("AXWindow", kids=[
+            _FakeControl("AXButton", f"Button {i}") for i in range(50)])
+        original = sources._CONTROLS_MAX_NODES
+        sources._CONTROLS_MAX_NODES = 10
+        try:
+            assert len(self._rows(root)) < 50
+        finally:
+            sources._CONTROLS_MAX_NODES = original
+
+    def test_choosing_presses_it(self):
+        from keyhac.core.sources import WindowControlsSource
+        button = _FakeControl("AXButton", "Save")
+        row = self._rows(_FakeControl("AXWindow", kids=[button]))[0]
+        WindowControlsSource().on_chosen(row, 0)
+        assert button.pressed == ["AXPress"]
+
+    def test_no_front_window_is_an_empty_list(self, ui_backend):
+        import keyhac.core.sources as src
+
+        class _Keymap:
+            get_active_window = staticmethod(lambda: None)
+
+        original = src.Keymap.get_instance
+        src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+        try:
+            assert list(src.WindowControlsSource().candidates()) == []
+        finally:
+            src.Keymap.get_instance = original

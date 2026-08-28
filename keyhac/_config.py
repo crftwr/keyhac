@@ -285,6 +285,11 @@ def configure(keymap):
         # ThreadedAction subclass into a file there and it appears here; bind
         # it to a key later, or never, for something used once a month.
         Scope("Actions", [ActionsSource()]),
+        # Everything clickable in the front window, by name.  Its own scope
+        # because it reads the whole window on every invocation — measured at
+        # 590 ms for a heavy application, though the first controls appear in
+        # about 10 ms because it streams.
+        Scope("Controls", [WindowControlsSource()]),
         Scope("Windows", [OpenWindows()]),
         Scope("Tools", [ClipboardToolsSource(tools)]),
     ])

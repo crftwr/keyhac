@@ -572,3 +572,150 @@ class ActionsSource(CandidateSource):
             Loader().instantiate(action)()
         except Exception:
             logger.error(f"{action.name}: starting it failed.")
+
+
+#: Roles worth offering as "things you can do in this window", in the two
+#: OSes' own vocabularies.  Deliberately controls rather than content: the
+#: measured tree of a heavy application is overwhelmingly AXGroup and
+#: AXStaticText - the page, not the buttons on it.
+_ACTIONABLE_ROLES = frozenset({
+    # macOS
+    "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox",
+    "AXRadioButton", "AXTextField", "AXTextArea", "AXComboBox", "AXLink",
+    "AXSlider", "AXIncrementor", "AXDisclosureTriangle", "AXTab",
+    "AXToolbarButton", "AXSearchField",
+    # Windows
+    "Button", "SplitButton", "CheckBox", "RadioButton", "Edit", "ComboBox",
+    "Hyperlink", "Slider", "Spinner", "TabItem", "MenuItem", "ListItem",
+    "TreeItem",
+})
+
+#: Node budget for one walk.  A generous bound rather than a tight one: the
+#: rows stream, so a long walk costs patience rather than a frozen window,
+#: and stopping early is the thing that silently hides a control.
+_CONTROLS_MAX_NODES = 4000
+
+#: Depth bound.  Measured: a Chromium web area puts its controls past depth
+#: 20, so a shallow walk is not a cheaper walk, it is an empty one.
+_CONTROLS_MAX_DEPTH = 40
+
+
+class WindowControlsSource(CandidateSource):
+    """Everything you could click in the front window, reachable by name.
+
+    Discussion #112's original target, and the reason the window had to stop
+    taking the keyboard focus: a list of "what is actionable here" that
+    changes what is actionable by opening is no use to anybody.
+
+    **It streams, because it is expensive.** Measured on macOS: a heavy
+    application's tree is 3000 nodes and 460 ms, and filtering by role does
+    not help - the walk is the cost, and reporting less of it changes
+    nothing. So the walk yields as it goes and the first controls are on
+    screen while the rest are still being found. Put it in a `Scope` of its
+    own all the same; it has real work to do on every invocation.
+
+    **Only controls with a name are offered.** An icon-only button with no
+    label, no description and no tooltip cannot be typed for - there is no
+    text to filter on - so listing it would add a row nobody can reach. Where
+    a name comes from is recorded on the candidate (`provenance`), because it
+    decides what else can find the element: a control reachable only through
+    its tooltip cannot be found by `find(name=...)` in an action either.
+    """
+
+    name = "Control"
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            return
+        try:
+            window = keymap.get_active_window()
+        except Exception:
+            window = None
+        element = getattr(window, "native", None) if window else None
+        if element is None:
+            logger.debug("No front window; there are no controls to read.")
+            return
+        yield from _walk_controls(element)
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("role", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        element = candidate.payload
+        for action in ("AXPress", "Invoke", "AXOpen"):
+            try:
+                if element.perform_action(action):
+                    return
+            except Exception:
+                continue
+        logger.error(f"{candidate.display}: the control refused to be pressed.")
+
+
+def _walk_controls(root):
+    """Yield the named, actionable descendants of `root`, depth first.
+
+    A generator for the same reason the menu walk is one: the accessibility
+    calls have to stay on the main thread, and yielding is what hands it back
+    between them.
+
+    The `seen` set is not cycle paranoia. A table's cells are children of
+    their row *and* of their column - the same element reached twice - so
+    without it every cell of every table is reported twice
+    (`keyhac/core/uitree.py` measured this).
+    """
+    seen = set()
+    budget = [_CONTROLS_MAX_NODES]
+
+    def walk(element, depth):
+        if budget[0] <= 0 or depth > _CONTROLS_MAX_DEPTH:
+            return
+        budget[0] -= 1
+        key = _identity_of(element)
+        if key is not None:
+            if key in seen:
+                return
+            seen.add(key)
+        try:
+            described = element.describe()
+        except Exception:
+            return
+        role = described.get("role")
+        name = described.get("name")
+        if role in _ACTIONABLE_ROLES and name:
+            yield Candidate(
+                icon="⌖", display=name, payload=element,
+                match_text=f"{name} {role or ''}",
+                rect=described.get("rect"),
+                provenance=described.get("name_source"),
+                extras={"role": role})
+        try:
+            children = element.children()
+        except Exception:
+            return
+        for child in children or []:
+            yield from walk(child, depth + 1)
+
+    yield from walk(root, 0)
+
+
+def _identity_of(element):
+    key = getattr(element, "identity_key", None)
+    if key is None:
+        return None
+    try:
+        return key()
+    except Exception:
+        return None

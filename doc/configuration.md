@@ -412,7 +412,11 @@ The built-in sources are `ClipboardHistorySource`, `SnippetsSource`,
 application's menus, with its shortcut), `KeyBindingsSource` (every binding in
 effect right here, and Enter runs it — a binding you can run from a list does
 not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
-`~/.keyhac/extensions/`, startable without ever binding it to anything).
+`~/.keyhac/extensions/`, startable without ever binding it to anything) and
+`WindowControlsSource` (everything clickable in the front window, by name).
+
+The last two read the front application on every invocation, so give each a
+`Scope` of its own rather than putting it in a merged one.
 
 Scopes are also how an expensive source stays affordable: one that has real work
 to do — walking the window's controls, asking a server — costs that work every

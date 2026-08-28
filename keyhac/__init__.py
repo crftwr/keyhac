@@ -23,6 +23,7 @@ from keyhac.core.sources import (
     ClipboardHistorySource,
     KeyBindingsSource,
     MenuItemsSource,
+    WindowControlsSource,
     ClipboardToolsSource,
     SnippetsSource,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "ClipboardHistorySource",
     "KeyBindingsSource",
     "MenuItemsSource",
+    "WindowControlsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
     "UINode",

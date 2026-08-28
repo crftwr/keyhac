@@ -91,6 +91,7 @@ API_NAMES = [
     "ClipboardHistorySource",
     "KeyBindingsSource",
     "MenuItemsSource",
+    "WindowControlsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
     "ShowClipboardHistory",

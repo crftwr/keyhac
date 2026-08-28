@@ -465,6 +465,42 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - It is the other side of `KeyBindingsSource`: one asks what the keys do, this
   asks what there is to run.
 
+## The window-controls source
+
+- Discussion #112's original target, and the reason the window had to stop
+  taking the keyboard focus at all: a list of "what is actionable here" that
+  changes what is actionable by opening is no use to anybody.
+- **It streams because there is no cheap version.** Measured: a heavy
+  application's tree is 3000 nodes and 460 ms, `roles=` does not reduce that
+  (495 ms — the walk is the cost, filtering only changes what is reported),
+  and depth trades everything away (VS Code yields 4 controls at depth 6
+  against 117 at depth 40). So the walk yields, and the first controls appear
+  in ~10 ms while the rest arrive over ~590 ms.
+- **The `seen` set is load-bearing, not cycle paranoia.** A table's cells are
+  children of their row *and* of their column, so without it every cell of
+  every table is reported twice — the same finding `uitree.py` records.
+  Windows returns no identity (its control view is a real tree), and two
+  distinct controls must not collapse into one, so "no key" means "do not
+  dedupe" rather than "the same".
+- **Only named controls are offered.** An icon-only button with no label, no
+  description and no tooltip cannot be typed for, so listing it adds a row
+  nobody can reach. The overlay view is where those become reachable, by
+  label rather than by name — which is the argument the discussion makes for
+  keeping a label path alongside filtering.
+- **This is what `provenance` was for, and the numbers justify it.** Of VS
+  Code's 131 controls, **113 are named only by `AXDescription` and 18 by a
+  real title**; Claude's 134 split 80/53/1. Without the name fallback chain
+  the source would list 18 controls instead of 131. Recording *which*
+  attribute answered matters because it decides what else can find the
+  element: one reachable only through its tooltip cannot be found by
+  `find(name=...)` in an action either.
+- A `help`-derived name is the weakest of the three and it shows — macOS's
+  window zoom button lists as *"this button also has an action to zoom"*,
+  which is a tooltip sentence rather than a label. Kept, because a bad name
+  beats no row, and `provenance` is what a future view can weigh it by.
+- **`rect` is exercised for the first time here**, on every row. It is what
+  the overlay view will draw against.
+
 ## The menu-items source
 
 - **Measured before it was designed.** Walking a window's whole accessibility

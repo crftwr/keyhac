@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1788,6 +1788,32 @@ Only leaves are offered.  A row that merely opens another menu is not a command,
 **It costs a real traversal.**  Measured on macOS: 79 ms for a small application, 396 ms for Chrome, for 161 and 331 items - so this belongs in a `Scope` of its own, where it is paid for when asked for, rather than in a merged scope opened on every keystroke. 
 
 ### <kbd>method</kbd> `MenuItemsSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
+
+---
+
+
+## <kbd>class</kbd> `WindowControlsSource`
+Everything you could click in the front window, reachable by name. 
+
+Discussion #112's original target, and the reason the window had to stop taking the keyboard focus: a list of "what is actionable here" that changes what is actionable by opening is no use to anybody. 
+
+**It streams, because it is expensive.** Measured on macOS: a heavy application's tree is 3000 nodes and 460 ms, and filtering by role does not help - the walk is the cost, and reporting less of it changes nothing. So the walk yields as it goes and the first controls are on screen while the rest are still being found. Put it in a `Scope` of its own all the same; it has real work to do on every invocation. 
+
+**Only controls with a name are offered.** An icon-only button with no label, no description and no tooltip cannot be typed for - there is no text to filter on - so listing it would add a row nobody can reach. Where a name comes from is recorded on the candidate (`provenance`), because it decides what else can find the element: a control reachable only through its tooltip cannot be found by `find(name=...)` in an action either. 
+
+### <kbd>method</kbd> `WindowControlsSource.__init__`
 
 ```python
 __init__(name: str = None)
