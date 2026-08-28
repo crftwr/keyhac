@@ -258,13 +258,26 @@ def configure(keymap):
     # has real work to do in a scope of its own and it is paid for only when
     # you ask for it, not every time the window opens.
 
+    # One instance each, shared between the scopes below.  A source is read
+    # once per window and remembered against the *object*, so sharing means
+    # the everything-scope and the scope of its own do not walk the same menu
+    # bar twice.  Two separately built sources are two sources, which is the
+    # right answer when they differ — two SnippetsSource with different
+    # snippets are not interchangeable.
+    clipboard = ClipboardHistorySource()
+    snippet_source = SnippetsSource(snippets)
+    tool_source = ClipboardToolsSource(tools)
+    menus = MenuItemsSource()
+    keys = KeyBindingsSource()
+    actions = ActionsSource()
+    controls = WindowControlsSource()
+
     kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
         # Everything at once.  The expensive sources stream — their first
         # rows are on screen while the rest are still being read — so a slow
         # one no longer holds the window shut for everybody.
-        Scope("All", [ClipboardHistorySource(), SnippetsSource(snippets),
-                      MenuItemsSource(), KeyBindingsSource(), ActionsSource()]),
-        Scope("Clipboard", [ClipboardHistorySource(), SnippetsSource(snippets)]),
+        Scope("All", [clipboard, snippet_source, menus, keys, actions]),
+        Scope("Clipboard", [clipboard, snippet_source]),
         # Every command in the front application's menus, as one flat list —
         # the long tail with no shortcut, in an app whose menus you do not
         # know by heart.  Rows read `File › Export › As PDF…` and show the
@@ -272,26 +285,26 @@ def configure(keymap):
         # time.  In a scope of its own on purpose: it costs a real read of
         # the application (measured: 84 ms for a small app, ~300 ms for a
         # big one), and nothing else here does.
-        Scope("Menus", [MenuItemsSource()]),
+        Scope("Menus", [menus]),
         # Every binding in effect *here*, and Enter runs it.  The one list
         # nothing outside Keyhac can produce - it is the engine's own tables,
         # resolved the way the hook resolves them - and the answer to running
         # out of keys: a binding you can run from a list does not need a key
         # of its own.  Multi-stroke prefixes are expanded, so `Fn-X › A` is
         # the sequence you would have typed.
-        Scope("Keys", [KeyBindingsSource()]),
+        Scope("Keys", [keys]),
         # Everything in ~/.keyhac/extensions/, startable without a key — the
         # half of the authoring loop a key binding never covered.  Write a
         # ThreadedAction subclass into a file there and it appears here; bind
         # it to a key later, or never, for something used once a month.
-        Scope("Actions", [ActionsSource()]),
+        Scope("Actions", [actions]),
         # Everything clickable in the front window, by name.  Its own scope
         # because it reads the whole window on every invocation — measured at
         # 590 ms for a heavy application, though the first controls appear in
         # about 10 ms because it streams.
-        Scope("Controls", [WindowControlsSource()]),
+        Scope("Controls", [controls]),
         Scope("Windows", [OpenWindows()]),
-        Scope("Tools", [ClipboardToolsSource(tools)]),
+        Scope("Tools", [tool_source]),
     ])
 
     # A source does not have to be a class - a plain callable works when

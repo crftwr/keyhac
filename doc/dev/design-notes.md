@@ -392,12 +392,19 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   budget it found 96 controls against 152, because breadth spends the budget
   on wide shallow layers and never reaches the deep ones — and its first rows
   were status-bar noise where depth-first gives the toolbar.
-- **Each scope is read once per window.** Tabbing between them used to
-  re-walk. What makes keeping the rows safe is not a judgement about
-  staleness: the dismissal watch closes the window the moment the front
-  window changes, so nothing a scope read can have gone stale while the
-  window is still up. A half-read scope keeps its generator too, so tabbing
-  away and back resumes rather than restarting.
+- **A source is read once per window — keyed on the source object, not on the
+  scope.** Tabbing between scopes used to re-walk, and keying on the scope
+  would still have walked the same menu bar twice for a `MenuItemsSource` that
+  sits both in an everything-scope and in a scope of its own. Sharing the
+  instance is how a config says "this is the same source"; building two says
+  they are two, which is the right answer when they differ — two
+  `SnippetsSource` with different snippets are not interchangeable.
+- A **half-read source keeps its generator**, and a row read for one scope
+  lands in the source's own list as well as the window's, so a different scope
+  sharing it starts from where the first got to rather than from nothing.
+- What makes keeping any of it safe is not a judgement about staleness: the
+  dismissal watch closes the window the moment the front window changes, so
+  nothing a source read can have gone stale while the window is up.
 - The cache is the **window's, not the process's**. A reopened window is a new
   question about a screen that has had time to move.
 - Background prefetching was considered and is not available in the shape it

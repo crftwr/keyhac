@@ -262,6 +262,9 @@ class ChooserAction:
         # different presses.
         self._scope = 0
         self._owners = {}
+        #: What each source has read so far, for this window only:
+        #: id(source) -> [rows, unfinished generator or None].
+        self._read = {}
         rows, pending, badge_of = self._collect()
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
@@ -307,50 +310,59 @@ class ChooserAction:
                        modifier_flags)
 
     def _collect(self):
-        """Every source's candidates, in source order, plus the badge lookup
-        the window draws beside each row.
+        """The current scope's rows, whatever of them is still coming, and the
+        badge lookup the window draws beside each one.
 
-        The source is remembered *here*, keyed by the candidate's identity,
-        rather than being copied onto the candidate: the window already has
-        to be handed the mapping to draw a badge, so storing it on every row
-        as well would be keeping the same fact twice.  Badges are drawn only
-        when there is more than one source - with one, every row would carry
-        the same word.
+        **A source is read once per window, not once per scope.** The same
+        `MenuItemsSource` can sit in an everything-scope and in a scope of its
+        own, and walking the menu bar twice for one press of one key is work
+        nobody asked for. So what is remembered is keyed on the *source
+        object*: share an instance between scopes and it is read once; build
+        two, and they are two sources that happen to be alike, which is also
+        the right answer - two `SnippetsSource` with different snippets are
+        not interchangeable.
+
+        Safe for the life of the window because the dismissal watch closes it
+        the moment the front window changes, so nothing a source read can
+        have gone stale while the window is up.
         """
         from keyhac.core.candidate import Candidate
         from keyhac.core.source import CandidateSource
 
         sources = self.sources()
-        # Accumulated across scopes, not reset per collect: a window keeps
-        # what each scope read, so rows collected earlier must still know
-        # which source owns them.
-        owners = self._owners
-
-        def adopt(source, item):
-            candidate = Candidate.from_item(item)
-            owners[id(candidate)] = source
-            return candidate
-
-        # A source that returns a list is finished, and its rows go straight
-        # into the window; one that yields is left to the window to drain.
-        # Splitting here rather than making everything lazy keeps the common
-        # case synchronous - there is nothing to gain by deferring rows that
-        # are already in hand, and much to lose in making every caller wait
-        # for them.
-        rows, streaming = [], []
+        rows, unfinished = [], []
         for source in sources:
-            produced = source.candidates()
-            if isinstance(produced, (list, tuple)):
-                rows.extend(adopt(source, item) for item in produced)
-            else:
-                streaming.append((source, produced))
+            state = self._read.get(id(source))
+            if state is None:
+                produced = source.candidates()
+                if isinstance(produced, (list, tuple)):
+                    state = [[self._adopt(source, item) for item in produced],
+                             None]
+                else:
+                    state = [[], iter(produced)]
+                self._read[id(source)] = state
+            rows.extend(state[0])
+            if state[1] is not None:
+                unfinished.append((source, state))
 
         def remainder():
-            for source, produced in streaming:
-                for item in produced:
-                    yield adopt(source, item)
+            """Continue each unfinished source, recording as it goes.
 
-        pending = remainder() if streaming else None
+            A row read here lands in the source's own list as well as in this
+            window, so a *different* scope sharing the source starts from
+            where this one got to rather than from nothing.
+            """
+            for source, state in unfinished:
+                generator = state[1]
+                if generator is None:
+                    continue
+                for item in generator:
+                    candidate = self._adopt(source, item)
+                    state[0].append(candidate)
+                    yield candidate
+                state[1] = None
+
+        pending = remainder() if unfinished else None
         if len(sources) < 2:
             # No "which source" question to answer, so the slot belongs to
             # the source itself - the menu source puts the shortcut there.
@@ -358,7 +370,14 @@ class ChooserAction:
             if single is None or type(single).badge is CandidateSource.badge:
                 return rows, pending, None
             return rows, pending, lambda c: single.badge(c)
-        return rows, pending, lambda c: getattr(owners.get(id(c)), "name", "")
+        return rows, pending, lambda c: getattr(
+            self._owners.get(id(c)), "name", "")
+
+    def _adopt(self, source, item):
+        from keyhac.core.candidate import Candidate
+        candidate = Candidate.from_item(item)
+        self._owners[id(candidate)] = source
+        return candidate
 
     def _scope_rows(self, index: int):
         """The rows of the scope the window is moving to.
@@ -386,6 +405,7 @@ class ChooserAction:
 
     #: Filled by _collect for the lifetime of one open window.
     _owners: dict = {}
+    _read: dict = {}
 
     @staticmethod
     def _stop_watch() -> None:

@@ -163,12 +163,6 @@ class ChooserWindow:
         self._scopes = list(scopes) if scopes else []
         self._on_scope = on_scope
         self._scope = 0
-        # What each scope had read, kept for the life of this window.  Safe
-        # because the dismissal watch closes the window the moment the front
-        # window changes, so nothing a scope read can have gone stale while
-        # this window is still up - and a scope left half-read keeps its
-        # generator, so tabbing back resumes rather than starting again.
-        self._scope_cache = {}
         self._badge_of = badge_of
         # With scopes, the row widget is used throughout even where the
         # current scope draws no badge: switching would otherwise have to
@@ -441,21 +435,16 @@ class ChooserWindow:
         """
         if len(self._scopes) < 2 or self._on_scope is None:
             return
-        self._scope_cache[self._scope] = (self._items, self._pending,
-                                          self._badge_of)
         self._scope = (self._scope + delta) % len(self._scopes)
-        cached = self._scope_cache.get(self._scope)
-        if cached is not None:
-            # Including a generator that was mid-walk: it resumes where it
-            # stopped, so cycling through the scopes does not restart the
-            # expensive ones.
-            self._items, self._pending, self._badge_of = cached
-            self._show_progress()
-        else:
-            rows, pending, badge_of = self._on_scope(self._scope)
-            self._items = [Candidate.from_item(row) for row in rows]
-            self._pending = pending
-            self._badge_of = badge_of
+        # Asked afresh, but not *read* afresh: the caller remembers what each
+        # source produced, keyed on the source itself, so returning to a scope
+        # re-concatenates rather than re-walks - and a source shared with
+        # another scope is not read a second time at all.
+        rows, pending, badge_of = self._on_scope(self._scope)
+        self._items = [Candidate.from_item(row) for row in rows]
+        self._pending = pending
+        self._badge_of = badge_of
+        self._show_progress()
         self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.

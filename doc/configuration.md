@@ -418,6 +418,20 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 The last two read the front application on every invocation, so give each a
 `Scope` of its own rather than putting it in a merged one.
 
+**Build each source once and share it between scopes.** A source is read once
+per window and remembered against the object, so a `MenuItemsSource` that
+appears both in an everything-scope and in a scope of its own walks the menu bar
+once — if it is the same instance. Two separately built sources are two
+sources, which is what you want when they differ.
+
+```python
+menus = MenuItemsSource()
+kt["Fn-P"] = ShowCandidates([
+    Scope("All",   [clipboard, menus]),
+    Scope("Menus", [menus]),
+])
+```
+
 Scopes are also how an expensive source stays affordable: one that has real work
 to do — walking the window's controls, asking a server — costs that work every
 time it is in the scope being opened, so putting it in a scope of its own means

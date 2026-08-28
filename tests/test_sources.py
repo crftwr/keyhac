@@ -1274,12 +1274,15 @@ class TestScopeCaching:
             self.reads += 1
             return [Candidate(display=r) for r in self.rows]
 
-    def _open(self, sources):
+    def _open(self, scopes):
         from keyhac.actions import ChooserAction, ShowCandidates
-        from keyhac.core.source import Scope
-        action = ShowCandidates([Scope(s.name, [s]) for s in sources])
+        action = ShowCandidates(scopes)
         action()
         return action, ChooserAction._open[1]
+
+    def _scoped(self, *sources):
+        from keyhac.core.source import Scope
+        return [Scope(s.name, [s]) for s in sources]
 
     def _tab(self, chooser, shift=False):
         from puikit.event import Event, EventType
@@ -1289,7 +1292,7 @@ class TestScopeCaching:
     def test_a_scope_is_read_once_per_window(self, ui_backend):
         slow = self._Counting("Slow", ["a", "b"])
         other = self._Counting("Other", ["c"])
-        _action, chooser = self._open([slow, other])
+        _action, chooser = self._open(self._scoped(slow, other))
         assert slow.reads == 1
         self._tab(chooser)                      # to Other
         self._tab(chooser)                      # back to Slow
@@ -1300,7 +1303,8 @@ class TestScopeCaching:
         """The cache is the window's, not the process's - a new window is a
         new question about a screen that has had time to move."""
         source = self._Counting("Slow", ["a"])
-        action, _chooser = self._open([source, self._Counting("Other", ["c"])])
+        action, _chooser = self._open(
+            self._scoped(source, self._Counting("Other", ["c"])))
         action()                                # closes
         action()                                # opens again
         assert source.reads == 2
@@ -1333,6 +1337,60 @@ class TestScopeCaching:
             ui_backend.run_animation_ticks()
         assert produced == list(range(6)), "the generator restarted"
 
+    def test_a_source_shared_between_scopes_is_read_once(self, ui_backend):
+        """The everything-scope and a scope of its own should not walk the
+        same menu bar twice for one press of one key."""
+        from keyhac.core.source import Scope
+        shared = self._Counting("Shared", ["a", "b"])
+        _action, chooser = self._open([
+            Scope("All", [shared, self._Counting("Other", ["c"])]),
+            Scope("Just it", [shared]),
+        ])
+        assert shared.reads == 1
+        self._tab(chooser)
+        assert shared.reads == 1
+        assert [c.display for c in chooser._items] == ["a", "b"]
+
+    def test_two_separately_built_sources_are_two_sources(self, ui_backend):
+        """Which is the right answer when they differ - two SnippetsSource
+        with different snippets are not interchangeable."""
+        from keyhac.core.source import Scope
+        one = self._Counting("One", ["a"])
+        two = self._Counting("Two", ["b"])
+        _action, chooser = self._open([Scope("First", [one]),
+                                       Scope("Second", [two])])
+        self._tab(chooser)
+        assert (one.reads, two.reads) == (1, 1)
+        assert [c.display for c in chooser._items] == ["b"]
+
+    def test_a_shared_streaming_source_carries_its_progress_across(self,
+                                                                   ui_backend):
+        """A row read in one scope starts the other from where this one got
+        to, rather than from nothing."""
+        from keyhac.core.source import Scope
+        from keyhac.actions import ChooserAction, ShowCandidates
+
+        produced = []
+
+        class _Streaming(CandidateSource):
+            name = "Streaming"
+
+            def candidates(self):
+                for index in range(6):
+                    produced.append(index)
+                    yield Candidate(display=f"row {index}")
+
+        shared = _Streaming()
+        ShowCandidates([Scope("All", [shared]), Scope("Just it", [shared])])()
+        chooser = ChooserAction._open[1]
+        for _ in range(40):
+            ui_backend.run_animation_ticks()
+        assert produced == list(range(6))
+        self._tab(chooser)
+        for _ in range(40):
+            ui_backend.run_animation_ticks()
+        assert produced == list(range(6)), "the shared source was read again"
+        assert len(chooser._items) == 6
 
 class TestProgress:
     """Without a sign that a list is still filling, a query that has not
@@ -1397,3 +1455,5 @@ class TestCallableShape:
         chooser = ChooserAction._open[1]
         assert chooser._pending is None
         assert [c.display for c in chooser._items] == ["a"]
+
+
