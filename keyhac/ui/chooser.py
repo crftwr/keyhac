@@ -367,7 +367,11 @@ class ChooserWindow:
         try:
             self._pointer = self._backend.mark_screen(
                 x, y, w, h, style=_POINTER_STYLE,
-                line_width=_POINTER_WIDTH, radius=_POINTER_RADIUS)
+                line_width=_POINTER_WIDTH, radius=_POINTER_RADIUS,
+                # The outline lands wherever the control is, which is not
+                # where the eye is - it is on the row that was just
+                # highlighted, on the other side of the screen.
+                flash=True)
         except Exception:
             logger.debug("This platform cannot point at a control.")
 

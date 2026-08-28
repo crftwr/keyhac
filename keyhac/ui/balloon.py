@@ -48,7 +48,9 @@ class BalloonManager:
             marker = self._backend.mark_screen(
                 *self._corner(max_width), text=text, fill=True,
                 style=_STYLE, radius=_RADIUS, max_width=max_width,
-                timeout=timeout)
+                timeout=timeout,
+                # A balloon appears in a corner nobody was watching.
+                flash=True)
         except Exception:
             logger.debug("This platform cannot draw a balloon.")
             return
