@@ -737,3 +737,90 @@ class TestChooserFocus:
             if label in text:
                 return chooser.window.style_at(text.index(label), y).bg
         raise AssertionError(f"{label!r} not found in the rendered window")
+
+
+class TestBalloonIsAMark:
+    """A balloon used to be a frameless topmost non-activating window with a
+    Label in it - five window-style fields spelling out "a tooltip", and it
+    could be clicked, which for a tooltip is simply wrong."""
+
+    class _Backend:
+        base_size = (8, 16)
+
+        def __init__(self):
+            self.marks = []
+
+        def screen_frames(self):
+            return [((0, 0, 1920, 1080), (0, 25, 1920, 1055))]
+
+        def mark_screen(self, x, y, w=None, h=None, **kwargs):
+            mark = _Mark(x, y, kwargs)
+            self.marks.append(mark)
+            return mark
+
+    def _manager(self):
+        from keyhac.ui.balloon import BalloonManager
+        backend = self._Backend()
+        return BalloonManager(backend), backend
+
+    def test_a_balloon_is_one_mark(self):
+        manager, backend = self._manager()
+        manager.pop("help", "Multi-stroke: sub")
+        assert len(backend.marks) == 1
+        assert backend.marks[0].kwargs["text"] == "Multi-stroke: sub"
+
+    def test_it_wraps_instead_of_being_squeezed_onto_one_line(self):
+        """The old window sized itself with min(70, len(text) + 4), which was
+        a wrap width with no name and no way for a long balloon to do
+        anything but be cut short."""
+        manager, backend = self._manager()
+        manager.pop("help", "x" * 400)
+        assert backend.marks[0].kwargs["max_width"] == 70 * 8
+
+    def test_it_sits_in_the_work_area_s_top_right(self):
+        manager, backend = self._manager()
+        manager.pop("help", "hi")
+        mark = backend.marks[0]
+        assert mark.y == 25 + 24
+        assert mark.x == 1920 - 70 * 8 - 24
+
+    def test_popping_the_same_name_replaces_it(self):
+        manager, backend = self._manager()
+        manager.pop("help", "first")
+        manager.pop("help", "second")
+        assert backend.marks[0].closed
+        assert not backend.marks[1].closed
+
+    def test_the_timeout_is_the_mark_s(self):
+        """Rather than a call_later of the balloon's own: closing is what a
+        mark already knows how to schedule."""
+        manager, backend = self._manager()
+        manager.pop("help", "hi", timeout=2.0)
+        assert backend.marks[0].kwargs["timeout"] == 2.0
+
+    def test_closing_by_name_and_closing_all(self):
+        manager, backend = self._manager()
+        manager.pop("one", "a")
+        manager.pop("two", "b")
+        manager.close("one")
+        assert backend.marks[0].closed and not backend.marks[1].closed
+        manager.close()
+        assert backend.marks[1].closed
+
+    def test_a_platform_that_cannot_mark_is_not_an_error(self):
+        from keyhac.ui.balloon import BalloonManager
+
+        class _Refuses(self._Backend):
+            def mark_screen(self, *a, **k):
+                raise RuntimeError("no marks here")
+
+        BalloonManager(_Refuses()).pop("help", "hi")   # must not raise
+
+
+class _Mark:
+    def __init__(self, x, y, kwargs):
+        self.x, self.y, self.kwargs = x, y, kwargs
+        self.closed = False
+
+    def close(self):
+        self.closed = True

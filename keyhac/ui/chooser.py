@@ -80,6 +80,13 @@ _SLICE_SECONDS = 0.002
 #: The progress note is context, not content: quieter than the query.
 _PROGRESS_STYLE = Style(fg=(130, 130, 140))
 
+#: The outline drawn over the control a highlighted row stands for.  Loud on
+#: purpose: it is answering "is this the one you meant?" across the whole
+#: screen, over content it cannot predict.
+_POINTER_STYLE = Style(fg=(255, 90, 90))
+_POINTER_WIDTH = 3.0
+_POINTER_RADIUS = 4.0
+
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
     "cmd": MODKEY_CMD, "win": MODKEY_WIN,
@@ -135,6 +142,11 @@ class ChooserWindow:
         self._done = False
         self._grabbed = False
         self._streaming = False
+        self._backend = backend
+        #: The mark drawn over whatever the selection stands for, and the
+        #: rectangle it is drawn at, so an unchanged selection redraws nothing.
+        self._pointer = None
+        self._pointing_at = None
 
         self.window = backend.create_window(
             72, 20, title=title,
@@ -302,6 +314,7 @@ class ChooserWindow:
     def _focus_edit(self) -> None:
         self._page.set_focused(self._edit)
         self._list.selected = -1
+        self._point_at_selection()
 
     def _focus_list(self, index: int = 0) -> None:
         if not self._filtered:
@@ -314,12 +327,49 @@ class ChooserWindow:
         self._page.set_focused(self._frame)
         self._frame.set_focused(self._list)
         self._list.selected = index
+        self._point_at_selection()
 
     def _on_row_clicked(self, index: int, _label) -> None:
         """A click on a row moves the focus into the list along with the
         selection.  It deliberately does not confirm: the payload can be a
         destructive action, so choosing stays an explicit Enter."""
         self._focus_list(index)
+
+    # --- pointing at the real thing ---------------------------------------
+
+    def _point_at_selection(self) -> None:
+        """Outline the thing the highlighted row stands for, on the screen.
+
+        Discussion #112's argument for this is the row that cannot describe
+        itself: an icon-only control listed as its tooltip, or by its role and
+        position, is a row whose text does not settle *which* one it is. The
+        only way to confirm the target is to light the real one up - and that
+        is also the difference between a list of controls and a list of names
+        that happen to be controls.
+
+        Only rows that carry a screen rectangle can be pointed at, which is
+        the accessibility ones; a clipboard entry has no place on screen and
+        simply clears the mark.
+        """
+        rect = None
+        index = self._list.selected
+        if 0 <= index < len(self._filtered):
+            rect = self._filtered[index].rect
+        if rect == self._pointing_at:
+            return
+        self._pointing_at = rect
+        if self._pointer is not None:
+            self._pointer.close()
+            self._pointer = None
+        if rect is None:
+            return
+        x, y, w, h = rect
+        try:
+            self._pointer = self._backend.mark_screen(
+                x, y, w, h, style=_POINTER_STYLE,
+                line_width=_POINTER_WIDTH, radius=_POINTER_RADIUS)
+        except Exception:
+            logger.debug("This platform cannot point at a control.")
 
     # --- streaming --------------------------------------------------------
 
@@ -502,19 +552,28 @@ class ChooserWindow:
             self._focus_edit()
             return
         self._list.selected = min(len(self._filtered) - 1, index)
+        self._point_at_selection()
 
     def _on_user_close(self) -> None:
         if not self._done:
             self._done = True
             self._release_keys()
+            self._stop_pointing()
             if self._on_canceled is not None:
                 self._on_canceled()
+
+    def _stop_pointing(self) -> None:
+        if self._pointer is not None:
+            self._pointer.close()
+            self._pointer = None
+        self._pointing_at = None
 
     def dismiss(self) -> None:
         """Close without invoking the callbacks (the owner is replacing it)."""
         if not self._done:
             self._done = True
             self._release_keys()
+            self._stop_pointing()
             self.window.close()
 
     def _finish(self, candidate, modifier_flags: int) -> None:
@@ -522,6 +581,7 @@ class ChooserWindow:
             return
         self._done = True
         self._release_keys()
+        self._stop_pointing()
         self.window.close()
         if candidate is None:
             if self._on_canceled is not None:

@@ -311,6 +311,22 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   and two public things with one name in a flat `from keyhac import *` is a
   trap.
 
+## Pointing at what a row stands for
+
+- Moving the selection through a source that carries screen rectangles draws
+  an outline over the real control (`ChooserWindow._point_at_selection`, PuiKit
+  `mark_screen`). This is discussion #112's argument for `node.highlight()`
+  made concrete: a row that cannot describe itself — an icon-only control
+  listed by its tooltip, or by role and position — is a row whose text does not
+  settle *which* one it is, and lighting the real one up is the only
+  confirmation there is.
+- It is also the first consumer of `Candidate.rect`, which the controls source
+  fills on every row and nothing read until now.
+- Rows without a rectangle clear the mark rather than leaving a stale one: a
+  clipboard entry is not anywhere on screen.
+- An unchanged selection redraws nothing, the mark goes on every exit the
+  window has, and a platform that cannot mark logs at debug and carries on.
+
 ## Candidate scopes
 
 - **The switch is a key (Tab / Shift-Tab), not a typed prefix**, for one
@@ -626,9 +642,20 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Balloon
 
-- Frameless topmost no-activate PuiKit window near the focused window. Used for
-  multi-stroke help (restores a keyhac-mac FIXME) and macro record state; timeout via
-  `call_later`.
+- **A screen mark, not a window** (PuiKit `mark_screen`). It was a frameless
+  topmost non-activating window with a `Label` in it — five window-style fields
+  spelling out "a tooltip" — and it could be *clicked*, which for a tooltip is
+  simply wrong. A mark says the intent once, comes with click-through, and
+  schedules its own timeout.
+- The old window sized itself with `min(70, max(14, len(text) + 4))`. That was
+  a wrap width with no name, and no way for a long balloon to do anything but
+  be cut short; it is `max_width` now and the text wraps.
+- Placement: top-right of the main screen's work area, at the widest the mark
+  could be rather than at its actual left edge — a mark sized to its text does
+  not know that edge until it exists, and this keeps a short balloon a little
+  further in rather than letting a long one run off.
+- Used for multi-stroke help (restores a keyhac-mac FIXME) and macro record
+  state.
 
 ## Tray / menu-bar extra
 

@@ -1457,3 +1457,98 @@ class TestCallableShape:
         assert [c.display for c in chooser._items] == ["a"]
 
 
+
+
+class TestPointingAtTheSelection:
+    """Discussion #112's argument for `node.highlight()`: a row that cannot
+    describe itself - an icon-only control listed by its tooltip - is a row
+    whose text does not settle *which* one it is. Lighting the real one up is
+    the only confirmation available."""
+
+    class _Marks:
+        """Stands in for the backend's screen marks."""
+
+        def __init__(self):
+            self.made = []
+
+        def mark_screen(self, x, y, w=None, h=None, **kwargs):
+            mark = _FakeMark(x, y, w, h)
+            self.made.append(mark)
+            return mark
+
+    def _chooser(self, ui_backend, rows):
+        from keyhac.ui.chooser import ChooserWindow
+        marks = self._Marks()
+        chooser = ChooserWindow(ui_backend, rows)
+        chooser._backend = marks
+        return chooser, marks
+
+    def _rows(self):
+        return [Candidate(display="Save", rect=(10, 20, 30, 40)),
+                Candidate(display="Open", rect=(50, 60, 70, 80))]
+
+    def test_stepping_into_the_list_points_at_the_first_row(self, ui_backend):
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        assert [(m.x, m.y, m.w, m.h) for m in marks.made] == [(10, 20, 30, 40)]
+        assert not marks.made[0].closed
+        chooser.dismiss()
+
+    def test_moving_the_selection_moves_the_mark(self, ui_backend):
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        chooser._navigate("down")
+        assert len(marks.made) == 2
+        assert marks.made[0].closed, "the previous outline should be gone"
+        assert (marks.made[1].x, marks.made[1].y) == (50, 60)
+        chooser.dismiss()
+
+    def test_leaving_the_list_stops_pointing(self, ui_backend):
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        chooser._focus_edit()
+        assert marks.made[0].closed
+        assert chooser._pointer is None
+        chooser.dismiss()
+
+    def test_a_row_with_no_place_on_screen_points_at_nothing(self, ui_backend):
+        """A clipboard entry is not anywhere."""
+        chooser, marks = self._chooser(
+            ui_backend, [Candidate(display="some copied text")])
+        chooser._navigate("down")
+        assert marks.made == []
+        chooser.dismiss()
+
+    def test_an_unchanged_selection_redraws_nothing(self, ui_backend):
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        chooser._point_at_selection()
+        chooser._point_at_selection()
+        assert len(marks.made) == 1
+
+    def test_closing_the_window_takes_the_mark_with_it(self, ui_backend):
+        chooser, marks = self._chooser(ui_backend, self._rows())
+        chooser._navigate("down")
+        chooser._finish(chooser._filtered[0], 0)
+        assert marks.made[0].closed
+
+    def test_a_platform_that_cannot_mark_is_not_an_error(self, ui_backend):
+        class _Refuses:
+            def mark_screen(self, *a, **k):
+                raise RuntimeError("no marks here")
+
+        from keyhac.ui.chooser import ChooserWindow
+        chooser = ChooserWindow(ui_backend, self._rows())
+        chooser._backend = _Refuses()
+        chooser._navigate("down")
+        assert chooser._pointer is None
+        chooser.dismiss()
+
+
+class _FakeMark:
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
+        self.closed = False
+
+    def close(self):
+        self.closed = True
