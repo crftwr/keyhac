@@ -1219,6 +1219,17 @@ class TestWindowControlsSource:
         row = self._rows(root)[0]
         assert WindowControlsSource().badge(row) == "AXCheckBox"
 
+    def test_a_menu_item_is_a_control_like_any_other(self):
+        """How a Windows menu reaches the user at all. There is no menu scope
+        there - the bar is not an OS-level part and fills only when it opens -
+        so the window's own top-level items are listed here, and choosing one
+        opens that menu, which is what clicking it does."""
+        root = _FakeControl("Window", kids=[
+            _FakeControl("MenuBar", "Application", kids=[
+                _FakeControl("MenuItem", "File"),
+                _FakeControl("MenuItem", "Edit")])])
+        assert [c.display for c in self._rows(root)] == ["File", "Edit"]
+
     def test_an_element_reached_twice_is_reported_once(self):
         """A table's cells are children of their row *and* of their column, so
         without the dedupe every cell of every table appears twice."""

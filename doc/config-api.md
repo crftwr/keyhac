@@ -1789,6 +1789,8 @@ Only leaves are offered.  A row that merely opens another menu is not a command,
 
 **It costs a real traversal.**  Measured on macOS: 79 ms for a small application, 396 ms for Chrome, for 161 and 331 items - so this belongs in a `Scope` of its own, where it is paid for when asked for, rather than in a merged scope opened on every keystroke. 
 
+**macOS only.**  There the menu bar is an OS-level part: one per application, always at the top of the screen, and readable in full while it is closed.  A Windows menu belongs to a window, may not be there at all, and is populated only when it opens - so this source finds no menu bar there and yields nothing.  Nothing is lost: a menu's top-level items are UI elements of the window like any other, and `WindowControlsSource` lists them with everything else clickable. 
+
 ### <kbd>method</kbd> `MenuItemsSource.__init__`
 
 ```python

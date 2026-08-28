@@ -355,25 +355,36 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   blind put `Unknown UI Automation action: 'AXPress'` in the console on every
   single press. An element that cannot say is still probed in order.
 
-## The Windows menu bar is not the first one found
+## There is no Menu scope on Windows
 
-- A window with a menu bar has **two**: UIA bridges the title-bar menu as
-  MenuBar "System" and the application's own as MenuBar "Application", and the
-  system one comes first in the tree. Taking the first therefore offered a
-  single row reading "System" (seen on a tk window whose real bar holds
-  File/Edit/Shell/Debug/Options/Window/Help). Those two names come from the
-  OBJID the bridge wrapped rather than from the application, so they read the
-  same on a localized Windows — verified on ja-JP.
-- **What is still missing there:** a Windows menu is populated when it opens.
-  An unopened `MenuItem` reports no children (measured: Notepad and tk alike),
-  so the Menu scope lists the *top level* — choosing "File" opens the File
-  menu rather than running a command. Reading the leaves would mean expanding
-  each item, finding the popup menu (which is hosted outside the item, not
-  under it), reading it and collapsing again: menus visibly flashing open, a
-  cost per top-level item, and a modal menu loop in the target application
-  while it happens. macOS needs none of that — AX exposes the whole tree
-  closed — so this is the one place the two platforms do not offer the same
-  list, and it is a deliberate hold rather than an oversight.
+- **A menu bar is a macOS concept.** There it is an OS-level part: one per
+  application, always at the top of the screen, always present, and readable
+  in full *while it is closed*. That is what makes `MenuItemsSource` possible
+  — every command in the application, flattened, without opening anything.
+- Windows has none of those properties. A menu belongs to a window, sits at
+  the top of it or nowhere at all, and is **populated when it opens**: an
+  unopened `MenuItem` reports no children (measured, Notepad and tk alike).
+  Reading the leaves would mean expanding each item, finding the popup (hosted
+  outside the item, not under it), reading it and collapsing again — menus
+  visibly flashing open, a cost per top-level item, and a modal menu loop in
+  the target application while it happens. Attempting it against a tk window
+  wedged the UIA call until the process was killed.
+- So Keyhac does not offer a menu scope there, and the shipped config builds
+  the "Menus" scope on macOS only. **Nothing is lost:** a menu's top-level
+  items are UI elements of the window like any other, and
+  `WindowControlsSource` already lists them (role `MenuItem`) — measured on a
+  tk window: File, Edit, Shell, Debug, Options, Window, Help. Choosing one
+  opens that menu, which is what clicking it does.
+- The mechanism carrying the decision is `UIElement.menu_bar()` returning
+  **None** on Windows. `MenuItemsSource` asks the platform whether there is a
+  menu bar, and there the honest answer to that question is no — so the
+  decision lives in the platform layer and `keyhac/core/` stays free of
+  OS knowledge, rather than the source branching on the platform name.
+- Discarded on the way: preferring MenuBar "Application" over the title-bar
+  MenuBar "System" (a window with a menu bar has both, and the system one
+  comes first in the tree, so searching for a bar found the wrong one). It
+  worked, but it only bought a list of top-level names that Controls already
+  had.
 
 ## Candidate scopes
 

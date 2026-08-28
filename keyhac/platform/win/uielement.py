@@ -195,11 +195,6 @@ class _TextUnit:
 #: Action name -> (pattern id, vtable slot).  Named after the UIA patterns
 #: rather than AX's "AXPress" etc., for the same reason attributes are (see the
 #: module docstring).
-#: What UIA calls the title-bar menu every window has, as opposed to
-#: "Application" for the one the application put there. See menu_bar().
-_SYSTEM_MENU_NAME = "System"
-
-
 _ACTIONS = {
     "Invoke": (_PatternId.Invoke, _IUIAutomationInvokePattern.Invoke),
     "Toggle": (_PatternId.Toggle, _IUIAutomationTogglePattern.Toggle),
@@ -560,31 +555,31 @@ class UIElement:
         return self.get_attribute_value("ControlType")
 
     def menu_bar(self) -> "UIElement | None":
-        """The window's menu bar, or None.
+        """None: Windows has no menu bar in the sense this asks about.
 
-        Windows has no application-level menu bar the way macOS does - a menu
-        lives inside its window - so this searches the subtree for a MenuBar,
-        and falls back to a Menu where an application draws one without the
-        bar role (the ribbon-era apps, and anything owner-drawn, expose
-        neither and correctly answer None).
+        Not a gap - a decision. On macOS the menu bar is an *OS-level* part:
+        one per application, always at the top of the screen, always there,
+        and its whole tree readable while it is closed. That is what makes
+        `MenuItemsSource` possible there - every command in the application,
+        flattened, without opening anything.
 
-        **The system menu is not it.** A window with a menu bar has two: UIA
-        bridges the title-bar menu as MenuBar "System" and the application's
-        own as MenuBar "Application". Those names come from the OBJID the
-        bridge wrapped rather than from the application, so they read the same
-        on a localized Windows (verified on ja-JP), and the system one sits
-        earlier in the tree - so "the first MenuBar" was reliably the wrong
-        one, and the Menu scope offered a single row reading "System".
+        Windows has none of those properties. A menu belongs to a window, sits
+        at the top of it or nowhere at all, and is *populated when it opens* -
+        an unopened MenuItem reports no children, and reading the leaves would
+        mean expanding each one, finding the popup (which is hosted outside
+        the item), reading it and collapsing again: menus visibly flashing
+        open, a cost per item, and a modal menu loop in the target application
+        while it happens. So Keyhac does not offer a menu scope here. The
+        menu's top-level items are UI elements of the window like any other,
+        and `WindowControlsSource` already lists them (role MenuItem) -
+        choosing one opens that menu, which is what clicking it does.
+
+        Answering None rather than the bar itself is what carries that
+        decision: `MenuItemsSource` asks the platform whether there is a menu
+        bar, and on Windows the honest answer to *that question* is no.
 
         lazydocs: ignore
         """
-        from keyhac.core.uitree import find_elements
-
-        for role in ("MenuBar", "Menu"):
-            for found in find_elements(self, role=role, max_nodes=400):
-                if found.name == _SYSTEM_MENU_NAME:
-                    continue
-                return found.element
         return None
 
     def describe(self) -> dict:

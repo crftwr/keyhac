@@ -15,48 +15,42 @@ if sys.platform != "win32":
 from keyhac.platform.win.uielement import UIElement  # noqa: E402
 
 
-class _Node:
-    """A UINode in the shape menu_bar() reads: a name, and the element."""
-
-    def __init__(self, name, element):
-        self.name = name
-        self.element = element
-
-
 def _detached_element():
-    """A UIElement with no COM pointer - menu_bar() only passes `self` to the
-    (patched) search, so it never dereferences one."""
+    """A UIElement with no COM pointer, for a method that dereferences none."""
     element = UIElement.__new__(UIElement)
     element._ptr = None
     return element
 
 
-def _found(monkeypatch, by_role):
-    monkeypatch.setattr("keyhac.core.uitree.find_elements",
-                        lambda root, role=None, **kw: by_role.get(role, []))
+def test_there_is_no_application_menu_bar_to_offer():
+    """Windows has no menu bar in the sense the question asks about, and
+    answering None is what carries that decision to MenuItemsSource.
 
-
-def test_the_application_menu_bar_is_preferred_over_the_system_one(monkeypatch):
-    """Every window has a title-bar menu, bridged as MenuBar "System", and it
-    comes earlier in the tree than the application's own "Application" bar -
-    so taking the first MenuBar found offered exactly one row, reading
-    "System". Seen live on a tk window whose real bar holds File/Edit/Help."""
-    system, application = object(), object()
-    _found(monkeypatch, {"MenuBar": [_Node("System", system),
-                                     _Node("Application", application)]})
-    assert _detached_element().menu_bar() is application
-
-
-def test_a_window_with_only_a_system_menu_has_no_menu_bar(monkeypatch):
-    """Which is the truth for an application that draws its own menus (the
-    ribbon-era ones, and anything owner-drawn): better None than a row the
-    user did not mean."""
-    _found(monkeypatch, {"MenuBar": [_Node("System", object())]})
+    On macOS a menu bar is an OS-level part: one per application, always at
+    the top of the screen, readable in full while closed. A Windows menu
+    belongs to a window, may not be there at all, and fills only when it
+    opens - so a "every command in the menus" list cannot be produced without
+    opening every menu in turn. The top-level items are UI elements of the
+    window instead, and the controls walk lists them (measured on a tk window:
+    File, Edit, Shell, Debug, Options, Window, Help, all role MenuItem).
+    """
     assert _detached_element().menu_bar() is None
 
 
-def test_a_menu_without_the_bar_role_still_answers(monkeypatch):
-    """The fallback: some applications expose a Menu and no MenuBar."""
-    menu = object()
-    _found(monkeypatch, {"Menu": [_Node("Context", menu)]})
-    assert _detached_element().menu_bar() is menu
+def test_a_source_asking_for_one_gets_an_empty_list_not_an_error():
+    """The whole point of answering None: MenuItemsSource in a shared config
+    is a no-op here, not a crash and not a wrong list."""
+    import keyhac.core.sources as src
+
+    class _Win:
+        element = _detached_element()
+
+    class _Keymap:
+        get_active_window = staticmethod(_Win)
+
+    original = src.Keymap.get_instance
+    src.Keymap.get_instance = staticmethod(lambda: _Keymap())
+    try:
+        assert list(src.MenuItemsSource().candidates()) == []
+    finally:
+        src.Keymap.get_instance = original

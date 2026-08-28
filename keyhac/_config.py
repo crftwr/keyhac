@@ -267,6 +267,12 @@ def configure(keymap):
     clipboard = ClipboardHistorySource()
     snippet_source = SnippetsSource(snippets)
     tool_source = ClipboardToolsSource(tools)
+    # macOS only, and it yields nothing elsewhere.  There the menu bar is an
+    # OS-level part - one per application, always at the top of the screen,
+    # readable in full while it is closed.  A Windows menu belongs to a
+    # window, may not be there at all, and fills only when it opens, so there
+    # is no such list to offer: its top-level items are UI elements of the
+    # window and come through Controls below with everything else clickable.
     menus = MenuItemsSource()
     keys = KeyBindingsSource()
     actions = ActionsSource()
@@ -284,8 +290,8 @@ def configure(keymap):
         # key where there is one, so picking it twice teaches it the third
         # time.  In a scope of its own on purpose: it costs a real read of
         # the application (measured: 84 ms for a small app, ~300 ms for a
-        # big one), and nothing else here does.
-        Scope("Menus", [menus]),
+        # big one), and nothing else here does.  macOS only, as above.
+        *([Scope("Menus", [menus])] if mac else []),
         # Every binding in effect *here*, and Enter runs it.  The one list
         # nothing outside Keyhac can produce - it is the engine's own tables,
         # resolved the way the hook resolves them - and the answer to running
