@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1708,6 +1708,34 @@ Build a scope.
  
  - <b>`name`</b>:  Shown in the window while this scope is the current one. 
  - <b>`sources`</b>:  The sources it draws from - `CandidateSource` objects,  plain callables, or a mix. 
+
+---
+
+
+## <kbd>class</kbd> `ActionsSource`
+Every action in `~/.keyhac/extensions/`, startable without a key. 
+
+The half of the authoring loop a key binding never covered: a class lands in `extensions/`, works, and is runnable from here - the `config.py` edit that binds it to a key comes later, or never, for something used once a month.  That is also the answer to running out of keys, from the other side to `KeyBindingsSource`: one asks what the keys do, this asks what there is to run. 
+
+**Listing does not import.** The catalogue is an AST parse (`keyhac.mcp.extensions.discover`), so a file is read and never executed to find out what is in it, and a module no `config.py` imports stays inert on disk. A class here runs at exactly one moment: when the operator picks it. 
+
+What is offered is a `ThreadedAction` subclass, transitively and across files - not every callable class. The main thread services the keyboard hook and every window, so a list whose rows might block it is a list that can freeze the keyboard. 
+
+A class needing constructor arguments is listed and says so rather than being hidden: an action missing from the list reads as Keyhac not seeing the file, which is a much worse thing to debug than a row that explains itself. 
+
+### <kbd>method</kbd> `ActionsSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
 
 ---
 

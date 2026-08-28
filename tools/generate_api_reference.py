@@ -87,6 +87,7 @@ API_NAMES = [
     "CandidateSource",
     "CallableSource",
     "Scope",
+    "ActionsSource",
     "ClipboardHistorySource",
     "KeyBindingsSource",
     "MenuItemsSource",

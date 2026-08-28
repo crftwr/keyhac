@@ -397,9 +397,10 @@ kt["Fn-P"] = ShowCandidates([
 
 The built-in sources are `ClipboardHistorySource`, `SnippetsSource`,
 `ClipboardToolsSource`, `MenuItemsSource` (every command in the front
-application's menus, with its shortcut) and `KeyBindingsSource` (every binding
-in effect right here, and Enter runs it — a binding you can run from a list
-does not need a key of its own).
+application's menus, with its shortcut), `KeyBindingsSource` (every binding in
+effect right here, and Enter runs it — a binding you can run from a list does
+not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
+`~/.keyhac/extensions/`, startable without ever binding it to anything).
 
 Scopes are also how an expensive source stays affordable: one that has real work
 to do — walking the window's controls, asking a server — costs that work every
@@ -544,6 +545,21 @@ The pool is a **single worker shared by every threaded action**, so a `run()` th
 sleeps or loops delays every other one until it returns. Keep long waits short, and
 prefer `keymap.call_on_main_thread(func)` — thread-safe, and the supported way to
 reach the main thread from anywhere — over holding the worker to wait for something.
+
+### It is also what makes an action listable
+
+Put a `ThreadedAction` subclass in a file under `~/.keyhac/extensions/` and it can
+be **started without a key at all** — by name from the candidate window, and by an
+AI assistant through the MCP endpoint. Subdirectories count, so
+`extensions/mine/extract.py` is addressed as `mine.extract.Extract`; names
+beginning with `_` are treated as helpers and not offered.
+
+Subclassing `ThreadedAction` is what puts it on those lists. A class that merely
+defines `__call__` binds to a key perfectly well and is deliberately *not*
+enumerated: the main thread services the keyboard hook and every window, so a list
+whose rows might block it is a list that can freeze the keyboard. If you want a
+fast action on the list, subclass anyway and leave `run()` short — the worker
+thread costs nothing when the work is small.
 
 ## Balloons
 

@@ -377,6 +377,30 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   binding you can run from a list does not need a key of its own, and running
   out of keys is what this whole window exists to fix.
 
+## The actions source
+
+- **Listing does not import**, which is the whole reason this can exist:
+  `keyhac/mcp/extensions.py`'s AST scan reads a file without executing it, so
+  a module no `config.py` imports stays inert on disk and a class runs at one
+  moment — when the operator picks it. Auto-registration via
+  `__init_subclass__` was considered and cannot work here: registration
+  happens at class-definition time, so it would see exactly the actions
+  already bound to a key (which `KeyBindingsSource` already lists) and miss
+  every unbound one, unless every half-written file were imported to
+  enumerate it.
+- **`ThreadedAction` subclasses only** — not every callable class. A class
+  defining `__call__` binds to a key perfectly well and is deliberately not
+  offered: the main thread services the keyboard hook *and* every PuiKit
+  window, so a list whose rows might block it is a list that can freeze the
+  keyboard. The vocabulary makes this confusing (there is no `Action` class,
+  and "action" is otherwise a role) — recorded in
+  [next-major.md](next-major.md).
+- **One needing constructor arguments is listed and says so**, rather than
+  hidden. An action missing from the list reads as Keyhac not seeing the file,
+  which is a much worse thing to debug than a row that explains itself.
+- It is the other side of `KeyBindingsSource`: one asks what the keys do, this
+  asks what there is to run.
+
 ## The menu-items source
 
 - **Measured before it was designed.** Walking a window's whole accessibility

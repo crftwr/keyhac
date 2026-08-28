@@ -6,6 +6,8 @@ and the routing that has to come with it, since Enter then means whatever the
 chosen row's source says it means.
 """
 
+import time
+
 import pytest
 
 from tests.test_chooser import keyhac_engine, ui_backend  # noqa: F401
@@ -727,3 +729,128 @@ class TestCandidateRowLayout:
         assert row._trailing(_Ctx(False, 8)) == 1.0
         assert row._trailing(_Ctx(True, 8)) == _TRAILING_PX / 8
         assert row._trailing(_Ctx(True, 0)) == 0.0
+
+
+class TestActionsSource:
+    """Everything in `extensions/`, startable without a key - the half of the
+    authoring loop a key binding never covered."""
+
+    ACTION = """
+        from keyhac.core.action import ThreadedAction
+
+        class {name}(ThreadedAction):
+            \"\"\"{doc}\"\"\"
+            {init}
+            def run(self):
+                {body}
+            def finished(self, result):
+                pass
+    """
+
+    def _write(self, keymap, path, name, doc, init="", body="pass"):
+        import os
+        import textwrap
+        full = os.path.join(keymap.extensions_dir, path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        init_dir = os.path.dirname(full)
+        if init_dir != keymap.extensions_dir:
+            open(os.path.join(init_dir, "__init__.py"), "a").close()
+        with open(full, "w") as handle:
+            handle.write(textwrap.dedent(
+                self.ACTION.format(name=name, doc=doc, init=init, body=body)))
+
+    def _source(self, engine, write):
+        import os
+        from keyhac.core.sources import ActionsSource
+        fixture = engine(lambda keymap: keymap.define_keytable(
+            focus_path_pattern="*"))
+        os.makedirs(fixture.keymap.extensions_dir, exist_ok=True)
+        write(fixture.keymap)
+        return ActionsSource(), fixture.keymap
+
+    def test_an_action_reads_as_its_docstring(self, engine):
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "translate.py", "Translate", "Translate the clipboard."))
+        rows = source.candidates()
+        assert [c.display for c in rows] == ["Translate the clipboard."]
+
+    def test_the_badge_is_how_it_is_addressed(self, engine):
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "translate.py", "Translate", "Translate the clipboard."))
+        assert source.badge(source.candidates()[0]) == "translate.Translate"
+
+    def test_an_action_in_a_subdirectory_is_listed(self, engine):
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "mine/extract.py", "Extract", "Pull the table out."))
+        assert source.badge(source.candidates()[0]) == "mine.extract.Extract"
+
+    def test_both_the_address_and_the_summary_are_searchable(self, engine):
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "translate.py", "Translate", "Translate the clipboard."))
+        text = source.candidates()[0].match_text
+        assert "translate.Translate" in text and "clipboard" in text
+
+    def test_a_class_that_is_only_callable_is_not_offered(self, engine):
+        """It binds to a key perfectly well. The main thread services the hook
+        and every window, so a list whose rows might block it is a list that
+        can freeze the keyboard."""
+        import os
+
+        def write(keymap):
+            with open(os.path.join(keymap.extensions_dir, "fast.py"), "w") as h:
+                h.write('class Fast:\n    """Callable, not threaded."""\n'
+                        "    def __call__(self):\n        pass\n")
+
+        source, _keymap = self._source(engine, write)
+        assert source.candidates() == []
+
+    def test_one_needing_arguments_is_listed_and_says_so(self, engine):
+        """Hiding it would read as Keyhac not seeing the file, which is a much
+        worse thing to debug than a row that explains itself."""
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "deploy.py", "Deploy", "Deploy somewhere.",
+            init="def __init__(self, environment):\n"
+                 "                self.environment = environment"))
+        row = source.candidates()[0]
+        assert source.badge(row) == "needs environment"
+
+    def test_choosing_one_that_needs_arguments_explains_rather_than_raises(
+            self, engine, caplog):
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "deploy.py", "Deploy", "Deploy somewhere.",
+            init="def __init__(self, environment):\n"
+                 "                self.environment = environment"))
+        with caplog.at_level("ERROR"):
+            source.on_chosen(source.candidates()[0], 0)
+        assert "environment" in caplog.text
+
+    def test_listing_does_not_import(self, engine):
+        """The property the directory has always had: a module no config.py
+        imports is inert on disk."""
+        import sys
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "boom.py", "Boom", "Would raise on import.",
+            body="pass"))
+        before = set(sys.modules)
+        source.candidates()
+        assert "boom" not in set(sys.modules) - before
+
+    def test_choosing_runs_it(self, engine, tmp_path):
+        marker = tmp_path / "ran"
+        source, _keymap = self._source(engine, lambda km: self._write(
+            km, "touch.py", "Touch", "Leaves a marker.",
+            body=f"open({str(marker)!r}, 'w').close()"))
+        from keyhac.core.keymap import Keymap
+        Keymap._prepare_extensions(_keymap.extensions_dir)
+        source.on_chosen(source.candidates()[0], 0)
+        # run() is on the shared worker, so the marker appears after this
+        # returns rather than during it.
+        deadline = time.time() + 5
+        while not marker.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        assert marker.exists()
+
+    def test_no_extensions_directory_is_an_empty_list(self, engine):
+        from keyhac.core.sources import ActionsSource
+        engine(lambda keymap: keymap.define_keytable(focus_path_pattern="*"))
+        assert ActionsSource().candidates() == []

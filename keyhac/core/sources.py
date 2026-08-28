@@ -488,3 +488,84 @@ def _action_text(action) -> str:
     if text.startswith("<") and " object at 0x" in text:
         return f"{type(action).__name__}()"
     return text
+
+
+class ActionsSource(CandidateSource):
+    """Every action in `~/.keyhac/extensions/`, startable without a key.
+
+    The half of the authoring loop a key binding never covered: a class lands
+    in `extensions/`, works, and is runnable from here - the `config.py` edit
+    that binds it to a key comes later, or never, for something used once a
+    month.  That is also the answer to running out of keys, from the other
+    side to `KeyBindingsSource`: one asks what the keys do, this asks what
+    there is to run.
+
+    **Listing does not import.** The catalogue is an AST parse
+    (`keyhac.mcp.extensions.discover`), so a file is read and never executed
+    to find out what is in it, and a module no `config.py` imports stays inert
+    on disk. A class here runs at exactly one moment: when the operator picks
+    it.
+
+    What is offered is a `ThreadedAction` subclass, transitively and across
+    files - not every callable class. The main thread services the keyboard
+    hook and every window, so a list whose rows might block it is a list that
+    can freeze the keyboard.
+
+    A class needing constructor arguments is listed and says so rather than
+    being hidden: an action missing from the list reads as Keyhac not seeing
+    the file, which is a much worse thing to debug than a row that explains
+    itself.
+    """
+
+    name = "Action"
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        from keyhac.mcp.extensions import discover
+
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            return []
+        try:
+            found = discover(keymap.extensions_dir)
+        except Exception:
+            logger.debug("The extensions directory could not be read.")
+            return []
+        return [Candidate(icon="⚙", display=action.summary or action.name,
+                          payload=action,
+                          match_text=f"{action.name} {action.summary or ''}",
+                          extras={"address": action.name,
+                                  "required": action.required})
+                for action in found]
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        required = candidate.extras.get("required")
+        if required:
+            return f"needs {', '.join(required)}"
+        return candidate.extras.get("address", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        from keyhac.mcp.extensions import Loader
+
+        action = candidate.payload
+        if action.required:
+            logger.error(
+                f"{action.name} needs constructor arguments "
+                f"({', '.join(action.required)}), so it cannot be started from "
+                f"the list - give them defaults to run it from here.")
+            return
+        try:
+            Loader().instantiate(action)()
+        except Exception:
+            logger.error(f"{action.name}: starting it failed.")

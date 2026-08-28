@@ -75,3 +75,40 @@ Issue #76 was closed in favor of this entry.
 `keyhac/core/uitree.py`, thread them through `UINode.find_all`, and teach the
 MCP no-match branch in `keyhac/mcp/tools.py` to read the stats; the pinning
 test is replaced deliberately in the same change.
+
+
+## There is no `Action` class — only `ThreadedAction`
+
+Everything user-facing calls the concept an **action**: the authoring skill is
+`keyhac-action-authoring`, the reference is `doc/action-api.md`, the MCP tools
+are `list_actions` / `start_action` / `get_action_result`. The only class is
+`ThreadedAction`, and "action" is otherwise a *role* — whatever a key table
+accepts, which is a string, a sequence of strings, a `KeyTable`, or any
+callable. `StartRecordingKeys`, `ToggleRecordingKeys` and `InputText` are
+actions in that sense and subclass nothing.
+
+So "which subclass is enumerated?" is a question the vocabulary invites and
+cannot answer from its own names. Two shapes would fix it, and they are not
+the same change:
+
+- **Rename `ThreadedAction` → `Action`**, on the grounds that the threaded
+  part is an implementation detail of the only shape that needs a base class.
+  Smallest, and it makes the enumerated set self-describing.
+- **Introduce `Action` as a base above `ThreadedAction`**, so a fast action
+  that needs no worker thread has somewhere to live and can still be
+  enumerated. Larger, and it needs an answer for what stops a slow one being
+  written that way — the main thread services the hook *and* every PuiKit
+  window, so an action that blocks it freezes the keyboard.
+
+**Why it waits.** `ThreadedAction` is released public surface that every
+existing config and every authored action subclasses by name. Either change
+breaks all of them at once, and neither is worth a compatibility shim: an
+alias would leave two names for one thing in a vocabulary whose problem is
+already that its names do not line up.
+
+**Migration.** Rename in `keyhac/core/action.py`, re-export both names for one
+release, update the two skills, `doc/configuration.md`, `doc/action-api.md`'s
+generator list and the `_is_action` base-name match in
+`keyhac/mcp/extensions.py`. The AST scan matches on the *trailing* base name,
+so a config that still writes `ThreadedAction` keeps being discovered
+throughout.

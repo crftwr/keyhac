@@ -275,6 +275,11 @@ def configure(keymap):
         # of its own.  Multi-stroke prefixes are expanded, so `Fn-X › A` is
         # the sequence you would have typed.
         Scope("Keys", [KeyBindingsSource()]),
+        # Everything in ~/.keyhac/extensions/, startable without a key — the
+        # half of the authoring loop a key binding never covered.  Write a
+        # ThreadedAction subclass into a file there and it appears here; bind
+        # it to a key later, or never, for something used once a month.
+        Scope("Actions", [ActionsSource()]),
         Scope("Windows", [OpenWindows()]),
         Scope("Tools", [ClipboardToolsSource(tools)]),
     ])
