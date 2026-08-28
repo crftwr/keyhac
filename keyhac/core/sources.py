@@ -688,19 +688,28 @@ def _walk_controls(root):
             if key in seen:
                 return
             seen.add(key)
+        # The role first, and the rest only for an element the role says is
+        # worth reading. `describe()` is a batched read of nine attributes and
+        # most of a window's tree is groups and static text this will never
+        # report, so describing everything pays eight reads per node to learn
+        # one thing. Measured over VS Code's 4000 nodes: 588 ms against 346.
         try:
-            described = element.describe()
+            role = element.role()
         except Exception:
             return
-        role = described.get("role")
-        name = described.get("name")
-        if role in _ACTIONABLE_ROLES and name:
-            yield Candidate(
-                icon="⌖", display=name, payload=element,
-                match_text=f"{name} {role or ''}",
-                rect=described.get("rect"),
-                provenance=described.get("name_source"),
-                extras={"role": role})
+        if role in _ACTIONABLE_ROLES:
+            try:
+                described = element.describe()
+            except Exception:
+                described = {}
+            name = described.get("name")
+            if name:
+                yield Candidate(
+                    icon="⌖", display=name, payload=element,
+                    match_text=f"{name} {role}",
+                    rect=described.get("rect"),
+                    provenance=described.get("name_source"),
+                    extras={"role": role})
         try:
             children = element.children()
         except Exception:

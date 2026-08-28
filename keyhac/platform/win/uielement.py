@@ -547,6 +547,13 @@ class UIElement:
         """
         return None
 
+    def role(self) -> str | None:
+        """Just the role, in one property read - see the macOS twin.
+
+        lazydocs: ignore
+        """
+        return self.get_attribute_value("ControlType")
+
     def menu_bar(self) -> "UIElement | None":
         """The window's menu bar, or None.
 

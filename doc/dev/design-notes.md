@@ -475,7 +475,25 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   (495 ms — the walk is the cost, filtering only changes what is reported),
   and depth trades everything away (VS Code yields 4 controls at depth 6
   against 117 at depth 40). So the walk yields, and the first controls appear
-  in ~10 ms while the rest arrive over ~590 ms.
+  in ~16 ms while the rest arrive over the rest of it.
+- **Where the time actually goes**, over VS Code's 4000 nodes:
+
+  | | ms |
+  |---|---|
+  | `AXChildren` traversal alone — the floor | 224 |
+  | + one `AXRole` read per node | 332 |
+  | + `describe()` on every node | 587 |
+
+  So the walk reads the **role first** and describes only the elements the
+  role says are worth reporting — 376 ms live, against 590 before, for the
+  same 157 controls. `describe()` is a batched read of nine attributes and
+  most of a window is groups and static text, so describing everything paid
+  eight reads per node to learn one thing.
+- What is left is **~150 ms above the traversal floor**, and closing it would
+  mean asking for the role and the children in *one* batched call instead of
+  two — a new platform primitive, for a third of what is already spent.
+  `AXVisibleChildren` was tried as a cheaper traversal and is not one: the
+  window answers it with nothing.
 - **The `seen` set is load-bearing, not cycle paranoia.** A table's cells are
   children of their row *and* of their column, so without it every cell of
   every table is reported twice — the same finding `uitree.py` records.
