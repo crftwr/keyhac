@@ -269,8 +269,18 @@ class MenuItemsSource(CandidateSource):
 
 
 #: What "press this" is called, in the order to try it - the AX names and the
-#: UIA one in one list, since a row can come from either platform.
-_PRESS_ACTIONS = ("AXPress", "Invoke", "AXOpen")
+#: UIA ones in one list, since a row can come from either platform.
+#:
+#: macOS says it in one word: AXPress is how a button, a tab, a checkbox and a
+#: disclosure triangle are all activated. UIA gives each its own *pattern*, so
+#: the same idea is four names here, and the order is what a click would do:
+#: run it (Invoke), else select it (a tab, a tree row), else flip it (a toggle
+#: button), else open it (a menu item, an expandable header). Measured in VS
+#: Code, which has all of them: 279 rows offer only Invoke, 19 only Select, 26
+#: only Expand/Collapse and 5 only Toggle - so a list with Invoke alone
+#: refused every tab in the activity bar, which is what
+#: "Extensions (Ctrl+Shift+X)" was.
+_PRESS_ACTIONS = ("AXPress", "Invoke", "Select", "Toggle", "Expand", "AXOpen")
 
 
 def _press(element) -> bool:
@@ -282,6 +292,12 @@ def _press(element) -> bool:
     Probing blind therefore put "Unknown UI Automation action: 'AXPress'" in
     the console on every press there. An element that cannot say (a platform
     without the query) is probed in order, as before.
+
+    **Focus is the last resort**, for a row whose platform offers no press
+    pattern at all - a text field, and Chromium's list items (26 of them in VS
+    Code). Clicking a text field is how the caret gets into it, so focusing
+    one *is* pressing it; for the rest it is the closest honest thing, and it
+    beats telling the user the row they chose does nothing.
     """
     try:
         available = set(element.get_action_names() or ())
@@ -295,6 +311,12 @@ def _press(element) -> bool:
                 return True
         except Exception:
             continue
+    try:
+        if element.set_focus():
+            logger.debug("Nothing pressed it; the focus was put on it instead.")
+            return True
+    except Exception:
+        pass
     return False
 
 

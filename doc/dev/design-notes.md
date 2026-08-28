@@ -354,6 +354,21 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   Windows element logs a warning for each unknown name, so probing the pair
   blind put `Unknown UI Automation action: 'AXPress'` in the console on every
   single press. An element that cannot say is still probed in order.
+- **macOS says "press" in one word; UIA needs four.** `AXPress` activates a
+  button, a tab, a checkbox and a disclosure triangle alike, while UIA gives
+  each its own pattern — so the list is `Invoke, Select, Toggle, Expand`, in
+  the order of what a click would do: run it, else select it, else flip it,
+  else open it. Measured in VS Code, which has all of them: 279 rows offer
+  only Invoke, 19 only Select, 26 only Expand/Collapse, 5 only Toggle. A list
+  of Invoke alone therefore refused every tab in the activity bar — the
+  reported symptom was `Extensions (Ctrl+Shift+X) - 1 requires update: the
+  control refused to be pressed`.
+- **Focus is the last resort.** Some rows offer no press pattern at all: a
+  text field, and Chromium's list items (26 in VS Code). Clicking a text field
+  is how the caret gets into it, so focusing one *is* pressing it; for the
+  rest it is the closest honest thing, and it beats telling the user the row
+  they chose does nothing. Both platforms have `set_focus()`, so the fallback
+  is portable rather than a Windows special case.
 
 ## There is no Menu scope on Windows
 

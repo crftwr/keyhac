@@ -1629,10 +1629,12 @@ class TestPressingAChosenElement:
     """`_press`: the one "press this" both element sources use."""
 
     class _Element:
-        def __init__(self, offers, presses=()):
+        def __init__(self, offers, presses=(), focusable=False):
             self._offers = offers
             self._presses = presses
+            self._focusable = focusable
             self.tried = []
+            self.focused = False
 
         def get_action_names(self):
             if self._offers is None:
@@ -1642,6 +1644,10 @@ class TestPressingAChosenElement:
         def perform_action(self, name):
             self.tried.append(name)
             return name in self._presses
+
+        def set_focus(self):
+            self.focused = self._focusable
+            return self._focusable
 
     def test_only_the_actions_the_element_offers_are_tried(self):
         """A name from the other platform is not a miss to try past - it is
@@ -1662,3 +1668,32 @@ class TestPressingAChosenElement:
     def test_an_element_nothing_presses_says_so(self):
         from keyhac.core.sources import _press
         assert not _press(self._Element(["Invoke"]))
+
+    @pytest.mark.parametrize("offers,expected", [
+        (["Select", "Expand", "Collapse"], "Select"),   # a tab, a tree row
+        (["Toggle"], "Toggle"),                          # a toggle button
+        (["Expand", "Collapse"], "Expand"),              # a menu item, a header
+        (["Invoke", "Select"], "Invoke"),                # run it before selecting
+    ])
+    def test_what_a_click_would_do_decides_the_order(self, offers, expected):
+        """macOS says all of this with one word (AXPress); UIA gives each its
+        own pattern. A list of only Invoke refused every tab in VS Code's
+        activity bar - "Extensions (Ctrl+Shift+X)" was one of them."""
+        from keyhac.core.sources import _press
+        element = self._Element(offers, presses=offers)
+        assert _press(element)
+        assert element.tried == [expected]
+
+    def test_a_row_with_no_press_pattern_is_focused_instead(self):
+        """A text field has none - and clicking one is how the caret gets into
+        it, so focusing it *is* pressing it. Chromium's list items have none
+        either (26 of them in VS Code)."""
+        from keyhac.core.sources import _press
+        element = self._Element([], focusable=True)
+        assert _press(element)
+        assert element.focused
+
+    def test_a_row_that_cannot_even_be_focused_says_no(self):
+        from keyhac.core.sources import _press
+        element = self._Element([], focusable=False)
+        assert not _press(element)
