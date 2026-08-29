@@ -540,52 +540,43 @@ class TestACornerIsATargetYouCanHit:
             chooser.window.close()
 
 
-class TestTheLitEdgeFollowsThePointer:
+class TestTheBorderFollowsThePointer:
     """Nothing here shapes the pointer. macOS gives the pointer to the key
     window, and this one deliberately never becomes key - measured: before it
     is clicked the panel reports key=False with the application inactive, and
     every shape it asked for was recorded and never reached the screen; after
     a click it is key and the same request works. An affordance that appears
     only once you have already found the thing is worse than none, so the
-    window lights its own border instead."""
+    window says it in the border it draws itself."""
 
-    def _lit(self, chooser, x, y):
+    def _hot(self, chooser, x, y):
         chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=x, y=y))
-        return chooser._page.hot_edge
+        return chooser._page.hot
 
-    def test_each_edge_and_corner_lights_its_own(self, ui_backend):
+    def test_every_edge_and_corner_lights_the_border(self, ui_backend):
         chooser = _chooser(ui_backend)
-        resizer = chooser._resizer
-        assert resizer.edge_at(*RIGHT) == (1, 0)
-        assert resizer.edge_at(*TOP) == (0, -1)
-        assert resizer.edge_at(*BOTTOM_RIGHT) == (1, 1)
-        assert resizer.edge_at(0.5, 19.5) == (-1, 1)
-        assert resizer.edge_at(36, 10) is None
+        for point in (RIGHT, TOP, LEFT, BOTTOM, BOTTOM_RIGHT, (0.5, 19.5)):
+            assert self._hot(chooser, *point) is True, point
 
-    def test_hovering_hands_the_edge_to_the_frame_that_draws_it(
-            self, ui_backend):
-        # The edge is not a widget, so nothing hovers it and nothing would
-        # light it on its own.
+    def test_the_middle_leaves_it_alone(self, ui_backend):
         chooser = _chooser(ui_backend)
-        assert self._lit(chooser, *RIGHT) == (1, 0)
-        assert self._lit(chooser, 36, 10) is None
+        assert self._hot(chooser, 36, 10) is False
 
-    def test_a_pointer_that_has_left_is_not_on_an_edge(self, ui_backend):
+    def test_it_goes_out_when_the_pointer_leaves(self, ui_backend):
         # The pointer leaving arrives as a move to (-1, -1), and "near the
         # start of the axis" is true of every negative number - so the window
-        # lit its top-left corner on the way out, and kept it lit.
+        # lit up on the way out, and stayed lit.
         chooser = _chooser(ui_backend)
-        self._lit(chooser, *RIGHT)
-        assert chooser._resizer.edge_at(-1.0, -1.0) is None
-        assert self._lit(chooser, -1.0, -1.0) is None
+        self._hot(chooser, *RIGHT)
+        assert self._hot(chooser, -1.0, -1.0) is False
 
     def test_arriving_on_an_edge_lights_it_at_once(self, ui_backend):
         # Crossing into the window and stopping on its edge is an entry and no
         # move (puikit 1.4.2 reports the arrival as a move at that point), so
         # this is the whole of what the user does approaching from outside.
         chooser = _chooser(ui_backend)
-        self._lit(chooser, -1.0, -1.0)
-        assert self._lit(chooser, *BOTTOM_RIGHT) == (1, 1)
+        self._hot(chooser, -1.0, -1.0)
+        assert self._hot(chooser, *BOTTOM_RIGHT) is True
 
     def test_it_follows_the_live_pointer_not_the_event(self, ui_backend):
         # A hand moving quickly crosses the boundary and comes to rest on the
@@ -595,128 +586,57 @@ class TestTheLitEdgeFollowsThePointer:
         frame = chooser.window.frame_px()
         ui_backend.pointer_px = (frame[0] + BOTTOM_RIGHT[0],
                                  frame[1] + BOTTOM_RIGHT[1])
-        assert self._lit(chooser, 36.0, 4.0) == (1, 1)
+        assert self._hot(chooser, 36.0, 4.0) is True
 
     def test_it_still_reads_the_event_when_the_backend_cannot_say(
             self, ui_backend):
         chooser = _chooser(ui_backend)
         ui_backend.pointer_px = None
-        assert self._lit(chooser, *TOP) == (0, -1)
+        assert self._hot(chooser, *TOP) is True
 
-    def test_a_pointer_resting_outside_lights_nothing(self, ui_backend):
+    def test_a_pointer_resting_outside_leaves_it_alone(self, ui_backend):
         chooser = _chooser(ui_backend)
         frame = chooser.window.frame_px()
         ui_backend.pointer_px = (frame[0] - 40, frame[1] + 5)
-        assert self._lit(chooser, *RIGHT) is None
+        assert self._hot(chooser, *RIGHT) is False
 
 
-class TestTheEdgeLightsUpUnderThePointer:
-    """macOS gives the pointer to the key window, and the chooser deliberately
-    never becomes one - measured: before it is clicked the panel reports
-    key=False and the application inactive, and the shape it asks for never
-    reaches the screen; after a click it is key and it does. So the affordance
-    cannot be the pointer alone. The window draws it on the border it already
-    draws, which needs nobody's permission."""
+class TestTheBorderSaysItInTheAccentColour:
 
-    def _lit(self, chooser, x, y):
+    def _hot(self, chooser, x, y):
         chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=x, y=y))
-        return chooser._page.hot_edge
-
-    def test_each_side_lights_its_own(self, ui_backend):
-        chooser = _chooser(ui_backend)
-        assert self._lit(chooser, *RIGHT) == (1, 0)
-        assert self._lit(chooser, *TOP) == (0, -1)
-        assert self._lit(chooser, *LEFT) == (-1, 0)
-
-    def test_a_corner_lights_both_of_its_sides(self, ui_backend):
-        # Which is the whole reason it is drawn as bars and not as a second
-        # outline: the corner has to say which two directions it drags in.
-        chooser = _chooser(ui_backend)
-        assert self._lit(chooser, *BOTTOM_RIGHT) == (1, 1)
-
-    def test_the_middle_lights_nothing(self, ui_backend):
-        chooser = _chooser(ui_backend)
-        assert self._lit(chooser, 36, 10) is None
-
-    def test_it_goes_out_when_the_pointer_leaves(self, ui_backend):
-        chooser = _chooser(ui_backend)
-        self._lit(chooser, *RIGHT)
-        assert self._lit(chooser, -1.0, -1.0) is None
+        return chooser._page.hot
 
     def test_nothing_asks_for_a_pointer_shape(self, ui_backend):
         # Consistency over a hint that only works after a click: hovering
-        # changes no cursor at all now.
+        # changes no cursor at all.
         chooser = _chooser(ui_backend)
         shapes = []
         ui_backend.set_pointer_shape = shapes.append
-        self._lit(chooser, *BOTTOM_RIGHT)
-        assert not [s for s in shapes if s]
+        self._hot(chooser, *BOTTOM_RIGHT)
+        assert not [shape for shape in shapes if shape]
 
-    def _fills(self, ui_backend, x, y, radius=0.0):
-        """What the lit edge filled, on a backend whose pixels mean something.
+    def test_the_whole_border_changes_colour(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        rows = ["".join(row) for row in chooser.window.snapshot()]
+        cold = chooser.window.style_at(0, 0).fg
+        self._hot(chooser, *RIGHT)
+        hot = chooser.window.style_at(0, 0).fg
+        assert hot != cold
+        # every side of it, not the one under the pointer
+        assert chooser.window.style_at(len(rows[0]) - 1, len(rows) - 1).fg == hot
+        assert chooser.window.style_at(0, len(rows) - 1).fg == hot
 
-        Only its own fills: the field box, the selection and the scrollbar
-        fill rectangles too, so these are picked out by their colour, which is
-        the hot colour or a step of its fade towards the background."""
-        from puikit import PROFILE_GUI_DESKTOP
-        from puikit.backends.memory_backend import MemoryBackend
-        from puikit.backends import memory_backend as mb
-        from keyhac.ui.frame import _HOT
+    def test_it_is_the_theme_accent_where_there_is_one(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        self._hot(chooser, *RIGHT)
+        accent = chooser.panel.theme.accent
+        assert chooser.window.style_at(0, 0).fg == accent
 
-        backend = MemoryBackend(width=300, height=200,
-                                capabilities=PROFILE_GUI_DESKTOP)
-        backend.open()
-        runtime.backend = backend
-        saved = mb._MemoryWindowHandle.corner_radius_px
-        mb._MemoryWindowHandle.corner_radius_px = property(lambda self: radius)
-        try:
-            chooser = _chooser(backend)
-            chooser.window.resize_to_px(200, 120)
-            fills = []
-            native = backend.fill_rect
-            backend.fill_rect = lambda *a: fills.append(a)
-            chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=x, y=y))
-            backend.fill_rect = native
-            # on the ramp from the background to the hot colour, and nothing
-            # else in this window is on it
-            hot = [f for f in fills if f[4].fg and f[4].fg[0] == f[4].fg[1]
-                   and f[4].fg[2] > f[4].fg[0] and f[4].fg[0] <= _HOT[0]]
-            return hot, chooser
-        finally:
-            mb._MemoryWindowHandle.corner_radius_px = saved
-            runtime.backend = ui_backend
-            backend.close()
-
-    def test_the_lit_side_runs_down_the_side_it_is_on(self, ui_backend):
-        fills, _c = self._fills(ui_backend, 199.0, 60.0)
-        assert fills, "the lit edge drew nothing"
-        assert all(f[0] > 190 for f in fills), "it strayed off its own side"
-        assert sum(f[3] for f in fills) > 60, "it did not run down the side"
-
-    def test_its_ends_dissolve_into_the_border(self, ui_backend):
-        fills, _c = self._fills(ui_backend, 199.0, 60.0)
-        by_y = sorted(fills, key=lambda f: f[1])
-
-        def brightness(fill):
-            return sum(fill[4].fg) / 3
-
-        middle = max(brightness(f) for f in fills)
-        assert brightness(by_y[0]) < middle, "the top end stopped dead"
-        assert brightness(by_y[-1]) < middle, "the bottom end stopped dead"
-
-    def test_a_corner_lights_both_sides_and_the_curve_between_them(
-            self, ui_backend):
-        fills, _c = self._fills(ui_backend, 199.0, 119.0, radius=15.0)
-        assert any(f[3] > f[2] for f in fills), "no vertical side"
-        assert any(f[2] > f[3] for f in fills), "no horizontal side"
-        # the curve itself, walked as overlapping squares
-        corner = [f for f in fills if f[0] > 200 - 19 and f[1] > 120 - 19
-                  and f[2] < 6 and f[3] < 6]
-        assert len(corner) > 4, "the corner between them stayed dark"
-
-    def test_a_square_cornered_window_needs_no_curve(self, ui_backend):
-        # Its two sides already meet there, so nothing walks between them.
-        fills, _c = self._fills(ui_backend, 199.0, 119.0, radius=0.0)
-        walked = [f for f in fills if f[0] > 200 - 19 and f[1] > 120 - 19
-                  and f[2] < 6 and f[3] < 6]
-        assert walked == []
+    def test_the_thickness_does_not_change(self, ui_backend):
+        # Colour alone: a border that also grew would move the content under
+        # it, and the window would twitch on every hover.
+        chooser = _chooser(ui_backend)
+        before = ["".join(row) for row in chooser.window.snapshot()]
+        self._hot(chooser, *RIGHT)
+        assert ["".join(row) for row in chooser.window.snapshot()] == before

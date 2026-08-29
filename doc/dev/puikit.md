@@ -130,10 +130,12 @@ Keyhac2-side usage notes:
   So the affordance is drawn rather than asked for, and **no pointer shape is
   requested on hover at all** — one that works only after a click is worse
   than none, because the behaviour is then inconsistent in a way the user has
-  to learn. `Frame.hot_edge` lights the side the pointer is standing on
-  instead: both sides plus the curve between them at a corner, so it says
-  which two directions the drag goes in, with each free end dissolving back
-  into the border rather than stopping dead.
+  to learn. `Frame.hot` draws the whole border in the theme's accent colour
+  while the pointer is somewhere the window can be grabbed: the whole border,
+  because which side is already where the pointer is, and the thing worth
+  saying is that the window is grabbable at all — and colour only, since a
+  border that also thickened would move the content under it and the window
+  would twitch on every hover.
 
   puikit's diagonal resize cursors (PR #132) stay: they are right for any app
   that *can* shape the pointer, which is any app whose window becomes key.

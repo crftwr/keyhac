@@ -12,8 +12,9 @@ window, and this one deliberately never becomes key - that is what leaves the
 target application its focus, its caret and its selection - so a shape it
 asked for reached the screen only after a click, and not before.  An
 affordance that turns up once you have already found the thing is worse than
-none, so the window says it where it can always say it: `Frame.hot_edge`
-lights the border the pointer is standing on.
+none, so the window says it where it can always say it: `Frame.hot` draws the
+whole border in the accent colour while the pointer is somewhere the window
+can be grabbed.
 
 Deliberately not asked of the toolkit.  macOS has `movableByWindowBackground`
 and Windows the `WM_NCHITTEST` -> `HTCAPTION` reply, and both mean "drag from
