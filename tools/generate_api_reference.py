@@ -87,7 +87,7 @@ API_NAMES = [
     "Candidate",
     "CandidateSource",
     "CallableSource",
-    "Scope",
+    "ChooserPage",
     "ActionsSource",
     "ClipboardHistorySource",
     "KeyBindingsSource",

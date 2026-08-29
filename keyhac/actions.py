@@ -342,10 +342,10 @@ class ChooserAction:
             ChooserAction._stop_watch()
             _refocus_original_app()
 
-        # Always open on the first scope: a window that reopened wherever it
+        # Always open on the first page: a window that reopened wherever it
         # was last left would make the same key mean different things on
         # different presses.
-        self._scope = 0
+        self._page = 0
         self._owners = {}
         #: What each source has read so far, for this window only:
         #: id(source) -> [rows, unfinished generator or None].
@@ -356,9 +356,10 @@ class ChooserAction:
                                 center_on=center_on, clamp_to=clamp_to,
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
-                                scopes=self.scope_names(),
-                                on_scope=self._scope_rows,
-                                background=background)
+                                pages=self.page_names(),
+                                on_page=self._page_rows,
+                                background=background,
+                                source_of=self._source_name)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -396,14 +397,14 @@ class ChooserAction:
                        modifier_flags)
 
     def _collect(self):
-        """The current scope's rows, whatever of them is still coming, and the
+        """The current page's rows, whatever of them is still coming, and the
         badge lookup the window draws beside each one.
 
-        **A source is read once per window, not once per scope.** The same
-        `MenuItemsSource` can sit in an everything-scope and in a scope of its
+        **A source is read once per window, not once per page.** The same
+        `MenuItemsSource` can sit in an everything-page and in a page of its
         own, and walking the menu bar twice for one press of one key is work
         nobody asked for. So what is remembered is keyed on the *source
-        object*: share an instance between scopes and it is read once; build
+        object*: share an instance between pages and it is read once; build
         two, and they are two sources that happen to be alike, which is also
         the right answer - two `SnippetsSource` with different snippets are
         not interchangeable.
@@ -436,7 +437,7 @@ class ChooserAction:
             goes.
 
             A row read here lands in the source's own list as well as in this
-            window, so a *different* scope sharing the source starts from
+            window, so a *different* page sharing the source starts from
             where this one got to rather than from nothing.
             """
             for source, state in group:
@@ -469,22 +470,34 @@ class ChooserAction:
         return rows, pending, lambda c: getattr(
             self._owners.get(id(c)), "name", ""), background
 
+    def _source_name(self, candidate) -> str:
+        """Which source produced a row, for the window's `@` narrowing.
+
+        Separate from the badge lookup on purpose: with one source the badge
+        slot belongs to the source itself - the menu source puts a keyboard
+        shortcut there - so the two questions have different answers and only
+        this one is always a source's name.
+
+        lazydocs: ignore
+        """
+        return getattr(self._owners.get(id(candidate)), "name", "")
+
     def _adopt(self, source, item):
         from keyhac.core.candidate import Candidate
         candidate = Candidate.from_item(item)
         self._owners[id(candidate)] = source
         return candidate
 
-    def _scope_rows(self, index: int):
-        """The rows of the scope the window is moving to.
+    def _page_rows(self, index: int):
+        """The rows of the page the window is moving to.
 
         lazydocs: ignore
         """
-        self._scope = index
+        self._page = index
         return self._collect()
 
-    def scope_names(self):
-        """Scope names for the window's cycle; empty when there is only one.
+    def page_names(self):
+        """ChooserPage names for the window's cycle; empty when there is only one.
 
         lazydocs: ignore
         """
@@ -551,7 +564,7 @@ class ShowCandidates(ChooserAction):
     ```python
     kt["Fn-V"] = ShowCandidates([ClipboardHistorySource(), SnippetsSource(mine)])
     kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
-    kt["Fn-P"] = ShowCandidates([Scope("All", every), Scope("Clipboard", clip)])
+    kt["Fn-P"] = ShowCandidates([ChooserPage("All", every), ChooserPage("Clipboard", clip)])
     ```
 
     Enter runs whatever the chosen row's source says to do, so rows from
@@ -566,8 +579,11 @@ class ShowCandidates(ChooserAction):
             sources: A `CandidateSource`, a plain callable returning candidates, or a
                 list of either.  A callable is wrapped, so anything that can
                 produce a list can be a source without subclassing.  A list
-                of `Scope` objects instead gives the window a cycle Tab and
-                Shift-Tab move along, keeping the query as they go.
+                of `ChooserPage` objects instead gives the window a row of
+                pages that Left and Right move between, keeping the query as
+                they go.  Aim for three, with the one you reach for most in
+                the middle; `@` narrows within a page and is what makes three
+                enough.
             on_chosen: Called as `on_chosen(candidate, modifier_flags)` for
                 rows whose source does not say what to do itself - which is
                 every row when the source is a bare callable.
@@ -577,16 +593,16 @@ class ShowCandidates(ChooserAction):
                 alone unless the filter field genuinely needs an input method
                 - see `ChooserAction.activates`.
         """
-        from keyhac.core.source import Scope, as_source
+        from keyhac.core.source import ChooserPage, as_source
 
         self._on_chosen = on_chosen
         listed = sources if isinstance(sources, (list, tuple)) else [sources]
-        if listed and all(isinstance(s, Scope) for s in listed):
-            self._scopes = list(listed)
+        if listed and all(isinstance(s, ChooserPage) for s in listed):
+            self._pages = list(listed)
         else:
             # A bare callable has no opinion about what choosing does, so it
             # inherits this action's; a real CandidateSource keeps its own.
-            self._scopes = [Scope("", [as_source(s, on_chosen=self._chosen_here)
+            self._pages = [ChooserPage("", [as_source(s, on_chosen=self._chosen_here)
                                        for s in listed])]
         if matcher is not None:
             self.matcher = matcher
@@ -594,22 +610,22 @@ class ShowCandidates(ChooserAction):
             self.activates = activates
 
     def __repr__(self):
-        if len(self._scopes) > 1:
-            return f"ShowCandidates({len(self._scopes)} scopes)"
+        if len(self._pages) > 1:
+            return f"ShowCandidates({len(self._pages)} pages)"
         names = ", ".join(s.name or type(s).__name__
-                          for s in self._scopes[0].sources)
+                          for s in self._pages[0].sources)
         return f"ShowCandidates({names})"
 
     def sources(self):
         """lazydocs: ignore"""
-        return self._scopes[self._scope].sources
+        return self._pages[self._page].sources
 
-    def scope_names(self):
+    def page_names(self):
         """lazydocs: ignore"""
-        return [s.name for s in self._scopes] if len(self._scopes) > 1 else []
+        return [s.name for s in self._pages] if len(self._pages) > 1 else []
 
-    #: Index into `_scopes` while a window is open.
-    _scope = 0
+    #: Index into `_pages` while a window is open.
+    _page = 0
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""

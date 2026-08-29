@@ -31,7 +31,7 @@ class CandidateSource:
 
     Named for what it is a source *of*: `keyhac import *` is flat, and a
     config writes `class Branches(CandidateSource)` with no surrounding call
-    to say which kind of source is meant.  `Scope` keeps the shorter name
+    to say which kind of source is meant.  `ChooserPage` keeps the shorter name
     because it is only ever written inside `ShowCandidates([...])`, where the
     context is right there.
 
@@ -76,7 +76,7 @@ class CandidateSource:
         Return a list, or - for a source with real work to do - **yield**.
         A generator is drained as it goes, so its first rows are on screen
         while it is still finding the rest, and abandoning it (the window
-        closed, the scope changed) simply stops pulling.
+        closed, the page changed) simply stops pulling.
 
         This method runs on the **main thread**.  The generator it returns
         runs there too unless the source sets `background` (below), in
@@ -189,46 +189,43 @@ def as_source(source: Any, name: str = "",
     return CallableSource(source, name, on_chosen)
 
 
-class Scope:
+class ChooserPage:
     """A named set of sources the candidate window can switch between.
 
-    One key opens the window, and **Tab completes a scope by name**: type
-    enough of one and Tab goes there, `Shift-Tab` offers the whole list.
-    Stepping to the next scope instead is the wrong shape past three of them,
-    since reaching the fourth means pressing Tab three times and reading the
-    label each time.
+    One key opens the window; **Left and Right move between pages**, and the
+    query comes with you - type `kensaku`, then look for the same thing on
+    another page without retyping it.
 
-    The query survives the move - type `kensaku`, add a scope name, and Tab
-    takes the name back out and leaves the query behind. That is the thing a
-    typed prefix (`>`, `@`) cannot do, and the reason a completed name is not
-    left sitting in the field. The other reason a sigil is wrong is that with
-    Migemo the query alphabet is exactly ASCII, so one sits in the middle of
-    what the user is trying to type.
+    **Three is the number to aim for**, with what you reach for most in the
+    middle: every page is then one keystroke away, and three is about as many
+    as anyone holds without looking. Pages are not how you narrow to one kind
+    of row - `@` and a source name does that, inside whichever page you are
+    on - so a page is a *place*, and there are few places.
 
-    Name them so they can be *typed*: the names are matched by the window's
-    own matcher, so a scope named where an input method would be needed is
-    reachable only as far as Migemo reaches - the same argument that made
-    Migemo a dependency for the rows.
+    More than three, and it stops being a place and becomes a ring you count
+    around. If you want more, the answer is another key bound to another
+    `ShowCandidates`: a key is the scarce thing here, but it is yours to
+    spend.
 
     Scopes are also how an *expensive* source stays affordable. A source that
     walks the accessibility tree costs a real traversal every time the window
-    opens; put it in its own scope and it is paid for only when the user asks
-    for it, instead of on every invocation of a merged everything-scope.
+    opens; put it in its own page and it is paid for only when the user asks
+    for it, instead of on every invocation of a merged everything-page.
 
     ```python
     keymap_global["Fn-P"] = ShowCandidates([
-        Scope("All", [clipboard, snippets, windows]),
-        Scope("Clipboard", [clipboard, snippets]),
-        Scope("Windows", [windows]),
+        ChooserPage("All", [clipboard, snippets, windows]),
+        ChooserPage("Clipboard", [clipboard, snippets]),
+        ChooserPage("Windows", [windows]),
     ])
     ```
     """
 
     def __init__(self, name: str, sources):
-        """Build a scope.
+        """Build a page.
 
         Args:
-            name: Shown in the window while this scope is the current one.
+            name: Shown in the window while this page is the current one.
             sources: The sources it draws from - `CandidateSource` objects,
                 plain callables, or a mix.
         """
@@ -237,4 +234,4 @@ class Scope:
         self.sources = [as_source(s) for s in listed]
 
     def __repr__(self):
-        return f"Scope({self.name!r}, {len(self.sources)} sources)"
+        return f"ChooserPage({self.name!r}, {len(self.sources)} sources)"

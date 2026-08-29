@@ -172,35 +172,31 @@ class TestClipboardPresets:
         assert pasted == []
 
 
-class TestScopes:
-    """One key, several scopes - and Tab *completes* a scope name rather than
-    stepping to the next one.
+class TestPages:
+    """Left and Right move between pages, and the query comes with you.
 
-    Stepping is the wrong shape past three: reaching the fourth means pressing
-    Tab three times and reading the label each time, and the shipped config
-    offers eight. Typed toward, "how many more presses" is not a question the
-    user has to answer. The query survives the move either way, which is the
-    thing a typed sigil could never offer and the reason the switch was a key
-    in the first place."""
+    Pages are a *row, not a ring*: three of them with the common one in the
+    middle puts everything one keystroke away, and an edge that stops is what
+    makes them a place you point at rather than a cycle you count around.
+    Narrowing to one kind of row is not a page's job - that is `@`."""
 
-    def _open(self, scopes):
+    def _open(self, pages):
         from keyhac.actions import ChooserAction, ShowCandidates
-        action = ShowCandidates(scopes)
+        action = ShowCandidates(pages)
         action()
         assert ChooserAction._open is not None
         return action, ChooserAction._open[1]
 
-    def _scopes(self):
-        from keyhac.core.source import Scope
+    def _pages(self):
+        from keyhac.core.source import ChooserPage
         self.fruit, self.tool = _Fruit(), _Tool()
-        return [Scope("All", [self.fruit, self.tool]),
-                Scope("Fruit only", [self.fruit]),
-                Scope("Tools only", [self.tool])]
+        return [ChooserPage("Fruit only", [self.fruit]),
+                ChooserPage("All", [self.fruit, self.tool]),
+                ChooserPage("Tools only", [self.tool])]
 
-    def _tab(self, chooser, shift=False):
+    def _arrow(self, chooser, key):
         from puikit.event import Event, EventType
-        chooser._on_event(Event(type=EventType.KEY, key="tab",
-                                modifiers=frozenset({"shift"} if shift else ())))
+        chooser._on_event(Event(type=EventType.KEY, key=key))
 
     def _type(self, chooser, text):
         from puikit.event import Event, EventType
@@ -208,239 +204,251 @@ class TestScopes:
             chooser._on_event(Event(type=EventType.KEY,
                                     key=" " if ch == " " else ch, char=ch))
 
-    def test_it_opens_on_the_first_scope(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        assert chooser._scope == 0
+    def test_it_opens_on_the_first_page(self, ui_backend):
+        _action, chooser = self._open(self._pages())
+        assert chooser._page_index == 0
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+
+    def test_right_and_left_move_one_page(self, ui_backend):
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "right")
+        assert [c.display for c in chooser._filtered] == [
+            "apple", "apricot", "hammer"]
+        self._arrow(chooser, "right")
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+        self._arrow(chooser, "left")
         assert [c.display for c in chooser._filtered] == [
             "apple", "apricot", "hammer"]
 
-    def test_a_name_typed_and_completed_switches(self, ui_backend):
-        """The whole point: type toward the scope instead of stepping to it."""
-        _action, chooser = self._open(self._scopes())
-        self._type(chooser, "fru")
-        self._tab(chooser)
-        assert chooser._scope == 1
-        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+    def test_the_ends_stop(self, ui_backend):
+        """A ring brings back "which way is shorter", which is the question
+        this arrangement exists to retire."""
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "left")
+        assert chooser._page_index == 0, "it wrapped"
+        for _ in range(5):
+            self._arrow(chooser, "right")
+        assert chooser._page_index == 2, "it wrapped"
 
-    def test_the_completed_name_does_not_stay_in_the_query(self, ui_backend):
-        """A path completes into the text because the text is the answer; a
-        scope completes into a change of what the window shows, so the token
-        goes back out."""
-        _action, chooser = self._open(self._scopes())
-        self._type(chooser, "too")
-        self._tab(chooser)
-        assert chooser._edit.text == ""
-        assert chooser._scope == 2
+    def test_the_query_comes_with_you(self, ui_backend):
+        """Look for the same thing elsewhere without retyping it. Typed for
+        real: setting the filter directly would leave the field empty and the
+        assertion would pass on nothing."""
+        _action, chooser = self._open(self._pages())
+        self._type(chooser, "app")
+        assert [c.display for c in chooser._filtered] == ["apple"]
+        self._arrow(chooser, "right")
+        assert chooser._edit.text == "app", "the query was left behind"
+        assert [c.display for c in chooser._filtered] == ["apple"], \
+            "it came with, and still filters the new page"
 
-    def test_the_rest_of_the_query_survives(self, ui_backend):
-        """`a` filters, `too` names a scope, and only the second one is spent.
-        Typed for real: setting the field directly would prove nothing about
-        which characters the completion takes back."""
-        _action, chooser = self._open(self._scopes())
-        self._type(chooser, "a too")
-        self._tab(chooser)
-        assert chooser._edit.text == "a"
-        assert chooser._scope == 2
-        assert [c.display for c in chooser._filtered] == ["hammer"]
+    def test_the_arrows_are_not_the_carets_any_more(self, ui_backend):
+        """In a field being searched with, people fix a query by erasing back
+        to the mistake rather than by walking into it - so the pages get
+        Left and Right, and Backspace stays where it was."""
+        _action, chooser = self._open(self._pages())
+        self._type(chooser, "ap")
+        self._arrow(chooser, "left")
+        assert chooser._edit.cursor == 2, "the caret moved"
 
-    def test_an_ambiguous_prefix_opens_a_list_instead_of_guessing(self, ui_backend):
-        from keyhac.core.source import Scope
-        fruit, tool = _Fruit(), _Tool()
-        _action, chooser = self._open([Scope("All", [fruit, tool]),
-                                       Scope("Tools old", [tool]),
-                                       Scope("Tools new", [tool])])
-        self._type(chooser, "too")
-        self._tab(chooser)
-        assert chooser._completing
-        assert chooser._completion.candidates == ["Tools old", "Tools new"]
-        assert chooser._scope == 0, "it must not have guessed one"
-
-    def test_the_common_prefix_goes_in_and_stops_there(self, ui_backend):
-        from keyhac.core.source import Scope
-        fruit, tool = _Fruit(), _Tool()
-        _action, chooser = self._open([Scope("All", [fruit, tool]),
-                                       Scope("Tools old", [tool]),
-                                       Scope("Tools new", [tool])])
-        self._type(chooser, "to")
-        self._tab(chooser)
-        assert chooser._edit.text == "Tools ", chooser._edit.text
-
-    def test_tab_steps_the_open_list_over_what_matches(self, ui_backend):
-        """The old cycling gesture survives, but over the handful that match
-        rather than over everything."""
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)                       # nothing typed: offer them all
-        assert chooser._completing
-        assert chooser._completion.focused_index == -1
-        self._tab(chooser)
-        assert chooser._completion.focused_index == 0
-        self._tab(chooser)
-        assert chooser._completion.focused_index == 1
-        self._tab(chooser, shift=True)
-        assert chooser._completion.focused_index == 0
-
-    def test_shift_tab_with_nothing_open_shows_everything(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser, shift=True)
-        assert chooser._completion.candidates == ["Fruit only", "Tools only"]
-
-    def test_the_current_scope_is_not_offered(self, ui_backend):
-        """It is where you already are."""
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        assert "All" not in chooser._completion.candidates
-
-    def test_enter_takes_the_highlighted_scope(self, ui_backend):
-        from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        self._tab(chooser)                       # highlight the first
-        chooser._on_event(Event(type=EventType.KEY, key="enter"))
-        assert chooser._scope == 1
-        assert not chooser._completing
-
-    def test_enter_with_nothing_highlighted_takes_the_first(self, ui_backend):
-        """A list is open only because it was asked for, so Enter has an
-        obvious thing to mean and no reason to dead-end."""
-        from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        assert chooser._completion.focused_index == -1
-        chooser._on_event(Event(type=EventType.KEY, key="enter"))
-        assert chooser._scope == 1
-
-    def test_escape_closes_the_list_before_the_window(self, ui_backend):
-        from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        chooser._on_event(Event(type=EventType.KEY, key="escape"))
-        assert not chooser._completing
-        assert not chooser._done, "the window went with it"
-        chooser._on_event(Event(type=EventType.KEY, key="escape"))
-        assert chooser._done
-
-    def test_the_list_shows_the_scopes_while_it_is_open(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        chooser.panel.render()
+    def test_the_current_page_is_named_on_screen(self, ui_backend):
+        _action, chooser = self._open(self._pages())
+        assert chooser._page_label.text() == "‹ Fruit only ›"
+        self._arrow(chooser, "right")
+        assert chooser._page_label.text() == "‹ All ›"
         rows = ["".join(r) for r in chooser.window.snapshot()]
-        assert any("Fruit only" in r for r in rows), rows
-        assert any("Tools only" in r for r in rows), rows
-
-    def test_dismissing_puts_the_rows_back(self, ui_backend):
-        from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        chooser._on_event(Event(type=EventType.KEY, key="escape"))
-        chooser.panel.render()
-        rows = ["".join(r) for r in chooser.window.snapshot()]
-        assert any("apple" in r for r in rows), rows
-
-    def test_typing_narrows_an_open_list(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser)
-        assert len(chooser._completion.candidates) == 2
-        self._type(chooser, "fru")
-        assert chooser._completion.candidates == ["Fruit only"]
-
-    def test_a_prefix_matching_nothing_leaves_it_alone(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._type(chooser, "zzz")
-        self._tab(chooser)
-        assert not chooser._completing
-        assert chooser._scope == 0
-        assert chooser._edit.text == "zzz", "the query was not eaten"
-
-    def test_the_current_scope_is_named_on_screen(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        assert chooser._scope_label.text() == "‹ All ›"
-        self._type(chooser, "fru")
-        self._tab(chooser)
-        assert chooser._scope_label.text() == "‹ Fruit only ›"
-        rows = ["".join(r) for r in chooser.window.snapshot()]
-        assert any("Fruit only" in r for r in rows), rows
+        assert any("All" in r for r in rows), rows
 
     def test_switching_re_proposes_nothing(self, ui_backend):
         from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
+        _action, chooser = self._open(self._pages())
         chooser._on_event(Event(type=EventType.KEY, key="down"))
         assert chooser.in_list
-        self._type(chooser, "fru")
-        self._tab(chooser)
+        self._arrow(chooser, "right")
         assert not chooser.in_list, "the rows are different ones now"
 
     def test_choosing_still_routes_to_the_right_source(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._type(chooser, "too")
-        self._tab(chooser)
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "right")
+        self._arrow(chooser, "right")
         chooser._finish(chooser._filtered[0], 0)
         assert self.tool.chosen == ["hammer"] and self.fruit.chosen == []
 
-    def test_reopening_starts_at_the_first_scope_again(self, ui_backend):
-        action, chooser = self._open(self._scopes())
-        self._type(chooser, "fru")
-        self._tab(chooser)
-        assert chooser._scope == 1
+    def test_reopening_starts_at_the_first_page_again(self, ui_backend):
+        action, chooser = self._open(self._pages())
+        self._arrow(chooser, "right")
+        assert chooser._page_index == 1
         action()                               # toggles closed
         action()                               # and open again
         from keyhac.actions import ChooserAction
-        assert ChooserAction._open[1]._scope == 0
+        assert ChooserAction._open[1]._page_index == 0
 
-    def test_one_scope_shows_no_switcher(self, ui_backend):
+    def test_one_page_shows_no_switcher(self, ui_backend):
         _action, chooser = self._open([_Fruit(), _Tool()])
-        assert chooser._scopes == []
-        assert chooser._scope_label.text() == ""
+        assert chooser._pages == []
+        assert chooser._page_label.text() == ""
 
     def test_the_arrows_are_clickable(self, ui_backend):
         """The pointer is sometimes already in hand. A click reaches the
         popup (overlay_input="mouse" on macOS, WS_EX_NOACTIVATE on Windows)
         without the application underneath losing anything."""
         from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
-        switcher = chooser._scope_label
+        _action, chooser = self._open(self._pages())
+        switcher = chooser._page_label
         chooser.panel.render()                 # the widget learns its width
         width = switcher._width
         assert width > 0
 
         switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
                                     x=width - 1, y=0, button="left"))
-        assert chooser._scope == 1, "the right arrow moves forward"
+        assert chooser._page_index == 1, "the right arrow moves forward"
 
         switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
                                     x=0, y=0, button="left"))
-        assert chooser._scope == 0, "the left arrow moves back"
+        assert chooser._page_index == 0, "the left arrow moves back"
 
     def test_clicking_the_switcher_keeps_the_query(self, ui_backend):
         from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
+        _action, chooser = self._open(self._pages())
         chooser._on_event(Event(type=EventType.KEY, key="a", char="a"))
         chooser.panel.render()
-        chooser._scope_label.handle_event(
+        chooser._page_label.handle_event(
             Event(type=EventType.MOUSE_CLICK,
-                  x=chooser._scope_label._width - 1, y=0, button="left"))
-        assert chooser._edit.text == "a"
-        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+                  x=chooser._page_label._width - 1, y=0, button="left"))
+        assert chooser._edit.text == "a", "the query went with the click"
+        assert chooser._page_index == 1
 
     def test_the_switcher_does_not_take_the_focus(self, ui_backend):
         """Clicking it must not pull the focus out of the filter field."""
         assert not getattr(
-            __import__("keyhac.ui.scope_switcher", fromlist=["ScopeSwitcher"])
-            .ScopeSwitcher, "focusable", False)
+            __import__("keyhac.ui.page_switcher", fromlist=["PageSwitcher"])
+            .PageSwitcher, "focusable", False)
 
     def test_a_click_routes_through_the_window(self, ui_backend):
         """Not just the widget in isolation: the search row has to place it
         where a click can find it."""
         from puikit.event import Event, EventType
-        _action, chooser = self._open(self._scopes())
+        _action, chooser = self._open(self._pages())
         chooser.panel.render()
         rows = ["".join(r) for r in chooser.window.snapshot()]
-        line = next(i for i, r in enumerate(rows) if "All" in r)
-        column = rows[line].index("All")
+        # The `›` glyph, so the click lands on the forward half - at the
+        # first page the backward half is clamped and would prove nothing.
+        line = next(i for i, r in enumerate(rows) if "\u203a" in r)
+        column = rows[line].index("\u203a")
         chooser._on_event(Event(type=EventType.MOUSE_DOWN, x=column, y=line,
                                 button="left"))
         chooser._on_event(Event(type=EventType.MOUSE_UP, x=column, y=line,
                                 button="left"))
-        assert chooser._scope != 0, "the click never reached the switcher"
+        assert chooser._page_index != 0, "the click never reached the switcher"
+
+class TestNarrowingToOneSource:
+    """`@Name` narrows to one source *inside* the page you are on.
+
+    A page is a set of sources; `@` names one of them, which is a different
+    level and a different key. And it narrows by the name already shown
+    beside every row, so there is nothing hidden to discover and nothing to
+    memorise."""
+
+    def _open(self):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        from keyhac.core.source import ChooserPage
+        self.fruit, self.tool = _Fruit(), _Tool()
+        action = ShowCandidates([ChooserPage("All", [self.fruit, self.tool]),
+                                 ChooserPage("Fruit only", [self.fruit])])
+        action()
+        return action, ChooserAction._open[1]
+
+    def _type(self, chooser, text):
+        from puikit.event import Event, EventType
+        for ch in text:
+            chooser._on_event(Event(type=EventType.KEY,
+                                    key=" " if ch == " " else ch, char=ch))
+
+    def _tab(self, chooser):
+        from puikit.event import Event, EventType
+        chooser._on_event(Event(type=EventType.KEY, key="tab"))
+
+    def test_it_narrows_to_the_named_source(self, ui_backend):
+        _action, chooser = self._open()
+        assert [c.display for c in chooser._filtered] == [
+            "apple", "apricot", "hammer"]
+        self._type(chooser, "@Tool")
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+
+    def test_a_prefix_is_enough(self, ui_backend):
+        _action, chooser = self._open()
+        self._type(chooser, "@fr")
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+
+    def test_the_rest_of_the_query_still_filters(self, ui_backend):
+        _action, chooser = self._open()
+        self._type(chooser, "@fruit apr")
+        assert [c.display for c in chooser._filtered] == ["apricot"]
+
+    def test_the_sigil_is_not_searched_for(self, ui_backend):
+        """`@Tool` must not be matched against the rows as text, or it would
+        find nothing and mean nothing."""
+        _action, chooser = self._open()
+        self._type(chooser, "@Tool")
+        assert chooser._filtered, "the sigil leaked into the query"
+
+    def test_a_source_not_on_this_page_simply_matches_nothing(self, ui_backend):
+        """And that is visible rather than surprising: the badges say what
+        there is, so an empty list explains itself."""
+        _action, chooser = self._open()
+        from puikit.event import Event, EventType
+        chooser._on_event(Event(type=EventType.KEY, key="right"))
+        assert chooser._page_index == 1
+        self._type(chooser, "@Tool")
+        assert chooser._filtered == []
+
+    def test_tab_extends_as_far_as_it_is_sure(self, ui_backend):
+        _action, chooser = self._open()
+        self._type(chooser, "@to")
+        self._tab(chooser)
+        assert chooser._edit.text == "@Tool"
+
+    def test_tab_stops_at_the_common_prefix(self, ui_backend):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        from keyhac.core.source import ChooserPage, CallableSource
+        one = CallableSource(lambda: [Candidate(display="x")], "Toolbox")
+        two = CallableSource(lambda: [Candidate(display="y")], "Toolkit")
+        action = ShowCandidates([ChooserPage("All", [one, two])])
+        action()
+        chooser = ChooserAction._open[1]
+        self._type(chooser, "@too")
+        self._tab(chooser)
+        assert chooser._edit.text == "@Tool", chooser._edit.text
+
+    def test_tab_opens_no_list(self, ui_backend):
+        """The names are already on screen beside every row. A list would
+        show what the user is looking at, and cover it to do so."""
+        _action, chooser = self._open()
+        self._type(chooser, "@")
+        self._tab(chooser)
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        assert any("apple" in r for r in rows), rows
+
+    def test_tab_does_nothing_to_a_bare_word(self, ui_backend):
+        """The surprise this replaced: `act` used to switch page on Tab, with
+        nothing on screen predicting it. Without a sigil there is now no
+        second reading of what was typed, so nothing to be surprised by."""
+        _action, chooser = self._open()
+        self._type(chooser, "app")
+        self._tab(chooser)
+        assert chooser._edit.text == "app"
+        assert chooser._page_index == 0
+
+    def test_the_query_keeps_the_sigil_as_ordinary_text(self, ui_backend):
+        """It stays in the field rather than becoming a chip, so Backspace
+        edits it like anything else."""
+        from puikit.event import Event, EventType
+        _action, chooser = self._open()
+        self._type(chooser, "@Tool")
+        chooser._on_event(Event(type=EventType.KEY, key="backspace"))
+        assert chooser._edit.text == "@Too"
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+
 
 
 class _FakeMenuElement:
@@ -578,7 +586,7 @@ class TestMenuItemsSource:
         """The second time this trap has bitten. A `Focus` mixes its sources -
         its window title comes from the AX-focused application, which the
         popup itself can become - and reading the menu bar from there gets
-        Keyhac's, which as an accessory app has none. The symptom was a scope
+        Keyhac's, which as an accessory app has none. The symptom was a page
         that came up empty."""
         import keyhac.core.sources as src
 
@@ -604,7 +612,7 @@ class TestMenuItemsSource:
     def test_the_menu_bar_comes_from_element_and_not_from_native(self):
         """`native` is *the platform's own object*: an AX element on macOS,
         but the HWND wrapper on Windows, which has no menu bar to find. That
-        is why the Menu scope came up empty on Windows while the same code
+        is why the Menu page came up empty on Windows while the same code
         worked on macOS - the tests faked the macOS shape too. `element` is
         the documented bridge from a window to element introspection, and it
         answers an element on both."""
@@ -1125,18 +1133,18 @@ class TestStreaming:
     def test_switching_scope_abandons_what_the_last_one_was_producing(
             self, ui_backend):
         """By dropping the iterator - nothing has to be told to stop."""
-        from keyhac.core.source import Scope
+        from keyhac.core.source import ChooserPage
         from puikit.event import Event, EventType
         source = self._Slow(count=200)
-        _action, chooser = self._open([Scope("Slow", [source]),
-                                       Scope("Fruit", [_Fruit()])])
+        _action, chooser = self._open([ChooserPage("Slow", [source]),
+                                       ChooserPage("Fruit", [_Fruit()])])
         # Deliberately without pumping: opening registers the drain, it does
         # not run it, so the switch lands while the source is untouched.
         assert source.produced == 0
-        chooser._on_event(Event(type=EventType.KEY, key="tab"))
+        chooser._on_event(Event(type=EventType.KEY, key="right"))
         assert chooser._pending is None
         assert [c.display for c in chooser._items] == ["apple", "apricot"]
-        # And it stays abandoned: the ticks that follow belong to the scope
+        # And it stays abandoned: the ticks that follow belong to the page
         # now showing, and the old generator is simply never asked again.
         self._pump(ui_backend)
         assert source.produced == 0 and source.finished is False
@@ -1347,7 +1355,7 @@ class TestWindowControlsSource:
         assert WindowControlsSource().badge(row) == "AXCheckBox"
 
     def test_a_menu_item_is_a_control_like_any_other(self):
-        """How a Windows menu reaches the user at all. There is no menu scope
+        """How a Windows menu reaches the user at all. There is no menu page
         there - the bar is not an OS-level part and fills only when it opens -
         so the window's own top-level items are listed here, and choosing one
         opens that menu, which is what clicking it does."""
@@ -1368,8 +1376,8 @@ class TestWindowControlsSource:
         assert [c.display for c in self._rows(root)] == ["Cell"]
 
     def test_the_tree_comes_from_element_and_not_from_native(self):
-        """The Control scope's half of the same bug: on Windows `native` is
-        the HWND wrapper, which has no children to walk, so the scope came up
+        """The Control page's half of the same bug: on Windows `native` is
+        the HWND wrapper, which has no children to walk, so the page came up
         empty. See TestMenuItemsSource's twin."""
         import keyhac.core.sources as src
 
@@ -1457,9 +1465,9 @@ class TestWindowControlsSource:
 
 
 class TestScopeCaching:
-    """Tabbing between scopes used to re-read each one. What makes keeping
+    """Tabbing between pages used to re-read each one. What makes keeping
     them safe is not a guess about staleness: the dismissal watch closes the
-    window the moment the front window changes, so nothing a scope read can
+    window the moment the front window changes, so nothing a page read can
     have gone stale while the window is still up."""
 
     class _Counting(CandidateSource):
@@ -1472,29 +1480,32 @@ class TestScopeCaching:
             self.reads += 1
             return [Candidate(display=r) for r in self.rows]
 
-    def _open(self, scopes):
+    def _open(self, pages):
         from keyhac.actions import ChooserAction, ShowCandidates
-        action = ShowCandidates(scopes)
+        action = ShowCandidates(pages)
         action()
         return action, ChooserAction._open[1]
 
     def _scoped(self, *sources):
-        from keyhac.core.source import Scope
-        return [Scope(s.name, [s]) for s in sources]
+        from keyhac.core.source import ChooserPage
+        return [ChooserPage(s.name, [s]) for s in sources]
 
     def _tab(self, chooser, shift=False):
+        """Move one page. Named for the key it used to be; the gesture is an
+        arrow now, and these tests are about paging rather than about which
+        key does it."""
         from puikit.event import Event, EventType
-        chooser._on_event(Event(type=EventType.KEY, key="tab",
-                                modifiers=frozenset({"shift"} if shift else ())))
+        chooser._on_event(Event(type=EventType.KEY,
+                                key="left" if shift else "right"))
 
     def test_a_scope_is_read_once_per_window(self, ui_backend):
         slow = self._Counting("Slow", ["a", "b"])
         other = self._Counting("Other", ["c"])
         _action, chooser = self._open(self._scoped(slow, other))
         assert slow.reads == 1
-        self._tab(chooser)                      # to Other
-        self._tab(chooser)                      # back to Slow
-        assert slow.reads == 1, "tabbing back re-read it"
+        self._tab(chooser)                      # right, to Other
+        self._tab(chooser, shift=True)          # left, back to Slow
+        assert slow.reads == 1, "coming back re-read it"
         assert [c.display for c in chooser._items] == ["a", "b"]
 
     def test_reopening_the_window_does_read_again(self, ui_backend):
@@ -1509,7 +1520,7 @@ class TestScopeCaching:
 
     def test_a_half_read_scope_resumes_rather_than_restarting(self,
                                                               ui_backend):
-        from keyhac.core.source import Scope
+        from keyhac.core.source import ChooserPage
         from keyhac.actions import ChooserAction, ShowCandidates
 
         produced = []
@@ -1522,8 +1533,8 @@ class TestScopeCaching:
                     produced.append(index)
                     yield Candidate(display=f"row {index}")
 
-        action = ShowCandidates([Scope("Streaming", [_Streaming()]),
-                                 Scope("Other", [_Fruit()])])
+        action = ShowCandidates([ChooserPage("Streaming", [_Streaming()]),
+                                 ChooserPage("Other", [_Fruit()])])
         action()
         chooser = ChooserAction._open[1]
         ui_backend.run_animation_ticks()
@@ -1536,13 +1547,13 @@ class TestScopeCaching:
         assert produced == list(range(6)), "the generator restarted"
 
     def test_a_source_shared_between_scopes_is_read_once(self, ui_backend):
-        """The everything-scope and a scope of its own should not walk the
+        """The everything-page and a page of its own should not walk the
         same menu bar twice for one press of one key."""
-        from keyhac.core.source import Scope
+        from keyhac.core.source import ChooserPage
         shared = self._Counting("Shared", ["a", "b"])
         _action, chooser = self._open([
-            Scope("All", [shared, self._Counting("Other", ["c"])]),
-            Scope("Just it", [shared]),
+            ChooserPage("All", [shared, self._Counting("Other", ["c"])]),
+            ChooserPage("Just it", [shared]),
         ])
         assert shared.reads == 1
         self._tab(chooser)
@@ -1552,20 +1563,20 @@ class TestScopeCaching:
     def test_two_separately_built_sources_are_two_sources(self, ui_backend):
         """Which is the right answer when they differ - two SnippetsSource
         with different snippets are not interchangeable."""
-        from keyhac.core.source import Scope
+        from keyhac.core.source import ChooserPage
         one = self._Counting("One", ["a"])
         two = self._Counting("Two", ["b"])
-        _action, chooser = self._open([Scope("First", [one]),
-                                       Scope("Second", [two])])
+        _action, chooser = self._open([ChooserPage("First", [one]),
+                                       ChooserPage("Second", [two])])
         self._tab(chooser)
         assert (one.reads, two.reads) == (1, 1)
         assert [c.display for c in chooser._items] == ["b"]
 
     def test_a_shared_streaming_source_carries_its_progress_across(self,
                                                                    ui_backend):
-        """A row read in one scope starts the other from where this one got
+        """A row read in one page starts the other from where this one got
         to, rather than from nothing."""
-        from keyhac.core.source import Scope
+        from keyhac.core.source import ChooserPage
         from keyhac.actions import ChooserAction, ShowCandidates
 
         produced = []
@@ -1579,7 +1590,7 @@ class TestScopeCaching:
                     yield Candidate(display=f"row {index}")
 
         shared = _Streaming()
-        ShowCandidates([Scope("All", [shared]), Scope("Just it", [shared])])()
+        ShowCandidates([ChooserPage("All", [shared]), ChooserPage("Just it", [shared])])()
         chooser = ChooserAction._open[1]
         for _ in range(40):
             ui_backend.run_animation_ticks()
@@ -1918,7 +1929,7 @@ class TestBackgroundSources:
         action = ShowCandidates(sources)
         action._read = {}
         action._owners = {}
-        action._scope = 0
+        action._page = 0
         return action._collect()
 
     def test_a_list_source_is_never_a_worker_s_business(self, ui_backend):
@@ -1945,19 +1956,19 @@ class TestBackgroundSources:
 
     def test_switching_scope_stops_the_walk_first(self, ui_backend):
         """The generator the worker is draining is about to be handed to
-        another scope; two consumers of one generator is not a race that can
+        another page; two consumers of one generator is not a race that can
         be tidied up afterwards."""
         import threading
         from keyhac.actions import ChooserAction, ShowCandidates
-        from keyhac.core.source import Scope
-        action = ShowCandidates([Scope("A", [self._Background()]),
-                                 Scope("B", [self._Background()])])
+        from keyhac.core.source import ChooserPage
+        action = ShowCandidates([ChooserPage("A", [self._Background()]),
+                                 ChooserPage("B", [self._Background()])])
         action()
         chooser = ChooserAction._open[1]
         chooser._bg_stop = threading.Event()
         stopped = chooser._bg_stop
-        chooser.switch_scope(1)
-        assert stopped.is_set(), "the scope switch left the old walk running"
+        chooser.switch_page(1)
+        assert stopped.is_set(), "the page switch left the old walk running"
 
     def test_a_callable_source_can_declare_it(self, ui_backend):
         """The case the flag is really for outside Keyhac's own sources: a

@@ -278,7 +278,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 - The base class is `CandidateSource`, not `Source`. `from keyhac import *` is
   flat, and a config writes `class Branches(CandidateSource)` with no
-  surrounding call to say which kind of source is meant. `Scope` keeps the
+  surrounding call to say which kind of source is meant. `ChooserPage` keeps the
   short name because it is only ever written inside `ShowCandidates([...])`,
   where the context is right there — the test is whether the name appears
   somewhere that supplies its own context, not whether the word is generic.
@@ -401,7 +401,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   object*, and that is an AX element on macOS but the **HWND wrapper** on
   Windows — which has no `children()`, no `role()` and no `menu_bar()`. Both
   sources caught the resulting `AttributeError`, logged at debug and returned
-  nothing, so on Windows the Control and Menu scopes were silently empty while
+  nothing, so on Windows the Control and Menu pages were silently empty while
   the identical code worked on macOS.
 - `Window.element` is the documented bridge for exactly this ("macOS already
   holds the AX element; Windows resolves the HWND through UI Automation") and
@@ -437,7 +437,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   they chose does nothing. Both platforms have `set_focus()`, so the fallback
   is portable rather than a Windows special case.
 
-## There is no Menu scope on Windows
+## There is no Menu page on Windows
 
 - **A menu bar is a macOS concept.** There it is an OS-level part: one per
   application, always at the top of the screen, always present, and readable
@@ -451,8 +451,8 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   visibly flashing open, a cost per top-level item, and a modal menu loop in
   the target application while it happens. Attempting it against a tk window
   wedged the UIA call until the process was killed.
-- So Keyhac does not offer a menu scope there, and the shipped config builds
-  the "Menus" scope on macOS only. **Nothing is lost:** a menu's top-level
+- So Keyhac does not offer a menu page there, and the shipped config builds
+  the "Menus" page on macOS only. **Nothing is lost:** a menu's top-level
   items are UI elements of the window like any other, and
   `WindowControlsSource` already lists them (role `MenuItem`) — measured on a
   tk window: File, Edit, Shell, Debug, Options, Window, Help. Choosing one
@@ -468,75 +468,69 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   worked, but it only bought a list of top-level names that Controls already
   had.
 
-## Candidate scopes
+## Candidate pages
 
-- **Tab completes a scope by name; it does not step to the next one.** The
-  cycle was the right shape for two or three and the wrong one for eight,
-  which is what the shipped config offers: reaching the fourth meant pressing
-  Tab three times and reading the label each time, and nothing on screen said
-  how many more presses a named scope was away. Typed toward, that question
-  does not arise — and "show me the list" stops needing a permanent widget,
-  because an ambiguous Tab produces one.
-- **The completed name does not stay in the field.** A path completes into the
-  text because the text is the answer; a scope completes into a change of what
-  the window is showing, so committing one takes the token back out. That is
-  what keeps *the query surviving the move* — the invariant the cycle had, and
-  the reason a typed sigil (`>`, `@`) was rejected: `save menu` + Tab leaves
-  `save` behind and moves to Menus. The other reason a sigil is wrong is
-  unchanged: with Migemo the query alphabet is exactly ASCII, so one sits in
-  the middle of what the user is trying to type.
-- **Completion acts on the word under the caret**, which is what lets the rest
-  of the query survive without any special case.
-- **The span is remembered, not recomputed.** A completed name may contain a
-  space — `Tools only` from `too` is two words — and asking afterwards which
-  word the caret is in answers "only" and takes back half a name. So the
-  controller records where the token began.
-- **Scope names are matched by the window's own matcher**, so wildcards and
-  Migemo work on them exactly as on rows. That is not a flourish: the chooser
-  gave up its input method, so a scope named in Japanese is otherwise
-  unreachable — the same argument that made Migemo a dependency in the first
-  place. It does mean a config author's scope names are now a typed
-  vocabulary, and two scopes sharing a prefix cost a keystroke.
-- **The shape is XeFM's** (`xefm/completion.py`), ported rather than shared:
-  longest common prefix on Tab, a list when more than one thing could still be
-  meant, "a second Tab" stepping the highlight. What is dropped is its
-  threaded fetch — a directory listing can stall and a handful of scope names
-  cannot.
-- **The scope list borrows the window's own list** rather than opening a
-  second one. It is already a list being chosen from with the same keys, and a
-  picker that grows a different picker to pick with is one more thing to
-  explain. Rows from a streaming source keep accumulating underneath and are
-  back the moment the completion ends.
-- **One layer at a time.** Escape closes the completion; the Escape after it
-  closes the window. Enter takes the highlighted scope, or the first when
-  nothing is highlighted — a list is open only because it was asked for, so
-  Enter has an obvious meaning and no reason to dead-end.
-- Tab is **intercepted before the Panel**, which would otherwise spend it on
-  focus traversal between the field and the list.
-- The scope name is drawn as `‹ Name ›` at the right of the search row
-  (`keyhac/ui/scope_switcher.py`). The arrows are not decoration: a key-driven
-  switch has no visible affordance of its own, and they are what says one
-  exists — the discoverability cost of choosing a key over a prefix, paid
-  back. They are also **clickable**, for when the pointer is already in hand;
-  the popup receives clicks (`overlay_input="mouse"` / `WS_EX_NOACTIVATE`)
-  without the application underneath losing anything. Which *half* was clicked
-  decides the direction, not which glyph — an arrow is one character wide and
-  nobody aims at a chevron. The widget is deliberately **not focusable**: a
-  click there must not pull the focus out of the filter field.
-- Switching **re-proposes nothing** (focus returns to the field, no row
-  selected): the rows are different ones, so the rule a changed query follows
-  applies here too.
-- A window **always opens on the first scope**. Reopening wherever it was last
-  left would make one key mean different things on different presses.
-- With scopes the row widget is used throughout, even in a scope that draws no
-  badge — switching would otherwise have to swap the list widget itself.
-- Scopes are also what keeps an **expensive source affordable**: a source that
-  walks the accessibility tree costs a real traversal every time the window
-  opens, so putting it in its own scope means it is paid for only when asked
-  for. That is why scopes came before the accessibility source rather than
-  after it — without them the only places to put an expensive source are "in
-  the merged everything-scope, paid every time" or "on a hotkey of its own",
-  and the hotkey is the thing this was trying to save.
+- **Two axes, and they are different questions.** A *page* is which set of
+  sources the window is over; `@Name` is which of the sources on that page you
+  meant. Conflating them is what the first two attempts did, and it is what
+  made them confusing.
+- **Left and Right move between pages.** Not a key shared with the query, so
+  there is no second reading of what was typed and nothing to disclose. Three
+  pages with the common one in the middle puts every page one keystroke away,
+  which answers "how many more presses" by making the answer always one.
+- **They clamp, they do not wrap.** An edge that stops is what makes three
+  pages a place you point at rather than a ring you count around, and "which
+  way is shorter" is the question this arrangement retires.
+- **Bare arrows only.** `Ctrl-Left` is a word, `Shift-Left` a selection and
+  `Cmd-Left` the line start, and all three arrive under the same key name;
+  taking them too would leave the field unable to do any of it. Bare Left and
+  Right therefore left `_FIELD_KEYS`, and their modifier forms are let through
+  beside it.
+- **`@Name` narrows to one source, inside the current page.** It filters by
+  the name the badge beside every row *already shows*, which is the whole
+  reason it does not need explaining: the thing the sigil names is on screen
+  before the sigil is typed. `@Action` on a page without that source empties
+  the list, and the empty list explains itself.
+- **A declaration, not an inference.** This is what the two rejected attempts
+  got wrong. Completing a bare token on Tab meant the same text had two
+  readings — a filter, which every keystroke displayed, and a page prefix,
+  which nothing displayed — and Tab acted on the invisible one. Typing `act`
+  to filter and landing in a different page is the symptom. A sigil cannot do
+  that: the user typed it, so it is already on screen.
+- **The old objection to a sigil no longer holds, and was half wrong anyway.**
+  It was rejected because a typed prefix could not let the query survive the
+  move, and because "with Migemo the query alphabet is exactly ASCII". The
+  first is void — pages moved to the arrows, so nothing about `@` touches the
+  query's survival. The second was overstated: the wildcard alphabet is `*`
+  and `?`, and Migemo's input is romaji, so `@` is reserved by neither. What
+  is true is narrower — `@` at the start of a token can be a thing someone
+  wants to search for — and that collision is *visible*, unlike the one it
+  replaced.
+- **A lone `@` narrows to nothing and is not searched for.** Treating it as
+  text empties the list for one keystroke, which reads as "no results" at
+  exactly the moment the user is starting to say which source they mean.
+- **`@` stays in the field as ordinary text**, rather than becoming a chip:
+  Backspace then edits it like anything else, and nothing has to be built to
+  draw it.
+- **Tab lengthens the `@` token and opens no list.** The names are on screen
+  already, and the chooser's only list is the rows — borrowing it to show
+  sources would cover the badges that are the answer. So Tab commits nothing,
+  opens no mode, and has nothing to dismiss; where it cannot lengthen, the
+  badges are the list. It does nothing at all to a bare word, which is the
+  surprise it replaced.
+- **`source_of` is not `badge_of`.** With one source the badge slot belongs to
+  the source itself — the menu source puts a keyboard shortcut there — so the
+  two questions have different answers, and only one of them is always a
+  source's name.
+- **Three pages is the recommendation, and `@` is what makes it enough.** The
+  config shipped eight, and it shipped eight because a page was the only way
+  to narrow to one source. Give `@` that job and the pages collapse to places:
+  Do, Paste, Screen. More than three is a key of your own bound to another
+  `ShowCandidates` — a key is the scarce thing, but it is yours to spend.
+- **`ChooserPage`, not `Scope`.** Renamed while it was free: `Scope` had never
+  shipped (v2.2.3 predates the candidate window), and once `@` does the
+  narrowing, "scope" actively misleads — it sounds like a filter. Long name
+  for the same reason `CandidateSource` has one: `keyhac import *` is flat.
 
 ## The key-bindings source
 
@@ -588,14 +582,14 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   on wide shallow layers and never reaches the deep ones — and its first rows
   were status-bar noise where depth-first gives the toolbar.
 - **A source is read once per window — keyed on the source object, not on the
-  scope.** Tabbing between scopes used to re-walk, and keying on the scope
+  page.** Tabbing between pages used to re-walk, and keying on the page
   would still have walked the same menu bar twice for a `MenuItemsSource` that
-  sits both in an everything-scope and in a scope of its own. Sharing the
+  sits both in an everything-page and in a page of its own. Sharing the
   instance is how a config says "this is the same source"; building two says
   they are two, which is the right answer when they differ — two
   `SnippetsSource` with different snippets are not interchangeable.
-- A **half-read source keeps its generator**, and a row read for one scope
-  lands in the source's own list as well as the window's, so a different scope
+- A **half-read source keeps its generator**, and a row read for one page
+  lands in the source's own list as well as the window's, so a different page
   sharing it starts from where the first got to rather than from nothing.
 - What makes keeping any of it safe is not a judgement about staleness: the
   dismissal watch closes the window the moment the front window changes, so
@@ -709,7 +703,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   query, which resets both deliberately. Without that asymmetry a list that is
   still filling moves under the hand choosing from it. Ported from XeFM's
   `add_items`, which is the one part of its shape that transfers unchanged.
-- **Abandoning is dropping the iterator.** A scope switch or a close simply
+- **Abandoning is dropping the iterator.** A page switch or a close simply
   stops pulling; nothing has to be told to stop, and there is no thread to
   join. The cancellation question discussion #112 raises for the iterator
   interface answers itself once the producer is a generator.
@@ -821,7 +815,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   elements instead of 117. There is no cheap way to enumerate a heavy app's
   controls. The menu bar, by contrast, is bounded and almost entirely named:
   77–202 items in 84–298 ms. That is why menus came first.
-- **It belongs in a `Scope` of its own** for the same reason — a merged scope
+- **It belongs in a `ChooserPage` of its own** for the same reason — a merged page
   opened on every keystroke cannot afford a quarter of a second.
 - Only **leaves** are offered. A row that merely opens another menu is not a
   command, and a list of those would be a worse menu bar rather than a better
@@ -845,7 +839,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   its pid is the frontmost application, which the popup never becomes, while
   its window title and element come from the *AX-focused* application, which
   the popup **does** become. Reading the menu bar from there gets Keyhac's,
-  and Keyhac is an accessory app with no menu bar — so the scope came up
+  and Keyhac is an accessory app with no menu bar — so the page came up
   empty. `get_active_window()` reads the frontmost application throughout.
 - Worth knowing: **a custom-drawn application exposes almost nothing.** XeFM,
   a PuiKit app, offers 4 elements and 7 nodes — and Keyhac's own windows are
@@ -961,7 +955,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   implementation would have to remember and restore the previous `HKL`. Both were
   measured on Windows 11 — the language switch does work through
   `WM_INPUTLANGCHANGEREQUEST` posted to the *focused* window, so this is a choice
-  about scope rather than about what is possible.
+  about page rather than about what is possible.
 - The asymmetry only reaches users who run an IME language **and** a non-IME one.
   On a Japanese-only setup — the classic one, where 半角/全角 opens and closes the
   only installed IME — every layout satisfies the gate, the two levels collapse

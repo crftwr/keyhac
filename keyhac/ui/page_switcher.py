@@ -1,6 +1,6 @@
-"""The scope indicator at the right of the filter field: `‹ Name ›`.
+"""The page indicator at the right of the filter field: `‹ Name ›`.
 
-The arrows carry two jobs. A key-driven switch (Tab completes a name) has no
+The arrows carry two jobs. A key-driven switch (Left / Right) has no
 visible affordance of its own, so they are what says one exists at all - the
 discoverability cost of preferring a key over a typed prefix, paid back. And
 they are clickable, for the moment the pointer is already in hand: the
@@ -10,7 +10,7 @@ underneath losing anything.
 
 Deliberately **not focusable**. A click here must not take the focus off the
 filter field - the point of the whole two-pane arrangement is that the field
-is where typing goes, and nothing about switching scope changes that.
+is where typing goes, and nothing about switching page changes that.
 """
 
 from puikit import DEFAULT_STYLE, Style
@@ -26,7 +26,7 @@ _PREV, _NEXT = "‹", "›"
 _NAME_STYLE = Style(fg=(130, 130, 140))
 
 
-class ScopeSwitcher(Widget):
+class PageSwitcher(Widget):
     """`‹ Name ›`, where clicking an arrow moves along the cycle."""
 
     def __init__(self, name: str = "", on_switch=None,

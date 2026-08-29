@@ -783,17 +783,26 @@ class TestChooserFocus:
 
     def test_moving_the_caret_from_the_list_returns_to_the_field(
             self, ui_backend):
-        """Left/Right and their modifier forms - Ctrl-Left for a word,
-        Shift-Left to select, Cmd-Left for the line start - all arrive under
-        these names, so naming the bare keys covers the derivatives."""
+        """Bare Left and Right belong to the pages now. Their modifier forms
+        do not - Ctrl-Left is a word, Shift-Left a selection, Cmd-Left the
+        line start - and all arrive under the same name, so the field has to
+        get them back or it loses all three."""
         chooser = self._chooser(ui_backend)
         self._key(chooser, "a", char="a")
-        for key, modifiers in (("left", ()), ("right", ("ctrl",)),
-                               ("delete", ()), ("left", ("shift",))):
+        for key, modifiers in (("right", ("ctrl",)), ("delete", ()),
+                               ("left", ("shift",)), ("left", ("cmd",))):
             self._key(chooser, "down")
             assert chooser.in_list
             self._key(chooser, key, modifiers=modifiers)
             assert not chooser.in_list, f"{key} {modifiers} should leave the list"
+
+    def test_a_bare_arrow_stays_with_the_pages(self, ui_backend):
+        """The other half of the rule above."""
+        chooser = self._chooser(ui_backend)
+        self._key(chooser, "down")
+        assert chooser.in_list
+        self._key(chooser, "left")
+        assert chooser.in_list, "a bare arrow is the pages', not the field's"
 
     def test_home_and_end_stay_with_the_list(self, ui_backend):
         """The one pair that is not the caret's: a list long enough to want a

@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1618,7 +1618,7 @@ The hotkey is the scarce resource, not the code: an action class per kind of row
 ```python
 kt["Fn-V"] = ShowCandidates([ClipboardHistorySource(), SnippetsSource(mine)])
 kt["Fn-B"] = ShowCandidates(git_branches, on_chosen=checkout)
-kt["Fn-P"] = ShowCandidates([Scope("All", every), Scope("Clipboard", clip)])
+kt["Fn-P"] = ShowCandidates([ChooserPage("All", every), ChooserPage("Clipboard", clip)])
 ``` 
 
 Enter runs whatever the chosen row's source says to do, so rows from different sources can mean different things in the same window - paste this, activate that, press the other. 
@@ -1635,7 +1635,7 @@ Build the action.
 
 **Args:**
  
- - <b>`sources`</b>:  A `CandidateSource`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing.  A list  of `Scope` objects instead gives the window a cycle Tab and  Shift-Tab move along, keeping the query as they go. 
+ - <b>`sources`</b>:  A `CandidateSource`, a plain callable returning candidates, or a  list of either.  A callable is wrapped, so anything that can  produce a list can be a source without subclassing.  A list  of `ChooserPage` objects instead gives the window a row of  pages that Left and Right move between, keeping the query as  they go.  Aim for three, with the one you reach for most in  the middle; `@` narrows within a page and is what makes three  enough. 
  - <b>`on_chosen`</b>:  Called as `on_chosen(candidate, modifier_flags)` for  rows whose source does not say what to do itself - which is  every row when the source is a bare callable. 
  - <b>`matcher`</b>:  How the filter text is matched; the default is  case-insensitive substring unioned with Migemo. 
  - <b>`activates`</b>:  Whether the window takes OS keyboard focus.  Leave it  alone unless the filter field genuinely needs an input method 
@@ -1687,7 +1687,7 @@ Adapt the `(icon, label, *payload)` tuple `ChooserAction.list_items` returns.  T
 ## <kbd>class</kbd> `CandidateSource`
 A named set of candidates, and what choosing one does. 
 
-Named for what it is a source *of*: `keyhac import *` is flat, and a config writes `class Branches(CandidateSource)` with no surrounding call to say which kind of source is meant.  `Scope` keeps the shorter name because it is only ever written inside `ShowCandidates([...])`, where the context is right there. 
+Named for what it is a source *of*: `keyhac import *` is flat, and a config writes `class Branches(CandidateSource)` with no surrounding call to say which kind of source is meant.  `ChooserPage` keeps the shorter name because it is only ever written inside `ShowCandidates([...])`, where the context is right there. 
 
 `background` says whether the generator `candidates()` returns may be drained on a worker thread.  False by default - a source touching the UI or the keymap is only correct on the main thread - and True is for one whose work is entirely outside this process: another application's accessibility tree, a file, a subprocess, the network.  The difference is not marginal.  A main-thread generator is drained in 2 ms slices on a 10 Hz tick, so a walk that takes a quarter of a second to read takes ten seconds to appear; on a worker it takes the quarter second. 
 
@@ -1718,7 +1718,7 @@ The rows this source offers *right now*.  Override this.
 
 Called on every invocation rather than cached: a source reading the screen - the windows that exist, the controls in the front window - is describing something that has already moved on by the time it is asked again. 
 
-Return a list, or - for a source with real work to do - **yield**. A generator is drained as it goes, so its first rows are on screen while it is still finding the rest, and abandoning it (the window closed, the scope changed) simply stops pulling. 
+Return a list, or - for a source with real work to do - **yield**. A generator is drained as it goes, so its first rows are on screen while it is still finding the rest, and abandoning it (the window closed, the page changed) simply stops pulling. 
 
 This method runs on the **main thread**.  The generator it returns runs there too unless the source sets `background` (below), in which case only the generator moves to a worker.  On the main thread, yield often and do not block: the drain gets 2 ms per turn, and a slice that does not come back holds the keyboard as surely as any other main-thread work would. 
 
@@ -1759,38 +1759,38 @@ A callable that **yields** is a streaming source and stays one; one that returns
 ---
 
 
-## <kbd>class</kbd> `Scope`
+## <kbd>class</kbd> `ChooserPage`
 A named set of sources the candidate window can switch between. 
 
-One key opens the window, and **Tab completes a scope by name**: type enough of one and Tab goes there, `Shift-Tab` offers the whole list. Stepping to the next scope instead is the wrong shape past three of them, since reaching the fourth means pressing Tab three times and reading the label each time. 
+One key opens the window; **Left and Right move between pages**, and the query comes with you - type `kensaku`, then look for the same thing on another page without retyping it. 
 
-The query survives the move - type `kensaku`, add a scope name, and Tab takes the name back out and leaves the query behind. That is the thing a typed prefix (`>`, `@`) cannot do, and the reason a completed name is not left sitting in the field. The other reason a sigil is wrong is that with Migemo the query alphabet is exactly ASCII, so one sits in the middle of what the user is trying to type. 
+**Three is the number to aim for**, with what you reach for most in the middle: every page is then one keystroke away, and three is about as many as anyone holds without looking. Pages are not how you narrow to one kind of row - `@` and a source name does that, inside whichever page you are on - so a page is a *place*, and there are few places. 
 
-Name them so they can be *typed*: the names are matched by the window's own matcher, so a scope named where an input method would be needed is reachable only as far as Migemo reaches - the same argument that made Migemo a dependency for the rows. 
+More than three, and it stops being a place and becomes a ring you count around. If you want more, the answer is another key bound to another `ShowCandidates`: a key is the scarce thing here, but it is yours to spend. 
 
-Scopes are also how an *expensive* source stays affordable. A source that walks the accessibility tree costs a real traversal every time the window opens; put it in its own scope and it is paid for only when the user asks for it, instead of on every invocation of a merged everything-scope. 
+Scopes are also how an *expensive* source stays affordable. A source that walks the accessibility tree costs a real traversal every time the window opens; put it in its own page and it is paid for only when the user asks for it, instead of on every invocation of a merged everything-page. 
 
 ```python
 keymap_global["Fn-P"] = ShowCandidates([
-     Scope("All", [clipboard, snippets, windows]),
-     Scope("Clipboard", [clipboard, snippets]),
-     Scope("Windows", [windows]),
+     ChooserPage("All", [clipboard, snippets, windows]),
+     ChooserPage("Clipboard", [clipboard, snippets]),
+     ChooserPage("Windows", [windows]),
 ])
 ``` 
 
-### <kbd>method</kbd> `Scope.__init__`
+### <kbd>method</kbd> `ChooserPage.__init__`
 
 ```python
 __init__(name: str, sources)
 ```
 
-Build a scope. 
+Build a page. 
 
 
 
 **Args:**
  
- - <b>`name`</b>:  Shown in the window while this scope is the current one. 
+ - <b>`name`</b>:  Shown in the window while this page is the current one. 
  - <b>`sources`</b>:  The sources it draws from - `CandidateSource` objects,  plain callables, or a mix. 
 
 ---
@@ -1865,7 +1865,7 @@ This is the long tail the candidate window is for: the commands that have no key
 
 Only leaves are offered.  A row that merely opens another menu is not a command, and a list of them would be a worse menu bar rather than a better one.  Disabled items are skipped: they are visible in the menu for the shape of it, and unchoosable here. 
 
-**It costs a real traversal.**  Measured on macOS: 79 ms for a small application, 396 ms for Chrome, for 161 and 331 items - so this belongs in a `Scope` of its own, where it is paid for when asked for, rather than in a merged scope opened on every keystroke. 
+**It costs a real traversal.**  Measured on macOS: 79 ms for a small application, 396 ms for Chrome, for 161 and 331 items - so this belongs in a `ChooserPage` of its own, where it is paid for when asked for, rather than in a merged page opened on every keystroke. 
 
 **macOS only.**  There the menu bar is an OS-level part: one per application, always at the top of the screen, and readable in full while it is closed.  A Windows menu belongs to a window, may not be there at all, and is populated only when it opens - so this source finds no menu bar there and yields nothing.  Nothing is lost: a menu's top-level items are UI elements of the window like any other, and `WindowControlsSource` lists them with everything else clickable. 
 
@@ -1891,7 +1891,7 @@ Everything you could click in the front window, reachable by name.
 
 Discussion #112's original target, and the reason the window had to stop taking the keyboard focus: a list of "what is actionable here" that changes what is actionable by opening is no use to anybody. 
 
-**It streams, because it is expensive.** Measured on macOS: a heavy application's tree is 3000 nodes and 460 ms, and filtering by role does not help - the walk is the cost, and reporting less of it changes nothing. So the walk yields as it goes and the first controls are on screen while the rest are still being found. Put it in a `Scope` of its own all the same; it has real work to do on every invocation. 
+**It streams, because it is expensive.** Measured on macOS: a heavy application's tree is 3000 nodes and 460 ms, and filtering by role does not help - the walk is the cost, and reporting less of it changes nothing. So the walk yields as it goes and the first controls are on screen while the rest are still being found. Put it in a `ChooserPage` of its own all the same; it has real work to do on every invocation. 
 
 **Only controls with a name are offered.** An icon-only button with no label, no description and no tooltip cannot be typed for - there is no text to filter on - so listing it would add a row nobody can reach. Where a name comes from is recorded on the candidate (`provenance`), because it decides what else can find the element: a control reachable only through its tooltip cannot be found by `find(name=...)` in an action either. 
 

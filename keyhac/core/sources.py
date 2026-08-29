@@ -191,8 +191,8 @@ class MenuItemsSource(CandidateSource):
 
     **It costs a real traversal.**  Measured on macOS: 79 ms for a small
     application, 396 ms for Chrome, for 161 and 331 items - so this belongs
-    in a `Scope` of its own, where it is paid for when asked for, rather than
-    in a merged scope opened on every keystroke.
+    in a `ChooserPage` of its own, where it is paid for when asked for, rather than
+    in a merged page opened on every keystroke.
 
     **macOS only.**  There the menu bar is an OS-level part: one per
     application, always at the top of the screen, and readable in full while
@@ -735,7 +735,7 @@ class WindowControlsSource(CandidateSource):
     application's tree is 3000 nodes and 460 ms, and filtering by role does
     not help - the walk is the cost, and reporting less of it changes
     nothing. So the walk yields as it goes and the first controls are on
-    screen while the rest are still being found. Put it in a `Scope` of its
+    screen while the rest are still being found. Put it in a `ChooserPage` of its
     own all the same; it has real work to do on every invocation.
 
     **Only controls with a name are offered.** An icon-only button with no
