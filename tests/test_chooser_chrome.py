@@ -389,3 +389,65 @@ class TestTheGestureAsksTheOSWhereThePointerIs:
         _drag(chooser, TOP[0], TOP[1] - 4)
         assert calls == ["frame"]
         assert chooser.window.frame_px() == (160.0, 156.0, 72.0, 24.0)
+
+
+class TestAResizeOnlyTouchesTheAxisItIsOn:
+    """A window frame is a rectangle of whole pixels, and the chooser's is
+    often asked for at a half - it centres itself on another window. Re-sending
+    that half every step of a drag argues with the platform's own snapping,
+    one pixel at a time, and the window shivers sideways while its top edge is
+    being dragged."""
+
+    def _offset_chooser(self, ui_backend, x=160.5, y=160.0):
+        chooser = _chooser(ui_backend)
+        chooser.window.x, chooser.window.y = x, y
+        return chooser
+
+    def test_the_top_edge_leaves_the_horizontal_axis_alone(self, ui_backend):
+        chooser = self._offset_chooser(ui_backend)
+        _press(chooser, *TOP)
+        for step in (1, 2, 3):
+            _drag(chooser, TOP[0], TOP[1] - step)
+            x, _y, w, _h = chooser.window.frame_px()
+            assert (x, w) == (160.5, 72.0), "the untouched axis moved"
+
+    def test_the_frame_it_asks_for_is_whole_pixels(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        asked = []
+        chooser.window.set_frame_px = lambda *a: asked.append(a)
+        _press(chooser, *TOP)
+        _drag(chooser, TOP[0], TOP[1] - 3)
+        assert asked and all(v == int(v) for v in asked[0])
+
+    def test_at_the_minimum_it_stops_asking_at_all(self, ui_backend):
+        # Every further step computes the same rectangle; setting it again is
+        # a window-server update and a redisplay for a window that is not
+        # moving, which is what jittered at the limit.
+        chooser = _chooser(ui_backend)
+        _press(chooser, *TOP)
+        _drag(chooser, TOP[0], TOP[1] + 40)            # well past the minimum
+        settled = chooser.window.frame_px()
+        assert settled[3] == 6.0
+        calls = []
+        chooser.window.set_frame_px = lambda *a: calls.append(a)
+        chooser.window.resize_to_px = lambda *a: calls.append(a)
+        for step in (50, 60, 70):
+            _drag(chooser, TOP[0], TOP[1] + step)
+        assert calls == []
+        assert chooser.window.frame_px() == settled
+
+    def test_the_bottom_settles_on_a_pixel_and_stays_there(self, ui_backend):
+        # The far edge is what a near-edge drag holds still. A window that
+        # began on a half pixel has to land on one at the first step - it is
+        # being rounded, once - and must not move again after that, however
+        # far the drag goes, minimum included.
+        chooser = self._offset_chooser(ui_backend, y=160.5)
+        _press(chooser, *TOP)
+        _drag(chooser, TOP[0], TOP[1] + 2.5)
+        _x, y, _w, h = chooser.window.frame_px()
+        bottom = y + h
+        assert bottom == round(bottom)
+        for step in (7.5, 12, 40):
+            _drag(chooser, TOP[0], TOP[1] + step)
+            _x, y, _w, h = chooser.window.frame_px()
+            assert y + h == bottom

@@ -61,6 +61,23 @@ def _pointer_on_screen(backend, fallback):
     return fallback()
 
 
+def _pixel_span(start, length):
+    """One axis of a frame, rounded to whole pixels **by its two edges**.
+
+    A window frame is a rectangle of whole pixels, and fractions reach here
+    honestly: a minimum size is six rows of whatever the font measures, and a
+    chooser centred on another window starts at a half.  Asking for those is
+    asking the platform to round them, which it does per frame and not always
+    the same way - that was the jitter at the minimum height.
+
+    By the edges, not by the origin and the length, because rounding a length
+    that starts at a half would move the far edge - and the far edge is
+    exactly what a resize from the near side is holding still.
+    """
+    near = round(start)
+    return near, round(start + length) - near
+
+
 def _scale(window):
     """Pixels per base unit, both axes, or None when the window cannot say.
     Derived rather than asked for: a frameless window's frame *is* its
@@ -122,8 +139,9 @@ class DragHandle(Widget):
             pointer = self._pointer_px(event)
             if pointer is not None:
                 (px, py), frame = self._press
-                self._window.move_to_px(frame[0] + pointer[0] - px,
-                                        frame[1] + pointer[1] - py)
+                x, _w = _pixel_span(frame[0] + pointer[0] - px, 0)
+                y, _h = _pixel_span(frame[1] + pointer[1] - py, 0)
+                self._window.move_to_px(x, y)
             return True
         if event.type in (EventType.MOUSE_UP, EventType.MOUSE_CLICK):
             # The click a release synthesizes is swallowed with it: a handle
@@ -257,23 +275,39 @@ class EdgeResizer:
 
     def _apply(self, event) -> None:
         pointer = self._pointer_px(event)
-        if pointer is None:
+        current = self._window.frame_px()
+        scale = _scale(self._window)
+        if pointer is None or current is None or scale is None:
             return
         (ex, ey), (px, py), (fx, fy, fw, fh) = self._press
         dx, dy = pointer[0] - px, pointer[1] - py
-        scale = _scale(self._window)
-        if scale is None:
+        # The axis this drag is not on is passed straight back through, from
+        # the window's *current* frame and unrounded.  Re-sending the frame
+        # from the press instead - a request the platform granted
+        # approximately, since the chooser centres itself on another window
+        # and can start on a half pixel - argued with its own snapping one
+        # pixel at a time, which is the sideways shiver a top-edge drag had.
+        x, w = (_pixel_span(*self._axis(fx, fw, dx, ex,
+                                        self._min_units[0] * scale[0]))
+                if ex else (current[0], current[2]))
+        y, h = (_pixel_span(*self._axis(fy, fh, dy, ey,
+                                        self._min_units[1] * scale[1]))
+                if ey else (current[1], current[3]))
+        target = (x, y, w, h)
+        if target == tuple(current):
+            # Nothing to ask for.  Worth the check: at the minimum size every
+            # further step of the drag computes the same rectangle, and
+            # setting it again is a window-server update and a redisplay for
+            # a window that is not moving.
             return
-        x, w = self._axis(fx, fw, dx, ex, self._min_units[0] * scale[0])
-        y, h = self._axis(fy, fh, dy, ey, self._min_units[1] * scale[1])
-        if (x, y) != (fx, fy):
+        if target[:2] != tuple(current[:2]):
             # One call, because the near edges move the window as they resize
             # it: as move-then-resize the window passes through a frame with
             # the new origin and the old size, and the far edge - the one the
             # user is holding still - twitches once per step of the drag.
-            self._window.set_frame_px(x, y, w, h)
+            self._window.set_frame_px(*target)
         else:
-            self._window.resize_to_px(w, h)
+            self._window.resize_to_px(target[2], target[3])
 
     @staticmethod
     def _axis(origin, length, travel, edge, minimum):
