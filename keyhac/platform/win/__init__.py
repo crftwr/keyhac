@@ -27,3 +27,10 @@ def notify_already_running():
 def offer_config_migration(target_config_path):
     from keyhac.platform.win.migrate import offer_config_migration
     return offer_config_migration(target_config_path)
+
+
+def worker_thread_context():
+    """The COM apartment a walking worker needs - see
+    keyhac.platform.win.uielement.com_worker_thread."""
+    from keyhac.platform.win.uielement import com_worker_thread
+    return com_worker_thread()

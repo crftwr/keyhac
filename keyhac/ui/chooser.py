@@ -65,6 +65,7 @@ from keyhac.core.const import (
 from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
+from keyhac.platform import worker_thread_context
 from keyhac.ui import runtime
 from keyhac.ui.frame import Frame, Separator
 from keyhac.ui.grips import MIN_UNITS, EdgeResizer
@@ -553,14 +554,18 @@ class ChooserWindow:
         def run():
             batch, deadline = [], time.monotonic() + _BATCH_SECONDS
             try:
-                for candidate in generator:
-                    if stop.is_set():
-                        return
-                    batch.append(candidate)
-                    now = time.monotonic()
-                    if len(batch) >= _BATCH_MAX or now >= deadline:
-                        self._deliver(batch, stop)
-                        batch, deadline = [], now + _BATCH_SECONDS
+                # The OS may want a word with a thread before it reads another
+                # application's UI - on Windows a COM apartment, on macOS
+                # nothing.  Which is which is the platform layer's business.
+                with worker_thread_context():
+                    for candidate in generator:
+                        if stop.is_set():
+                            return
+                        batch.append(candidate)
+                        now = time.monotonic()
+                        if len(batch) >= _BATCH_MAX or now >= deadline:
+                            self._deliver(batch, stop)
+                            batch, deadline = [], now + _BATCH_SECONDS
             except Exception:
                 logger.exception("A background candidate source failed.")
             finally:

@@ -54,3 +54,45 @@ def test_a_source_asking_for_one_gets_an_empty_list_not_an_error():
         assert list(src.MenuItemsSource().candidates()) == []
     finally:
         src.Keymap.get_instance = original
+
+
+def test_a_worker_walking_the_tree_gets_the_mta():
+    """The apartment a background walk runs in is chosen, not inherited.
+
+    `get_automation()` initialises whichever thread calls it first as an STA,
+    and until `com_worker_thread` existed no worker called `CoInitializeEx` at
+    all - it landed in the implicit MTA that Windows 8 and later hand an
+    uninitialised thread, which happens to be the apartment UI Automation
+    clients want. This pins the intent rather than the accident: an explicit
+    MTA, so that a worker which reached `get_automation()` before the main
+    thread could not bind the process-wide automation object to an apartment
+    that dies with it.
+    """
+    import ctypes
+    import threading
+
+    from keyhac.platform.win.uielement import com_worker_thread
+
+    ole32 = ctypes.WinDLL("ole32")
+    ole32.CoGetApartmentType.argtypes = [ctypes.POINTER(ctypes.c_int),
+                                         ctypes.POINTER(ctypes.c_int)]
+    ole32.CoGetApartmentType.restype = ctypes.c_long
+    APTTYPE_MTA, APTTYPEQUALIFIER_NONE = 1, 0
+
+    seen = {}
+
+    def worker():
+        with com_worker_thread():
+            kind, qualifier = ctypes.c_int(), ctypes.c_int()
+            seen["hr"] = ole32.CoGetApartmentType(ctypes.byref(kind),
+                                                  ctypes.byref(qualifier))
+            seen["apartment"] = (kind.value, qualifier.value)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+
+    assert seen["hr"] == 0
+    # MTA by our own CoInitializeEx - not APTTYPEQUALIFIER_IMPLICIT_MTA, which
+    # is what an uninitialised thread would have reported.
+    assert seen["apartment"] == (APTTYPE_MTA, APTTYPEQUALIFIER_NONE)
