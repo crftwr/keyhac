@@ -56,7 +56,7 @@ import time
 from puikit import Panel, Style, WindowStyle
 from puikit.event import EventType
 from puikit.layout import HSplit, Item, VSplit
-from puikit.widgets import Label, ListView, TextEdit
+from puikit.widgets import Label, LayoutView, ListView, TextEdit
 
 from keyhac.core.const import (
     MODKEY_ALT, MODKEY_CMD, MODKEY_CTRL, MODKEY_SHIFT, MODKEY_WIN,
@@ -65,15 +65,13 @@ from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
 from keyhac.ui import runtime
-from keyhac.ui.frame import Frame
+from keyhac.ui.frame import Frame, Separator
 from keyhac.ui.grips import MIN_UNITS, EdgeResizer
 
 logger = log.getLogger("Chooser")
 
-# The window's inner margin, and the list frame's interior inset. Both
-# collapse on a character grid.
+# The window's inner margin, which collapses on a character grid.
 _MARGIN_PX = 5
-_LIST_PAD_PX = 3
 
 #: How far the two ornaments in the search row - the magnifier and the scope
 #: switcher - stand off the window's *edge*, the page margin included.  The
@@ -260,24 +258,24 @@ class ChooserWindow:
         # current scope draws no badge: switching would otherwise have to
         # swap the list widget itself, and the badge is the first thing a
         # merged scope needs anyway.
-        if badge_of is None and not self._scopes:
-            self._list = ListView(self._labels(), ellipsis="…",
-                                  elide_where="end", allow_no_selection=True,
-                                  on_select=self._on_row_clicked)
-        else:
-            # Rows become widgets so each can carry its source beside it; the
-            # widget does its own eliding, which plain string rows get from
-            # ListView (see keyhac.ui.candidate_row).
-            from keyhac.ui.candidate_row import CandidateRow
-            self._list = ListView(
-                self._rows(), allow_no_selection=True,
-                on_select=self._on_row_clicked,
-                row_factory=lambda row: CandidateRow(*row))
+        # Every row is a widget, badge or no badge: it carries the source name
+        # beside it where there is one, and the air before the icon where
+        # there is not - and the list runs to the page's edge now, so a plain
+        # string row would start against the window.  It does its own eliding
+        # in exchange, which plain string rows got from ListView (see
+        # keyhac.ui.candidate_row).
+        from keyhac.ui.candidate_row import CandidateRow
+        self._list = ListView(
+            self._rows(), allow_no_selection=True,
+            on_select=self._on_row_clicked,
+            row_factory=lambda row: CandidateRow(*row))
 
-        # Kept, not inlined: the list is nested inside it, and focus is marked
-        # one level at a time - see _focus_list.
-        self._frame = Frame(VSplit(Item(self._list, weight=1)),
-                            margin_px=_LIST_PAD_PX)
+        # A plain pane, not a frame: the list needs no box of its own.  Kept
+        # rather than inlined, because focus is marked one level at a time -
+        # see _focus_list - and because the list runs to the page's edges,
+        # which is where its scrollbar then sits.
+        self._pane = LayoutView(VSplit(Item(self._list, weight=1)),
+                                margin_px=0)
 
         self.panel = Panel(backend, window=self.window)
         # align="center" sits the magnifier on the field's text line (the field
@@ -313,7 +311,11 @@ class ChooserWindow:
                 -1, Item(self._scope_label, size="content", align="center"))
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
-            Item(self._frame, weight=1),
+            # The one line worth drawing between the two: what the list's own
+            # frame was for, without the three sides of it that only repeated
+            # the window's border a few pixels further in.
+            Item(Separator(), size="content"),
+            Item(self._pane, weight=1),
             gap=0.3,
         )
         # Frame, not LayoutView: the window is frameless, so the only edge it
@@ -383,17 +385,10 @@ class ChooserWindow:
             y = max(sy, min(y, sy + sh - h))
         self.window.move_to_px(x, y)
 
-    def _labels(self):
-        return [candidate.label for candidate in self._filtered]
-
     def _rows(self):
         badge = self._badge_of
         return [(c.label, (badge(c) or "") if badge else "")
                 for c in self._filtered]
-
-    def _items_for_list(self):
-        plain = self._badge_of is None and not self._scopes
-        return self._labels() if plain else self._rows()
 
     # --- focus ------------------------------------------------------------
     #
@@ -420,8 +415,8 @@ class ChooserWindow:
         # Frame, so the page has to focus the frame and the frame the list -
         # naming the list to the page marks nothing, and the selection then
         # draws in the muted unfocused colour (grey) instead of the accent.
-        self._page.set_focused(self._frame)
-        self._frame.set_focused(self._list)
+        self._page.set_focused(self._pane)
+        self._pane.set_focused(self._list)
         self._list.selected = index
         self._point_at_selection()
 
@@ -549,7 +544,7 @@ class ChooserWindow:
             else None
         offset = self._list.offset
         self._filtered = self._ranked(self._filtered + matched)
-        self._list.set_items(self._items_for_list())
+        self._list.set_items(self._rows())
         # set_items drops the viewport, so put it back first; then move the
         # selection, which scrolls itself into view if the row actually went
         # somewhere. Restoring in the other order would leave the selection
@@ -567,7 +562,7 @@ class ChooserWindow:
         self._match = self._matcher.compile(text)
         self._filtered = self._ranked(
             c for c in self._items if self._match.hit(c.match_text))
-        self._list.set_items(self._items_for_list())
+        self._list.set_items(self._rows())
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.
         self._list.selected = -1

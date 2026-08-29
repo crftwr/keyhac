@@ -719,3 +719,36 @@ class TestTheSearchRowIsEvenlyGuttered:
     def test_the_two_edges_match_each_other(self, ui_backend):
         handle_x, switcher_x, switcher_w, width = self._row(ui_backend)
         assert handle_x == width - (switcher_x + switcher_w)
+
+
+class TestTheListHasNoBoxOfItsOwn:
+    """The list used to sit in a frame of its own: three of its four lines -
+    both sides and the bottom - repeated the window's border a few pixels
+    further in, to say the one thing that does need saying, which is that the
+    field above is not the list below. That is a line, not a box."""
+
+    def _rows(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        return ["".join(row) for row in chooser.window.snapshot()]
+
+    def test_a_line_separates_the_field_from_the_list(self, ui_backend):
+        rows = self._rows(ui_backend)
+        # under the search row, and running the width of the page
+        assert set(rows[2][1:-1]) == {"─"}
+
+    def test_the_list_has_no_sides(self, ui_backend):
+        rows = self._rows(ui_backend)
+        listed = [row for row in rows if "entry" in row]
+        assert listed
+        for row in listed:
+            assert row[1] != "│", f"a second side: {row!r}"
+            assert row[-2] != "│", f"a second side: {row!r}"
+
+    def test_and_no_bottom(self, ui_backend):
+        rows = self._rows(ui_backend)
+        assert set(rows[-2][1:-1]) == {" "}, "a line above the window's own"
+
+    def test_the_rows_start_clear_of_the_window(self, ui_backend):
+        rows = self._rows(ui_backend)
+        listed = [row for row in rows if "entry" in row]
+        assert all(row[1] == " " for row in listed)

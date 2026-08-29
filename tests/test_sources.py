@@ -746,10 +746,12 @@ class TestCandidateRowLayout:
             assert line.rstrip().endswith("Clipboard") or \
                 line.index("Clipboard") + len("Clipboard") >= len(line) - 2
 
-    def test_the_inset_is_pixels_on_a_vector_backend_and_a_column_on_a_grid(self):
+    def test_the_insets_are_pixels_on_a_vector_backend_and_a_column_on_a_grid(
+            self):
         """A whole column would be a gulf where pixels are available, and a
         grid cannot express less than one."""
-        from keyhac.ui.candidate_row import CandidateRow, _TRAILING_PX
+        from keyhac.ui.candidate_row import (
+            CandidateRow, _LEADING_PX, _TRAILING_PX)
 
         class _Ctx:
             def __init__(self, vector, base_w):
@@ -757,9 +759,16 @@ class TestCandidateRowLayout:
                 self.base_size = (base_w, 1)
 
         row = CandidateRow("x", "y")
-        assert row._trailing(_Ctx(False, 8)) == 1.0
-        assert row._trailing(_Ctx(True, 8)) == _TRAILING_PX / 8
-        assert row._trailing(_Ctx(True, 0)) == 0.0
+        for px in (_LEADING_PX, _TRAILING_PX):
+            assert row._inset(_Ctx(False, 8), px) == 1.0
+            assert row._inset(_Ctx(True, 8), px) == px / 8
+            assert row._inset(_Ctx(True, 0), px) == 0.0
+
+    def test_the_icon_is_not_flush_against_the_window(self):
+        """The list runs to the page's edge now, with no frame of its own in
+        between, so a row starting at column zero starts against the window."""
+        lines = self._render()
+        assert lines and all(line.startswith(" ") for line in lines if line.strip())
 
 
 class TestActionsSource:

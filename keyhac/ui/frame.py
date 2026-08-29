@@ -1,6 +1,7 @@
 """A bordered LayoutView shared by the Keyhac windows (console, chooser)."""
 
 from puikit import Style
+from puikit.layout import SizeRequest
 from puikit.widgets import LayoutView
 
 _BORDER_STYLE = Style(fg=(120, 120, 132))
@@ -95,3 +96,31 @@ class Frame(LayoutView):
             # be drawn at; the colour is the whole of what changes there.
             ctx.draw_border(line)
         super().draw(ctx)
+
+
+class Separator(LayoutView):
+    """A hairline across a window, between two panes of it.
+
+    The chooser's list had a frame of its own, which drew three lines nobody
+    needed - down both sides and along the bottom, a few pixels inside the
+    window's own border - to say the one thing that does need saying: the
+    field above is not the list below. That is a line, not a box.
+    """
+
+    def __init__(self, style: Style = _BORDER_STYLE):
+        super().__init__(None, margin_px=0)
+        self.style = style
+
+    def measure(self, ctx, axis, available):
+        """lazydocs: ignore"""
+        if axis == "x":
+            return SizeRequest(min=1, preferred=1)
+        # One cell where a cell is all there is; one device pixel otherwise -
+        # this claims the line's own height and no row's worth of space.
+        height = 1.0 if ctx.snap else 1.0 / max(1.0, ctx.base_h)
+        return SizeRequest(min=height, preferred=height)
+
+    def draw(self, ctx) -> None:
+        """lazydocs: ignore"""
+        width, height = ctx.size_units
+        ctx.draw_hairline(0, height / 2, width, style=self.style)

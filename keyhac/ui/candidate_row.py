@@ -23,6 +23,11 @@ from puikit.widgets.base import Widget
 #: does not run into it.
 _GAP = 2
 
+#: Air before the icon.  The list runs to the window's own edge now, with no
+#: frame of its own between the two, so a row that started at column zero
+#: started against the window.
+_LEADING_PX = 6
+
 #: Breathing room at the row's right edge.  A row is drawn exactly up to the
 #: scrollbar's left edge (`ListView` hands it `ctx.width - 1` when the bar is
 #: showing), so without this the badge and the bar touch.
@@ -43,18 +48,19 @@ class CandidateRow(Widget):
         self.style = style
         self.badge_style = badge_style
 
-    def _trailing(self, ctx) -> float:
-        """The right-edge inset in base units.  Pixels on a vector backend,
-        where a whole column would be a gulf; a whole column on a character
-        grid, which cannot express less and would otherwise leave none."""
+    def _inset(self, ctx, px: float) -> float:
+        """A row-edge inset in base units.  Pixels on a vector backend, where a
+        whole column would be a gulf; a whole column on a character grid,
+        which cannot express less and would otherwise leave none."""
         if not ctx.vector_shapes:
             return 1.0
         base_w = ctx.base_size[0]
-        return _TRAILING_PX / base_w if base_w else 0.0
+        return px / base_w if base_w else 0.0
 
     def draw(self, ctx) -> None:
         """lazydocs: ignore"""
-        width = max(0.0, ctx.size_units[0] - self._trailing(ctx))
+        lead = self._inset(ctx, _LEADING_PX)
+        width = max(0.0, ctx.size_units[0] - self._inset(ctx, _TRAILING_PX))
         measure = lambda t: ctx.measure_text(t, self.style)
         badge_w = 0.0
         badge = ""
@@ -64,9 +70,9 @@ class CandidateRow(Widget):
             badge = elide(self.badge, int(max(0, width / 3)), "…",
                           where="end", measure=measure)
             badge_w = measure(badge) if badge else 0.0
-        label_w = max(0, width - badge_w - (_GAP if badge else 0))
-        ctx.draw_text(0, 0, elide(self.label, int(label_w), "…",
-                                  where="end", measure=measure), self.style)
+        label_w = max(0, width - lead - badge_w - (_GAP if badge else 0))
+        ctx.draw_text(lead, 0, elide(self.label, int(label_w), "…",
+                                     where="end", measure=measure), self.style)
         if badge:
             # A selected row's own foreground wins: the muted badge colour
             # would disappear into the accent fill.
