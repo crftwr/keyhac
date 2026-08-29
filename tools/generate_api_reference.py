@@ -65,6 +65,7 @@ API_NAMES = [
     "ThreadedAction",
     "InputText",
     "LaunchApplication",
+    "ActivateApplication",
     "ActivateWindow",
     "MoveWindow",
     "SnapWindow",

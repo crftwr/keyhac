@@ -35,6 +35,7 @@ from keyhac.core.wait import WaitTimeout
 from keyhac.core.fill import FillFailed
 from keyhac.core.action import ActionCancelled
 from keyhac.actions import (
+    ActivateApplication,
     ActivateWindow,
     MouseButtonClick,
     MouseButtonDown,
@@ -94,6 +95,7 @@ __all__ = [
     "MouseWheel",
     "MoveWindow",
     "SnapWindow",
+    "ActivateApplication",
     "ActivateWindow",
     "ShowCandidates",
     "ShowClipboardHistory",

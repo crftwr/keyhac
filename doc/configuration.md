@@ -135,7 +135,8 @@ specific ones override exactly the keys they bind.
 - **Key names**: letters, digits, punctuation (`Semicolon`, `Slash`,
   `OpenBracket`, …, plus JIS names like `Yen` and `Atmark`), `F1`–`F20` (to `F24`
   on Windows), the navigation cluster (`Left`, `Home`, `PageUp`, …), numpad
-  (`Num0`, `NumAdd`, …), `Kana`/`Eisu` (macOS), `Apps`/`PrintScreen`/`ScrollLock`/
+  (`Num0`, `NumAdd`, …), `Kana`/`Eisu`/`Menu`/`Help` (macOS — `Menu` is the
+  application key a PC keyboard sends), `Apps`/`PrintScreen`/`ScrollLock`/
   `Pause` (Windows), and the modifier keys themselves as primary keys (`LWin`,
   `RCmd`, …). Any unmapped key is expressible as its raw code: `"(124)"`.
 - **macOS Fn-arrow gotcha**: Apple keyboards translate `Fn-Left/Right/Up/Down` into
@@ -150,7 +151,7 @@ kt["Fn-J"] = "Left"                          # key -> key
 kt["Fn-N"] = "Cmd-1", "Cmd-2"                # key -> sequence
 kt["Fn-A"] = some_callable                   # key -> function / action object
 kt["Ctrl-X"] = kt_ctrlx                      # key -> multi-stroke table
-kt["O-RAlt"] = "Space"                       # one-shot
+kt["O-RCtrl"] = "Space"                      # one-shot
 ```
 
 Anything callable can be bound: a plain function, a lambda, or one of the action
@@ -457,8 +458,10 @@ which costs the focus of the application underneath).
 ## Windows, screens and applications
 
 ```python
+kt["O-RCmd"] = ActivateApplication(app="Terminal|ターミナル",  # go to it, then
+                                   launch="Terminal.app")     # window by window
 kt["Fn-1"] = ActivateWindow(app="code|Visual Studio Code")   # bring forward
-kt["Fn-T"] = LaunchApplication("Terminal.app")               # launch
+kt["Fn-T"] = LaunchApplication("Terminal.app")               # launch, every press
 
 kt["Fn-Ctrl-Left"] = MoveWindow(direction="left", distance=20)
 kt["Fn-Alt-Left"]  = MoveWindow(direction="left", distance=9999,
@@ -467,18 +470,39 @@ kt["Fn-Ctrl-J"] = SnapWindow("left")          # tile: left/right/top/bottom/full
 kt["Fn-F"]      = SnapWindow("full")          # ratio=2/3 etc. picks the split
 ```
 
+Three actions reach an application, and they differ in how much of "take me
+there" they do. `ActivateApplication` does all of it: a press brings the
+application's front-most window forward, a press made while it is *already* in
+front moves on to its next window (bind a second key with `reverse=True` to
+walk back), and `launch=` starts it when it is not running. `ActivateWindow` is
+the same minus those two — one press, the front-most window, never a launch.
+`LaunchApplication` only hands the name to the OS, which on Windows means a new
+window on every press.
+
+The rotation keeps no state: which window is current is read from the z-order
+each time, and the order walked is where the windows sit on screen, so it
+survives a config reload and windows opening, closing or being dragged
+elsewhere. Match on the name the *OS* reports — macOS localizes it, so a
+Japanese system calls Terminal `ターミナル`; the console's focus fields show the
+live value.
+
 `MoveWindow` nudges by `distance` pixels (default 10), or with
 `window_edge=`/`screen_edge=` travels until it hits other windows' edges / the
 screen edge (hopping to the next monitor when already there). Only `screen_edge`
 is on by default. `SnapWindow` tiles within the screen's *work area* — menu bar,
 Dock and taskbar stay uncovered — taking half the screen unless `ratio=` says
-otherwise.
+otherwise. It places the window itself rather than handing it to the OS's snap:
+the window lands where Windows' snap would put it, but no Snap Assist appears
+and no snap group is formed.
 
 For your own logic, `Window` objects are fully portable:
 
 ```python
 window = keymap.get_active_window()           # or find_window(app=, title=,
 x, y, w, h = window.get_frame()               #    class_name=), list_windows()
+                                              # the visible frame: Windows'
+                                              # invisible resize border is not
+                                              # part of it, on either accessor
 window.set_frame(x + 100, y)
 window.activate(); window.minimize(); window.restore(); window.is_minimized()
 window.title; window.app_name; window.pid; window.class_name  # class_name: Windows
@@ -640,7 +664,7 @@ focus path — the two things you need when writing new bindings.
 | `keymap.replay_buffer` | macro buffer behind the record actions |
 | `keymap.pop_balloon(name, text, timeout)` / `close_balloon(name)` | balloons (UI mode only) |
 | `InputText(s)` | type a literal string |
-| `MoveWindow(...)` / `SnapWindow(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
+| `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | mouse output actions |
 | `ShowClipboardHistory()` / `ShowClipboardSnippets(...)` / `ShowClipboardTools(...)` / `DateTimeSnippet(fmt)` | clipboard UI actions |
 | `ChooserAction` | base class for custom chooser popups |

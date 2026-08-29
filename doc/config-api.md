@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [Scope](#class-scope) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -862,6 +862,8 @@ get_frame() → tuple[float, float, float, float] | None
 
 Get the window's frame. 
 
+The frame is the window as drawn: invisible padding around it (the resize border Windows keeps outside the visible edge) is excluded, so these are the coordinates the OS itself positions windows in. 
+
 
 
 **Returns:**
@@ -916,6 +918,8 @@ set_frame(x: float, y: float, w: float = None, h: float = None) → bool
 ```
 
 Move the window, and optionally resize it. 
+
+The coordinates are the visible frame get_frame reports, so a frame read from one window can be given to another unchanged. 
 
 
 
@@ -1100,14 +1104,80 @@ An action's most-used object, so it is one attribute away rather than two lines 
 ---
 
 
+## <kbd>class</kbd> `ActivateApplication`
+Go to an application: bring it forward, walk its windows, launch it. 
+
+One key for the whole of "take me to my terminal".  What a press does depends on where the application already is: 
+
+
+- **Behind** - its front-most window comes forward. 
+- **Already in front** - its next window comes forward, so one key reaches  all of them.  Bind a second key with `reverse=True` to walk back. 
+- **Not running** - `launch=` starts it.  Without `launch=` nothing is  started. 
+
+```python
+kt["O-RCmd"] = ActivateApplication(app="Terminal|ターミナル",
+                                    launch="Terminal.app")
+``` 
+
+The rotation keeps no state.  Which window is current is read from the z-order on each press, and the order walked is where the windows sit on screen, so it survives a configuration reload, windows opening and closing, and the user dragging one somewhere else. 
+
+### <kbd>method</kbd> `ActivateApplication.__init__`
+
+```python
+__init__(
+    app: str,
+    launch: str = None,
+    cycle: bool = True,
+    reverse: bool = False
+)
+```
+
+Build the action. 
+
+
+
+**Args:**
+ 
+ - <b>`app`</b>:  Application name pattern, matched like define_keytable's  app= - case-insensitive, fnmatch wildcards, "|" alternation, 
+ - <b>`".exe" optional.  Name every spelling you need`</b>:  macOS reports the localized application name, so Terminal is "ターミナル" on a Japanese system. 
+ - <b>`launch`</b>:  What to hand the OS when nothing matches - "Terminal.app"  on macOS, an executable name or path on Windows.  None never  launches anything. 
+ - <b>`cycle`</b>:  Whether a press made while the application is already in  front moves on to its next window. 
+ - <b>`reverse`</b>:  Walk the windows the other way. 
+
+
+
+**Raises:**
+ 
+ - <b>`ValueError`</b>:  No app pattern - reported when the configuration  loads, not when the key is pressed. 
+
+
+---
+
+#### <kbd>property</kbd> ActivateApplication.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> ActivateApplication.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
+---
+
+
 ## <kbd>class</kbd> `ActivateWindow`
 Bring an application's window to the front, by name pattern. 
 
-Where the platform enumerates windows (Windows), this raises an actual window, so it can restore a minimized one and pick the front-most match. Otherwise (macOS today) it activates the matching *application* by pid. 
+The front-most window of the first application that matches, restored first if it was minimized.  An application that is running but shows no window the platform can enumerate is activated by pid instead. 
 
 ```python
 ActivateWindow(app="code|Visual Studio Code")
 ``` 
+
+`ActivateApplication` is this with the rest of "go to that application" attached: it walks the windows on a second press, and launches what is not running. 
 
 ### <kbd>method</kbd> `ActivateWindow.__init__`
 
@@ -1199,6 +1269,8 @@ An action's most-used object, so it is one attribute away rather than two lines 
 Snap the focused window to a region of its screen (tiling). 
 
 The region is the screen's *work area*, so the menu bar and Dock (macOS) and the taskbar (Windows) stay uncovered.  "Its screen" is the one the window overlaps most, so repeated snaps keep a window on the monitor it is already on. 
+
+This places the window itself; it does not enter the OS's own snap state. The window lands where Windows' snap would put it, but Snap Assist does not offer to fill the other half, no snap group is formed, dragging the window away does not restore its previous size, and dragging the shared edge does not resize the neighbour. 
 
 ```python
 SnapWindow("left")               # left half

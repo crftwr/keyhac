@@ -11,6 +11,38 @@ from keyhac.platform.base import Window  # noqa: E402
 from keyhac.platform.win.window import WinWindow, WinWindowProvider  # noqa: E402
 
 
+def _dwm_extended_frame(hwnd):
+    """The visible frame, read independently of the module under test."""
+    import ctypes
+    from ctypes import wintypes
+    dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+    dwmapi.DwmGetWindowAttribute.argtypes = [
+        wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+    dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
+    rect = wintypes.RECT()
+    DWMWA_EXTENDED_FRAME_BOUNDS = 9
+    hr = dwmapi.DwmGetWindowAttribute(
+        hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+        ctypes.byref(rect), ctypes.sizeof(rect))
+    if hr != 0:
+        return None
+    return (float(rect.left), float(rect.top),
+            float(rect.right - rect.left), float(rect.bottom - rect.top))
+
+
+def _window_rect(hwnd):
+    """GetWindowRect: the wider rect, invisible resize border included."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetWindowRect.restype = wintypes.BOOL
+    rect = wintypes.RECT()
+    assert user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return (float(rect.left), float(rect.top),
+            float(rect.right - rect.left), float(rect.bottom - rect.top))
+
+
 @pytest.fixture(scope="module")
 def provider():
     return WinWindowProvider()
@@ -129,6 +161,26 @@ class TestFrameWrites:
         assert own_window.set_frame(x, y, w + 40, h + 30)
         _nx, _ny, nw, nh = own_window.get_frame()
         assert (nw, nh) == (w + 40, h + 30)
+
+    def test_get_frame_is_the_frame_dwm_draws(self, own_window):
+        """Not GetWindowRect, which includes the invisible resize border:
+        a window positioned by that arithmetic lands short of where the OS's
+        own snap puts one, and two tiles show twice the gap between them."""
+        visible = _dwm_extended_frame(own_window.hwnd)
+        if visible is None:
+            pytest.skip("DWM reported no extended frame bounds")
+        assert own_window.get_frame() == visible
+
+    def test_set_frame_compensates_the_invisible_border(self, own_window):
+        """Given a visible frame, get_frame reads the same one back, and the
+        window rect underneath is the wider one (the same, on a window with
+        no resize border or a DWM that will not answer)."""
+        x, y, w, h = own_window.get_frame()
+        assert own_window.set_frame(x + 10, y + 20, w + 40, h + 30)
+        assert own_window.get_frame() == (x + 10, y + 20, w + 40, h + 30)
+        wx, wy, ww, wh = _window_rect(own_window.hwnd)
+        assert wx <= x + 10 and wy <= y + 20
+        assert ww >= w + 40 and wh >= h + 30
 
     def test_minimize_and_restore(self, own_window):
         own_window.minimize()

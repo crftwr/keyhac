@@ -465,6 +465,29 @@ off. What the IME entry checks **inverted on 2026-08-26**: the chooser no
 longer takes keyboard focus, so its filter field no longer composes, and that
 is now the thing to confirm rather than the thing to fix.
 
+- **ActivateApplication's window rotation, on both OSes** *(new, not yet
+  passed)* — `tests/test_activate.py` pins the choice of target against fake
+  windows; what it cannot exercise is the ordering the real platforms report.
+  Open three windows of one application in different screen positions and hold
+  the key down through a full cycle: every window must be reached, in screen
+  order, with no pair swapping back and forth (the failure mode the walk over
+  positions exists to prevent). Then, with the application behind, one press
+  must bring it forward rather than advance the rotation; quit it and one press
+  must launch it. On macOS repeat with a localized application name, since
+  `app=` matches what the OS reports.
+
+- **Window geometry against Windows' own snap** *(new, not yet passed)* —
+  `WinWindow.get_frame`/`set_frame` now work in the **visible** frame (DWM's
+  `EXTENDED_FRAME_BOUNDS`) instead of the window rect, so `SnapWindow` and
+  `MoveWindow` place a window where the OS itself would; before, every edge
+  landed ~7px short at 100% DPI, twice that between two tiles.
+  `tests/test_win_window.py` pins the round-trip on a window this process owns,
+  and cannot judge the result by eye. Snap one window left with `SnapWindow`
+  and another with Win+Left and compare the edges; tile two side by side and
+  look for a seam; repeat at a display scale other than 100%, and on a window
+  with no resize border (Settings, or another UWP app), where the compensation
+  must come out zero rather than wrong.
+
 - **The chooser on Windows, after the non-activating rework** *(new, not yet
   passed)* — this branch changed the chooser on both OSes but was developed and
   live-checked only on macOS, and **Windows takes the other code path**:
