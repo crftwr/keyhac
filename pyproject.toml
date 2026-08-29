@@ -30,21 +30,28 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # 1.3.0 is the first release with every puikit API/fix keyhac uses. What
-    # the floor last moved for: WindowStyle's overlay_input (PR #126), without
+    # 1.4.0 is the first release with every puikit API/fix keyhac uses. What
+    # the floor last moved for: mark_screen() and ScreenMarker (PR #130,
+    # capability screen_markers). The balloon and the outline the chooser puts
+    # around the control it is pointing at are screen marks now, and on an
+    # older puikit both are the base's already-closed mark - on Windows they
+    # did not appear at all, so multi-stroke help and macro status were a
+    # feature lost rather than degraded. The same release stops a lone
+    # surrogate raising out of a paint on Windows, which is what a control
+    # name truncated by UTF-16 units does to the row listing it. Earlier
+    # floors, still required: WindowStyle's overlay_input (PR #126), without
     # which a click on the chooser activates Keyhac and deactivates the very
     # window the paste is aimed at; ListView(allow_no_selection=), for a list
-    # that proposes no row while the filter field holds the focus; and the
+    # that proposes no row while the filter field holds the focus; the
     # per-window pointer shape that stopped the cursor flickering between the
-    # chooser and the console. Earlier floors, still required: set_tray(image=)
-    # (PR #82), main-window visibility (PR #84), the LogView sized-font clip
-    # fix the 11pt console log needs (PR #86), per-window IME input contexts
-    # (PR #90, issue #20 - for the windows that still take keyboard focus; the
-    # chooser deliberately no longer does) -
-    # and ListView scrolling an assigned selection into view (PR #95), which
-    # keeps the chooser's highlight on screen (issue #27). To develop against
-    # a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.3.0",
+    # chooser and the console; set_tray(image=) (PR #82), main-window
+    # visibility (PR #84), the LogView sized-font clip fix the 11pt console
+    # log needs (PR #86), per-window IME input contexts (PR #90, issue #20 -
+    # for the windows that still take keyboard focus; the chooser deliberately
+    # no longer does) - and ListView scrolling an assigned selection into view
+    # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
+    # develop against a local checkout, set PUIKIT_DIR (see Makefile).
+    "puikit>=1.4.0",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
