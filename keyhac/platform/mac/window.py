@@ -164,11 +164,17 @@ class MacWindowProvider(WindowProvider):
         return MacWindow(element, str(app.localizedName()), pid)
 
     def list_windows(self) -> list[MacWindow]:
-        """Windows of every running app that has any, front-most app first.
+        """Windows of every running app that has any, grouped by application.
 
-        NSWorkspace already returns applications in activation order, so the
-        front-most app's windows come first - the same ordering guarantee
-        EnumWindows gives on Windows.
+        Within one application the order is the z-order, front-most first:
+        activating a window moves it to the head of its group.  Across
+        applications there is no such guarantee - NSWorkspace does not
+        document runningApplications() as activation-ordered, and it measurably
+        is not (with Terminal in front the list still began with a VS Code
+        window).  So this list answers "which window of that application is
+        current" and not "which application is in front"; get_active_window()
+        answers the second.  EnumWindows on Windows is a single global z-order
+        and does answer both.
         """
         windows = []
         for app in NSWorkspace.sharedWorkspace().runningApplications():

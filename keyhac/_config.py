@@ -104,8 +104,13 @@ def configure(keymap):
     # --- one-shot: tap for one key, hold to modify ---------------------
     # Held, the key is still its modifier; only a lone tap-and-release
     # fires.  Pick one where a stray tap is harmless: here the right Cmd
-    # (right Ctrl on Windows), tapped alone, opens a terminal.
-    kt[f"O-R{MOD2}"] = LaunchApplication("Terminal.app" if mac else "wt.exe")
+    # (right Ctrl on Windows), tapped alone, goes to the terminal - forward
+    # if it is behind, on to its next window if it is already in front, and
+    # launched if it is not running.  macOS reports the *localized*
+    # application name, which is why both spellings are listed.
+    kt[f"O-R{MOD2}"] = ActivateApplication(
+        app="Terminal|ターミナル|WindowsTerminal",
+        launch="Terminal.app" if mac else "wt.exe")
 
     # ---- IME ---------------------------------------------------------
 
@@ -244,8 +249,10 @@ def configure(keymap):
 
     # --- bring an application forward -----------------------------------
     # Matches like the focus conditions below: wildcards, "|" alternation,
-    # case-insensitive, ".exe" optional.  (LaunchApplication, which starts one
-    # instead, is the one-shot example above.)
+    # case-insensitive, ".exe" optional.  ActivateWindow does not walk an
+    # application's windows and never starts one; the one-shot example above
+    # is ActivateApplication, which does both.  LaunchApplication("wt.exe")
+    # is the third option: start one, every press.
     kt[f"{MOD1}-1"] = ActivateWindow(app="code|Visual Studio Code")
     kt[f"{MOD1}-2"] = ActivateWindow(app="chrome|Google Chrome")
 

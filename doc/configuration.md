@@ -458,8 +458,10 @@ which costs the focus of the application underneath).
 ## Windows, screens and applications
 
 ```python
+kt["O-RCmd"] = ActivateApplication(app="Terminal|ターミナル",  # go to it, then
+                                   launch="Terminal.app")     # window by window
 kt["Fn-1"] = ActivateWindow(app="code|Visual Studio Code")   # bring forward
-kt["Fn-T"] = LaunchApplication("Terminal.app")               # launch
+kt["Fn-T"] = LaunchApplication("Terminal.app")               # launch, every press
 
 kt["Fn-Ctrl-Left"] = MoveWindow(direction="left", distance=20)
 kt["Fn-Alt-Left"]  = MoveWindow(direction="left", distance=9999,
@@ -467,6 +469,22 @@ kt["Fn-Alt-Left"]  = MoveWindow(direction="left", distance=9999,
 kt["Fn-Ctrl-J"] = SnapWindow("left")          # tile: left/right/top/bottom/full
 kt["Fn-F"]      = SnapWindow("full")          # ratio=2/3 etc. picks the split
 ```
+
+Three actions reach an application, and they differ in how much of "take me
+there" they do. `ActivateApplication` does all of it: a press brings the
+application's front-most window forward, a press made while it is *already* in
+front moves on to its next window (bind a second key with `reverse=True` to
+walk back), and `launch=` starts it when it is not running. `ActivateWindow` is
+the same minus those two — one press, the front-most window, never a launch.
+`LaunchApplication` only hands the name to the OS, which on Windows means a new
+window on every press.
+
+The rotation keeps no state: which window is current is read from the z-order
+each time, and the order walked is where the windows sit on screen, so it
+survives a config reload and windows opening, closing or being dragged
+elsewhere. Match on the name the *OS* reports — macOS localizes it, so a
+Japanese system calls Terminal `ターミナル`; the console's focus fields show the
+live value.
 
 `MoveWindow` nudges by `distance` pixels (default 10), or with
 `window_edge=`/`screen_edge=` travels until it hits other windows' edges / the
@@ -646,7 +664,7 @@ focus path — the two things you need when writing new bindings.
 | `keymap.replay_buffer` | macro buffer behind the record actions |
 | `keymap.pop_balloon(name, text, timeout)` / `close_balloon(name)` | balloons (UI mode only) |
 | `InputText(s)` | type a literal string |
-| `MoveWindow(...)` / `SnapWindow(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
+| `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | mouse output actions |
 | `ShowClipboardHistory()` / `ShowClipboardSnippets(...)` / `ShowClipboardTools(...)` / `DateTimeSnippet(fmt)` | clipboard UI actions |
 | `ChooserAction` | base class for custom chooser popups |

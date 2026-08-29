@@ -9,6 +9,7 @@ import os
 import traceback
 
 from keyhac.core.const import MODKEY_SHIFT
+from keyhac.core.focus import match_app_name, match_window_fields
 from keyhac.core.action import ThreadedAction
 from keyhac.core.keymap import Keymap
 from keyhac.core import log
@@ -1201,23 +1202,195 @@ class SnapWindow:
         return f'SnapWindow("{self.position}")'
 
 
-class ActivateWindow(ThreadedAction):
+def _window_position(window):
+    """Sort key for the rotation: top to bottom, then left to right.
+
+    A frame survives an activation, which is exactly what the z-order does
+    not.  A window with no readable frame sorts last, together with the others
+    that have none, in the order the platform listed them - deterministic
+    rather than correct, which is all there is for a window that will not say
+    where it is.
+    """
+    frame = window.get_frame()
+    if frame is None:
+        return (float("inf"), float("inf"))
+    x, y, _width, _height = frame
+    return (y, x)
+
+
+class ActivateApplication(ThreadedAction):
+    """Go to an application: bring it forward, walk its windows, launch it.
+
+    One key for the whole of "take me to my terminal".  What a press does
+    depends on where the application already is:
+
+    - **Behind** - its front-most window comes forward.
+    - **Already in front** - its next window comes forward, so one key reaches
+      all of them.  Bind a second key with `reverse=True` to walk back.
+    - **Not running** - `launch=` starts it.  Without `launch=` nothing is
+      started.
+
+    ```python
+    kt["O-RCmd"] = ActivateApplication(app="Terminal|ターミナル",
+                                       launch="Terminal.app")
+    ```
+
+    The rotation keeps no state.  Which window is current is read from the
+    z-order on each press, and the order walked is where the windows sit on
+    screen, so it survives a configuration reload, windows opening and
+    closing, and the user dragging one somewhere else.
+    """
+
+    # Three measurements shaped the rotation, and each one breaks an obvious
+    # implementation:
+    #
+    # * Several windows of one application report the same title (three
+    #   Terminal windows all called "Terminal"), so a title is not an identity
+    #   and nothing may key on one.
+    # * list_windows() is z-ordered and activating a window moves it to the
+    #   front of that order, so walking the z-order swaps the top two back and
+    #   forth forever and never reaches a third window.  The walk therefore
+    #   runs over a stable order - position on screen - and the z-order is
+    #   asked only which window is current.
+    # * The z-order is not globally front-most-first on macOS: with Terminal
+    #   active the list still began with a VS Code window, because it is
+    #   grouped by application.  So windows[0] cannot answer "is this
+    #   application in front"; get_active_window() can, and does.
+    #
+    # Thread contract: every window read and the activation itself happen in
+    # starting(), on the event-loop thread - Window accessors are UI-thread
+    # only - which leaves run() with nothing but the launch.
+
+    def __init__(self, app: str, launch: str = None,
+                 cycle: bool = True, reverse: bool = False):
+        """Build the action.
+
+        Args:
+            app: Application name pattern, matched like define_keytable's
+                app= - case-insensitive, fnmatch wildcards, "|" alternation,
+                ".exe" optional.  Name every spelling you need: macOS reports
+                the localized application name, so Terminal is "ターミナル" on
+                a Japanese system.
+            launch: What to hand the OS when nothing matches - "Terminal.app"
+                on macOS, an executable name or path on Windows.  None never
+                launches anything.
+            cycle: Whether a press made while the application is already in
+                front moves on to its next window.
+            reverse: Walk the windows the other way.
+
+        Raises:
+            ValueError: No app pattern - reported when the configuration
+                loads, not when the key is pressed.
+        """
+        if not app:
+            raise ValueError("ActivateApplication needs an app= pattern")
+        self.app = app
+        self.launch = launch
+        self.cycle = cycle
+        self.reverse = reverse
+        self._launch_wanted = False
+        self._message = None
+
+    def starting(self):
+        """lazydocs: ignore"""
+        self._launch_wanted = False
+        self._message = None
+        keymap = Keymap.get_instance()
+        windows = []
+        if keymap.window_provider is not None:
+            windows = [w for w in keymap.list_windows()
+                       if match_window_fields(w, app=self.app)]
+        if not windows:
+            self._nothing_matched(keymap)
+            return
+
+        active = keymap.get_active_window()
+        in_front = active is not None and match_window_fields(active, app=self.app)
+        if not self.cycle or len(windows) == 1 or not in_front:
+            # windows[0] is the application's front-most window - that is what
+            # the z-order means - and a press that finds the application
+            # behind means "come here", not "next", so direction does not
+            # apply and both bindings do the same thing.
+            target = windows[0]
+            self._message = f"Activated {self.app} ({len(windows)} window(s))"
+        else:
+            ordered = sorted(windows, key=_window_position)
+            # sorted() hands back the same objects, so identity locates the
+            # current window even though the titles cannot.
+            index = next((i for i, w in enumerate(ordered) if w is windows[0]), 0)
+            step = (index - 1 if self.reverse else index + 1) % len(ordered)
+            target = ordered[step]
+            self._message = (f"Moved to {self.app} window "
+                             f"{step + 1}/{len(ordered)}")
+
+        if target.is_minimized():
+            target.restore()
+        if target.activate():
+            return
+        self._message = None
+        if self.launch is None:
+            logger.warning(f"{type(self).__name__}: a window matching "
+                           f"{self.app!r} would not activate.")
+        else:
+            self._launch_wanted = True
+
+    def _nothing_matched(self, keymap):
+        """Launch, or activate a running application that shows no window."""
+        if self.launch is not None:
+            self._launch_wanted = True
+            return
+        # An application can be running with no window the provider can see;
+        # by pid is the only way to reach one.
+        for name, pid in keymap.app_control_running_apps():
+            if match_app_name(name, self.app):
+                keymap.app_control.activate_pid(pid)
+                self._message = f"Activated {name} by pid"
+                return
+        logger.warning(f"{type(self).__name__}: no window or running app "
+                       f"matches {self.app!r}")
+
+    def run(self):
+        """lazydocs: ignore"""
+        if not self._launch_wanted:
+            return self._message
+        # The OS's own launch is idempotent - `open -a` activates a running
+        # application rather than starting a second copy - so racing the
+        # window read in starting() costs nothing.
+        Keymap.get_instance().app_control.launch(self.launch)
+        return f"Launched {self.launch}"
+
+    def finished(self, result):
+        """lazydocs: ignore"""
+        if result:
+            logger.debug(result)
+
+    def __repr__(self):
+        extra = ""
+        if self.launch is not None:
+            extra += f', launch="{self.launch}"'
+        if self.reverse:
+            extra += ", reverse=True"
+        return f'{type(self).__name__}(app="{self.app}"{extra})'
+
+
+class ActivateWindow(ActivateApplication):
     """Bring an application's window to the front, by name pattern.
 
-    Where the platform enumerates windows (Windows), this raises an actual
-    window, so it can restore a minimized one and pick the front-most match.
-    Otherwise (macOS today) it activates the matching *application* by pid.
+    The front-most window of the first application that matches, restored
+    first if it was minimized.  An application that is running but shows no
+    window the platform can enumerate is activated by pid instead.
 
     ```python
     ActivateWindow(app="code|Visual Studio Code")
     ```
+
+    `ActivateApplication` is this with the rest of "go to that application"
+    attached: it walks the windows on a second press, and launches what is not
+    running.
     """
 
-    # A portable subset of keyhac-win's ActivateWindowCommand.
-    #
-    # Thread contract: all window/AppKit enumeration happens in starting()
-    # (main thread), run() is pure matching, and the activation is posted back
-    # to the main thread in finished() - Window and AX are both UI-thread only.
+    # A portable subset of keyhac-win's ActivateWindowCommand, and now the
+    # no-cycle, no-launch case of the action above.
 
     def __init__(self, app: str):
         """Build the action.
@@ -1227,54 +1400,7 @@ class ActivateWindow(ThreadedAction):
                 app= - case-insensitive, fnmatch wildcards, "|" alternation,
                 ".exe" optional.
         """
-        self.app = app
-        self.apps = []
-        self.windows = []
-
-    def starting(self):
-        """lazydocs: ignore"""
-        keymap = Keymap.get_instance()
-        self.windows = []
-        if keymap.window_provider is not None:
-            # Snapshot identity here, on the main thread; run() must not touch
-            # a Window (its accessors are UI-thread only).
-            self.windows = [(w, w.app_name, w.title, w.class_name)
-                            for w in keymap.list_windows()]
-        # Running apps as a fallback: an app with no windows (or none the
-        # provider can see) can still be activated by name.
-        self.apps = keymap.app_control_running_apps()
-
-    def run(self):
-        """lazydocs: ignore"""
-        import fnmatch
-        pattern = self.app.lower()
-
-        def _matches(name):
-            return name is not None and any(
-                fnmatch.fnmatch(name.lower(), p.strip()) for p in pattern.split("|"))
-
-        for window, app_name, _title, _class_name in self.windows:
-            # ".exe"-optional, like define_keytable(app=...)
-            if _matches(app_name) or _matches((app_name or "") + ".exe"):
-                return window
-
-        for name, pid in self.apps:
-            if _matches(name):
-                return pid
-        logger.warning(f"ActivateWindow: no window or running app matches {self.app!r}")
-        return None
-
-    def finished(self, target):
-        """lazydocs: ignore"""
-        # finished() is on the event-loop thread, which is where activation
-        # (an AX write in the own-process case) has to happen.
-        if target is None:
-            return
-        keymap = Keymap.get_instance()
-        if isinstance(target, int):
-            keymap.app_control.activate_pid(target)
-        else:
-            target.activate()
+        super().__init__(app=app, launch=None, cycle=False)
 
     def __repr__(self):
         return f'ActivateWindow(app="{self.app}")'

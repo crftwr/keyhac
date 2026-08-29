@@ -21,6 +21,18 @@ def _match_any(value: str, pattern: str) -> bool:
     return any(fnmatch.fnmatch(value, p.strip().lower()) for p in pattern.split("|"))
 
 
+def match_app_name(name: str | None, pattern: str) -> bool:
+    """Whether an application name matches an `app=` pattern.
+
+    The app= half of match_window_fields, for a caller holding a bare name
+    rather than a Window - the running-application list, which has no windows
+    to be matched against.
+    """
+    name = (name or "").lower().removesuffix(".exe")
+    pattern = "|".join(p.strip().removesuffix(".exe") for p in pattern.split("|"))
+    return bool(name) and _match_any(name, pattern)
+
+
 def match_window_fields(window, app: str = None, title: str = None,
                         class_name: str = None) -> bool:
     """Whether a Window matches the given patterns (all specified must match).
@@ -30,9 +42,7 @@ def match_window_fields(window, app: str = None, title: str = None,
     '|' alternation, same ".exe"-optional app names.
     """
     if app is not None:
-        name = (window.app_name or "").lower().removesuffix(".exe")
-        pattern = "|".join(p.strip().removesuffix(".exe") for p in app.split("|"))
-        if not name or not _match_any(name, pattern):
+        if not match_app_name(window.app_name, app):
             return False
     if title is not None:
         if window.title is None or not _match_any(window.title, title):
