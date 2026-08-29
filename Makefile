@@ -158,7 +158,8 @@ install-puikit: check-venv
 			echo "PuiKit already installed from PyPI; skipping."; \
 		else \
 			echo "Installing PuiKit from PyPI..."; \
-			$(VENV_PIP) install --force-reinstall --no-deps "puikit>=1.0.6"; \
+			req=$$($(VENV_PYTHON) -c 'import tomllib, pathlib; print(next(r for r in tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["dependencies"] if r.startswith("puikit")))'); \
+			$(VENV_PIP) install --force-reinstall --no-deps "$$req"; \
 		fi; \
 	fi
 

@@ -6,8 +6,10 @@ curses/web/memory backends. Its `CLAUDE.md` defines a strict **additive** API po
 every extension below complies (new capability flags default off, new `Backend` methods
 get base no-ops, appended ctor params).
 
-Keyhac2 requires **`puikit >= 1.0.8`** from PyPI — the first release carrying
-everything it uses. A local editable checkout is needed only for puikit development:
+Keyhac2 requires the PyPI release named by the `puikit>=` pin in
+[pyproject.toml](../../pyproject.toml) — the only place that floor is written, and
+its comment says what each move of it was for. A local editable checkout is needed
+only for puikit development:
 set `PUIKIT_DIR` (via gitignored `Makefile.local` or the environment) and run
 `make install-puikit` to switch an existing venv between the two sources.
 
@@ -39,8 +41,8 @@ set `PUIKIT_DIR` (via gitignored `Makefile.local` or the environment) and run
 
 ## Extensions delivered for Keyhac2
 
-All developed in `../puikit` on feature branches with PRs, per its additive policy;
-all merged and released by puikit 1.0.8.
+All developed in `../puikit` on feature branches with PRs, per its additive policy,
+and merged and released there before the pin moved to them.
 
 | PR | What it added |
 |---|---|

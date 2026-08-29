@@ -102,7 +102,8 @@ odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporti
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
 the skill bundles - one zip per folder in `keyhac/skills/`, all attached to the
 GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
-versioned/released independently on PyPI; Keyhac2 pins a minimum (`puikit>=1.0.10`).
+versioned/released independently on PyPI; Keyhac2 pins a minimum in
+`pyproject.toml`.
 
 **`release-skill` is not optional the way it looks.** The bundles are the
 only way a user can obtain the skills — `make skill-bundle` needs the

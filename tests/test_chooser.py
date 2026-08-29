@@ -200,7 +200,7 @@ class TestChooserSingleInstance:
 class TestChooserScrolling:
     """Issue #27: the chooser routes keys itself and assigns the list's
     `selected` directly, so the scroll has to come with the assignment -
-    puikit >= 1.0.12 scrolls the selection into view on assignment."""
+    puikit scrolls the selection into view on assignment."""
 
     def test_selection_moved_past_the_viewport_stays_visible(self, ui_backend):
         from puikit.event import Event, EventType

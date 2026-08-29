@@ -52,7 +52,8 @@ reviewed one-off.
    focus conditions (`app=`, `title=`) and the keyhac-win features it lacked. One
    `config.py` runs on both OSes; keyhac-win configs require migration.
 4. **PuiKit is extended additively** per its compatibility policy; everything Keyhac2
-   needs shipped in puikit ≥ 1.0.8 (PyPI). See [doc/dev/puikit.md](doc/dev/puikit.md).
+   needs is in the PyPI release `pyproject.toml` pins. See
+   [doc/dev/puikit.md](doc/dev/puikit.md).
 5. **Single process, main-thread rule**: the native event loop on the main thread
    services the hook *and* all PuiKit windows. Slow work goes to `ThreadedAction`;
    results come back via `call_on_main_thread`.
@@ -104,9 +105,11 @@ tools/         # icon pipeline, release scripts, hook_echo diagnostic
 - PuiKit changes are developed in `../puikit` and must respect its additive API
   policy (new capability flags default off; new `Backend` methods get base
   no-op/raise). **Always on a feature branch with a pull request — never commit
-  directly to its main.** Keyhac2 depends on `puikit>=1.0.10` from PyPI; an editable
-  checkout is for puikit development only (set `PUIKIT_DIR` in gitignored
-  `Makefile.local`; `make install-puikit` switches an existing venv).
+  directly to its main.** Keyhac2 depends on the PyPI puikit named by the
+  `puikit>=` pin in `pyproject.toml`, which is the only place that floor is
+  written; an editable checkout is for puikit development only (set
+  `PUIKIT_DIR` in gitignored `Makefile.local`; `make install-puikit` switches
+  an existing venv).
 - `../keyhac-win` and `../keyhac-mac` are **read-only** references. Never modify them.
 - Build/release infra follows XeFM's Makefile/bundle system (the author's shipped
   PuiKit app) — port from it rather than inventing new schemes.

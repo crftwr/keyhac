@@ -98,7 +98,7 @@ regular app". Keyhac2 needed: multiple simultaneous windows (console + chooser +
 balloon), frameless / always-on-top / no-activate popup styles, an agent-app mode (no
 Dock icon), a system tray icon / menu-bar extra, screen geometry queries, runtime window
 control (show/hide/move), and a `call_later` timer. All were added additively under
-PuiKit's capability model and shipped in puikit ≥ 1.0.8.
+PuiKit's capability model and shipped in the puikit releases Keyhac pins.
 → [puikit.md](puikit.md)
 
 ## Naming
