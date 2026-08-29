@@ -34,15 +34,27 @@ def _chooser(backend, **kwargs):
     return ChooserWindow(backend, items, **kwargs)
 
 
+def _sync_pointer(chooser, x, y) -> None:
+    """Put the OS pointer where an event at these window coordinates says it
+    is - which is what is true at the moment an event is posted, and stops
+    being true as soon as the gesture moves the window. One pixel per cell
+    here, so the window coordinate needs no scaling."""
+    frame = chooser.window.frame_px()
+    chooser._backend.pointer_px = (frame[0] + x, frame[1] + y)
+
+
 def _press(chooser, x, y):
+    _sync_pointer(chooser, x, y)
     chooser._on_event(Event(type=EventType.MOUSE_DOWN, x=x, y=y, button="left"))
 
 
 def _drag(chooser, x, y):
+    _sync_pointer(chooser, x, y)
     chooser._on_event(Event(type=EventType.MOUSE_DRAG, x=x, y=y, button="left"))
 
 
 def _release(chooser, x, y):
+    _sync_pointer(chooser, x, y)
     chooser._on_event(Event(type=EventType.MOUSE_UP, x=x, y=y, button="left"))
 
 
@@ -94,11 +106,13 @@ class TestDraggingTheHandleMovesTheWindow:
         assert chooser.window.frame_px()[:2] == (180.0, 160.0)
 
     def test_a_gesture_that_leaves_the_handle_still_moves_it(self, ui_backend):
-        # The Panel clamps x/y to the widget once the pointer leaves it and
-        # keeps the true position alongside; reading the clamped one would
+        # With no pointer from the OS the event answers instead - and the
+        # Panel clamps its x/y to the widget once the pointer leaves it,
+        # keeping the true position alongside. Reading the clamped one would
         # pin the window a character from where it started.
         chooser = _chooser(ui_backend)
         _press(chooser, *HANDLE)
+        ui_backend.pointer_px = None
         chooser._on_event(Event(
             type=EventType.MOUSE_DRAG, x=HANDLE[0], y=HANDLE[1], button="left",
             hints={"pointer_x": HANDLE[0] + 40.0,
@@ -225,49 +239,54 @@ class TestNeitherGrabIsAControlTheKeyboardKnowsAbout:
 
 
 class TestTheEdgeIsRoundedWhereTheWindowIs:
-    """macOS clips a window to a 15 pt rounded rectangle (measured off
-    `NSThemeFrame`; a borderless window is 0) and Windows 11 rounds a popup
-    too, so a square border drawn at the window's extent loses its four
-    corners to that clip - which is what it did."""
+    """macOS clips a window to a rounded rectangle (15 pt for anything with a
+    frame under it; a borderless one is square) and Windows 11 rounds a popup
+    too, so a square border drawn at the window's extent loses exactly its
+    four corners to that clip - which is what it did. The radius is the
+    window's own: `WindowHandle.corner_radius_px` is the platform's fact."""
 
-    def _gui_backend(self):
+    def _rounded_backend(self, monkeypatch, radius=15.0):
         # MemoryBackend masks vector_shapes off - it is a character grid - so a
         # test that wants the vector path re-enables it, the way puikit's own
-        # rounded-face tests do.
+        # rounded-face tests do, and says its windows have rounded corners.
         from puikit import PROFILE_GUI_DESKTOP
-        from puikit.backends.memory_backend import MemoryBackend
+        from puikit.backends import memory_backend as mb
         from puikit.capability import CapabilityProfile
 
-        class VectorBackend(MemoryBackend):
+        class VectorBackend(mb.MemoryBackend):
             @property
             def capabilities(self):
                 return CapabilityProfile({**PROFILE_GUI_DESKTOP,
                                           "vector_shapes": True})
 
+        monkeypatch.setattr(mb._MemoryWindowHandle, "corner_radius_px",
+                            property(lambda self: radius), raising=False)
         backend = VectorBackend(width=100, height=30,
                                 capabilities=PROFILE_GUI_DESKTOP)
         backend.open()
         runtime.backend = backend
         return backend
 
-    def test_the_line_is_round_and_inside_the_corner(self, ui_backend):
-        backend = self._gui_backend()
+    def test_the_line_is_round_and_just_inside_the_corner(self, ui_backend,
+                                                          monkeypatch):
+        backend = self._rounded_backend(monkeypatch)
         try:
             _chooser(backend)
             # first: the page frame draws before anything nested in it
-            outer = backend.round_rect_calls[0]
+            x, y, w, h, radius = backend.round_rect_calls[0][:5]
         finally:
             runtime.backend = ui_backend
             backend.close()
-        x, y, w, h, radius = outer[:5]
-        # inset on every side, and rounded concentrically with the window
-        assert (x, y) == (2.0, 2.0)
-        assert (w, h) == (72.0 - 4.0, 20.0 - 4.0)
-        assert radius == 13.0
+        # half a pixel in on every side - the outermost thing the window
+        # draws, not a second edge inside a rim of background
+        assert (x, y) == (0.5, 0.5)
+        assert (w, h) == (72.0 - 1.0, 20.0 - 1.0)
+        # ... and concentric with the corner it sits in
+        assert radius == 14.5
 
-    def test_a_character_grid_keeps_its_square_box(self, ui_backend):
-        # Nothing there to round: the corner is a cell and the stroke is a
-        # box-drawing glyph.
+    def test_a_square_cornered_window_keeps_its_box(self, ui_backend):
+        # Nothing there to round: the memory backend's corners are square, as
+        # a borderless macOS window's are.
         chooser = _chooser(ui_backend)
         assert ui_backend.round_rect_calls == []
         assert "".join(chooser.window.snapshot()[0]).startswith("┌")
@@ -314,3 +333,59 @@ class TestTheSizeSurvivesTheWindow:
         _drag(chooser, BOTTOM_RIGHT[0] + 8, BOTTOM_RIGHT[1])
         _release(chooser, BOTTOM_RIGHT[0] + 8, BOTTOM_RIGHT[1])
         assert chooser.window.frame_px()[2] == 80.0
+
+
+class TestTheGestureAsksTheOSWhereThePointerIs:
+    """An event's position is measured against a window and frozen when the
+    event was posted. The top and left edges *move* that window as they
+    resize it, so adding its current origin to a location taken against its
+    previous one overstates the travel by exactly the move - and the
+    correction feeds the next frame. Dragging the top edge oscillated; the
+    bottom-right corner, the one gesture that never moves the window, did
+    not."""
+
+    def test_a_stale_event_does_not_move_the_top_edge_again(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        _press(chooser, *TOP)
+        _drag(chooser, TOP[0], TOP[1] - 4)             # window top now at 156
+        settled = chooser.window.frame_px()
+        assert settled[1:2] + settled[3:] == (156.0, 24.0)
+
+        # The pointer has not moved. This event was posted before the window
+        # was, so it still measures against the old top - the shape of event
+        # that made the window oscillate.
+        chooser._on_event(Event(type=EventType.MOUSE_DRAG, x=TOP[0],
+                                y=TOP[1] - 4, button="left"))
+        assert chooser.window.frame_px() == settled
+
+    def test_the_same_is_true_of_the_left_edge(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        _press(chooser, *LEFT)
+        _drag(chooser, LEFT[0] - 6, LEFT[1])
+        settled = chooser.window.frame_px()
+        chooser._on_event(Event(type=EventType.MOUSE_DRAG, x=LEFT[0] - 6,
+                                y=LEFT[1], button="left"))
+        assert chooser.window.frame_px() == settled
+
+    def test_the_os_pointer_wins_over_the_event(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        _press(chooser, *BOTTOM_RIGHT)
+        ui_backend.pointer_px = (160 + BOTTOM_RIGHT[0] + 10,
+                                 160 + BOTTOM_RIGHT[1] + 3)
+        chooser._on_event(Event(type=EventType.MOUSE_DRAG, x=BOTTOM_RIGHT[0],
+                                y=BOTTOM_RIGHT[1], button="left"))
+        assert chooser.window.frame_px()[2:] == (82.0, 23.0)
+
+    def test_a_near_edge_sets_its_whole_frame_at_once(self, ui_backend):
+        # Not move-then-resize: in between, the far edge - the one being held
+        # still - would be somewhere else, and it shows as a twitch.
+        chooser = _chooser(ui_backend)
+        calls = []
+        set_frame = chooser.window.set_frame_px
+        chooser.window.move_to_px = lambda *a: calls.append("move")
+        chooser.window.set_frame_px = lambda *a: (calls.append("frame"),
+                                                 set_frame(*a))[1]
+        _press(chooser, *TOP)
+        _drag(chooser, TOP[0], TOP[1] - 4)
+        assert calls == ["frame"]
+        assert chooser.window.frame_px() == (160.0, 156.0, 72.0, 24.0)

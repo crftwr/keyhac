@@ -35,7 +35,14 @@ dependencies = [
     # which the chooser cannot be resized at all - it is frameless, which is
     # what makes it non-activating, and a frameless window has no edge for the
     # user to drag, so the grip it draws itself is the only one there is
-    # (issue #117). Before that: mark_screen() and ScreenMarker (PR #130,
+    # (issue #117).
+    #
+    # NOT YET MOVED, and it has to be before this branch merges: the chooser
+    # now also uses pointer_position_px(), set_frame_px() and
+    # corner_radius_px (PR #132) - unreleased, so this floor still names the
+    # release before them. Develop against the checkout (PUIKIT_DIR).
+    #
+    # Before that: mark_screen() and ScreenMarker (PR #130,
     # capability screen_markers). The balloon and the outline the chooser puts
     # around the control it is pointing at are screen marks now, and on an
     # older puikit both are the base's already-closed mark - on Windows they

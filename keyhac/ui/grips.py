@@ -20,6 +20,16 @@ per-event deltas instead would be wrong twice over - what was grabbed slides
 out from under the pointer as the window follows it, and a size held at its
 minimum would go on accumulating travel the window never made, so it would
 not start growing again where the pointer turned round.
+
+That screen position comes from the **OS**, not from the event, and the
+difference is not academic.  A mouse event carries its position relative to a
+window, frozen when the event was posted; these gestures *move that window*
+while they run, so adding the window's current origin to a location taken
+against its previous one overstates the travel by exactly the move - and the
+correction feeds the next frame.  Dragging the top edge oscillated, while the
+bottom-right corner, which is the one gesture that never moves the window,
+was fine.  `Backend.pointer_position_px()` never mentions a window and cannot
+have the problem; the event is the fallback for a backend that cannot say.
 """
 
 from puikit import Style
@@ -35,6 +45,20 @@ _GRIP_STYLE = Style(fg=(130, 130, 140))
 #: filter field has no room to show what was typed into it, which is the one
 #: thing the window cannot do without.
 MIN_UNITS = (24.0, 6.0)
+
+
+def _pointer_on_screen(backend, fallback):
+    """Where the pointer is now, in the coordinates `frame_px` reports.
+
+    `fallback()` derives it from the event instead, for a backend with no
+    answer - which is right for every gesture that leaves the window where it
+    is, and the best available for the ones that do not.
+    """
+    if backend is not None:
+        pointer = backend.pointer_position_px()
+        if pointer is not None:
+            return pointer
+    return fallback()
 
 
 def _scale(window):
@@ -59,8 +83,10 @@ class DragHandle(Widget):
     off the filter field would break the thing the window is for.
     """
 
-    def __init__(self, window, glyph: str, style: Style = _GRIP_STYLE):
+    def __init__(self, window, glyph: str, style: Style = _GRIP_STYLE,
+                 backend=None):
         self._window = window
+        self._backend = backend
         self.glyph = glyph
         self.style = style
         #: Where this widget sits in the window, in base units, read off the
@@ -109,9 +135,16 @@ class DragHandle(Widget):
 
     def _pointer_px(self, event):
         """Where the pointer is on screen, in the coordinates `frame_px`
-        reports.  The event's own x/y are clamped to this widget once a drag
-        leaves it, so the unclamped position the Panel keeps alongside them is
-        what a gesture that has wandered across the screen is measured by."""
+        reports - from the OS, or worked out from the event where the backend
+        has no answer."""
+        return _pointer_on_screen(self._backend,
+                                  lambda: self._from_event(event))
+
+    def _from_event(self, event):
+        """The event's own position, put back into screen coordinates.  Its
+        x/y are clamped to this widget once a drag leaves it, so the unclamped
+        position the Panel keeps alongside them is what a gesture that has
+        wandered across the screen is measured by."""
         if event.x is None:
             return None
         frame = self._window.frame_px()
@@ -157,8 +190,10 @@ class EdgeResizer:
                 (-1, -1): "nwse-resize", (1, 1): "nwse-resize",
                 (1, -1): "nesw-resize", (-1, 1): "nesw-resize"}
 
-    def __init__(self, window, min_units=MIN_UNITS, on_resized=None):
+    def __init__(self, window, min_units=MIN_UNITS, on_resized=None,
+                 backend=None):
         self._window = window
+        self._backend = backend
         self._min_units = min_units
         #: Called with the new size in base units once a resize ends, for a
         #: caller that remembers it.
@@ -232,11 +267,13 @@ class EdgeResizer:
         x, w = self._axis(fx, fw, dx, ex, self._min_units[0] * scale[0])
         y, h = self._axis(fy, fh, dy, ey, self._min_units[1] * scale[1])
         if (x, y) != (fx, fy):
-            # Before the resize, not after: resize_to_px holds whatever the
-            # top-left corner is when it runs, so an edge that moves the
-            # corner has to have moved it already.
-            self._window.move_to_px(x, y)
-        self._window.resize_to_px(w, h)
+            # One call, because the near edges move the window as they resize
+            # it: as move-then-resize the window passes through a frame with
+            # the new origin and the old size, and the far edge - the one the
+            # user is holding still - twitches once per step of the drag.
+            self._window.set_frame_px(x, y, w, h)
+        else:
+            self._window.resize_to_px(w, h)
 
     @staticmethod
     def _axis(origin, length, travel, edge, minimum):
@@ -259,7 +296,13 @@ class EdgeResizer:
         self.on_resized(w, h)
 
     def _pointer_px(self, event):
-        """The pointer on screen, from an event in window coordinates."""
+        """The pointer on screen - from the OS, or from the event where the
+        backend has no answer."""
+        return _pointer_on_screen(self._backend,
+                                  lambda: self._from_event(event))
+
+    def _from_event(self, event):
+        """The event's own position, put back into screen coordinates."""
         frame = self._window.frame_px()
         scale = _scale(self._window)
         if event.x is None or frame is None or scale is None:

@@ -85,12 +85,21 @@ Keyhac2-side usage notes:
   `WM_NCHITTEST` → `HTCAPTION` reply both mean "drag from anywhere the content
   is not a control", which in a window that is mostly a list is a gesture
   arguing with the list.
-- **The border has to be rounded.** A macOS window is clipped to a rounded
-  rectangle — 15 pt on macOS 26, read off `NSThemeFrame`'s private
-  `cornerRadius` for the chooser's exact style mask (a borderless window is 0)
-  — and Windows 11 rounds a popup too, so a square line drawn at the window's
-  extent loses its four corners to the clip. `Frame(radius_px=, inset_px=)`
-  draws it concentric with that corner and just inside it.
+- **The border has to be rounded**, and **the gesture has to ask the OS where
+  the pointer is** — puikit PR #132 carries both facts, plus `set_frame_px`:
+  - A window is clipped to a rounded rectangle (15 pt on macOS for anything
+    with a frame under it, 8 px on Windows 11), so a square line drawn at its
+    extent loses exactly its four corners. `WindowHandle.corner_radius_px` is
+    the number; `Frame(radius_px=, inset_px=)` draws the line concentric with
+    that corner, half a pixel inside it.
+  - A mouse event's position is measured against the window and frozen when
+    the event was posted, so a gesture that *moves* that window — the top and
+    left edges, which hold the far side still — cannot convert it back to a
+    screen position: the error is exactly the move, and it feeds the next
+    frame. The top edge oscillated. `Backend.pointer_position_px()` never
+    mentions a window; the event stays the fallback.
+  - `set_frame_px` lands the origin and the size in one window-server update,
+    so the far edge does not twitch once per step of the drag.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.

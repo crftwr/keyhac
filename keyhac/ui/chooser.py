@@ -76,12 +76,14 @@ logger = log.getLogger("Chooser")
 _MARGIN_PX = 5
 _LIST_PAD_PX = 3
 
-#: The window's own edge: rounded to the radius macOS clips a window to (15 pt
-#: off `NSThemeFrame`, less the inset, so the line stays concentric with the
-#: corner it sits in) and drawn just inside the frame, where the clip cannot
-#: reach it.  The inset stays under the page margin, so no content moves.
-_EDGE_RADIUS_PX = 13.0
-_EDGE_INSET_PX = 2.0
+#: The window's own edge, drawn a half pixel inside the frame - far enough in
+#: that the stroke clears the corner the platform clips the window to, close
+#: enough that the line *is* the outermost thing the window draws rather than
+#: a second edge inside a rim of background.  The radius is the window's own,
+#: less the inset, so the line stays concentric with that corner; how round
+#: the corner is is the platform's fact and `WindowHandle.corner_radius_px`
+#: is where it is kept.
+_EDGE_INSET_PX = 0.5
 
 #: The window's size before anything has been remembered, in base units, and
 #: the ceiling a remembered one is clamped to - a settings file written by
@@ -232,7 +234,8 @@ class ChooserWindow:
                               width=_MAX_UNITS[0])
         # Dragging the window's own edge resizes it, since a frameless window
         # gets nothing from the window manager to drag (issue #117).
-        self._resizer = EdgeResizer(self.window, on_resized=_remember_size)
+        self._resizer = EdgeResizer(self.window, on_resized=_remember_size,
+                                    backend=backend)
         self._scopes = list(scopes) if scopes else []
         self._on_scope = on_scope
         self._scope = 0
@@ -277,7 +280,8 @@ class ChooserWindow:
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
         search_row = [
-            Item(DragHandle(self.window, "🔍"), size="content", align="center"),
+            Item(DragHandle(self.window, "🔍", backend=backend),
+                 size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
             Item(Label(""), size_px=_MARGIN_PX),
@@ -295,12 +299,12 @@ class ChooserWindow:
         # Frame, not LayoutView: the window is frameless, so the only edge it
         # can have is one it draws.  Without it the popup reads as a floating
         # rectangle of text over a light background rather than as a window.
-        # Rounded and inset, because a macOS window is clipped to a rounded
-        # rectangle (15 pt, measured off NSThemeFrame) and Windows 11 rounds a
-        # popup too: a square line drawn at the window's extent loses its four
-        # corners to that clip, which is what it did.
-        self._page = Frame(page, margin_px=_MARGIN_PX,
-                           radius_px=_EDGE_RADIUS_PX, inset_px=_EDGE_INSET_PX)
+        # Rounded to whatever the platform clips this window's corners to,
+        # because a square line drawn at the window's extent loses exactly
+        # those four corners to the clip - which is what it did.
+        self._page = Frame(
+            page, margin_px=_MARGIN_PX, inset_px=_EDGE_INSET_PX,
+            radius_px=max(0.0, self.window.corner_radius_px - _EDGE_INSET_PX))
         self.panel.set_layout(VSplit(Item(self._page, weight=1)))
         self.panel.focus(self._page)
         self._focus_edit()
