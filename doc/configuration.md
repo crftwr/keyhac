@@ -402,11 +402,15 @@ current page is named at the right of the filter field.
 
 ```python
 kt["Fn-P"] = ShowCandidates([
-    ChooserPage("Do",     [keys, actions, menus]),
-    ChooserPage("Paste",  [clipboard, snippets, tools]),
-    ChooserPage("Screen", [controls, windows]),
+    ChooserPage("Run",   [keys, actions]),
+    ChooserPage("Paste", [clipboard, snippets, tools]),
+    ChooserPage("Click", [menus, controls, windows]),
 ])
 ```
+
+**Name a page for what Enter does on it.** The query you carry between pages is
+then the noun and the page is the verb: type `mail`, and Left/Right asks run it,
+paste it, or click it.
 
 **Aim for three, with the one you reach for most in the middle** — the window
 opens there, so it costs nothing to reach and both neighbours cost one press.
@@ -421,14 +425,15 @@ scarce thing here, but it is yours to spend.
 
 Inside whichever page you are on, type `@` and a source name — `@Clip`,
 `@Menu`, `@Key` — to see only that source's rows. `Tab` extends what you have
-typed as far as it is sure of.
+typed as far as it is sure of, and adds a space once one name is left, so the
+rest of the query follows straight on.
 
 The names are the ones already shown beside each row, so there is nothing to
 memorise, and a name that is not on this page simply matches nothing. The rest
 of the query still filters: `@Menu save` looks for `save` among menu commands.
 
-This is why three pages is enough. A page is *where you are*; `@` is *which of
-the things there* you meant.
+This is why three pages is enough. A page is *what you would do with it*; `@`
+is *which of the things there* you meant.
 
 The built-in sources are `ClipboardHistorySource`, `SnippetsSource`,
 `ClipboardToolsSource`, `MenuItemsSource` (every command in the front

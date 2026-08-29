@@ -515,6 +515,12 @@ class ChooserWindow:
         would cover it to do so. Tab therefore only ever lengthens what is in
         the field: it cannot commit anything, cannot open a mode, and has
         nothing to dismiss. Where it cannot extend, the badges are the list.
+
+        One name left means the token is finished, and a space goes in after
+        it so the search terms can be typed straight on: `@to` Tab leaves the
+        caret ready for `apr`, not for a space the user has to reach for. An
+        ambiguous prefix gets none - a space there would end the very token
+        the next Tab is meant to extend.
         """
         text, cursor = self._edit.text, self._edit.cursor
         start, end = token_span(text, cursor)
@@ -525,6 +531,8 @@ class ChooserWindow:
         if not matches:
             return False
         common = _SOURCE_SIGIL + common_prefix(matches)
+        if len(matches) == 1 and not text[end:end + 1].isspace():
+            common += " "
         if len(common) > len(token):
             self._edit.text = text[:start] + common + text[end:]
             self._edit.cursor = start + len(common)

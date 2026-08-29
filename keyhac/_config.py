@@ -198,30 +198,33 @@ def configure(keymap):
     actions = ActionsSource()
     controls = WindowControlsSource()
 
-    # Three pages, and the one you reach for most in the middle - the window
-    # opens there, so it costs nothing and both neighbours cost one press.
-    # Three is about as many as anyone holds without looking, which is why
-    # the list below is short rather than complete - narrowing *within* a
-    # page is `@` and not another page (see below).
+    # Three pages, each named for what Enter does on it - so the query you
+    # carry between them is the noun and the page is the verb: type `mail`,
+    # and Left/Right asks run it, paste it, or click it.  The one you reach
+    # for most goes in the middle, since the window opens there: it costs
+    # nothing and both neighbours cost one press.  Three is about as many as
+    # anyone holds without looking, which is why the list below is short
+    # rather than complete - narrowing *within* a page is `@` and not
+    # another page (see below).
     #
     # A source that reads the front application costs that work every time
     # the page holding it is opened, so those sit on the page you go to
     # deliberately.  They stream: the first rows are on screen while the
     # rest are still being read.
     kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
-        # Do: what Keyhac itself defines - your bindings, your actions.
-        ChooserPage("Do", [keys, actions]),
+        # Run: what Keyhac itself defines - your bindings, your actions.
+        ChooserPage("Run", [keys, actions]),
         ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
-        # Screen: what is in front of you and belongs to the application -
-        # its menu commands, its controls, and the other windows.
-        ChooserPage("Screen", ([menus] if mac else []) + [controls, OpenWindows()]),
+        # Click: what you would otherwise reach for the mouse to hit - the
+        # application's menu commands, its controls, and the other windows.
+        ChooserPage("Click", ([menus] if mac else []) + [controls, OpenWindows()]),
     ])
 
     # Type `@` and a source name to narrow to one of them - `@Clip`, `@Menu`,
     # `@Key` - and Tab extends what you have typed as far as it is sure of.
     # The names are the ones already shown beside each row, so there is
-    # nothing to memorise.  It is why three pages is enough: a page is where
-    # you are, `@` is which of the things there you meant.
+    # nothing to memorise.  It is why three pages is enough: the page is
+    # what you would do with it, `@` is which of the things there you meant.
     #
     # Want more pages?  Bind another key to another ShowCandidates.  A key is
     # the scarce thing, but it is yours to spend:

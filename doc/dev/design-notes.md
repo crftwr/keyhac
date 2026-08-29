@@ -539,9 +539,23 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   source's name.
 - **Three pages is the recommendation, and `@` is what makes it enough.** The
   config shipped eight, and it shipped eight because a page was the only way
-  to narrow to one source. Give `@` that job and the pages collapse to places:
-  Do, Paste, Screen. More than three is a key of your own bound to another
+  to narrow to one source. Give `@` that job and the pages collapse to three:
+  Run, Paste, Click. More than three is a key of your own bound to another
   `ShowCandidates` — a key is the scarce thing, but it is yours to spend.
+- **A page is a verb, the query is the noun, `@` is which of the things there
+  you meant.** That is what picked those three words. The first names were Do,
+  Paste, Screen — two verbs and a place, because page 3's rows share no single
+  verb (a menu item is invoked, a control pressed, a window raised), and
+  "Screen" was the only word covering all three. But the query *carries across
+  pages*, and naming them for what Enter does is what gives that carrying a
+  meaning: type `mail`, and Left/Right asks run it, paste it, click it. Under
+  place-names the same gesture only says "look somewhere else". "Do" also
+  excluded nothing — every row in the window does something — and sat directly
+  above its own near-synonym, the `Action` badge. The one thing paid for is
+  `OpenWindows` on the Click page: raising a window is the weakest fit of the
+  three, and worth it. Both sources already describe themselves in the word —
+  `WindowControlsSource` is "everything you could click in the front window",
+  and `MenuItemsSource` ends "with everything else clickable".
 - **`ChooserPage`, not `Scope`.** Renamed while it was free: `Scope` had never
   shipped (v2.2.3 predates the candidate window), and once `@` does the
   narrowing, "scope" actively misleads — it sounds like a filter. Long name
