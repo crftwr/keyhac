@@ -51,6 +51,7 @@ A source that genuinely needs an input method in the filter field asks for
 ``activates=True`` and gets the old behaviour back, with the old costs.
 """
 
+import threading
 import time
 
 from puikit import Panel, Style, WindowStyle
@@ -109,8 +110,13 @@ _SIZE_KEY = "chooser_size"
 #: one.
 _SLICE_SECONDS = 0.002
 
-#: The progress note is context, not content: quieter than the query.
-_PROGRESS_STYLE = Style(fg=(130, 130, 140))
+#: How much a background worker accumulates before handing rows to the main
+#: thread.  Whichever comes first: a full batch keeps a fast source from
+#: crossing threads per row, the deadline keeps a slow one from looking
+#: stalled.  30 ms is under a frame, so the list still fills visibly rather
+#: than in one jump - which is what says the window is working.
+_BATCH_MAX = 64
+_BATCH_SECONDS = 0.030
 
 #: The outline drawn over the control a highlighted row stands for.  Loud on
 #: purpose: it is answering "is this the one you meant?" across the whole
@@ -192,12 +198,17 @@ class ChooserWindow:
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
-                 scopes=None, on_scope=None, pending=None):
+                 scopes=None, on_scope=None, pending=None, background=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
         # to give, and nothing about it should become asynchronous.
         self._pending = pending
+        # Rows from sources that declared themselves safe off the main thread
+        # (CandidateSource.background), walked on a worker and handed back in
+        # batches. None is the ordinary case.
+        self._background = background
+        self._bg_stop = None
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._match = self._matcher.compile("")
         self._filtered = list(self._items)
@@ -284,12 +295,6 @@ class ChooserWindow:
         from keyhac.ui.scope_switcher import ScopeSwitcher
         self._scope_label = ScopeSwitcher(
             self._scope_name(), on_switch=self._switch_clicked)
-        # "Still reading", and how much of it so far.  Without this an
-        # unfinished list is indistinguishable from a finished one, so a query
-        # that has not matched *yet* reads as one that never will - which is
-        # the whole of what makes a streaming source feel slow, rather than
-        # the milliseconds.
-        self._progress = Label("", style=_PROGRESS_STYLE)
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
@@ -299,10 +304,6 @@ class ChooserWindow:
             Item(self._handle, size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
-            # No spacer of its own: the progress note is usually empty, and a
-            # spacer that stayed behind it would widen the gap the switcher
-            # keeps on its left.  It carries its own leading space instead.
-            Item(self._progress, size="content", align="center"),
             Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
         ]
         if self._scopes:
@@ -338,6 +339,7 @@ class ChooserWindow:
         # After the window is on screen, so streamed rows land in something
         # the user is already looking at rather than delaying its first paint.
         self._start_streaming()
+        self._start_background()
 
     # --- non-activating input (spike - discussion #112) -------------------
 
@@ -501,21 +503,99 @@ class ChooserWindow:
             self._pending = None
         if arrived:
             self._append(arrived)
-        self._show_progress()
         if self._pending is None:
             self._streaming = False
             return False
         return True
 
-    def _show_progress(self) -> None:
-        """Say whether the list is still filling, and how far it has got."""
-        # The leading space is the note's own gap from the field: an empty
-        # note then takes no width at all, and the switcher beside it keeps
-        # the gutter it is supposed to have.
-        text = f"  … {len(self._items)}" if self._pending is not None else ""
-        if self._progress.text != text:
-            self._progress.text = text
-            self.panel.render()
+    # --- the worker ------------------------------------------------------
+
+    def _start_background(self) -> None:
+        """Walk the background sources on a worker, delivering in batches.
+
+        The tick drain above exists because a main-thread generator must hand
+        the thread back; a worker has nothing to hand back, so it simply runs
+        and the window fills in the time the walk actually takes. Measured on
+        a live menu bar: the same walk that reached the screen over ten
+        seconds arrives in a fifth of one.
+
+        What makes this safe is not a guess. An accessibility read into
+        *another* process releases the GIL while it waits, so a target that
+        has stopped answering blocks this thread and nothing else - measured
+        against a deliberately frozen application, the main thread's
+        throughput did not move while a call sat in it for 1.5 s. And the
+        contention runs the right way round: a main thread busy with Python
+        starves the worker rather than the other way about, so a keystroke
+        does not queue behind the walk. What it costs the main thread,
+        measured with the walk running flat out, is 0.13 ms on a hook-sized
+        piece of work.
+
+        One worker, not several. The cost of a walk is the marshalling in
+        *this* process rather than the wait in the other one, so six walks on
+        six threads took as long as six in a row - the GIL is the ceiling,
+        and more threads only divide it.
+        """
+        if self._background is None or self._bg_stop is not None:
+            return
+        if not self.panel.dispatches_to_main_thread:
+            # No other thread to hand rows back to, so nothing is gained by
+            # putting them on one - and a worker would have nowhere to land.
+            # Drain inline, which is what the tick drain does on a still
+            # backend for the same reason. Tests take this path.
+            generator, self._background = self._background, None
+            rows = [Candidate.from_item(c) for c in generator]
+            if rows:
+                self._append(rows)
+            return
+        stop = self._bg_stop = threading.Event()
+        generator = self._background
+
+        def run():
+            batch, deadline = [], time.monotonic() + _BATCH_SECONDS
+            try:
+                for candidate in generator:
+                    if stop.is_set():
+                        return
+                    batch.append(candidate)
+                    now = time.monotonic()
+                    if len(batch) >= _BATCH_MAX or now >= deadline:
+                        self._deliver(batch, stop)
+                        batch, deadline = [], now + _BATCH_SECONDS
+            except Exception:
+                logger.exception("A background candidate source failed.")
+            finally:
+                # The last batch and the "no more coming" both land here, so
+                # an abandoned walk still takes the progress note down.
+                self._deliver(batch, stop, done=True)
+
+        threading.Thread(target=run, name="keyhac-candidates",
+                         daemon=True).start()
+
+    def _deliver(self, batch, stop, done: bool = False) -> None:
+        """Hand one batch to the main thread, which is the only place a row
+        may be added to the window.
+
+        Batched rather than row by row for the reason the tick drain is
+        time-boxed rather than counted: `_append` re-ranks and redraws
+        everything it has, so paying that per row makes filling the window
+        cost more than reading it did.
+        """
+        def land():
+            if self._done or stop.is_set():
+                return
+            if batch:
+                self._append([Candidate.from_item(c) for c in batch])
+            if done:
+                self._background = None
+
+        self._backend.call_on_main_thread(land)
+
+    def _stop_background(self) -> None:
+        """Abandon the walk. The worker notices at its next row; nothing it
+        delivers after this lands, because `land()` checks the same flag."""
+        if self._bg_stop is not None:
+            self._bg_stop.set()
+            self._bg_stop = None
 
     def _ranked(self, candidates) -> list:
         """Best first, and stable - so rows the query cannot tell apart keep
@@ -588,17 +668,22 @@ class ChooserWindow:
         # source produced, keyed on the source itself, so returning to a scope
         # re-concatenates rather than re-walks - and a source shared with
         # another scope is not read a second time at all.
-        rows, pending, badge_of = self._on_scope(self._scope)
+        # Before anything else: the worker is walking a generator this is
+        # about to hand to someone else, and two consumers of one generator
+        # is not a race that can be tidied up afterwards.
+        self._stop_background()
+        rows, pending, badge_of, background = self._on_scope(self._scope)
         self._items = [Candidate.from_item(row) for row in rows]
         self._pending = pending
+        self._background = background
         self._badge_of = badge_of
-        self._show_progress()
         self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
         self._focus_edit()
         self._on_filter_change(self._edit.text)
         self._start_streaming()
+        self._start_background()
 
     def _on_event(self, event) -> None:
         if event.type is EventType.KEY:
@@ -685,6 +770,7 @@ class ChooserWindow:
         if not self._done:
             self._done = True
             self._release_keys()
+            self._stop_background()
             self._stop_pointing()
             if self._on_canceled is not None:
                 self._on_canceled()
@@ -700,6 +786,7 @@ class ChooserWindow:
         if not self._done:
             self._done = True
             self._release_keys()
+            self._stop_background()
             self._stop_pointing()
             self.window.close()
 
@@ -708,6 +795,7 @@ class ChooserWindow:
             return
         self._done = True
         self._release_keys()
+        self._stop_background()
         self._stop_pointing()
         self.window.close()
         if candidate is None:

@@ -443,6 +443,26 @@ class UIElement:
             return self._pattern_attribute(name)
         return None
 
+    def get_attribute_values(self, names: list[str]) -> dict:
+        """Read several attributes in one call (the macOS twin's counterpart).
+
+        macOS answers this in one round trip into the other application;
+        UI Automation has no such call in the shape this API needs - its
+        batching is a *cache request* built around a tree walk, not around
+        one element - so here it is the loop the caller would have written,
+        and costs exactly what the individual reads cost. The point is that
+        callers get to be written once, against the shape that can be fast.
+
+        Args:
+            names: Attribute names, in this platform's vocabulary
+                ("ControlType", "Name", ...).
+
+        Returns:
+            A dict from name to value, None for an attribute the element
+            does not have.
+        """
+        return {name: self.get_attribute_value(name) for name in names}
+
     def _pattern_attribute(self, name: str):
         pattern = self._pattern(self._PATTERN_ATTRS[name])
         if pattern is None:

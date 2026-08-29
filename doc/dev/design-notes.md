@@ -541,9 +541,13 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   not the problem by then; not being able to tell an unfinished list from a
   finished one was. A query that has not matched *yet* reads as one that never
   will.
-- So the search row carries a **"… n" note while a source is still
-  producing**, and goes quiet when it stops. No milliseconds saved; it is the
-  difference between "there is nothing" and "not yet".
+- So the search row carried a **"… n" note while a source was still
+  producing** — no milliseconds saved, but the difference between "there is
+  nothing" and "not yet". **It has since been removed**: the walk moved to a
+  worker and a fill went from ~11.7 s to ~0.25 s, and a note describing a
+  state nobody is left looking at is a thing appearing and vanishing beside
+  the query for no reason. The reasoning was right for the speed it was
+  written at; the speed changed. See "Streaming a source".
 - **Breadth-first was tried and rejected.** It reaches the first rows sooner
   (3 ms against 16) and is worse at everything else: within the same node
   budget it found 96 controls against 152, because breadth spends the budget
@@ -564,11 +568,15 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   nothing a source read can have gone stale while the window is up.
 - The cache is the **window's, not the process's**. A reopened window is a new
   question about a screen that has had time to move.
-- Background prefetching was considered and is not available in the shape it
-  is usually meant: accessibility calls must stay on the main thread, so
-  "fetch it on a worker beforehand" cannot be done at all, and doing it on the
-  main thread on every focus change would spend ~370 ms for windows the user
-  never asks about — moving the cost rather than removing it.
+- Background prefetching is available after all, and was not while this was
+  written. It was ruled out on a rule one level too broad: the contract in
+  `platform/base.py` says AX **into our own process** off the main thread
+  crashes with SIGTRAP, and that had been read as "accessibility calls must
+  stay on the main thread". The sources that are slow read *other* processes
+  by definition. See "Streaming a source" below for what was measured. What is
+  still true is the other half of the objection: walking on every focus change
+  spends the cost for windows the user never asks about, so prefetching is a
+  question about *when*, not about whether it is possible.
 
 ## Ranking a merged list
 
@@ -602,21 +610,62 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 ## Streaming a source
 
 - A source may **yield** instead of returning a list. The window drains the
-  generator a slice at a time between renders, so its first rows are on screen
-  while it is still finding the rest. Measured on a live menu bar: **first row
-  at 16 ms, all 89 over 344 ms** — the difference between a window that opens
-  and one that appears a third of a second later.
-- **On the main thread, in slices — not on a worker.** This is where the design
-  parts company with XeFM's, which streams from a daemon thread drained on the
-  animation tick. It cannot work here: on macOS an accessibility call off the
-  main thread crashes the process (`platform/base.py`'s Window contract), and
-  accessibility is what the sources needing this are made of. A generator
-  suspends at each `yield`, which is exactly the chunking a main-thread walk
-  needs, and it stays on the right thread by construction.
-- **Time-boxed, not counted.** An accessibility call's cost varies by orders of
-  magnitude between a menu item and a node inside a web area, so "twenty rows
-  per tick" is a different amount of frozen keyboard every time and "two
-  milliseconds" is not.
+  generator as it goes, so its first rows are on screen while it is still
+  finding the rest.
+- **Where it is drained is the source's own declaration**, `background`. False
+  by default, which keeps a generator on the main thread in 2 ms slices —
+  right for anything touching the UI or the keymap, and the only safe default
+  for a source someone else wrote. The accessibility sources set it True.
+- **The main-thread path is slow in a way that is not the walk's fault.** The
+  drain rides puikit's animation tick, and a tick callback with no animation
+  behind it runs at the *idle* rate — measured on the real backend, 10.0 Hz.
+  So a 2 ms slice every 100 ms is a 2% duty cycle, and the cost of a source is
+  not what it reads but `work / 2 ms × 100 ms`. Measured end to end, Chrome's
+  menu bar: **11.7 s** to fill. This is why the earlier note here — "first row
+  at 16 ms, all 89 over 344 ms" — did not match live use: it timed the
+  generator, not the delivery.
+- **A worker simply runs**, so the fill costs what the walk costs. Same window,
+  same source, real backend: Chrome's menus **11,723 ms → 257 ms**, VS Code
+  4,724 → 213, iTerm2 7,420 → 311, Chrome's controls 9,544 → 342. First row
+  halves too (130 ms → ~60), because nothing waits for the first tick.
+- **What makes the worker safe was measured, not assumed.** An AX read into
+  another process releases the GIL while it waits: against a deliberately
+  frozen application, a call sat in the worker for 1.51 s (returning
+  `kAXErrorCannotComplete` on AX's own ~1.5 s messaging timeout) while the main
+  thread's Python throughput did not move — 4.91M vs 5.0M iterations per half
+  second. The contention also runs the right way round: a main thread busy with
+  Python starves the worker (149 AX calls/s against 24,400), not the reverse,
+  so a keystroke never queues behind the walk. The cost to a hook-sized piece
+  of main-thread work, with the walk running flat out, is 0.19 ms median
+  against 0.06 idle.
+- **One worker, not several.** Six applications walked on six threads took
+  948 ms against 935 ms for the same six in a row — 1.0×. The cost is the
+  PyObjC marshalling in *our* process, not the wait in the other one, so the
+  GIL is the ceiling and more threads only divide it. It also means the only
+  way to make a walk itself faster is to ask fewer times — which is what the
+  menu walk's batched read does.
+- **`candidates()` is always called on the main thread**, whatever `background`
+  says; only the generator it returns moves. That is where a source resolves
+  what it needs from the UI — which application is frontmost, which window —
+  and `WindowControlsSource` was reshaped from a generator into a function
+  returning one so that its `get_active_window()` stays there.
+- **Delivered in batches**, 64 rows or 30 ms, whichever comes first. Per row
+  would pay `_append`'s re-rank and redraw once per row; per completion would
+  give up the streaming the whole shape exists for.
+- **Nothing announces the filling any more.** The "… n" note earned its place
+  against an 11.7 s fill; against a quarter of a second it describes a state
+  the user never sees, and appears and vanishes beside the query to do it.
+  Removed with the slowness that justified it.
+- **Two streams, not one.** `_collect` splits the unfinished sources by
+  `background` and hands the window two generators. Merging them would put
+  every row of both on whichever thread drained first.
+- **A still backend drains inline.** `MemoryBackend` has no
+  `call_on_main_thread` — the base raises — so there is nowhere for a worker to
+  land rows. The tick drain already had this shape for the same reason.
+- **Time-boxed, not counted** (the main-thread path). An accessibility call's
+  cost varies by orders of magnitude between a menu item and a node inside a
+  web area, so "twenty rows per tick" is a different amount of frozen keyboard
+  every time and "two milliseconds" is not.
 - **A list source does not stream at all.** There is nothing to gain by
   deferring rows already in hand and much to lose in making every caller wait
   for them, so `ChooserAction._collect` splits at the source level: lists go
