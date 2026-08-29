@@ -350,14 +350,15 @@ class ChooserAction:
         #: What each source has read so far, for this window only:
         #: id(source) -> [rows, unfinished generator or None].
         self._read = {}
-        rows, pending, badge_of = self._collect()
+        rows, pending, badge_of, background = self._collect()
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
                                 scopes=self.scope_names(),
-                                on_scope=self._scope_rows)
+                                on_scope=self._scope_rows,
+                                background=background)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -430,14 +431,15 @@ class ChooserAction:
             if state[1] is not None:
                 unfinished.append((source, state))
 
-        def remainder():
-            """Continue each unfinished source, recording as it goes.
+        def remainder(group):
+            """Continue each unfinished source in `group`, recording as it
+            goes.
 
             A row read here lands in the source's own list as well as in this
             window, so a *different* scope sharing the source starts from
             where this one got to rather than from nothing.
             """
-            for source, state in unfinished:
+            for source, state in group:
                 generator = state[1]
                 if generator is None:
                     continue
@@ -447,16 +449,25 @@ class ChooserAction:
                     yield candidate
                 state[1] = None
 
-        pending = remainder() if unfinished else None
+        # Two streams, because they are drained in two different places. A
+        # source that touches nothing of Keyhac's says so with `background`
+        # and is walked on a worker; everything else keeps the main-thread
+        # slices, which is where a source touching the UI has to be. They are
+        # separate generators rather than one, because merging them would put
+        # every row of both on whichever thread drained first.
+        main = [pair for pair in unfinished if not getattr(pair[0], "background", False)]
+        worker = [pair for pair in unfinished if getattr(pair[0], "background", False)]
+        pending = remainder(main) if main else None
+        background = remainder(worker) if worker else None
         if len(sources) < 2:
             # No "which source" question to answer, so the slot belongs to
             # the source itself - the menu source puts the shortcut there.
             single = sources[0] if sources else None
             if single is None or type(single).badge is CandidateSource.badge:
-                return rows, pending, None
-            return rows, pending, lambda c: single.badge(c)
+                return rows, pending, None, background
+            return rows, pending, lambda c: single.badge(c), background
         return rows, pending, lambda c: getattr(
-            self._owners.get(id(c)), "name", "")
+            self._owners.get(id(c)), "name", ""), background
 
     def _adopt(self, source, item):
         from keyhac.core.candidate import Candidate

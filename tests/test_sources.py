@@ -1720,3 +1720,157 @@ class TestPressingAChosenElement:
         from keyhac.core.sources import _press
         element = self._Element([], focusable=False)
         assert not _press(element)
+
+
+class TestBackgroundSources:
+    """A source that touches nothing of Keyhac's says so, and its walk moves
+    off the main thread - which is the whole difference between a window that
+    fills in a fifth of a second and one that takes ten."""
+
+    class _Background(CandidateSource):
+        name = "Background"
+        background = True
+
+        def __init__(self, count=5):
+            self.count = count
+            self.thread = None
+
+        def candidates(self):
+            import threading
+            self.called_on = threading.current_thread().name
+            return self._walk()
+
+        def _walk(self):
+            import threading
+            for index in range(self.count):
+                self.thread = threading.current_thread().name
+                yield Candidate(display=f"bg {index}")
+
+    class _Foreground(CandidateSource):
+        name = "Foreground"
+
+        def candidates(self):
+            for index in range(3):
+                yield Candidate(display=f"fg {index}")
+
+    def _open(self, sources):
+        from keyhac.actions import ChooserAction, ShowCandidates
+        action = ShowCandidates(sources)
+        action()
+        return action, ChooserAction._open[1]
+
+    def test_the_rows_arrive(self, ui_backend):
+        """The still backend has no thread to hand them back to, so the walk
+        is drained inline - but it is still drained."""
+        source = self._Background()
+        _, chooser = self._open([source])
+        assert [c.display for c in chooser._items] == [
+            "bg 0", "bg 1", "bg 2", "bg 3", "bg 4"]
+
+    def test_candidates_is_called_before_the_generator_moves(self, ui_backend):
+        """`candidates()` runs on the calling thread whatever `background`
+        says: a source resolves what it needs from the UI there, and only the
+        walk it returns is free to move."""
+        source = self._Background()
+        self._open([source])
+        assert source.called_on == "MainThread"
+
+    def test_the_two_kinds_are_drained_separately(self, ui_backend):
+        """Merging them into one generator would put every row of both on
+        whichever thread drained first."""
+        rows, pending, _, background = self._collect(
+            [self._Foreground(), self._Background()])
+        assert [c.display for c in pending] == ["fg 0", "fg 1", "fg 2"]
+        assert [c.display for c in background] == [
+            "bg 0", "bg 1", "bg 2", "bg 3", "bg 4"]
+
+    def test_a_window_with_only_foreground_sources_asks_for_no_worker(
+            self, ui_backend):
+        rows, pending, _, background = self._collect([self._Foreground()])
+        assert background is None and pending is not None
+
+    def test_a_window_with_only_background_sources_needs_no_slices(
+            self, ui_backend):
+        rows, pending, _, background = self._collect([self._Background()])
+        assert pending is None and background is not None
+
+    @staticmethod
+    def _collect(sources):
+        from keyhac.actions import ShowCandidates
+        action = ShowCandidates(sources)
+        action._read = {}
+        action._owners = {}
+        action._scope = 0
+        return action._collect()
+
+    def test_a_list_source_is_never_a_worker_s_business(self, ui_backend):
+        """`background` says where a *generator* is drained. A source with its
+        rows already in hand has nothing to drain."""
+        class Listy(CandidateSource):
+            background = True
+
+            def candidates(self):
+                return [Candidate(display="here already")]
+
+        rows, pending, _, background = self._collect([Listy()])
+        assert [c.display for c in rows] == ["here already"]
+        assert pending is None and background is None
+
+    def test_closing_the_window_stops_the_walk(self, ui_backend):
+        """A walk outliving its window would deliver rows into a window that
+        is gone, and go on reading the screen to do it."""
+        source = self._Background(count=3)
+        _, chooser = self._open([source])
+        chooser._bg_stop = __import__("threading").Event()
+        chooser.dismiss()
+        assert chooser._bg_stop is None, "dismiss left the walk running"
+
+    def test_switching_scope_stops_the_walk_first(self, ui_backend):
+        """The generator the worker is draining is about to be handed to
+        another scope; two consumers of one generator is not a race that can
+        be tidied up afterwards."""
+        import threading
+        from keyhac.actions import ChooserAction, ShowCandidates
+        from keyhac.core.source import Scope
+        action = ShowCandidates([Scope("A", [self._Background()]),
+                                 Scope("B", [self._Background()])])
+        action()
+        chooser = ChooserAction._open[1]
+        chooser._bg_stop = threading.Event()
+        stopped = chooser._bg_stop
+        chooser.switch_scope(1)
+        assert stopped.is_set(), "the scope switch left the old walk running"
+
+    def test_a_callable_source_can_declare_it(self, ui_backend):
+        """The case the flag is really for outside Keyhac's own sources: a
+        callable reading a file, a subprocess, the network."""
+        from keyhac.core.source import CallableSource
+
+        def produce():
+            yield Candidate(display="from a worker")
+
+        source = CallableSource(produce, "Files", background=True)
+        assert source.background is True
+        _, chooser = self._open([source])
+        assert [c.display for c in chooser._items] == ["from a worker"]
+
+    def test_callable_source_still_binds_positionally(self):
+        """The parameter is appended last with the old default, so every
+        CallableSource already written keeps working."""
+        from keyhac.core.source import CallableSource
+        source = CallableSource(lambda: [], "Name", None)
+        assert source.background is False
+
+    def test_the_built_in_accessibility_sources_declare_it(self):
+        """These are what the flag was added for: a few thousand round trips
+        into another application, and nothing of Keyhac's touched."""
+        from keyhac.core.sources import MenuItemsSource, WindowControlsSource
+        assert MenuItemsSource.background is True
+        assert WindowControlsSource.background is True
+
+    def test_an_ordinary_source_does_not(self):
+        """The default has to be the main thread: a source that touches the
+        UI or the keymap is only correct there."""
+        from keyhac.core.sources import ClipboardHistorySource
+        assert CandidateSource.background is False
+        assert ClipboardHistorySource.background is False

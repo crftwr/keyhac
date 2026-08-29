@@ -101,6 +101,29 @@ class UIElement:
         err, value = AS.AXUIElementCopyAttributeValue(self._ref, name, None)
         return _from_ax(value) if err == 0 else None
 
+    def get_attribute_values(self, names: list[str]) -> dict:
+        """Read several attributes in one call.
+
+        Every accessibility read is a round trip into the other application,
+        answered on *its* main thread, so the count of them - not the amount
+        of data - is what a tree walk costs. Reading seven attributes of a
+        menu item one at a time costs seven round trips; this costs one.
+
+        Args:
+            names: Attribute names, in this platform's vocabulary
+                ("AXRole", "AXTitle", ...).
+
+        Returns:
+            A dict from name to value. An attribute the element does not
+            have maps to None, so a caller reads the result the same way
+            whether the element answered or not.
+        """
+        err, values = AS.AXUIElementCopyMultipleAttributeValues(
+            self._ref, list(names), 0, None)
+        if err != 0 or values is None:
+            return {name: None for name in names}
+        return dict(zip(names, [_from_ax(v) for v in values]))
+
     def set_attribute_value(self, name: str, type_name: str, value) -> None:
         AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
 

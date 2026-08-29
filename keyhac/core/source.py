@@ -34,10 +34,36 @@ class CandidateSource:
     to say which kind of source is meant.  `Scope` keeps the shorter name
     because it is only ever written inside `ShowCandidates([...])`, where the
     context is right there.
+
+    `background` says whether the generator `candidates()` returns may be
+    drained on a worker thread.  False by default - a source touching the UI
+    or the keymap is only correct on the main thread - and True is for one
+    whose work is entirely outside this process: another application's
+    accessibility tree, a file, a subprocess, the network.  The difference is
+    not marginal.  A main-thread generator is drained in 2 ms slices on a
+    10 Hz tick, so a walk that takes a quarter of a second to read takes ten
+    seconds to appear; on a worker it takes the quarter second.
     """
 
     #: Shown beside each row when more than one source is in the window.
     name: str = ""
+
+    #: Whether the generator `candidates()` returns may be drained on a
+    #: worker thread.  False - the default - keeps it on the main thread,
+    #: which is where a source that touches the UI or the keymap has to be.
+    #:
+    #: Set it True only if the generator's body touches nothing but the
+    #: outside world: another application's accessibility tree, a file, a
+    #: subprocess, the network.  It buys the whole difference between a
+    #: window that fills in a fifth of a second and one that takes ten,
+    #: because a main-thread generator is drained in 2 ms slices on a 10 Hz
+    #: tick and a worker is not drained at all - it simply runs.
+    #:
+    #: `candidates()` itself is always called on the main thread whatever
+    #: this says.  Only the generator it returns moves, so a source resolves
+    #: what it needs from the UI *before* the first yield and walks the rest
+    #: after it - which is the shape the built-in sources already had.
+    background: bool = False
 
     def candidates(self):
         """The rows this source offers *right now*.  Override this.
@@ -48,15 +74,15 @@ class CandidateSource:
         asked again.
 
         Return a list, or - for a source with real work to do - **yield**.
-        A generator is drained a slice at a time between renders, so its first
-        rows are on screen while it is still finding the rest, and abandoning
-        it (the window closed, the scope changed) simply stops pulling.
+        A generator is drained as it goes, so its first rows are on screen
+        while it is still finding the rest, and abandoning it (the window
+        closed, the scope changed) simply stops pulling.
 
-        A generator runs on the **main thread**, in slices, and not on a
-        worker.  That is not a simplification: on macOS an accessibility call
-        off the main thread crashes the process, and accessibility is what the
-        sources needing this are made of.  Yield often, and do not block - a
-        slice that does not return holds the keyboard as surely as any other
+        This method runs on the **main thread**.  The generator it returns
+        runs there too unless the source sets `background` (below), in
+        which case only the generator moves to a worker.  On the main thread, yield
+        often and do not block: the drain gets 2 ms per turn, and a slice
+        that does not come back holds the keyboard as surely as any other
         main-thread work would.
         """
         return []
@@ -116,10 +142,17 @@ class CallableSource(CandidateSource):
     """
 
     def __init__(self, produce: Callable[[], Any], name: str = "",
-                 on_chosen: Callable[[Candidate, int], None] = None):
+                 on_chosen: Callable[[Candidate, int], None] = None,
+                 background: bool = False):
         self._produce = produce
         self.name = name
         self._on_chosen = on_chosen
+        # Appended last and defaulting to the old behaviour, so every
+        # CallableSource already written keeps binding positionally. A
+        # callable that yields is exactly the case this is for: reading a
+        # file, a subprocess, the network - work with no business on the
+        # thread the keyboard hook runs on. See CandidateSource.background.
+        self.background = background
 
     def candidates(self):
         """lazydocs: ignore"""

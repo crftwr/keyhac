@@ -794,7 +794,7 @@ The portable half of keyhac-win's pyauto.Window and keyhac-mac's AXWindow elemen
 
 **Note:**
 
-> Everything on this class is UI-thread only.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP.  A ThreadedAction therefore reads windows in starting(), computes in run(), and writes back in finished(); the thread-safe queries a run() may call are keymap.screen_frames() and keymap.window_frames(). 
+> Everything on this class is UI-thread only.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP.  Read that narrowly: it is *our own process*. AX into another application is a different thing entirely and is safe from a worker - it is how the candidate window walks a menu bar without holding the keyboard (doc/dev/design-notes.md, "Streaming a source").  A ThreadedAction therefore reads windows in starting(), computes in run(), and writes back in finished(); the thread-safe queries a run() may call are keymap.screen_frames() and keymap.window_frames(). 
 
 
 ---
@@ -1689,6 +1689,8 @@ A named set of candidates, and what choosing one does.
 
 Named for what it is a source *of*: `keyhac import *` is flat, and a config writes `class Branches(CandidateSource)` with no surrounding call to say which kind of source is meant.  `Scope` keeps the shorter name because it is only ever written inside `ShowCandidates([...])`, where the context is right there. 
 
+`background` says whether the generator `candidates()` returns may be drained on a worker thread.  False by default - a source touching the UI or the keymap is only correct on the main thread - and True is for one whose work is entirely outside this process: another application's accessibility tree, a file, a subprocess, the network.  The difference is not marginal.  A main-thread generator is drained in 2 ms slices on a 10 Hz tick, so a walk that takes a quarter of a second to read takes ten seconds to appear; on a worker it takes the quarter second. 
+
 
 
 
@@ -1716,9 +1718,9 @@ The rows this source offers *right now*.  Override this.
 
 Called on every invocation rather than cached: a source reading the screen - the windows that exist, the controls in the front window - is describing something that has already moved on by the time it is asked again. 
 
-Return a list, or - for a source with real work to do - **yield**. A generator is drained a slice at a time between renders, so its first rows are on screen while it is still finding the rest, and abandoning it (the window closed, the scope changed) simply stops pulling. 
+Return a list, or - for a source with real work to do - **yield**. A generator is drained as it goes, so its first rows are on screen while it is still finding the rest, and abandoning it (the window closed, the scope changed) simply stops pulling. 
 
-A generator runs on the **main thread**, in slices, and not on a worker.  That is not a simplification: on macOS an accessibility call off the main thread crashes the process, and accessibility is what the sources needing this are made of.  Yield often, and do not block - a slice that does not return holds the keyboard as surely as any other main-thread work would. 
+This method runs on the **main thread**.  The generator it returns runs there too unless the source sets `background` (below), in which case only the generator moves to a worker.  On the main thread, yield often and do not block: the drain gets 2 ms per turn, and a slice that does not come back holds the keyboard as surely as any other main-thread work would. 
 
 ---
 

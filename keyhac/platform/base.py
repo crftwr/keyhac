@@ -318,7 +318,11 @@ class Window(ABC):
     Note:
         Everything on this class is UI-thread only.  On macOS these are
         Accessibility calls, and AX into our own process off the main thread
-        crashes with SIGTRAP.  A ThreadedAction therefore reads windows in
+        crashes with SIGTRAP.  Read that narrowly: it is *our own process*.
+        AX into another application is a different thing entirely and is safe
+        from a worker - it is how the candidate window walks a menu bar
+        without holding the keyboard (doc/dev/design-notes.md, "Streaming a
+        source").  A ThreadedAction therefore reads windows in
         starting(), computes in run(), and writes back in finished(); the
         thread-safe queries a run() may call are keymap.screen_frames() and
         keymap.window_frames().
