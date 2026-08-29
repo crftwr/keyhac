@@ -70,11 +70,19 @@ from keyhac.ui.grips import MIN_UNITS, EdgeResizer
 
 logger = log.getLogger("Chooser")
 
-# The window's inner margin, shared by the magnifier<->field spacer so the
-# magnifier sits the same distance from the window edge and the field; and
-# the list frame's interior inset. Both collapse on a character grid.
+# The window's inner margin, and the list frame's interior inset. Both
+# collapse on a character grid.
 _MARGIN_PX = 5
 _LIST_PAD_PX = 3
+
+#: How far the two ornaments in the search row - the magnifier and the scope
+#: switcher - stand off the window's *edge*, the page margin included.  The
+#: gap to the field beside them stays `_MARGIN_PX`, and the difference is the
+#: point: the field draws its own box with its own padding inside it, and the
+#: border is drawn in the margin, so two sides that measure the same do not
+#: look the same.  Both glyphs read as pushed against the frame until the
+#: outer side is about twice the inner one.
+_EDGE_GUTTER_PX = 10
 
 #: The window's own edge, drawn a half pixel inside the frame - far enough in
 #: that the stroke clears the corner the platform clips the window to, close
@@ -287,18 +295,22 @@ class ChooserWindow:
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
+        self._handle = DragHandle(self.window, "🔍", backend=backend)
         search_row = [
-            Item(DragHandle(self.window, "🔍", backend=backend),
-                 size="content", align="center"),
+            Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
+            Item(self._handle, size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
-            Item(Label(""), size_px=_MARGIN_PX),
+            # No spacer of its own: the progress note is usually empty, and a
+            # spacer that stayed behind it would widen the gap the switcher
+            # keeps on its left.  It carries its own leading space instead.
             Item(self._progress, size="content", align="center"),
+            Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
         ]
         if self._scopes:
-            search_row.append(Item(Label(""), size_px=_MARGIN_PX))
-            search_row.append(
-                Item(self._scope_label, size="content", align="center"))
+            search_row.insert(-1, Item(Label(""), size_px=_MARGIN_PX))
+            search_row.insert(
+                -1, Item(self._scope_label, size="content", align="center"))
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
             Item(self._frame, weight=1),
@@ -502,7 +514,10 @@ class ChooserWindow:
 
     def _show_progress(self) -> None:
         """Say whether the list is still filling, and how far it has got."""
-        text = f"… {len(self._items)}" if self._pending is not None else ""
+        # The leading space is the note's own gap from the field: an empty
+        # note then takes no width at all, and the switcher beside it keeps
+        # the gutter it is supposed to have.
+        text = f"  … {len(self._items)}" if self._pending is not None else ""
         if self._progress.text != text:
             self._progress.text = text
             self.panel.render()

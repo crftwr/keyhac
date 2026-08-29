@@ -675,3 +675,47 @@ class TestTheBorderSaysItInTheAccentColour:
         before = ["".join(row) for row in chooser.window.snapshot()]
         self._hot(chooser, *RIGHT)
         assert ["".join(row) for row in chooser.window.snapshot()] == before
+
+
+class TestTheSearchRowIsEvenlyGuttered:
+    """The magnifier and the scope switcher each sit between the window's edge
+    and the field, and the page margin alone left them pushed up against the
+    frame. They stand off the edge by their own gutter now - wider than the
+    gap to the field, because the field draws its own padded box and the
+    border is drawn in the margin, so sides that measure the same do not look
+    the same."""
+
+    def _row(self, ui_backend):
+        # A backend whose pixels are not collapsed: on a character grid every
+        # one of these gaps is zero and there is nothing to balance.
+        from puikit import PROFILE_GUI_DESKTOP
+        from puikit.backends.memory_backend import MemoryBackend
+        backend = MemoryBackend(width=200, height=60,
+                                capabilities=PROFILE_GUI_DESKTOP)
+        backend.open()
+        runtime.backend = backend
+        try:
+            from keyhac.ui.chooser import ChooserWindow
+            chooser = ChooserWindow(backend, [("*", "a", 1)],
+                                    scopes=["All", "Windows"],
+                                    on_scope=lambda i: ([], None, None))
+            handle, switcher = chooser._handle, chooser._scope_label
+            width = chooser.window.size_units[0]
+            return handle._origin[0], switcher._origin, switcher._width, width
+        finally:
+            runtime.backend = ui_backend
+            backend.close()
+
+    def test_the_magnifier_stands_off_the_edge(self, ui_backend):
+        from keyhac.ui.chooser import _EDGE_GUTTER_PX
+        handle_x, _sx, _sw, _width = self._row(ui_backend)
+        assert handle_x == _EDGE_GUTTER_PX
+
+    def test_so_does_the_scope_switcher(self, ui_backend):
+        from keyhac.ui.chooser import _EDGE_GUTTER_PX
+        _hx, switcher_x, switcher_w, width = self._row(ui_backend)
+        assert width - (switcher_x + switcher_w) == _EDGE_GUTTER_PX
+
+    def test_the_two_edges_match_each_other(self, ui_backend):
+        handle_x, switcher_x, switcher_w, width = self._row(ui_backend)
+        assert handle_x == width - (switcher_x + switcher_w)

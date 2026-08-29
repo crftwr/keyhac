@@ -36,6 +36,7 @@ class ScopeSwitcher(Widget):
         self.on_switch = on_switch          # called with -1 or +1
         self.style = style
         self.name_style = name_style
+        self._origin = 0.0
         self._width = 0.0
 
     def text(self) -> str:
@@ -51,8 +52,10 @@ class ScopeSwitcher(Widget):
 
     def draw(self, ctx) -> None:
         """lazydocs: ignore"""
-        # The widget's own width, remembered for the click test: there is no
-        # layout hook to read it from, and a click can only follow a draw.
+        # The widget's own place and width, remembered for the click test:
+        # there is no layout hook to read them from, and a click can only
+        # follow a draw.
+        self._origin = ctx.screen_rect[0]
         self._width = ctx.size_units[0]
         if not self.name:
             return

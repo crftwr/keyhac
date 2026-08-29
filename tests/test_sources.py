@@ -1484,7 +1484,8 @@ class TestProgress:
         chooser = self._open(produce)
         ui_backend.run_animation_ticks()
         assert chooser._pending is not None, "it finished in one slice"
-        assert chooser._progress.text.startswith("…")
+        # stripped: the note carries its own leading gap from the field
+        assert chooser._progress.text.strip().startswith("…")
         assert chooser._progress.text.split()[-1] == str(len(chooser._items))
 
     def test_it_goes_quiet_when_there_is_nothing_left(self, ui_backend):
