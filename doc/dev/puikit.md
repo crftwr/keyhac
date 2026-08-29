@@ -100,6 +100,13 @@ Keyhac2-side usage notes:
     mentions a window; the event stays the fallback.
   - `set_frame_px` lands the origin and the size in one window-server update,
     so the far edge does not twitch once per step of the drag.
+  - `WindowStyle(movable=False)` — **the one that made the top edge look
+    broken.** `frameless` only *hides* the title bar the panel mask forces,
+    and AppKit keeps dragging the window by it, so a press on the top edge
+    ran the window manager's move and the chooser's resize from the same
+    gesture. The chooser draws its own handle, so it owns the drag; a chooser
+    that opts back into `activates=True` is an ordinary titled window and
+    keeps the window manager's.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.

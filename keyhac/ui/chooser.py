@@ -211,6 +211,14 @@ class ChooserWindow:
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
                               activates=activates,
+                              # The drag is the window's own (the magnifier),
+                              # so the OS must not run one too: `frameless`
+                              # only *hides* the title bar the panel mask
+                              # forces, and AppKit goes on dragging the window
+                              # by it - which is the top edge, where the
+                              # resize gesture is. One press was moving the
+                              # window and resizing it at the same time.
+                              movable=activates,
                               # The panel's mask forces a title bar; frameless
                               # hides it and restores content == frame.
                               frameless=not activates,

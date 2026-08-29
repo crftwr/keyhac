@@ -451,3 +451,29 @@ class TestAResizeOnlyTouchesTheAxisItIsOn:
             _drag(chooser, TOP[0], TOP[1] + step)
             _x, y, _w, h = chooser.window.frame_px()
             assert y + h == bottom
+
+
+class TestOnlyOneGesturePerPress:
+    """`frameless` hides the title bar the panel mask forces; it does not
+    remove it, and AppKit goes on dragging the window by it - which is the
+    top edge, where the resize gesture is. One press was moving the window
+    and resizing it at once."""
+
+    def test_the_window_does_not_offer_itself_to_the_window_manager(
+            self, ui_backend):
+        assert _chooser(ui_backend).window.window_style.movable is False
+
+    def test_a_chooser_that_takes_focus_is_an_ordinary_window_again(
+            self, ui_backend):
+        # It has a real title bar and no drag handle of its own, so dragging
+        # it is the window manager's job, as it always was.
+        chooser = _chooser(ui_backend, activates=True)
+        assert chooser.window.window_style.movable is True
+
+    def test_the_app_can_still_move_it(self, ui_backend):
+        # movable=False is about the user's drag, not the app's: the handle
+        # moves the window through move_to_px either way.
+        chooser = _chooser(ui_backend)
+        _press(chooser, *HANDLE)
+        _drag(chooser, HANDLE[0] + 14, HANDLE[1] + 6)
+        assert chooser.window.frame_px()[:2] == (174.0, 166.0)
