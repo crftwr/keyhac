@@ -111,11 +111,26 @@ Keyhac2-side usage notes:
     and stopping on its edge is an entry and no move — every move event in
     that gesture was outside — so the edge said nothing until the hand moved
     again, which is exactly how a resize edge is approached from outside.
-  - The diagonal resize cursors. `nwse-resize` / `nesw-resize` resolved to
+  - The diagonal resize cursors — though see the limit below. `nwse-resize` / `nesw-resize` resolved to
     nothing, so every corner read as "nothing to drag here" — which is where
     a resize is most often started. AppKit has them and does not publish
     them; puikit resolves them through `respondsToSelector`, so a release
     that withdrew one costs an arrow and nothing else.
+- **The pointer belongs to the key window, and the chooser is never one.**
+  Measured on macOS 26 with another application frontmost: before the chooser
+  is clicked it reports `key=False` with the application inactive, and the
+  shape it asks for never reaches the screen; after a click it is key, the
+  application is active, and the same request works. It is the rule every
+  background window lives under — an inactive application's text field shows
+  an arrow until you click it — and the chooser cannot buy its way out,
+  because never taking key status is exactly what keeps the target's focus,
+  caret and selection.
+
+  So the affordance is drawn rather than asked for: `Frame.hot_edge` lights
+  the side the pointer is standing on (both sides at a corner, so it says
+  which two directions the drag goes in). The cursor is still requested, for
+  the windows and moments where it is allowed; the lit edge is what works the
+  rest of the time.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.

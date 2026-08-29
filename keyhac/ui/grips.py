@@ -291,9 +291,13 @@ class EdgeResizer:
         edge = self.edge_at(x, y)
         return self._CURSORS.get(edge) if edge else None
 
-    def cursor_now(self, x: float = None, y: float = None):
-        """The pointer shape for where the pointer is **now**, falling back to
-        the window coordinates given.
+    def cursor_for(self, edge):
+        """The pointer shape for an edge, or None for no edge."""
+        return self._CURSORS.get(edge) if edge else None
+
+    def edge_now(self, x: float = None, y: float = None):
+        """Which edge the pointer is on **now**, falling back to the window
+        coordinates given.
 
         The live pointer, for the same reason the drag uses it: an event says
         where the pointer was when the event was posted.  The one that reports
@@ -306,7 +310,11 @@ class EdgeResizer:
         here = self._pointer_in_window()
         if here is None:
             here = (x, y) if x is not None else None
-        return self.cursor_at(*here) if here else None
+        return self.edge_at(*here) if here else None
+
+    def cursor_now(self, x: float = None, y: float = None):
+        """The pointer shape for where the pointer is now."""
+        return self.cursor_for(self.edge_now(x, y))
 
     def _pointer_in_window(self):
         """The live pointer in window base units, or None where the backend

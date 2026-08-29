@@ -609,3 +609,70 @@ class TestThePointerSaysWhereItCanBeGrabbed:
         chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=RIGHT[0],
                                 y=RIGHT[1]))
         assert chooser._page.cursor is None
+
+
+class TestTheEdgeLightsUpUnderThePointer:
+    """macOS gives the pointer to the key window, and the chooser deliberately
+    never becomes one - measured: before it is clicked the panel reports
+    key=False and the application inactive, and the shape it asks for never
+    reaches the screen; after a click it is key and it does. So the affordance
+    cannot be the pointer alone. The window draws it on the border it already
+    draws, which needs nobody's permission."""
+
+    def _lit(self, chooser, x, y):
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=x, y=y))
+        return chooser._page.hot_edge
+
+    def test_each_side_lights_its_own(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        assert self._lit(chooser, *RIGHT) == (1, 0)
+        assert self._lit(chooser, *TOP) == (0, -1)
+        assert self._lit(chooser, *LEFT) == (-1, 0)
+
+    def test_a_corner_lights_both_of_its_sides(self, ui_backend):
+        # Which is the whole reason it is drawn as bars and not as a second
+        # outline: the corner has to say which two directions it drags in.
+        chooser = _chooser(ui_backend)
+        assert self._lit(chooser, *BOTTOM_RIGHT) == (1, 1)
+
+    def test_the_middle_lights_nothing(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        assert self._lit(chooser, 36, 10) is None
+
+    def test_it_goes_out_when_the_pointer_leaves(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        self._lit(chooser, *RIGHT)
+        assert self._lit(chooser, -1.0, -1.0) is None
+
+    def test_the_pointer_shape_is_still_asked_for(self, ui_backend):
+        # It is not either/or: where the window *is* allowed to shape the
+        # pointer (once clicked, or on a backend that does not gate it), both
+        # say the same thing.
+        chooser = _chooser(ui_backend)
+        self._lit(chooser, *BOTTOM_RIGHT)
+        assert chooser._page.cursor == "nwse-resize"
+
+    def test_the_lit_side_is_drawn(self, ui_backend):
+        # On the character grid the bars land as filled cells at the window's
+        # edge; on a pixel backend they are three device pixels of the border.
+        from puikit import PROFILE_GUI_DESKTOP
+        from puikit.backends.memory_backend import MemoryBackend
+        backend = MemoryBackend(width=200, height=90,
+                                capabilities=PROFILE_GUI_DESKTOP)
+        backend.open()
+        runtime.backend = backend
+        try:
+            chooser = _chooser(backend)
+            fills = []
+            native = backend.fill_rect
+            backend.fill_rect = lambda *a: fills.append(a)
+            chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=71.5, y=10.0))
+            backend.fill_rect = native
+            assert fills, "the lit edge drew nothing"
+            # a tall thin bar down the right-hand side
+            widths = [a[2] for a in fills]
+            heights = [a[3] for a in fills]
+            assert min(widths) <= 3.0 and max(heights) >= 10.0
+        finally:
+            runtime.backend = ui_backend
+            backend.close()

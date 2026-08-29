@@ -5,6 +5,16 @@ from puikit.widgets import LayoutView
 
 _BORDER_STYLE = Style(fg=(120, 120, 132))
 
+#: The border where the pointer is standing on something it can drag.  Bright
+#: enough to read as a state change out of the corner of the eye, since it is
+#: standing in for the pointer shape macOS will not let a window that is not
+#: key ask for (issue #117).
+_HOT_STYLE = Style(fg=(210, 210, 225), bg=(210, 210, 225))
+
+#: How thick the lit segment is, in device pixels.  Thicker than the line it
+#: sits on: the difference has to be visible without the eye going looking.
+_HOT_PX = 3.0
+
 
 class Frame(LayoutView):
     """A LayoutView that draws a clear border line around its own extent.
@@ -34,6 +44,13 @@ class Frame(LayoutView):
         #: nothing hovers it, so nothing else would ask.  A child asks later
         #: in the frame and wins wherever it covers this one.
         self.cursor = None
+        #: Which of this frame's own edges the pointer is standing on, as
+        #: (ex, ey) each -1 / 0 / +1, or None.  Set by the same owner, and
+        #: drawn lit: macOS gives the pointer to the key window, and a window
+        #: that deliberately never becomes key (the chooser is one) cannot
+        #: shape it at all until it is clicked - so the affordance has to be
+        #: something the window draws for itself.
+        self.hot_edge = None
 
     def _reserve_stroke(self, lctx) -> None:
         # On snap backends the pixel margin collapses to zero while the border
@@ -63,4 +80,37 @@ class Frame(LayoutView):
                            self.line_style, radius=self.radius_px)
         else:
             ctx.draw_border(self.line_style)
+        if self.hot_edge and ctx.pixel_layout:
+            # Pixels only, like the rounding: on a character grid a bar three
+            # pixels thick is three whole columns of tinted cells across the
+            # list, which is not a lit edge - it is a stripe.
+            self._draw_hot_edge(ctx)
         super().draw(ctx)
+
+    def _draw_hot_edge(self, ctx) -> None:
+        """Light the side(s) the pointer is standing on.
+
+        Drawn as bars rather than as a second outline, because a corner is
+        two sides at once and has to read as *the corner* - both of its sides
+        light up, and the eye is told which two directions the drag will go
+        in. They stop short of the rounded corners, where a straight bar
+        would cross the curve it is meant to sit inside.
+        """
+        bw, bh = ctx.base_pixel_size
+        if not bw or not bh:
+            return
+        w, h = ctx.size_units
+        thick_x, thick_y = _HOT_PX / bw, _HOT_PX / bh
+        inset_x, inset_y = self.inset_px / bw, self.inset_px / bh
+        # The curve eats the last stretch of every side, so the bars end where
+        # it begins.
+        gap_x, gap_y = self.radius_px / bw, self.radius_px / bh
+        ex, ey = self.hot_edge
+        if ex:
+            x = inset_x if ex < 0 else w - inset_x - thick_x
+            ctx.fill_rect(x, gap_y, thick_x, max(0.0, h - 2 * gap_y),
+                          _HOT_STYLE)
+        if ey:
+            y = inset_y if ey < 0 else h - inset_y - thick_y
+            ctx.fill_rect(gap_x, y, max(0.0, w - 2 * gap_x), thick_y,
+                          _HOT_STYLE)
