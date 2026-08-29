@@ -1,5 +1,7 @@
 """A bordered LayoutView shared by the Keyhac windows (console, chooser)."""
 
+import math
+
 from puikit import Style
 from puikit.widgets import LayoutView
 
@@ -7,13 +9,28 @@ _BORDER_STYLE = Style(fg=(120, 120, 132))
 
 #: The border where the pointer is standing on something it can drag.  Bright
 #: enough to read as a state change out of the corner of the eye, since it is
-#: standing in for the pointer shape macOS will not let a window that is not
-#: key ask for (issue #117).
-_HOT_STYLE = Style(fg=(210, 210, 225), bg=(210, 210, 225))
+#: the whole affordance: macOS gives the pointer to the key window, and a
+#: window that never becomes one cannot shape it at all (issue #117).
+_HOT = (210, 210, 225)
 
-#: How thick the lit segment is, in device pixels.  Thicker than the line it
-#: sits on: the difference has to be visible without the eye going looking.
+#: How thick the lit stretch is, in device pixels.  Thicker than the line it
+#: sits on, or the difference is something the eye has to go looking for.
 _HOT_PX = 3.0
+
+#: How much of each free end dissolves back into the border, and in how many
+#: steps.  A lit stretch that stops dead reads as a separate object lying on
+#: the window; one that fades out reads as the border itself being warm.
+_FADE_PX = 40.0
+_FADE_STEPS = 10
+
+
+def _blend(under, over, t: float):
+    """`over` at strength t against `under`, both opaque.
+
+    Mixed here rather than asked for as an alpha: a fill carrying one is
+    composited by the backends that can and flattened by the backends that
+    cannot, and this wants the same soft end on both."""
+    return tuple(round(u + (o - u) * t) for u, o in zip(under, over))
 
 
 class Frame(LayoutView):
@@ -39,17 +56,12 @@ class Frame(LayoutView):
         self.line_style = line_style
         self.radius_px = radius_px
         self.inset_px = inset_px
-        #: Pointer shape over this frame, or None.  Set by whoever owns the
-        #: window, because the edge a rounded frame draws is not a widget:
-        #: nothing hovers it, so nothing else would ask.  A child asks later
-        #: in the frame and wins wherever it covers this one.
-        self.cursor = None
         #: Which of this frame's own edges the pointer is standing on, as
-        #: (ex, ey) each -1 / 0 / +1, or None.  Set by the same owner, and
-        #: drawn lit: macOS gives the pointer to the key window, and a window
-        #: that deliberately never becomes key (the chooser is one) cannot
-        #: shape it at all until it is clicked - so the affordance has to be
-        #: something the window draws for itself.
+        #: (ex, ey) each -1 / 0 / +1, or None.  Set by whoever owns the
+        #: window, since the edge is not a widget and nothing hovers it - and
+        #: drawn lit, because the pointer belongs to the key window and a
+        #: window that deliberately never becomes one has to say "you can grab
+        #: this here" in the only place it owns: the border it draws itself.
         self.hot_edge = None
 
     def _reserve_stroke(self, lctx) -> None:
@@ -69,8 +81,6 @@ class Frame(LayoutView):
 
     def draw(self, ctx) -> None:
         self._reserve_stroke(ctx.layout_context())
-        if self.cursor:
-            ctx.set_cursor(self.cursor)
         if self.radius_px and ctx.pixel_layout:
             bw, bh = ctx.base_pixel_size
             ix = self.inset_px / bw if bw else 0.0
@@ -87,30 +97,88 @@ class Frame(LayoutView):
             self._draw_hot_edge(ctx)
         super().draw(ctx)
 
-    def _draw_hot_edge(self, ctx) -> None:
-        """Light the side(s) the pointer is standing on.
+    # --- the lit edge -------------------------------------------------------
 
-        Drawn as bars rather than as a second outline, because a corner is
-        two sides at once and has to read as *the corner* - both of its sides
-        light up, and the eye is told which two directions the drag will go
-        in. They stop short of the rounded corners, where a straight bar
-        would cross the curve it is meant to sit inside.
+    def _draw_hot_edge(self, ctx) -> None:
+        """Light the side(s) the pointer is standing on, the corner included.
+
+        Sides rather than a second outline, because a corner is two of them at
+        once and has to read as *the corner*: both its sides light up and the
+        curve between them with them, so the eye is told which two directions
+        the drag will go in.
         """
         bw, bh = ctx.base_pixel_size
         if not bw or not bh:
             return
         w, h = ctx.size_units
-        thick_x, thick_y = _HOT_PX / bw, _HOT_PX / bh
-        inset_x, inset_y = self.inset_px / bw, self.inset_px / bh
-        # The curve eats the last stretch of every side, so the bars end where
-        # it begins.
-        gap_x, gap_y = self.radius_px / bw, self.radius_px / bh
         ex, ey = self.hot_edge
+        under = ctx.background or (0, 0, 0)
+        rx, ry = self.radius_px / bw, self.radius_px / bh
+        tx, ty = _HOT_PX / bw, _HOT_PX / bh
+        ix, iy = self.inset_px / bw, self.inset_px / bh
+
         if ex:
-            x = inset_x if ex < 0 else w - inset_x - thick_x
-            ctx.fill_rect(x, gap_y, thick_x, max(0.0, h - 2 * gap_y),
-                          _HOT_STYLE)
+            self._bar(ctx, under, vertical=True,
+                      across=ix if ex < 0 else w - ix - tx, thickness=tx,
+                      start=ry, end=h - ry,
+                      # An end that runs into the lit corner is not an end.
+                      fade_start=ey >= 0, fade_end=ey <= 0,
+                      fade=_FADE_PX / bh)
         if ey:
-            y = inset_y if ey < 0 else h - inset_y - thick_y
-            ctx.fill_rect(gap_x, y, max(0.0, w - 2 * gap_x), thick_y,
-                          _HOT_STYLE)
+            self._bar(ctx, under, vertical=False,
+                      across=iy if ey < 0 else h - iy - ty, thickness=ty,
+                      start=rx, end=w - rx,
+                      fade_start=ex >= 0, fade_end=ex <= 0,
+                      fade=_FADE_PX / bw)
+        if ex and ey and self.radius_px:
+            self._arc(ctx, ex, ey, w, h, ix, iy, rx, ry, tx, ty)
+
+    def _bar(self, ctx, under, *, vertical, across, thickness, start, end,
+             fade_start, fade_end, fade) -> None:
+        """One lit side: solid in the middle, dissolving at a free end."""
+        length = end - start
+        if length <= 0:
+            return
+        fade = max(0.0, min(fade, length / 2))
+        head = fade if fade_start else 0.0
+        tail = fade if fade_end else 0.0
+
+        def fill(at, extent, colour):
+            style = Style(fg=colour, bg=colour)
+            if vertical:
+                ctx.fill_rect(across, at, thickness, extent, style)
+            else:
+                ctx.fill_rect(at, across, extent, thickness, style)
+
+        if length - head - tail > 0:
+            fill(start + head, length - head - tail, _HOT)
+        if not fade:
+            return
+        step = fade / _FADE_STEPS
+        for i in range(_FADE_STEPS):
+            # t: 0 at the tip, 1 where the solid stretch takes over.
+            colour = _blend(under, _HOT, (i + 0.5) / _FADE_STEPS)
+            if fade_start:
+                fill(start + i * step, step, colour)
+            if fade_end:
+                fill(end - (i + 1) * step, step, colour)
+
+    def _arc(self, ctx, ex, ey, w, h, ix, iy, rx, ry, tx, ty) -> None:
+        """The curve between two lit sides, walked as overlapping squares.
+
+        There is no arc primitive to ask for and this is not enough reason to
+        add one: at three pixels thick against a fifteen point radius the
+        samples overlap into a smooth corner, and it degrades to rectangles on
+        a backend that has nothing else."""
+        cx = ix + rx if ex < 0 else w - ix - rx
+        cy = iy + ry if ey < 0 else h - iy - ry
+        quarter = math.pi / 2
+        base = {(-1, -1): math.pi, (1, -1): 3 * quarter,
+                (1, 1): 0.0, (-1, 1): quarter}[(ex, ey)]
+        style = Style(fg=_HOT, bg=_HOT)
+        steps = max(6, int(self.radius_px))
+        for i in range(steps + 1):
+            angle = base + quarter * i / steps
+            ctx.fill_rect(cx + rx * math.cos(angle) - tx / 2,
+                          cy + ry * math.sin(angle) - ty / 2,
+                          tx, ty, style)

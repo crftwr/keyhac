@@ -111,7 +111,8 @@ Keyhac2-side usage notes:
     and stopping on its edge is an entry and no move — every move event in
     that gesture was outside — so the edge said nothing until the hand moved
     again, which is exactly how a resize edge is approached from outside.
-  - The diagonal resize cursors — though see the limit below. `nwse-resize` / `nesw-resize` resolved to
+  - The diagonal resize cursors — for apps whose windows become key; the
+    chooser ended up not shaping the pointer at all, see below. `nwse-resize` / `nesw-resize` resolved to
     nothing, so every corner read as "nothing to drag here" — which is where
     a resize is most often started. AppKit has them and does not publish
     them; puikit resolves them through `respondsToSelector`, so a release
@@ -126,11 +127,16 @@ Keyhac2-side usage notes:
   because never taking key status is exactly what keeps the target's focus,
   caret and selection.
 
-  So the affordance is drawn rather than asked for: `Frame.hot_edge` lights
-  the side the pointer is standing on (both sides at a corner, so it says
-  which two directions the drag goes in). The cursor is still requested, for
-  the windows and moments where it is allowed; the lit edge is what works the
-  rest of the time.
+  So the affordance is drawn rather than asked for, and **no pointer shape is
+  requested on hover at all** — one that works only after a click is worse
+  than none, because the behaviour is then inconsistent in a way the user has
+  to learn. `Frame.hot_edge` lights the side the pointer is standing on
+  instead: both sides plus the curve between them at a corner, so it says
+  which two directions the drag goes in, with each free end dissolving back
+  into the border rather than stopping dead.
+
+  puikit's diagonal resize cursors (PR #132) stay: they are right for any app
+  that *can* shape the pointer, which is any app whose window becomes key.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.

@@ -7,6 +7,14 @@ from "active" forces a title bar and only frameless hides it.  So the window
 cannot have a title bar back to be dragged by, nor a resize edge the window
 manager offers: both have to be found in the content and handled there.
 
+None of it shapes the **pointer**.  macOS gives the pointer to the key
+window, and this one deliberately never becomes key - that is what leaves the
+target application its focus, its caret and its selection - so a shape it
+asked for reached the screen only after a click, and not before.  An
+affordance that turns up once you have already found the thing is worse than
+none, so the window says it where it can always say it: `Frame.hot_edge`
+lights the border the pointer is standing on.
+
 Deliberately not asked of the toolkit.  macOS has `movableByWindowBackground`
 and Windows the `WM_NCHITTEST` -> `HTCAPTION` reply, and both mean "drag from
 anywhere the content is not a control" - which, in a window that is mostly a
@@ -122,10 +130,6 @@ class DragHandle(Widget):
     def draw(self, ctx) -> None:
         """lazydocs: ignore"""
         self._origin = ctx.screen_rect[:2]
-        if self._press is not None:
-            ctx.set_cursor("grabbing")
-        elif ctx.hovered:
-            ctx.set_cursor("grab")
         ctx.draw_text(0, 0, self.glyph, self.style)
 
     def handle_event(self, event) -> bool:
@@ -208,14 +212,6 @@ class EdgeResizer:
     #: gives the corner the larger target for the same reason.
     CORNER_PX = 16.0
 
-    #: What the pointer looks like over each edge.  The diagonals are the
-    #: cursors AppKit has and does not publish, which puikit resolves through
-    #: a guarded lookup; Windows does not shape the pointer at all yet.
-    _CURSORS = {(-1, 0): "ew-resize", (1, 0): "ew-resize",
-                (0, -1): "ns-resize", (0, 1): "ns-resize",
-                (-1, -1): "nwse-resize", (1, 1): "nwse-resize",
-                (1, -1): "nesw-resize", (-1, 1): "nesw-resize"}
-
     def __init__(self, window, min_units=MIN_UNITS, on_resized=None,
                  backend=None):
         self._window = window
@@ -286,15 +282,6 @@ class EdgeResizer:
             return False
         return self._backend.capabilities.supports("pixel_layout")
 
-    def cursor_at(self, x: float, y: float):
-        """The pointer shape for that point, or None away from every edge."""
-        edge = self.edge_at(x, y)
-        return self._CURSORS.get(edge) if edge else None
-
-    def cursor_for(self, edge):
-        """The pointer shape for an edge, or None for no edge."""
-        return self._CURSORS.get(edge) if edge else None
-
     def edge_now(self, x: float = None, y: float = None):
         """Which edge the pointer is on **now**, falling back to the window
         coordinates given.
@@ -304,17 +291,12 @@ class EdgeResizer:
         the pointer *arriving* says where it crossed the window's boundary,
         which for a hand moving quickly is not where it has stopped - the
         pointer came to rest on the edge and the window was told about a point
-        it had already left, so the shape never changed. Approached slowly the
-        same crossing produces moves all the way in, and it worked.
+        it had already left.
         """
         here = self._pointer_in_window()
         if here is None:
             here = (x, y) if x is not None else None
         return self.edge_at(*here) if here else None
-
-    def cursor_now(self, x: float = None, y: float = None):
-        """The pointer shape for where the pointer is now."""
-        return self.cursor_for(self.edge_now(x, y))
 
     def _pointer_in_window(self):
         """The live pointer in window base units, or None where the backend

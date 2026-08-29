@@ -639,13 +639,11 @@ class ChooserWindow:
         elif event.type is EventType.MOUSE_MOVE:
             # The edge is not a widget, so nothing hovers it and nothing would
             # ask for its cursor; the frame that draws it asks on its behalf.
-            # Both: the cursor for when the window is allowed to shape it -
-            # macOS gives that to the key window, which this one deliberately
-            # never is until it is clicked - and the lit edge for the rest of
-            # the time, which is the affordance the window can always draw.
-            edge = self._resizer.edge_now(event.x, event.y)
-            self._page.cursor = self._resizer.cursor_for(edge)
-            self._page.hot_edge = edge
+            # The lit edge, and nothing about the pointer's shape: macOS
+            # gives that to the key window, so a window that never becomes
+            # one could only change it after a click - an affordance that
+            # appears once you no longer need it is worse than none.
+            self._page.hot_edge = self._resizer.edge_now(event.x, event.y)
         self.panel.dispatch_event(event)
         self.panel.render()
 
