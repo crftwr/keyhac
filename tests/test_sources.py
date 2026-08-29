@@ -296,6 +296,57 @@ class TestPages:
         from keyhac.actions import ChooserAction
         assert ChooserAction._open[1]._page_index == 1
 
+    def test_no_left_arrow_at_the_left_end(self, ui_backend):
+        """A chevron where the pages stop would offer a move that does not
+        happen, and the row's whole job is to say where you are in it."""
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "left")
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        line = next(r for r in rows if "Fruit only" in r)
+        assert "\u2039" not in line, line
+        assert "\u203a" in line, "the way forward is still offered"
+
+    def test_no_right_arrow_at_the_right_end(self, ui_backend):
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "right")
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        line = next(r for r in rows if "Tools only" in r)
+        assert "\u203a" not in line, line
+        assert "\u2039" in line
+
+    def test_both_arrows_in_the_middle(self, ui_backend):
+        _action, chooser = self._open(self._pages())
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        line = next(r for r in rows if "All" in r)
+        assert "\u2039" in line and "\u203a" in line, line
+
+    def test_the_name_does_not_move_when_an_arrow_goes(self, ui_backend):
+        """The blanked arrow keeps its width. Dropping it would narrow the
+        widget, the field beside it would grow into what it gave up, and the
+        name would jump sideways every time you reached an edge."""
+        _action, chooser = self._open(self._pages())
+        chooser.panel.render()
+        middle = next(r for r in ["".join(x) for x in chooser.window.snapshot()]
+                      if "All" in r).index("All")
+        self._arrow(chooser, "left")
+        chooser.panel.render()
+        end = next(r for r in ["".join(x) for x in chooser.window.snapshot()]
+                   if "Fruit only" in r).index("Fruit only")
+        assert end + len("Fruit only") == middle + len("All"), \
+            "the switcher changed width"
+
+    def test_a_click_on_a_blank_half_does_nothing(self, ui_backend):
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._pages())
+        self._arrow(chooser, "left")
+        chooser.panel.render()
+        chooser._page_label.handle_event(
+            Event(type=EventType.MOUSE_CLICK, x=0, y=0, button="left"))
+        assert chooser._page_index == 0
+
     def test_one_page_shows_no_switcher(self, ui_backend):
         _action, chooser = self._open([_Fruit(), _Tool()])
         assert chooser._pages == []

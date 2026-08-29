@@ -411,7 +411,8 @@ kt["Fn-P"] = ShowCandidates([
 **Aim for three, with the one you reach for most in the middle** — the window
 opens there, so it costs nothing to reach and both neighbours cost one press.
 Three is about as many as anyone holds without looking. The pages stop at the
-ends rather than wrapping, so left is left.
+ends rather than wrapping, so left is left — and the `‹` or `›` beside the name
+disappears when there is nothing that way.
 
 If you want more, bind another key to another `ShowCandidates`. A key is the
 scarce thing here, but it is yours to spend.

@@ -488,6 +488,14 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - **They clamp, they do not wrap.** An edge that stops is what makes three
   pages a place you point at rather than a ring you count around, and "which
   way is shorter" is the question this arrangement retires.
+- **The chevron goes where the pages stop.** An arrow at the last page offers
+  a move that does not happen, and saying which end you are on is the row's
+  job. It is blanked rather than removed: dropping the glyph narrows the
+  widget, the field beside it grows into what it gave up, and the name jumps
+  sideways every time you reach an edge. A row that moves as you page is worse
+  than one with a gap in it. A click on the blank half is swallowed - paging
+  would clamp anyway, but a click that visibly does nothing beats one that
+  silently does nothing somewhere else.
 - **Bare arrows only.** `Ctrl-Left` is a word, `Shift-Left` a selection and
   `Cmd-Left` the line start, and all three arrive under the same key name;
   taking them too would leave the field unable to do any of it. Bare Left and

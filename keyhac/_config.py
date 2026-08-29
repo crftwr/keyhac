@@ -209,9 +209,12 @@ def configure(keymap):
     # deliberately.  They stream: the first rows are on screen while the
     # rest are still being read.
     kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
-        ChooserPage("Do", [keys, actions] + ([menus] if mac else [])),
+        # Do: what Keyhac itself defines - your bindings, your actions.
+        ChooserPage("Do", [keys, actions]),
         ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
-        ChooserPage("Screen", [controls, OpenWindows()]),
+        # Screen: what is in front of you and belongs to the application -
+        # its menu commands, its controls, and the other windows.
+        ChooserPage("Screen", ([menus] if mac else []) + [controls, OpenWindows()]),
     ])
 
     # Type `@` and a source name to narrow to one of them - `@Clip`, `@Menu`,

@@ -328,6 +328,7 @@ class ChooserWindow:
         from keyhac.ui.page_switcher import PageSwitcher
         self._page_label = PageSwitcher(
             self._page_name(), on_switch=self._switch_clicked)
+        self._show_page_ends()
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
@@ -834,6 +835,11 @@ class ChooserWindow:
 
     # --- pages -----------------------------------------------------------
 
+    def _show_page_ends(self) -> None:
+        """Tell the switcher which way there is somewhere to go."""
+        self._page_label.can_prev = self._page_index > 0
+        self._page_label.can_next = self._page_index < len(self._pages) - 1
+
     def _page_name(self) -> str:
         return self._pages[self._page_index] if self._pages else ""
 
@@ -869,6 +875,7 @@ class ChooserWindow:
         self._background = background
         self._badge_of = badge_of
         self._page_label.name = self._page_name()
+        self._show_page_ends()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
         self._focus_edit()
