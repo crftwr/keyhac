@@ -169,7 +169,7 @@ def configure(keymap):
 
     # A key is the scarce thing here, so a *source* is a value you hand to
     # one window instead, and one incremental search runs across the lot.
-    # Tab and Shift-Tab move along the scopes, and the query comes with you.
+    # Left and Right move between pages, and the query comes with you.
     # ("One window over several sources" in doc/configuration.md.)
 
     # --- your own source ------------------------------------------------
@@ -187,7 +187,7 @@ def configure(keymap):
         def on_chosen(self, candidate, modifier_flags):
             candidate.payload.activate()
 
-    # One instance each, shared between the scopes below: a source is read
+    # One instance each, shared between the pages below: a source is read
     # once per window and remembered against the *object*, so sharing means
     # it is not read twice.
     clipboard = ClipboardHistorySource()
@@ -198,21 +198,35 @@ def configure(keymap):
     actions = ActionsSource()
     controls = WindowControlsSource()
 
+    # Three pages, and the one you reach for most in the middle - the window
+    # opens there, so it costs nothing and both neighbours cost one press.
+    # Three is about as many as anyone holds without looking, which is why
+    # the list below is short rather than complete - narrowing *within* a
+    # page is `@` and not another page (see below).
+    #
     # A source that reads the front application costs that work every time
-    # the scope holding it is opened, so the expensive ones get a scope of
-    # their own.  They stream: the first rows are on screen while the rest
-    # are still being read.
+    # the page holding it is opened, so those sit on the page you go to
+    # deliberately.  They stream: the first rows are on screen while the
+    # rest are still being read.
     kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
-        Scope("All", [clipboard, snippet_source, keys, actions]
-              + ([menus] if mac else [])),
-        Scope("Clipboard", [clipboard, snippet_source]),
-        *([Scope("Menus", [menus])] if mac else []),   # every menu command
-        Scope("Keys", [keys]),            # every binding here; Enter runs it
-        Scope("Actions", [actions]),      # everything in extensions/
-        Scope("Controls", [controls]),    # everything clickable, by name
-        Scope("Windows", [OpenWindows()]),
-        Scope("Tools", [tool_source]),
+        # Do: what Keyhac itself defines - your bindings, your actions.
+        ChooserPage("Do", [keys, actions]),
+        ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
+        # Screen: what is in front of you and belongs to the application -
+        # its menu commands, its controls, and the other windows.
+        ChooserPage("Screen", ([menus] if mac else []) + [controls, OpenWindows()]),
     ])
+
+    # Type `@` and a source name to narrow to one of them - `@Clip`, `@Menu`,
+    # `@Key` - and Tab extends what you have typed as far as it is sure of.
+    # The names are the ones already shown beside each row, so there is
+    # nothing to memorise.  It is why three pages is enough: a page is where
+    # you are, `@` is which of the things there you meant.
+    #
+    # Want more pages?  Bind another key to another ShowCandidates.  A key is
+    # the scarce thing, but it is yours to spend:
+    #
+    #   kt[f"{MOD1}-O"] = ShowCandidates([ChooserPage("Windows", [OpenWindows()])])
 
     # A source does not have to be a class - a plain callable works when
     # there is one thing to do with every row:

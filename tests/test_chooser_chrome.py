@@ -218,7 +218,7 @@ class TestDraggingTheEdgeResizesTheWindow:
 
 
 class TestNeitherGrabIsAControlTheKeyboardKnowsAbout:
-    """The same rule the scope arrows follow: a click here is for the moment
+    """The same rule the page arrows follow: a click here is for the moment
     the pointer is already in hand, and it must not take the focus off the
     filter field - typing is what the window is for."""
 
@@ -678,7 +678,7 @@ class TestTheBorderSaysItInTheAccentColour:
 
 
 class TestTheSearchRowIsEvenlyGuttered:
-    """The magnifier and the scope switcher each sit between the window's edge
+    """The magnifier and the page switcher each sit between the window's edge
     and the field, and the page margin alone left them pushed up against the
     frame. They stand off the edge by their own gutter now - wider than the
     gap to the field, because the field draws its own padded box and the
@@ -697,9 +697,9 @@ class TestTheSearchRowIsEvenlyGuttered:
         try:
             from keyhac.ui.chooser import ChooserWindow
             chooser = ChooserWindow(backend, [("*", "a", 1)],
-                                    scopes=["All", "Windows"],
-                                    on_scope=lambda i: ([], None, None))
-            handle, switcher = chooser._handle, chooser._scope_label
+                                    pages=["All", "Windows"],
+                                    on_page=lambda i: ([], None, None))
+            handle, switcher = chooser._handle, chooser._page_label
             width = chooser.window.size_units[0]
             return handle._origin[0], switcher._origin, switcher._width, width
         finally:

@@ -1,6 +1,6 @@
-"""The scope indicator at the right of the filter field: `‹ Name ›`.
+"""The page indicator at the right of the filter field: `‹ Name ›`.
 
-The arrows carry two jobs. A key-driven switch (Tab / Shift-Tab) has no
+The arrows carry two jobs. A key-driven switch (Left / Right) has no
 visible affordance of its own, so they are what says one exists at all - the
 discoverability cost of preferring a key over a typed prefix, paid back. And
 they are clickable, for the moment the pointer is already in hand: the
@@ -10,7 +10,7 @@ underneath losing anything.
 
 Deliberately **not focusable**. A click here must not take the focus off the
 filter field - the point of the whole two-pane arrangement is that the field
-is where typing goes, and nothing about switching scope changes that.
+is where typing goes, and nothing about switching page changes that.
 """
 
 from puikit import DEFAULT_STYLE, Style
@@ -26,21 +26,36 @@ _PREV, _NEXT = "‹", "›"
 _NAME_STYLE = Style(fg=(130, 130, 140))
 
 
-class ScopeSwitcher(Widget):
-    """`‹ Name ›`, where clicking an arrow moves along the cycle."""
+class PageSwitcher(Widget):
+    """`‹ Name ›`, where clicking an arrow moves one page.
+
+    **An arrow is drawn only where there is somewhere to go.** The pages stop
+    at the ends rather than wrapping, so a chevron at the last page would be
+    offering a move that does not happen - and the row's whole job is to say
+    where you are in it. At an end it also says *which* end.
+
+    The space it occupied stays occupied. Dropping the glyph outright would
+    narrow the widget, and the field beside it grows to fill what it gave up,
+    so the name would jump sideways every time you reached an edge - a row
+    that moves as you page is worse than one with a gap in it.
+    """
 
     def __init__(self, name: str = "", on_switch=None,
                  style: Style = DEFAULT_STYLE,
                  name_style: Style = _NAME_STYLE):
         self.name = name
         self.on_switch = on_switch          # called with -1 or +1
+        #: Whether there is a page that way. False blanks the arrow.
+        self.can_prev = True
+        self.can_next = True
         self.style = style
         self.name_style = name_style
         self._origin = 0.0
         self._width = 0.0
 
     def text(self) -> str:
-        """What the widget occupies, arrows included."""
+        """What the widget occupies, arrows included - and it occupies the
+        same width whether they are drawn or not."""
         return f"{_PREV} {self.name} {_NEXT}" if self.name else ""
 
     def measure(self, ctx, axis, available):
@@ -60,9 +75,13 @@ class ScopeSwitcher(Widget):
         if not self.name:
             return
         x = 0.0
-        for piece, style in ((f"{_PREV} ", self.style),
+        prev = _PREV if self.can_prev else " "
+        nxt = _NEXT if self.can_next else " "
+        for piece, style in ((f"{prev} ", self.style),
                              (self.name, self.name_style),
-                             (f" {_NEXT}", self.style)):
+                             (f" {nxt}", self.style)):
+            # Measured on the drawn piece so a blanked arrow still costs its
+            # own width, which is what keeps the name from moving.
             ctx.draw_text(x, 0, piece, style)
             x += ctx.measure_text(piece, self.style)
 
@@ -74,7 +93,13 @@ class ScopeSwitcher(Widget):
             return False
         # Which half was clicked, not which glyph: the arrows are one
         # character wide and nobody aims that precisely at a chevron.
-        self.on_switch(-1 if event.x < self._half() else 1)
+        delta = -1 if event.x < self._half() else 1
+        # A blank half is not a control. Paging would clamp anyway, but a
+        # click that visibly does nothing is better than one that silently
+        # does nothing somewhere else.
+        if (delta < 0 and not self.can_prev) or (delta > 0 and not self.can_next):
+            return True
+        self.on_switch(delta)
         return True
 
     def _half(self) -> float:

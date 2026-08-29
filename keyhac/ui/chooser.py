@@ -65,6 +65,7 @@ from keyhac.core.const import (
 from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
+from keyhac.ui.completion import common_prefix, token_span
 from keyhac.platform import worker_thread_context
 from keyhac.ui import runtime
 from keyhac.ui.frame import Frame, Separator
@@ -75,7 +76,7 @@ logger = log.getLogger("Chooser")
 # The window's inner margin, which collapses on a character grid.
 _MARGIN_PX = 5
 
-#: How far the two ornaments in the search row - the magnifier and the scope
+#: How far the two ornaments in the search row - the magnifier and the page
 #: switcher - stand off the window's *edge*, the page margin included.  The
 #: gap to the field beside them stays `_MARGIN_PX`, and the difference is the
 #: point: the field draws its own box with its own padding inside it, and the
@@ -106,6 +107,12 @@ _MAX_UNITS = (300, 100)
 #: invocation from the window it opens over (issue #4).
 _SIZE_KEY = "chooser_size"
 
+#: What marks a token as naming a source rather than being searched for.
+#: Declared by the user rather than inferred, which is the whole difference:
+#: an inferred meaning has to be shown before it acts, and a declared one is
+#: already on screen because they typed it.
+_SOURCE_SIGIL = "@"
+
 #: How long one streaming slice may hold the main thread.  Small enough that a
 #: keystroke lands between slices; large enough that a cheap source finishes in
 #: one.
@@ -133,7 +140,11 @@ _POINTER_RADIUS = 4.0
 #: keys covers the derivatives with them. Home and End are deliberately absent:
 #: the list uses those for its first and last row, which is what a list long
 #: enough to need them wants them for.
-_FIELD_KEYS = frozenset({"backspace", "delete", "left", "right"})
+#: Keys the list hands back to the field, because they are addressed to the
+#: query. Bare Left and Right are absent deliberately - they belong to the
+#: pages now - but their modifier forms are still the caret's, and are let
+#: through beside this set.
+_FIELD_KEYS = frozenset({"backspace", "delete"})
 
 _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
@@ -178,12 +189,18 @@ class ChooserWindow:
     pending: an iterator of further rows, drained a slice at a time between
     renders.  None for a window whose rows are all already known.
 
-    scopes: names of the scopes Tab / Shift-Tab move between, or None for a
-    window with only one.  `on_scope(index)` is asked for the rows of the
-    scope being moved to, as `(candidates, badge_of)`.  **The query survives
-    the move** - that is the whole reason the switch is a key rather than a
-    typed prefix, and a prefix could not do it without the user editing the
-    front of what they had already typed.
+    pages: names of the pages, or None for a window with only one.  Left and
+    Right move between them, clamped at the ends.  `on_page(index)` is asked
+    for the rows of the page being moved to, as
+    `(candidates, pending, badge_of, background)`.  **The query survives the
+    move** - look for the same thing on another page without retyping it,
+    which is why paging is a key of its own rather than something typed into
+    the query.
+
+    source_of: optional `candidate -> str`, the name of the source that
+    produced a row.  What `@Name` narrows by.  Not `badge_of`: with a single
+    source the badge slot belongs to the source itself, so the two questions
+    have different answers.
 
     activates: whether the window takes OS keyboard focus.  The default is
     not to - see the module docstring.  A non-activating window asks PuiKit
@@ -199,7 +216,8 @@ class ChooserWindow:
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
-                 scopes=None, on_scope=None, pending=None, background=None):
+                 pages=None, on_page=None, pending=None, background=None,
+                 source_of=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -215,6 +233,8 @@ class ChooserWindow:
         self._keys = []
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._match = self._matcher.compile("")
+        #: Lower-cased source-name prefixes the query asked for, from `@`.
+        self._wanted_sources = []
         self._filtered = list(self._items)
         self._on_selected = on_selected
         self._on_canceled = on_canceled
@@ -265,14 +285,23 @@ class ChooserWindow:
         # gets nothing from the window manager to drag (issue #117).
         self._resizer = EdgeResizer(self.window, on_resized=_remember_size,
                                     backend=backend)
-        self._scopes = list(scopes) if scopes else []
-        self._on_scope = on_scope
-        self._scope = 0
+        self._pages = list(pages) if pages else []
+        self._on_page = on_page
+        # The middle of the row, matching what ChooserAction opens on: the
+        # page you reach for most belongs in the middle, and landing on an
+        # end would put it a keystroke away. Rounds left, so two pages open
+        # on the first - there is no middle of two.
+        self._page_index = (len(self._pages) - 1) // 2 if self._pages else 0
         self._badge_of = badge_of
-        # With scopes, the row widget is used throughout even where the
-        # current scope draws no badge: switching would otherwise have to
+        # Which source a row came from, for `@`. Not `badge_of`: with one
+        # source the badge slot belongs to the source itself - the menu puts
+        # a keyboard shortcut there - so the two answer different questions
+        # and only one of them is always the source's name.
+        self._source_of = source_of
+        # With pages, the row widget is used throughout even where the
+        # current page draws no badge: switching would otherwise have to
         # swap the list widget itself, and the badge is the first thing a
-        # merged scope needs anyway.
+        # merged page needs anyway.
         # Every row is a widget, badge or no badge: it carries the source name
         # beside it where there is one, and the air before the icon where
         # there is not - and the list runs to the page's edge now, so a plain
@@ -296,9 +325,10 @@ class ChooserWindow:
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
         # and the search-row/list gap collapse to nothing on a character grid.
-        from keyhac.ui.scope_switcher import ScopeSwitcher
-        self._scope_label = ScopeSwitcher(
-            self._scope_name(), on_switch=self._switch_clicked)
+        from keyhac.ui.page_switcher import PageSwitcher
+        self._page_label = PageSwitcher(
+            self._page_name(), on_switch=self._switch_clicked)
+        self._show_page_ends()
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
@@ -310,10 +340,10 @@ class ChooserWindow:
             Item(self._edit, weight=1),
             Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
         ]
-        if self._scopes:
+        if self._pages:
             search_row.insert(-1, Item(Label(""), size_px=_MARGIN_PX))
             search_row.insert(
-                -1, Item(self._scope_label, size="content", align="center"))
+                -1, Item(self._page_label, size="content", align="center"))
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
             # The one line worth drawing between the two: what the list's own
@@ -445,6 +475,62 @@ class ChooserWindow:
         badge = self._badge_of
         return [(c.label, (badge(c) or "") if badge else "")
                 for c in self._filtered]
+
+    # --- narrowing to one source -------------------------------------------
+
+    def _source_names(self):
+        """The sources this page is showing, in the order they produced rows.
+
+        Read off the rows rather than asked of the page, because the answer
+        has to agree with what is on screen: `@` narrows by the very name the
+        badge beside each row already shows, and a name the user cannot see
+        is one they have no reason to type.
+        """
+        seen, names = set(), []
+        for candidate in self._items:
+            name = self._source_of(candidate) if self._source_of else ""
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+        return names
+
+    def _source_matches(self, token: str):
+        """The source names a token could mean.
+
+        Anchored, because completing is a prefix question where filtering is
+        a substring one: `c` finds "Control" as a substring of nothing useful
+        and would leave Tab with no common prefix to insert.
+        """
+        names = self._source_names()
+        if not token:
+            return names
+        lowered = token.lower()
+        return [name for name in names if name.lower().startswith(lowered)]
+
+    def _complete_source(self) -> bool:
+        """Tab: extend an `@` token to the longest name it can still be.
+
+        **No candidate list.** The names are already on screen, one beside
+        every row, so a list would show what the user is looking at - and
+        would cover it to do so. Tab therefore only ever lengthens what is in
+        the field: it cannot commit anything, cannot open a mode, and has
+        nothing to dismiss. Where it cannot extend, the badges are the list.
+        """
+        text, cursor = self._edit.text, self._edit.cursor
+        start, end = token_span(text, cursor)
+        token = text[start:end]
+        if not token.startswith(_SOURCE_SIGIL):
+            return False
+        matches = self._source_matches(token[1:])
+        if not matches:
+            return False
+        common = _SOURCE_SIGIL + common_prefix(matches)
+        if len(common) > len(token):
+            self._edit.text = text[:start] + common + text[end:]
+            self._edit.cursor = start + len(common)
+            self._edit._anchor = None
+            self._on_filter_change(self._edit.text)
+        return True
 
     # --- focus ------------------------------------------------------------
     #
@@ -674,7 +760,8 @@ class ChooserWindow:
         different again and resets the selection deliberately.
         """
         self._items.extend(arrived)
-        matched = [c for c in arrived if self._match.hit(c.match_text)]
+        matched = [c for c in arrived
+                   if self._from_wanted_source(c) and self._match.hit(c.match_text)]
         if not matched:
             return
         index = self._list.selected
@@ -692,50 +779,103 @@ class ChooserWindow:
             self._list.selected = self._filtered.index(pinned)
         self.panel.render()
 
+    def _split_query(self, text: str):
+        """The query as the two questions it holds: which source, and what
+        text.
+
+        `@` tokens come out of the text before it is matched, so `@Menu save`
+        searches for `save` among menu rows rather than for the string
+        "@Menu save" among all of them. They stay in the field rather than
+        becoming a chip: Backspace then edits them like anything else, and
+        nothing has to be built to draw them.
+        """
+        wanted, kept = [], []
+        for word in text.split(" "):
+            if word.startswith(_SOURCE_SIGIL):
+                # A lone `@` is a sigil with nothing named yet, so it narrows
+                # to nothing and is not searched for either. Treating it as
+                # text instead empties the list for one keystroke, which
+                # reads as "no results" at exactly the moment the user is
+                # starting to say which source they mean.
+                if len(word) > 1:
+                    wanted.append(word[1:].lower())
+            else:
+                kept.append(word)
+        return wanted, " ".join(kept).strip()
+
+    def _from_wanted_source(self, candidate) -> bool:
+        """Whether a row is from a source the query asked for.
+
+        A prefix, so `@Cl` is enough for `Clipboard`, and a name that matches
+        nothing here simply matches nothing - which is visible rather than
+        surprising, because the badges say what there is. `@Action` on a page
+        without that source empties the list, and the empty list explains
+        itself.
+        """
+        if not self._wanted_sources:
+            return True
+        name = (self._source_of(candidate) if self._source_of else "") or ""
+        lowered = name.lower()
+        return any(lowered.startswith(w) for w in self._wanted_sources)
+
     def _on_filter_change(self, text: str) -> None:
         # The query is compiled once here, not once per candidate: Migemo's
         # whole cost is in building its alternation regex (discussion #112).
         # Kept, too, so an arriving slice re-uses it rather than paying that
         # cost again on every frame of a streaming source.
-        self._match = self._matcher.compile(text)
+        self._wanted_sources, query = self._split_query(text)
+        self._match = self._matcher.compile(query)
         self._filtered = self._ranked(
-            c for c in self._items if self._match.hit(c.match_text))
+            c for c in self._items
+            if self._from_wanted_source(c) and self._match.hit(c.match_text))
         self._list.set_items(self._rows())
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.
         self._list.selected = -1
 
-    # --- scopes -----------------------------------------------------------
+    # --- pages -----------------------------------------------------------
 
-    def _scope_name(self) -> str:
-        return self._scopes[self._scope] if self._scopes else ""
+    def _show_page_ends(self) -> None:
+        """Tell the switcher which way there is somewhere to go."""
+        self._page_label.can_prev = self._page_index > 0
+        self._page_label.can_next = self._page_index < len(self._pages) - 1
+
+    def _page_name(self) -> str:
+        return self._pages[self._page_index] if self._pages else ""
 
     def _switch_clicked(self, delta: int) -> None:
-        self.switch_scope(delta)
+        self.switch_page(delta)
         self.panel.render()
 
-    def switch_scope(self, delta: int) -> None:
-        """Move `delta` steps along the scope cycle, keeping the query.
+    def switch_page(self, delta: int) -> None:
+        """Move `delta` pages, keeping the query.  Stops at the ends.
 
         lazydocs: ignore
         """
-        if len(self._scopes) < 2 or self._on_scope is None:
+        if len(self._pages) < 2 or self._on_page is None:
             return
-        self._scope = (self._scope + delta) % len(self._scopes)
+        # Clamped, not wrapped. An edge that stops is what makes three pages a
+        # place you can point at rather than a ring you count around, and
+        # "which way is shorter" is the question this arrangement retires.
+        moved = max(0, min(self._page_index + delta, len(self._pages) - 1))
+        if moved == self._page_index:
+            return
+        self._page_index = moved
         # Asked afresh, but not *read* afresh: the caller remembers what each
-        # source produced, keyed on the source itself, so returning to a scope
+        # source produced, keyed on the source itself, so returning to a page
         # re-concatenates rather than re-walks - and a source shared with
-        # another scope is not read a second time at all.
+        # another page is not read a second time at all.
         # Before anything else: the worker is walking a generator this is
         # about to hand to someone else, and two consumers of one generator
         # is not a race that can be tidied up afterwards.
         self._stop_background()
-        rows, pending, badge_of, background = self._on_scope(self._scope)
+        rows, pending, badge_of, background = self._on_page(self._page_index)
         self._items = [Candidate.from_item(row) for row in rows]
         self._pending = pending
         self._background = background
         self._badge_of = badge_of
-        self._scope_label.name = self._scope_name()
+        self._page_label.name = self._page_name()
+        self._show_page_ends()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
         self._focus_edit()
@@ -748,7 +888,24 @@ class ChooserWindow:
             if event.key == "tab":
                 # Intercepted before the Panel, which would otherwise spend it
                 # on focus traversal between the field and the list.
-                self.switch_scope(-1 if "shift" in event.modifiers else 1)
+                self._complete_source()
+                self.panel.render()
+                return
+            if event.key in ("left", "right") and not event.modifiers:
+                # The pages are a row, not a ring: left is left. Nothing here
+                # wraps, because an edge that stops is what makes three of
+                # them a place rather than a cycle - and "which way is
+                # shorter" is the question this arrangement exists to retire.
+                #
+                # Taken from the caret, which is what they did before. In a
+                # field being searched with, people fix a query by erasing
+                # back to the mistake rather than by walking into it.
+                #
+                # **Bare only.** Ctrl-Left is a word, Shift-Left is a
+                # selection and Cmd-Left is the line start, and all three
+                # arrive under this same name - taking them too would leave
+                # the field with no way to do any of it.
+                self.switch_page(-1 if event.key == "left" else 1)
                 self.panel.render()
                 return
             if event.key == "escape":
@@ -776,7 +933,9 @@ class ChooserWindow:
                 self._navigate(event.key)
                 self.panel.render()
                 return
-            if self.in_list and (event.char or event.key in _FIELD_KEYS):
+            if self.in_list and (event.char or event.key in _FIELD_KEYS
+                                 or (event.key in ("left", "right")
+                                     and event.modifiers)):
                 # Anything addressed to the query goes to the field, which
                 # means leaving the list first - then the key is dispatched as
                 # usual and lands there. Backspace with the focus still in the

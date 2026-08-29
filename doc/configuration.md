@@ -380,7 +380,7 @@ first.
 
 A source with real work to do can **yield** instead of returning a list. Its
 first rows appear immediately and the rest arrive while the window is already
-open, and closing it or switching scope simply stops asking. Yield often, and
+open, and closing it or switching page simply stops asking. Yield often, and
 do not block: a source runs on the main thread, in slices, and one that does
 not return holds the keyboard.
 
@@ -393,20 +393,42 @@ A single row can override even that with `Candidate(action=...)`.
 `ShowClipboardHistory()` and its two siblings are presets over exactly these
 sources.
 
-### Scopes: one key, several sets
+### Pages: one key, several sets
 
-Group the sources into named scopes and one key reaches all of them. `Tab` and
-`Shift-Tab` move along the cycle, and **the query comes with you** — type what
-you are looking for, then look for it somewhere else without retyping it. The
-current scope is named at the right of the filter field.
+Group the sources into named pages and one key reaches all of them. **Left and
+Right** move between pages, and **the query comes with you** — type what you
+are looking for, then look for it somewhere else without retyping it. The
+current page is named at the right of the filter field.
 
 ```python
 kt["Fn-P"] = ShowCandidates([
-    Scope("All",       [clipboard, snippets, tools, windows]),
-    Scope("Clipboard", [clipboard, snippets]),
-    Scope("Windows",   [windows]),
+    ChooserPage("Do",     [keys, actions, menus]),
+    ChooserPage("Paste",  [clipboard, snippets, tools]),
+    ChooserPage("Screen", [controls, windows]),
 ])
 ```
+
+**Aim for three, with the one you reach for most in the middle** — the window
+opens there, so it costs nothing to reach and both neighbours cost one press.
+Three is about as many as anyone holds without looking. The pages stop at the
+ends rather than wrapping, so left is left — and the `‹` or `›` beside the name
+disappears when there is nothing that way.
+
+If you want more, bind another key to another `ShowCandidates`. A key is the
+scarce thing here, but it is yours to spend.
+
+### `@` narrows to one source
+
+Inside whichever page you are on, type `@` and a source name — `@Clip`,
+`@Menu`, `@Key` — to see only that source's rows. `Tab` extends what you have
+typed as far as it is sure of.
+
+The names are the ones already shown beside each row, so there is nothing to
+memorise, and a name that is not on this page simply matches nothing. The rest
+of the query still filters: `@Menu save` looks for `save` among menu commands.
+
+This is why three pages is enough. A page is *where you are*; `@` is *which of
+the things there* you meant.
 
 The built-in sources are `ClipboardHistorySource`, `SnippetsSource`,
 `ClipboardToolsSource`, `MenuItemsSource` (every command in the front
@@ -417,7 +439,7 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 `WindowControlsSource` (everything clickable in the front window, by name).
 
 The last two read the front application on every invocation, so give each a
-`Scope` of its own rather than putting it in a merged one.
+`ChooserPage` of its own rather than putting it in a merged one.
 
 `MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
 one per application, always at the top of the screen, and readable in full
@@ -427,23 +449,23 @@ filled only when it opens, so the source finds no menu bar and yields nothing;
 its top-level items are UI elements of the window instead, and
 `WindowControlsSource` lists them with everything else clickable.
 
-**Build each source once and share it between scopes.** A source is read once
+**Build each source once and share it between pages.** A source is read once
 per window and remembered against the object, so a `MenuItemsSource` that
-appears both in an everything-scope and in a scope of its own walks the menu bar
+appears both in an everything-page and in a page of its own walks the menu bar
 once — if it is the same instance. Two separately built sources are two
 sources, which is what you want when they differ.
 
 ```python
 menus = MenuItemsSource()
 kt["Fn-P"] = ShowCandidates([
-    Scope("All",   [clipboard, menus]),
-    Scope("Menus", [menus]),
+    ChooserPage("All",   [clipboard, menus]),
+    ChooserPage("Menus", [menus]),
 ])
 ```
 
-Scopes are also how an expensive source stays affordable: one that has real work
+Pages are also how an expensive source stays affordable: one that has real work
 to do — walking the window's controls, asking a server — costs that work every
-time it is in the scope being opened, so putting it in a scope of its own means
+time it is in the page being opened, so putting it in a page of its own means
 it is paid for only when you ask for it.
 
 ### Writing a chooser as a class
