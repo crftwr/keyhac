@@ -862,6 +862,8 @@ get_frame() → tuple[float, float, float, float] | None
 
 Get the window's frame. 
 
+The frame is the window as drawn: invisible padding around it (the resize border Windows keeps outside the visible edge) is excluded, so these are the coordinates the OS itself positions windows in. 
+
 
 
 **Returns:**
@@ -916,6 +918,8 @@ set_frame(x: float, y: float, w: float = None, h: float = None) → bool
 ```
 
 Move the window, and optionally resize it. 
+
+The coordinates are the visible frame get_frame reports, so a frame read from one window can be given to another unchanged. 
 
 
 
@@ -1199,6 +1203,8 @@ An action's most-used object, so it is one attribute away rather than two lines 
 Snap the focused window to a region of its screen (tiling). 
 
 The region is the screen's *work area*, so the menu bar and Dock (macOS) and the taskbar (Windows) stay uncovered.  "Its screen" is the one the window overlaps most, so repeated snaps keep a window on the monitor it is already on. 
+
+This places the window itself; it does not enter the OS's own snap state. The window lands where Windows' snap would put it, but Snap Assist does not offer to fill the other half, no snap group is formed, dragging the window away does not restore its previous size, and dragging the shared edge does not resize the neighbour. 
 
 ```python
 SnapWindow("left")               # left half

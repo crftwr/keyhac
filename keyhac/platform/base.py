@@ -361,6 +361,10 @@ class Window(ABC):
     def get_frame(self) -> tuple[float, float, float, float] | None:
         """Get the window's frame.
 
+        The frame is the window as drawn: invisible padding around it (the
+        resize border Windows keeps outside the visible edge) is excluded, so
+        these are the coordinates the OS itself positions windows in.
+
         Returns:
             (x, y, w, h) in global top-left-origin screen coordinates, or None
             when the window has no readable frame.
@@ -370,6 +374,9 @@ class Window(ABC):
     def set_frame(self, x: float, y: float,
                   w: float = None, h: float = None) -> bool:
         """Move the window, and optionally resize it.
+
+        The coordinates are the visible frame get_frame reports, so a frame
+        read from one window can be given to another unchanged.
 
         Args:
             x: New left edge.

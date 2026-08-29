@@ -33,6 +33,10 @@ if sys.platform == "win32":
     SWP_NOZORDER = 0x0004
     SWP_NOACTIVATE = 0x0010
     GA_ROOT = 2
+    # A resize border is ~7px at 100% DPI and scales with it; anything past
+    # this is not a border, it is a window whose two rects disagree for some
+    # other reason (minimized, or a shell surface with no frame at all).
+    MAX_FRAME_INSET = 64
     MONITORINFOF_PRIMARY = 0x1
 
     ENUMWINDOWSPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -101,6 +105,7 @@ if sys.platform == "win32":
     # DWM cloaking: a suspended UWP app keeps a visible top-level HWND that is
     # not on screen at all, so IsWindowVisible alone over-reports on Windows 10+.
     DWMWA_CLOAKED = 14
+    DWMWA_EXTENDED_FRAME_BOUNDS = 9
     try:
         dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
         dwmapi.DwmGetWindowAttribute.argtypes = [
@@ -185,19 +190,61 @@ class WinWindow(Window):
 
     # -- geometry -----------------------------------------------------------
 
+    # The frame this class reads and writes is the window as drawn.
+    # GetWindowRect/SetWindowPos work in the *window* rect, which since Vista
+    # includes the invisible resize border DWM keeps outside the visible edge
+    # - about 7px left, right and bottom at 100% DPI, 0 at the top.  The OS
+    # positions everything of its own (its snap included) in visible
+    # coordinates, so arithmetic done in window coordinates lands short:
+    # a half-screen tile leaves a 7px gap at the screen edge and a 14px one
+    # between two tiles.  Both accessors convert, so callers see one
+    # coordinate system and it is the one the user can see.
+
+    def _frame_insets(self):
+        """(left, top, right, bottom) thickness of the invisible border.
+
+        Zero when DWM cannot answer, and zero rather than nonsense for a
+        minimized window, whose window rect is off in the -32000 corner
+        while DWM still reports where the window was: the sanity bound below
+        rejects the difference.
+        """
+        if dwmapi is None:
+            return (0, 0, 0, 0)
+        window = wintypes.RECT()
+        visible = wintypes.RECT()
+        if not user32.GetWindowRect(self.hwnd, ctypes.byref(window)):
+            return (0, 0, 0, 0)
+        hr = dwmapi.DwmGetWindowAttribute(
+            self.hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+            ctypes.byref(visible), ctypes.sizeof(visible))
+        if hr != 0:
+            return (0, 0, 0, 0)
+        insets = (visible.left - window.left, visible.top - window.top,
+                  window.right - visible.right, window.bottom - visible.bottom)
+        if not all(0 <= inset <= MAX_FRAME_INSET for inset in insets):
+            return (0, 0, 0, 0)
+        return insets
+
     def get_frame(self):
         rect = wintypes.RECT()
         if not user32.GetWindowRect(self.hwnd, ctypes.byref(rect)):
             return None
-        return (float(rect.left), float(rect.top),
-                float(rect.right - rect.left), float(rect.bottom - rect.top))
+        left, top, right, bottom = self._frame_insets()
+        return (float(rect.left + left), float(rect.top + top),
+                float(rect.right - right - rect.left - left),
+                float(rect.bottom - bottom - rect.top - top))
 
     def set_frame(self, x, y, w=None, h=None) -> bool:
+        left, top, right, bottom = self._frame_insets()
         flags = SWP_NOZORDER | SWP_NOACTIVATE
         if w is None or h is None:
             flags |= SWP_NOSIZE
             w = h = 0
-        return bool(user32.SetWindowPos(self.hwnd, None, int(x), int(y),
+        else:
+            w = int(w) + left + right
+            h = int(h) + top + bottom
+        return bool(user32.SetWindowPos(self.hwnd, None,
+                                        int(x) - left, int(y) - top,
                                         int(w), int(h), flags))
 
     # -- state --------------------------------------------------------------

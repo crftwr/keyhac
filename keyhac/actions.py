@@ -1123,6 +1123,12 @@ class SnapWindow:
     window overlaps most, so repeated snaps keep a window on the monitor it is
     already on.
 
+    This places the window itself; it does not enter the OS's own snap state.
+    The window lands where Windows' snap would put it, but Snap Assist does
+    not offer to fill the other half, no snap group is formed, dragging the
+    window away does not restore its previous size, and dragging the shared
+    edge does not resize the neighbour.
+
     ```python
     SnapWindow("left")               # left half
     SnapWindow("left", ratio=2/3)    # left two thirds

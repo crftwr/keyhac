@@ -472,13 +472,18 @@ kt["Fn-F"]      = SnapWindow("full")          # ratio=2/3 etc. picks the split
 screen edge (hopping to the next monitor when already there). Only `screen_edge`
 is on by default. `SnapWindow` tiles within the screen's *work area* — menu bar,
 Dock and taskbar stay uncovered — taking half the screen unless `ratio=` says
-otherwise.
+otherwise. It places the window itself rather than handing it to the OS's snap:
+the window lands where Windows' snap would put it, but no Snap Assist appears
+and no snap group is formed.
 
 For your own logic, `Window` objects are fully portable:
 
 ```python
 window = keymap.get_active_window()           # or find_window(app=, title=,
 x, y, w, h = window.get_frame()               #    class_name=), list_windows()
+                                              # the visible frame: Windows'
+                                              # invisible resize border is not
+                                              # part of it, on either accessor
 window.set_frame(x + 100, y)
 window.activate(); window.minimize(); window.restore(); window.is_minimized()
 window.title; window.app_name; window.pid; window.class_name  # class_name: Windows
