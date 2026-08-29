@@ -477,3 +477,87 @@ class TestOnlyOneGesturePerPress:
         _press(chooser, *HANDLE)
         _drag(chooser, HANDLE[0] + 14, HANDLE[1] + 6)
         assert chooser.window.frame_px()[:2] == (174.0, 166.0)
+
+
+class TestACornerIsATargetYouCanHit:
+    """An edge is aimed at with one coordinate and a corner with two, so a
+    corner sized like the edge is a six-pixel square the pointer crosses
+    without landing in - which reads as "the corner does not resize"."""
+
+    def _pixel_chooser(self, ui_backend):
+        # A backend whose pixels mean something: one cell per pixel here, so
+        # the strip depths are in cells and exact.
+        from puikit import PROFILE_GUI_DESKTOP
+        from puikit.backends.memory_backend import MemoryBackend
+        backend = MemoryBackend(width=200, height=90,
+                                capabilities=PROFILE_GUI_DESKTOP)
+        backend.open()
+        runtime.backend = backend
+        chooser = _chooser(backend)
+        chooser.window.resize_to_px(120, 60)
+        return chooser
+
+    def test_a_point_near_two_edges_is_the_corner(self, ui_backend):
+        chooser = self._pixel_chooser(ui_backend)
+        try:
+            # 10 px from the right and 12 from the bottom: outside both
+            # 6 px edge strips, inside the corner's reach.
+            assert chooser._resizer.edge_at(110, 48) == (1, 1)
+            assert chooser._resizer.edge_at(10, 12) == (-1, -1)
+            assert chooser._resizer.edge_at(110, 12) == (1, -1)
+        finally:
+            runtime.backend = ui_backend
+            chooser.window.close()
+
+    def test_the_middle_of_an_edge_stays_one_axis(self, ui_backend):
+        chooser = self._pixel_chooser(ui_backend)
+        try:
+            assert chooser._resizer.edge_at(118, 30) == (1, 0)
+            assert chooser._resizer.edge_at(60, 58) == (0, 1)
+        finally:
+            runtime.backend = ui_backend
+            chooser.window.close()
+
+    def test_a_corner_drag_moves_both_axes(self, ui_backend):
+        chooser = self._pixel_chooser(ui_backend)
+        try:
+            _press(chooser, 110, 48)
+            _drag(chooser, 130, 60)
+            assert chooser.window.frame_px()[2:] == (140.0, 72.0)
+        finally:
+            runtime.backend = ui_backend
+            chooser.window.close()
+
+    def test_the_corner_never_swallows_a_third_of_the_window(self, ui_backend):
+        # A window dragged down to its minimum must not become all edge and
+        # no content.
+        chooser = self._pixel_chooser(ui_backend)
+        try:
+            chooser.window.resize_to_px(30, 24)
+            assert chooser._resizer.edge_at(15, 12) is None
+        finally:
+            runtime.backend = ui_backend
+            chooser.window.close()
+
+
+class TestThePointerSaysWhereItCanBeGrabbed:
+
+    def test_each_edge_and_corner_names_its_own_cursor(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        resizer = chooser._resizer
+        assert resizer.cursor_at(*RIGHT) == "ew-resize"
+        assert resizer.cursor_at(*TOP) == "ns-resize"
+        assert resizer.cursor_at(*BOTTOM_RIGHT) == "nwse-resize"
+        assert resizer.cursor_at(0.5, 19.5) == "nesw-resize"
+        assert resizer.cursor_at(36, 10) is None
+
+    def test_hovering_hands_the_shape_to_the_frame_that_draws_the_edge(
+            self, ui_backend):
+        # The edge is not a widget, so nothing hovers it and nothing would ask
+        # for its cursor on its own.
+        chooser = _chooser(ui_backend)
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=RIGHT[0],
+                                y=RIGHT[1]))
+        assert chooser._page.cursor == "ew-resize"
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=36, y=10))
+        assert chooser._page.cursor is None

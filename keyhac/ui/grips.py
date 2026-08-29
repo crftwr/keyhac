@@ -200,9 +200,17 @@ class EdgeResizer:
     DEPTH_PX = 6.0
     DEPTH_UNITS = 1.0
 
-    #: What the pointer looks like over each edge.  macOS has no public
-    #: diagonal resize cursor, so a corner shows the cursor of whichever axis
-    #: it shares with an edge; Windows does not shape the pointer at all yet.
+    #: How far along each edge a *corner* reaches, in the same pixels.  Deeper
+    #: than the edge on purpose: an edge is aimed at with one coordinate and a
+    #: corner with two, so a corner sized like the edge is a six-pixel square
+    #: that the pointer crosses without ever landing in - which reads as "the
+    #: corner does not resize", not as "I missed it".  Every window manager
+    #: gives the corner the larger target for the same reason.
+    CORNER_PX = 16.0
+
+    #: What the pointer looks like over each edge.  The diagonals are the
+    #: cursors AppKit has and does not publish, which puikit resolves through
+    #: a guarded lookup; Windows does not shape the pointer at all yet.
     _CURSORS = {(-1, 0): "ew-resize", (1, 0): "ew-resize",
                 (0, -1): "ns-resize", (0, 1): "ns-resize",
                 (-1, -1): "nwse-resize", (1, 1): "nwse-resize",
@@ -225,16 +233,51 @@ class EdgeResizer:
 
     def edge_at(self, x: float, y: float):
         """Which edge (ex, ey) the point (x, y) in window base units is on,
-        each -1 / 0 / +1, or None for a point that is not on one."""
+        each -1 / 0 / +1, or None for a point that is not on one.
+
+        A corner is both at once, and it is looked for first, in a square
+        that reaches `CORNER_PX` along each axis - deeper than the edges,
+        because an edge is aimed at with one coordinate and a corner with two.
+        """
         units = self._window.size_units
         scale = _scale(self._window)
         if scale is None:
             return None
-        dx = min(self.DEPTH_UNITS, self.DEPTH_PX / scale[0])
-        dy = min(self.DEPTH_UNITS, self.DEPTH_PX / scale[1])
-        ex = -1 if x < dx else (1 if x > units[0] - dx else 0)
-        ey = -1 if y < dy else (1 if y > units[1] - dy else 0)
+        # The corner square first, and it reaches further along both axes
+        # than the edge strips do: inside it the answer is both axes, so the
+        # region that resizes width and height together is a target rather
+        # than the six-pixel overlap of two strips.
+        cx = self._side(x, units[0], self.CORNER_PX, scale[0])
+        cy = self._side(y, units[1], self.CORNER_PX, scale[1])
+        if cx and cy:
+            return (cx, cy)
+        ex = self._side(x, units[0], self.DEPTH_PX, scale[0])
+        ey = self._side(y, units[1], self.DEPTH_PX, scale[1])
         return (ex, ey) if (ex or ey) else None
+
+    def _side(self, value: float, extent: float, depth_px: float,
+              scale: float) -> int:
+        """-1 near the start of an axis, +1 near its end, 0 in between.
+
+        The depth is in device pixels where those mean something and one cell
+        where they do not: a character grid's cell *is* about a pixel, so six
+        of them would be six rows of the list.  And never more than a third
+        of the axis, so a window dragged down to its minimum does not become
+        all edge and no content.
+        """
+        if self._pixel_layout():
+            depth = depth_px / scale
+        else:
+            depth = self.DEPTH_UNITS
+        depth = min(depth, extent / 3.0)
+        if value < depth:
+            return -1
+        return 1 if value > extent - depth else 0
+
+    def _pixel_layout(self) -> bool:
+        if self._backend is None:
+            return False
+        return self._backend.capabilities.supports("pixel_layout")
 
     def cursor_at(self, x: float, y: float):
         """The pointer shape for that point, or None away from every edge."""

@@ -107,6 +107,11 @@ Keyhac2-side usage notes:
     gesture. The chooser draws its own handle, so it owns the drag; a chooser
     that opts back into `activates=True` is an ordinary titled window and
     keeps the window manager's.
+  - The diagonal resize cursors. `nwse-resize` / `nesw-resize` resolved to
+    nothing, so every corner read as "nothing to drag here" — which is where
+    a resize is most often started. AppKit has them and does not publish
+    them; puikit resolves them through `respondsToSelector`, so a release
+    that withdrew one costs an arrow and nothing else.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.
