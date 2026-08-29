@@ -106,11 +106,15 @@ def configure(keymap):
     # fires.  Pick one where a stray tap is harmless: here the right Cmd
     # (right Ctrl on Windows), tapped alone, goes to the terminal - forward
     # if it is behind, on to its next window if it is already in front, and
-    # launched if it is not running.  macOS reports the *localized*
-    # application name, which is why both spellings are listed.
-    kt[f"O-R{MOD2}"] = ActivateApplication(
-        app="Terminal|ターミナル|WindowsTerminal",
-        launch="Terminal.app" if mac else "wt.exe")
+    # launched if it is not running.  With Shift the walk runs the other way.
+    # macOS reports the *localized* application name, which is why both
+    # spellings are listed.
+    TERMINAL = "Terminal|ターミナル|WindowsTerminal"
+    TERMINAL_APP = "Terminal.app" if mac else "wt.exe"
+    kt[f"O-R{MOD2}"] = ActivateApplication(app=TERMINAL, launch=TERMINAL_APP)
+    kt[f"O-Shift-R{MOD2}"] = ActivateApplication(app=TERMINAL,
+                                                 launch=TERMINAL_APP,
+                                                 reverse=True)
 
     # ---- IME ---------------------------------------------------------
 
