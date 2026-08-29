@@ -541,9 +541,13 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   not the problem by then; not being able to tell an unfinished list from a
   finished one was. A query that has not matched *yet* reads as one that never
   will.
-- So the search row carries a **"… n" note while a source is still
-  producing**, and goes quiet when it stops. No milliseconds saved; it is the
-  difference between "there is nothing" and "not yet".
+- So the search row carried a **"… n" note while a source was still
+  producing** — no milliseconds saved, but the difference between "there is
+  nothing" and "not yet". **It has since been removed**: the walk moved to a
+  worker and a fill went from ~11.7 s to ~0.25 s, and a note describing a
+  state nobody is left looking at is a thing appearing and vanishing beside
+  the query for no reason. The reasoning was right for the speed it was
+  written at; the speed changed. See "Streaming a source".
 - **Breadth-first was tried and rejected.** It reaches the first rows sooner
   (3 ms against 16) and is worse at everything else: within the same node
   budget it found 96 controls against 152, because breadth spends the budget
@@ -647,9 +651,11 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   returning one so that its `get_active_window()` stays there.
 - **Delivered in batches**, 64 rows or 30 ms, whichever comes first. Per row
   would pay `_append`'s re-rank and redraw once per row; per completion would
-  give up the streaming the whole shape exists for. The progress note is
-  updated on every batch, since a count that only appears once the filling is
-  over says nothing.
+  give up the streaming the whole shape exists for.
+- **Nothing announces the filling any more.** The "… n" note earned its place
+  against an 11.7 s fill; against a quarter of a second it describes a state
+  the user never sees, and appears and vanishes beside the query to do it.
+  Removed with the slowness that justified it.
 - **Two streams, not one.** `_collect` splits the unfinished sources by
   `background` and hands the window two generators. Merging them would put
   every row of both on whichever thread drained first.

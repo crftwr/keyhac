@@ -1472,9 +1472,13 @@ class TestScopeCaching:
         assert produced == list(range(6)), "the shared source was read again"
         assert len(chooser._items) == 6
 
-class TestProgress:
-    """Without a sign that a list is still filling, a query that has not
-    matched *yet* reads as one that never will."""
+class TestFillingIsNotAnnounced:
+    """The window used to carry a "… N" note while a source was still being
+    read.  It was answering a real question - a query that has not matched
+    *yet* reads as one that never will - but the question was only real
+    because filling took seconds.  It takes a fifth of one now, so the note
+    described a state the user never saw, in a slot beside the query where
+    something appearing and vanishing is its own distraction."""
 
     def _open(self, produce):
         from keyhac.actions import ChooserAction, ShowCandidates
@@ -1482,33 +1486,29 @@ class TestProgress:
         action()
         return ChooserAction._open[1]
 
-    def test_it_says_how_far_it_has_got_while_reading(self, ui_backend):
+    def test_nothing_is_drawn_beside_the_query_while_reading(self, ui_backend):
         def produce():
             for index in range(10):
-                # Enough per row that one slice cannot swallow the lot, which
-                # is the state this note exists to describe.
                 time.sleep(0.001)
                 yield Candidate(display=f"row {index}")
 
         chooser = self._open(produce)
         ui_backend.run_animation_ticks()
         assert chooser._pending is not None, "it finished in one slice"
-        # stripped: the note carries its own leading gap from the field
-        assert chooser._progress.text.strip().startswith("…")
-        assert chooser._progress.text.split()[-1] == str(len(chooser._items))
+        assert not hasattr(chooser, "_progress")
 
-    def test_it_goes_quiet_when_there_is_nothing_left(self, ui_backend):
+    def test_the_rows_still_arrive(self, ui_backend):
+        """Removing the note is a change to what is *said* about the filling,
+        not to the filling."""
         def produce():
-            yield Candidate(display="only")
+            for index in range(10):
+                yield Candidate(display=f"row {index}")
 
         chooser = self._open(produce)
-        for _ in range(10):
+        for _ in range(20):
             ui_backend.run_animation_ticks()
-        assert chooser._progress.text == ""
-
-    def test_a_list_source_never_says_anything(self, ui_backend):
-        chooser = self._open(lambda: [Candidate(display="a")])
-        assert chooser._progress.text == ""
+        assert len(chooser._items) == 10
+        assert chooser._pending is None
 
 
 class TestCallableShape:

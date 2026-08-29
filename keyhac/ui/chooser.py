@@ -118,9 +118,6 @@ _SLICE_SECONDS = 0.002
 _BATCH_MAX = 64
 _BATCH_SECONDS = 0.030
 
-#: The progress note is context, not content: quieter than the query.
-_PROGRESS_STYLE = Style(fg=(130, 130, 140))
-
 #: The outline drawn over the control a highlighted row stands for.  Loud on
 #: purpose: it is answering "is this the one you meant?" across the whole
 #: screen, over content it cannot predict.
@@ -298,12 +295,6 @@ class ChooserWindow:
         from keyhac.ui.scope_switcher import ScopeSwitcher
         self._scope_label = ScopeSwitcher(
             self._scope_name(), on_switch=self._switch_clicked)
-        # "Still reading", and how much of it so far.  Without this an
-        # unfinished list is indistinguishable from a finished one, so a query
-        # that has not matched *yet* reads as one that never will - which is
-        # the whole of what makes a streaming source feel slow, rather than
-        # the milliseconds.
-        self._progress = Label("", style=_PROGRESS_STYLE)
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
         from keyhac.ui.grips import DragHandle
@@ -313,10 +304,6 @@ class ChooserWindow:
             Item(self._handle, size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
-            # No spacer of its own: the progress note is usually empty, and a
-            # spacer that stayed behind it would widen the gap the switcher
-            # keeps on its left.  It carries its own leading space instead.
-            Item(self._progress, size="content", align="center"),
             Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
         ]
         if self._scopes:
@@ -516,7 +503,6 @@ class ChooserWindow:
             self._pending = None
         if arrived:
             self._append(arrived)
-        self._show_progress()
         if self._pending is None:
             self._streaming = False
             return False
@@ -560,7 +546,6 @@ class ChooserWindow:
             rows = [Candidate.from_item(c) for c in generator]
             if rows:
                 self._append(rows)
-            self._show_progress()
             return
         stop = self._bg_stop = threading.Event()
         generator = self._background
@@ -602,10 +587,6 @@ class ChooserWindow:
                 self._append([Candidate.from_item(c) for c in batch])
             if done:
                 self._background = None
-            # Every batch, not only the last: the count is what says the
-            # window is still filling, and a note that only appears once the
-            # filling is over says nothing at all.
-            self._show_progress()
 
         self._backend.call_on_main_thread(land)
 
@@ -615,17 +596,6 @@ class ChooserWindow:
         if self._bg_stop is not None:
             self._bg_stop.set()
             self._bg_stop = None
-
-    def _show_progress(self) -> None:
-        """Say whether the list is still filling, and how far it has got."""
-        # The leading space is the note's own gap from the field: an empty
-        # note then takes no width at all, and the switcher beside it keeps
-        # the gutter it is supposed to have.
-        filling = self._pending is not None or self._background is not None
-        text = f"  … {len(self._items)}" if filling else ""
-        if self._progress.text != text:
-            self._progress.text = text
-            self.panel.render()
 
     def _ranked(self, candidates) -> list:
         """Best first, and stable - so rows the query cannot tell apart keep
@@ -707,7 +677,6 @@ class ChooserWindow:
         self._pending = pending
         self._background = background
         self._badge_of = badge_of
-        self._show_progress()
         self._scope_label.name = self._scope_name()
         # The rows are different ones, so nothing is proposed and the focus
         # goes back to the field - the same rule a changed query follows.
