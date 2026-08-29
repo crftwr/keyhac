@@ -478,6 +478,13 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   there is no second reading of what was typed and nothing to disclose. Three
   pages with the common one in the middle puts every page one keystroke away,
   which answers "how many more presses" by making the answer always one.
+- **The window opens on the middle page**, not the first — otherwise the whole
+  point of putting the common one in the middle is given away, since it would
+  cost a press and one side of the row would be two away. It rounds *left* on
+  an even count, which is what makes two pages open on the first: there is no
+  middle of two, and the alternative reads as opening on the wrong one. Always
+  the same page, whatever the last press left behind, or the key would mean
+  different things on different presses.
 - **They clamp, they do not wrap.** An edge that stops is what makes three
   pages a place you point at rather than a ring you count around, and "which
   way is shorter" is the question this arrangement retires.

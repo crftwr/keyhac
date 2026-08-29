@@ -197,8 +197,9 @@ class ChooserPage:
     another page without retyping it.
 
     **Three is the number to aim for**, with what you reach for most in the
-    middle: every page is then one keystroke away, and three is about as many
-    as anyone holds without looking. Pages are not how you narrow to one kind
+    middle - the window *opens* there, so it costs nothing to reach and both
+    neighbours cost one press. Three is about as many as anyone holds without
+    looking. Pages are not how you narrow to one kind
     of row - `@` and a source name does that, inside whichever page you are
     on - so a page is a *place*, and there are few places.
 

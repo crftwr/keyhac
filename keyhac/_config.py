@@ -198,8 +198,8 @@ def configure(keymap):
     actions = ActionsSource()
     controls = WindowControlsSource()
 
-    # Three pages, and the one you reach for most in the middle: Left and
-    # Right are one keystroke each, so everything is one keystroke away.
+    # Three pages, and the one you reach for most in the middle - the window
+    # opens there, so it costs nothing and both neighbours cost one press.
     # Three is about as many as anyone holds without looking, which is why
     # the list below is short rather than complete - narrowing *within* a
     # page is `@` and not another page (see below).

@@ -1764,7 +1764,7 @@ A named set of sources the candidate window can switch between.
 
 One key opens the window; **Left and Right move between pages**, and the query comes with you - type `kensaku`, then look for the same thing on another page without retyping it. 
 
-**Three is the number to aim for**, with what you reach for most in the middle: every page is then one keystroke away, and three is about as many as anyone holds without looking. Pages are not how you narrow to one kind of row - `@` and a source name does that, inside whichever page you are on - so a page is a *place*, and there are few places. 
+**Three is the number to aim for**, with what you reach for most in the middle - the window *opens* there, so it costs nothing to reach and both neighbours cost one press. Three is about as many as anyone holds without looking. Pages are not how you narrow to one kind of row - `@` and a source name does that, inside whichever page you are on - so a page is a *place*, and there are few places. 
 
 More than three, and it stops being a place and becomes a ring you count around. If you want more, the answer is another key bound to another `ShowCandidates`: a key is the scarce thing here, but it is yours to spend. 
 

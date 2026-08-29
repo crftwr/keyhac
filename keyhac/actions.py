@@ -342,10 +342,11 @@ class ChooserAction:
             ChooserAction._stop_watch()
             _refocus_original_app()
 
-        # Always open on the first page: a window that reopened wherever it
-        # was last left would make the same key mean different things on
-        # different presses.
-        self._page = 0
+        # Always the same page, so the key means the same thing on every
+        # press - and the *middle* one, because that is where the page you
+        # reach for most belongs. Landing on an end would put the common
+        # case a keystroke away and leave one side of the row unused.
+        self._page = self._home_page()
         self._owners = {}
         #: What each source has read so far, for this window only:
         #: id(source) -> [rows, unfinished generator or None].
@@ -497,11 +498,20 @@ class ChooserAction:
         return self._collect()
 
     def page_names(self):
-        """ChooserPage names for the window's cycle; empty when there is only one.
+        """ChooserPage names for the window's row; empty when there is only one.
 
         lazydocs: ignore
         """
         return []
+
+    def _home_page(self) -> int:
+        """The page a press of the key opens on.  Zero here, because a
+        chooser with no pages has only one thing to open on; `ShowCandidates`
+        overrides it with the middle of the row.
+
+        lazydocs: ignore
+        """
+        return 0
 
     def _choose(self, candidate, modifier_flags: int) -> None:
         """Route a chosen row to whatever owns it."""
@@ -624,8 +634,24 @@ class ShowCandidates(ChooserAction):
         """lazydocs: ignore"""
         return [s.name for s in self._pages] if len(self._pages) > 1 else []
 
-    #: Index into `_pages` while a window is open.
+    #: Index into `_pages` while a window is open.  Starts at `_home_page()`.
     _page = 0
+
+    def _home_page(self) -> int:
+        """The middle of the row (overriding `ChooserAction._home_page`).
+
+        The arrangement this window recommends is three pages with the one
+        you reach for most in the middle, and opening at an end would give
+        that up - the common case would cost a keystroke and half the row
+        would be two away.
+
+        Rounds **left** on an even count, which is what makes two pages open
+        on the first: there is no middle of two, and the alternative reads as
+        the window opening on the wrong one.
+
+        lazydocs: ignore
+        """
+        return (len(self._pages) - 1) // 2 if self._pages else 0
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""

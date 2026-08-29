@@ -287,7 +287,11 @@ class ChooserWindow:
                                     backend=backend)
         self._pages = list(pages) if pages else []
         self._on_page = on_page
-        self._page_index = 0
+        # The middle of the row, matching what ChooserAction opens on: the
+        # page you reach for most belongs in the middle, and landing on an
+        # end would put it a keystroke away. Rounds left, so two pages open
+        # on the first - there is no middle of two.
+        self._page_index = (len(self._pages) - 1) // 2 if self._pages else 0
         self._badge_of = badge_of
         # Which source a row came from, for `@`. Not `badge_of`: with one
         # source the badge slot belongs to the source itself - the menu puts

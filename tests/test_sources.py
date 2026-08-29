@@ -204,27 +204,38 @@ class TestPages:
             chooser._on_event(Event(type=EventType.KEY,
                                     key=" " if ch == " " else ch, char=ch))
 
-    def test_it_opens_on_the_first_page(self, ui_backend):
+    def test_it_opens_in_the_middle(self, ui_backend):
+        """Where the page you reach for most belongs, so it costs nothing to
+        reach and both neighbours cost one."""
         _action, chooser = self._open(self._pages())
+        assert chooser._page_index == 1
+        assert chooser._page_label.text() == "‹ All ›"
+
+    def test_two_pages_open_on_the_first(self, ui_backend):
+        """There is no middle of two, and opening on the second reads as the
+        window opening on the wrong one."""
+        from keyhac.core.source import ChooserPage
+        fruit, tool = _Fruit(), _Tool()
+        _action, chooser = self._open([ChooserPage("Fruit", [fruit]),
+                                       ChooserPage("Tools", [tool])])
         assert chooser._page_index == 0
-        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
 
     def test_right_and_left_move_one_page(self, ui_backend):
         _action, chooser = self._open(self._pages())
-        self._arrow(chooser, "right")
-        assert [c.display for c in chooser._filtered] == [
-            "apple", "apricot", "hammer"]
         self._arrow(chooser, "right")
         assert [c.display for c in chooser._filtered] == ["hammer"]
         self._arrow(chooser, "left")
         assert [c.display for c in chooser._filtered] == [
             "apple", "apricot", "hammer"]
+        self._arrow(chooser, "left")
+        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
 
     def test_the_ends_stop(self, ui_backend):
         """A ring brings back "which way is shorter", which is the question
         this arrangement exists to retire."""
         _action, chooser = self._open(self._pages())
-        self._arrow(chooser, "left")
+        for _ in range(5):
+            self._arrow(chooser, "left")
         assert chooser._page_index == 0, "it wrapped"
         for _ in range(5):
             self._arrow(chooser, "right")
@@ -237,7 +248,7 @@ class TestPages:
         _action, chooser = self._open(self._pages())
         self._type(chooser, "app")
         assert [c.display for c in chooser._filtered] == ["apple"]
-        self._arrow(chooser, "right")
+        self._arrow(chooser, "left")
         assert chooser._edit.text == "app", "the query was left behind"
         assert [c.display for c in chooser._filtered] == ["apple"], \
             "it came with, and still filters the new page"
@@ -253,11 +264,11 @@ class TestPages:
 
     def test_the_current_page_is_named_on_screen(self, ui_backend):
         _action, chooser = self._open(self._pages())
-        assert chooser._page_label.text() == "‹ Fruit only ›"
-        self._arrow(chooser, "right")
         assert chooser._page_label.text() == "‹ All ›"
+        self._arrow(chooser, "left")
+        assert chooser._page_label.text() == "‹ Fruit only ›"
         rows = ["".join(r) for r in chooser.window.snapshot()]
-        assert any("All" in r for r in rows), rows
+        assert any("Fruit only" in r for r in rows), rows
 
     def test_switching_re_proposes_nothing(self, ui_backend):
         from puikit.event import Event, EventType
@@ -274,14 +285,16 @@ class TestPages:
         chooser._finish(chooser._filtered[0], 0)
         assert self.tool.chosen == ["hammer"] and self.fruit.chosen == []
 
-    def test_reopening_starts_at_the_first_page_again(self, ui_backend):
+    def test_reopening_starts_in_the_middle_again(self, ui_backend):
+        """A window that reopened wherever it was last left would make the
+        same key mean different things on different presses."""
         action, chooser = self._open(self._pages())
         self._arrow(chooser, "right")
-        assert chooser._page_index == 1
+        assert chooser._page_index == 2
         action()                               # toggles closed
         action()                               # and open again
         from keyhac.actions import ChooserAction
-        assert ChooserAction._open[1]._page_index == 0
+        assert ChooserAction._open[1]._page_index == 1
 
     def test_one_page_shows_no_switcher(self, ui_backend):
         _action, chooser = self._open([_Fruit(), _Tool()])
@@ -301,11 +314,11 @@ class TestPages:
 
         switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
                                     x=width - 1, y=0, button="left"))
-        assert chooser._page_index == 1, "the right arrow moves forward"
+        assert chooser._page_index == 2, "the right arrow moves forward"
 
         switcher.handle_event(Event(type=EventType.MOUSE_CLICK,
                                     x=0, y=0, button="left"))
-        assert chooser._page_index == 0, "the left arrow moves back"
+        assert chooser._page_index == 1, "the left arrow moves back"
 
     def test_clicking_the_switcher_keeps_the_query(self, ui_backend):
         from puikit.event import Event, EventType
@@ -316,7 +329,7 @@ class TestPages:
             Event(type=EventType.MOUSE_CLICK,
                   x=chooser._page_label._width - 1, y=0, button="left"))
         assert chooser._edit.text == "a", "the query went with the click"
-        assert chooser._page_index == 1
+        assert chooser._page_index == 2
 
     def test_the_switcher_does_not_take_the_focus(self, ui_backend):
         """Clicking it must not pull the focus out of the filter field."""
@@ -339,7 +352,7 @@ class TestPages:
                                 button="left"))
         chooser._on_event(Event(type=EventType.MOUSE_UP, x=column, y=line,
                                 button="left"))
-        assert chooser._page_index != 0, "the click never reached the switcher"
+        assert chooser._page_index != 1, "the click never reached the switcher"
 
 class TestNarrowingToOneSource:
     """`@Name` narrows to one source *inside* the page you are on.
