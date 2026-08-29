@@ -210,6 +210,9 @@ class ChooserWindow:
         # batches. None is the ordinary case.
         self._background = background
         self._bg_stop = None
+        #: Keystrokes taken by _grab_keys but not yet acted on.  The hook
+        #: callback appends; the main thread drains.  See _grab_keys.
+        self._keys = []
         self._matcher = matcher if matcher is not None else DEFAULT_MATCHER
         self._match = self._matcher.compile("")
         self._filtered = list(self._items)
@@ -349,6 +352,29 @@ class ChooserWindow:
 
         See ``keyhac.ui.keyroute`` for what that route can carry - ASCII and
         the named keys, and no input method at all.
+
+        **The hook callback only queues.** Filtering is O(number of
+        candidates), and the number of candidates has no ceiling - the
+        clipboard's `max_items`, and the size of a window's control tree, are
+        the user's and the target application's to decide. Measured on
+        Windows, with rows of the length clipboard history actually holds:
+        one keystroke against 250 candidates costs 17 ms, against 4,000 it
+        costs 131 ms, and against 8,000 it costs 259 ms - nearly all of it in
+        the ranking sort, and none of it needing Migemo to get there. Run in
+        the callback, that reaches the 200 ms slow-callback warning at around
+        6,000 rows and 300 ms at around 9,000, which is `LowLevelHooksTimeout`
+        - where Windows drops the hook without saying so. macOS is the same
+        story with `kCGEventTapDisabledByTimeout`.
+
+        No optimisation removes that shape: `sorted` calls its key once per
+        candidate, so the cost stays linear in the list and only the constant
+        moves. The work goes to the main thread instead, which is where every
+        other row of this window is already added (see `_deliver`).
+
+        Consuming the key is not deferred, and does not need to be: a grab
+        outranks every table, so `Keymap._modal_input` consumes whatever it
+        routes here whether this handler does anything with it or not. The
+        callback therefore decides nothing - it queues, and returns.
         """
         from keyhac.core.keymap import Keymap
         from keyhac.ui.keyroute import to_event
@@ -359,14 +385,41 @@ class ChooserWindow:
             return
 
         def handler(key):
+            # to_event stays here: it is a pure O(1) translation, and it is
+            # what says whether there is anything worth queueing at all.
             event = to_event(key)
-            if event is not None:
+            if event is None:
+                return
+            if not self.panel.dispatches_to_main_thread:
+                # Nowhere to hand it to, and nothing driving a loop that would
+                # pick it up - so act on it here, which is what the tick drain
+                # and the worker both do on such a backend. Tests take this
+                # path; the two real backends never do.
                 self._on_event(event)
+                return
+            self._keys.append(event)
+            self._backend.call_on_main_thread(self._drain_keys)
 
         keymap.push_modal_input(handler)
         self._grabbed = True
 
+    def _drain_keys(self) -> None:
+        """One queued keystroke, on the main thread.
+
+        One per call rather than the whole queue, so a burst of typing still
+        renders each state it passes through, and so a key that closes the
+        window cannot be followed by one acted on after it. Keys that arrive
+        after the window is done are dropped - the same test `_deliver` makes
+        of a batch of rows arriving late.
+        """
+        if self._done or not self._keys:
+            return
+        self._on_event(self._keys.pop(0))
+
     def _release_keys(self) -> None:
+        # Whatever is queued and not yet acted on goes with the grab: the
+        # window it was addressed to is closing.
+        self._keys.clear()
         if not self._grabbed:
             return
         self._grabbed = False
