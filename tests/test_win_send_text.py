@@ -137,3 +137,18 @@ def test_send_text_arrives_as_wm_char(probe, text):
     while len(probe.units) < expected_units and time.monotonic() < deadline:
         probe.pump(0.05)
     assert probe.text() == text
+
+
+def test_send_text_types_a_lone_surrogate_rather_than_raising(probe):
+    """Text read back from a UTF-16 buffer that was cut between the halves of
+    a pair carries a lone surrogate. Strict UTF-16 refuses to encode it, so
+    typing such a string raised from the middle of the action instead of
+    typing the one broken character - and the probe below reads its units back
+    with surrogatepass precisely because a unit is what was sent."""
+    probe.units.clear()
+    broken = "cut\ud842"
+    WinInputHook().send_text(broken)
+    deadline = time.monotonic() + 3.0
+    while len(probe.units) < 4 and time.monotonic() < deadline:
+        probe.pump(0.05)
+    assert probe.text() == broken

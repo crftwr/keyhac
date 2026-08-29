@@ -491,8 +491,13 @@ class WinInputHook(InputHook):
     def send_text(self, s: str) -> None:
         """Type a literal string via KEYEVENTF_UNICODE (one down+up pair per
         UTF-16 code unit; surrogate pairs arrive as two units, which is the
-        documented way to inject non-BMP characters)."""
-        units = s.encode("utf-16-le")
+        documented way to inject non-BMP characters).
+
+        ``surrogatepass`` because the string can carry a lone surrogate: text
+        read back from a UTF-16 buffer that something cut between the halves
+        of a pair decodes to one, and refusing to type it would raise from the
+        middle of an action rather than type the one broken character."""
+        units = s.encode("utf-16-le", "surrogatepass")
         n = len(units) // 2
         if n == 0:
             return
