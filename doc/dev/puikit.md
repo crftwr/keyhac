@@ -74,6 +74,80 @@ Keyhac2-side usage notes:
 - Guaranteeing the window opens on the active Space would want a `WindowStyle` field
   reaching `collectionBehavior` (`NSWindowCollectionBehaviorMoveToActiveSpace`).
   Not needed while the chooser builds a fresh window per invocation.
+- Being frameless costs the chooser everything a frame provides, so it draws its
+  own (issue #117): a border from the outermost `Frame`, a drag handle under the
+  magnifier, and its own edge as the resize grip
+  ([grips.py](../../keyhac/ui/grips.py)) — read off the window's event stream
+  before the Panel sees it, since the edge is the one strip that costs the list
+  no row. Only resizing needed puikit — `WindowHandle.resize_to_px` (PR #131),
+  the pair to `move_to_px`, since nothing could set a window's size. The
+  gestures stay Keyhac's: macOS `movableByWindowBackground` and the Windows
+  `WM_NCHITTEST` → `HTCAPTION` reply both mean "drag from anywhere the content
+  is not a control", which in a window that is mostly a list is a gesture
+  arguing with the list.
+- **The border has to be rounded**, and **the gesture has to ask the OS where
+  the pointer is** — puikit PR #132 carries both facts, plus `set_frame_px`:
+  - A window is clipped to a rounded rectangle (15 pt on macOS for anything
+    with a frame under it, 8 px on Windows 11), so a square line drawn at its
+    extent loses exactly its four corners. `WindowHandle.corner_radius_px` is
+    the number; `Frame(radius_px=, inset_px=)` draws the line concentric with
+    that corner, half a pixel inside it.
+  - A mouse event's position is measured against the window and frozen when
+    the event was posted, so a gesture that *moves* that window — the top and
+    left edges, which hold the far side still — cannot convert it back to a
+    screen position: the error is exactly the move, and it feeds the next
+    frame. The top edge oscillated. `Backend.pointer_position_px()` never
+    mentions a window; the event stays the fallback.
+  - `set_frame_px` lands the origin and the size in one window-server update,
+    so the far edge does not twitch once per step of the drag.
+  - `WindowStyle(movable=False)` — **the one that made the top edge look
+    broken.** `frameless` only *hides* the title bar the panel mask forces,
+    and AppKit keeps dragging the window by it, so a press on the top edge
+    ran the window manager's move and the chooser's resize from the same
+    gesture. The chooser draws its own handle, so it owns the drag; a chooser
+    that opts back into `activates=True` is an ordinary titled window and
+    keeps the window manager's.
+  - A `MOUSE_MOVE` on **entry**, not only on exit. Crossing into the window
+    and stopping on its edge is an entry and no move — every move event in
+    that gesture was outside — so the edge said nothing until the hand moved
+    again, which is exactly how a resize edge is approached from outside.
+  - The diagonal resize cursors — for apps whose windows become key; the
+    chooser ended up not shaping the pointer at all, see below. `nwse-resize` / `nesw-resize` resolved to
+    nothing, so every corner read as "nothing to drag here" — which is where
+    a resize is most often started. AppKit has them and does not publish
+    them; puikit resolves them through `respondsToSelector`, so a release
+    that withdrew one costs an arrow and nothing else.
+- **The pointer belongs to the key window, and the chooser is never one.**
+  Measured on macOS 26 with another application frontmost: before the chooser
+  is clicked it reports `key=False` with the application inactive, and the
+  shape it asks for never reaches the screen; after a click it is key, the
+  application is active, and the same request works. It is the rule every
+  background window lives under — an inactive application's text field shows
+  an arrow until you click it — and the chooser cannot buy its way out,
+  because never taking key status is exactly what keeps the target's focus,
+  caret and selection.
+
+  So the affordance is drawn rather than asked for, and **no pointer shape is
+  requested on hover at all** — one that works only after a click is worse
+  than none, because the behaviour is then inconsistent in a way the user has
+  to learn. `Frame.hot` draws the whole border in the theme's accent colour
+  while the pointer is somewhere the window can be grabbed: the whole border,
+  because which side is already where the pointer is, and the thing worth
+  saying is that the window is grabbable at all. Drawn thicker with it (four
+  pixels against one, through `round_rect`'s `line_width` hint), which costs
+  the content nothing: the stroke insets by half its width, so it grows
+  *inward* from the same outer edge and stays inside the page margin the
+  content begins after.
+
+  puikit's diagonal resize cursors (PR #132) stay: they are right for any app
+  that *can* shape the pointer, which is any app whose window becomes key.
+- macOS gives the chooser a window shadow already (its panel mask is not
+  borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
+  is the other half of why the edge is drawn rather than asked for.
+- The chooser's *size* is remembered in `settings.json` (`runtime.settings`),
+  because the window is rebuilt per invocation and would otherwise undo every
+  resize. Its position is not: that is decided per invocation from the window it
+  opens over (issue #4), and where it should open is issue #118.
 
 ## Known limit
 

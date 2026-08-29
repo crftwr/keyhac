@@ -1,7 +1,9 @@
 """Persistent app settings - the keyhac2 analog of keyhac-win's keyhac.ini.
 
-A flat JSON dict of small UI-state values (currently the console window's
-visibility; PuiKit's frame autosave owns the window *geometry* separately).
+A flat JSON dict of small UI-state values (the console window's visibility,
+the size a chooser resize ended on; PuiKit's frame autosave owns the console's
+own *geometry* separately, and the chooser has none to autosave - it is a new
+window every time it opens).
 Writes are write-through: the file is tiny and changes are rare, so every
 changed set() rewrites it immediately - the state survives however the
 process later dies, which matters because quitting from the tray is not the

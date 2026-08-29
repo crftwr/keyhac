@@ -64,15 +64,45 @@ from keyhac.core.const import (
 from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
-from keyhac.ui.frame import Frame
+from keyhac.ui import runtime
+from keyhac.ui.frame import Frame, Separator
+from keyhac.ui.grips import MIN_UNITS, EdgeResizer
 
 logger = log.getLogger("Chooser")
 
-# The window's inner margin, shared by the magnifier<->field spacer so the
-# magnifier sits the same distance from the window edge and the field; and
-# the list frame's interior inset. Both collapse on a character grid.
+# The window's inner margin, which collapses on a character grid.
 _MARGIN_PX = 5
-_LIST_PAD_PX = 3
+
+#: How far the two ornaments in the search row - the magnifier and the scope
+#: switcher - stand off the window's *edge*, the page margin included.  The
+#: gap to the field beside them stays `_MARGIN_PX`, and the difference is the
+#: point: the field draws its own box with its own padding inside it, and the
+#: border is drawn in the margin, so two sides that measure the same do not
+#: look the same.  Both glyphs read as pushed against the frame until the
+#: outer side is about twice the inner one.
+_EDGE_GUTTER_PX = 10
+
+#: The window's own edge, drawn a half pixel inside the frame - far enough in
+#: that the stroke clears the corner the platform clips the window to, close
+#: enough that the line *is* the outermost thing the window draws rather than
+#: a second edge inside a rim of background.  The radius is the window's own,
+#: less the inset, so the line stays concentric with that corner; how round
+#: the corner is is the platform's fact and `WindowHandle.corner_radius_px`
+#: is where it is kept.
+_EDGE_INSET_PX = 0.5
+
+#: The window's size before anything has been remembered, in base units, and
+#: the ceiling a remembered one is clamped to - a settings file written by
+#: hand, or on a much larger screen, must not open a window that does not fit
+#: on this one.
+_DEFAULT_SIZE = (72, 20)
+_MAX_UNITS = (300, 100)
+
+#: Where a resize is kept between invocations.  The window is rebuilt every
+#: time it opens, so without this every resize is undone by the next press of
+#: the key that opened it.  Size only: *where* the window goes is decided per
+#: invocation from the window it opens over (issue #4).
+_SIZE_KEY = "chooser_size"
 
 #: How long one streaming slice may hold the main thread.  Small enough that a
 #: keystroke lands between slices; large enough that a cheap source finishes in
@@ -102,6 +132,29 @@ _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
     "cmd": MODKEY_CMD, "win": MODKEY_WIN,
 }
+
+
+def _remembered_size() -> tuple:
+    """The size the last resize left, or the default - clamped, because this
+    comes off disk and a window too small to read or too large for the screen
+    is one the user cannot undo from inside the window."""
+    store = getattr(runtime, "settings", None)
+    size = store.get(_SIZE_KEY) if store is not None else None
+    try:
+        width, height = int(size[0]), int(size[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return _DEFAULT_SIZE
+    return (max(int(MIN_UNITS[0]), min(width, _MAX_UNITS[0])),
+            max(int(MIN_UNITS[1]), min(height, _MAX_UNITS[1])))
+
+
+def _remember_size(width: float, height: float) -> None:
+    """Keep the size a resize ended on, for the next window (this one is
+    thrown away when it closes).  Silently nothing while running headless,
+    where there is no settings store to write to."""
+    store = getattr(runtime, "settings", None)
+    if store is not None:
+        store.set(_SIZE_KEY, [round(width), round(height)])
 
 
 class ChooserWindow:
@@ -160,10 +213,18 @@ class ChooserWindow:
         self._pointing_at = None
 
         self.window = backend.create_window(
-            72, 20, title=title,
+            *_remembered_size(), title=title,
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
                               activates=activates,
+                              # The drag is the window's own (the magnifier),
+                              # so the OS must not run one too: `frameless`
+                              # only *hides* the title bar the panel mask
+                              # forces, and AppKit goes on dragging the window
+                              # by it - which is the top edge, where the
+                              # resize gesture is. One press was moving the
+                              # window and resizing it at the same time.
+                              movable=activates,
                               # The panel's mask forces a title bar; frameless
                               # hides it and restores content == frame.
                               frameless=not activates,
@@ -180,9 +241,15 @@ class ChooserWindow:
         self.window.on_close = self._on_user_close
 
         # width is a cap, not a request: TextEdit draws at most `width` base
-        # units of its flex slot, so pass the full window width to let the
-        # field fill whatever the layout resolves (the window is not resizable).
-        self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
+        # units of its flex slot, so the cap is the widest window there can be
+        # rather than the one this is - the window resizes, and a field still
+        # capped at the width it opened with would stop short of its own box.
+        self._edit = TextEdit(text="", on_change=self._on_filter_change,
+                              width=_MAX_UNITS[0])
+        # Dragging the window's own edge resizes it, since a frameless window
+        # gets nothing from the window manager to drag (issue #117).
+        self._resizer = EdgeResizer(self.window, on_resized=_remember_size,
+                                    backend=backend)
         self._scopes = list(scopes) if scopes else []
         self._on_scope = on_scope
         self._scope = 0
@@ -191,24 +258,24 @@ class ChooserWindow:
         # current scope draws no badge: switching would otherwise have to
         # swap the list widget itself, and the badge is the first thing a
         # merged scope needs anyway.
-        if badge_of is None and not self._scopes:
-            self._list = ListView(self._labels(), ellipsis="…",
-                                  elide_where="end", allow_no_selection=True,
-                                  on_select=self._on_row_clicked)
-        else:
-            # Rows become widgets so each can carry its source beside it; the
-            # widget does its own eliding, which plain string rows get from
-            # ListView (see keyhac.ui.candidate_row).
-            from keyhac.ui.candidate_row import CandidateRow
-            self._list = ListView(
-                self._rows(), allow_no_selection=True,
-                on_select=self._on_row_clicked,
-                row_factory=lambda row: CandidateRow(*row))
+        # Every row is a widget, badge or no badge: it carries the source name
+        # beside it where there is one, and the air before the icon where
+        # there is not - and the list runs to the page's edge now, so a plain
+        # string row would start against the window.  It does its own eliding
+        # in exchange, which plain string rows got from ListView (see
+        # keyhac.ui.candidate_row).
+        from keyhac.ui.candidate_row import CandidateRow
+        self._list = ListView(
+            self._rows(), allow_no_selection=True,
+            on_select=self._on_row_clicked,
+            row_factory=lambda row: CandidateRow(*row))
 
-        # Kept, not inlined: the list is nested inside it, and focus is marked
-        # one level at a time - see _focus_list.
-        self._frame = Frame(VSplit(Item(self._list, weight=1)),
-                            margin_px=_LIST_PAD_PX)
+        # A plain pane, not a frame: the list needs no box of its own.  Kept
+        # rather than inlined, because focus is marked one level at a time -
+        # see _focus_list - and because the list runs to the page's edges,
+        # which is where its scrollbar then sits.
+        self._pane = LayoutView(VSplit(Item(self._list, weight=1)),
+                                margin_px=0)
 
         self.panel = Panel(backend, window=self.window)
         # align="center" sits the magnifier on the field's text line (the field
@@ -223,23 +290,43 @@ class ChooserWindow:
         # the whole of what makes a streaming source feel slow, rather than
         # the milliseconds.
         self._progress = Label("", style=_PROGRESS_STYLE)
+        # The magnifier is where a title bar would have put the drag handle,
+        # and a frameless window has no title bar to put one in (issue #117).
+        from keyhac.ui.grips import DragHandle
+        self._handle = DragHandle(self.window, "🔍", backend=backend)
         search_row = [
-            Item(Label("🔍"), size="content", align="center"),
+            Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
+            Item(self._handle, size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
-            Item(Label(""), size_px=_MARGIN_PX),
+            # No spacer of its own: the progress note is usually empty, and a
+            # spacer that stayed behind it would widen the gap the switcher
+            # keeps on its left.  It carries its own leading space instead.
             Item(self._progress, size="content", align="center"),
+            Item(Label(""), size_px=_EDGE_GUTTER_PX - _MARGIN_PX),
         ]
         if self._scopes:
-            search_row.append(Item(Label(""), size_px=_MARGIN_PX))
-            search_row.append(
-                Item(self._scope_label, size="content", align="center"))
+            search_row.insert(-1, Item(Label(""), size_px=_MARGIN_PX))
+            search_row.insert(
+                -1, Item(self._scope_label, size="content", align="center"))
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
-            Item(self._frame, weight=1),
+            # The one line worth drawing between the two: what the list's own
+            # frame was for, without the three sides of it that only repeated
+            # the window's border a few pixels further in.
+            Item(Separator(), size="content"),
+            Item(self._pane, weight=1),
             gap=0.3,
         )
-        self._page = LayoutView(page, margin_px=_MARGIN_PX)
+        # Frame, not LayoutView: the window is frameless, so the only edge it
+        # can have is one it draws.  Without it the popup reads as a floating
+        # rectangle of text over a light background rather than as a window.
+        # Rounded to whatever the platform clips this window's corners to,
+        # because a square line drawn at the window's extent loses exactly
+        # those four corners to the clip - which is what it did.
+        self._page = Frame(
+            page, margin_px=_MARGIN_PX, inset_px=_EDGE_INSET_PX,
+            radius_px=max(0.0, self.window.corner_radius_px - _EDGE_INSET_PX))
         self.panel.set_layout(VSplit(Item(self._page, weight=1)))
         self.panel.focus(self._page)
         self._focus_edit()
@@ -298,17 +385,10 @@ class ChooserWindow:
             y = max(sy, min(y, sy + sh - h))
         self.window.move_to_px(x, y)
 
-    def _labels(self):
-        return [candidate.label for candidate in self._filtered]
-
     def _rows(self):
         badge = self._badge_of
         return [(c.label, (badge(c) or "") if badge else "")
                 for c in self._filtered]
-
-    def _items_for_list(self):
-        plain = self._badge_of is None and not self._scopes
-        return self._labels() if plain else self._rows()
 
     # --- focus ------------------------------------------------------------
     #
@@ -335,8 +415,8 @@ class ChooserWindow:
         # Frame, so the page has to focus the frame and the frame the list -
         # naming the list to the page marks nothing, and the selection then
         # draws in the muted unfocused colour (grey) instead of the accent.
-        self._page.set_focused(self._frame)
-        self._frame.set_focused(self._list)
+        self._page.set_focused(self._pane)
+        self._pane.set_focused(self._list)
         self._list.selected = index
         self._point_at_selection()
 
@@ -429,7 +509,10 @@ class ChooserWindow:
 
     def _show_progress(self) -> None:
         """Say whether the list is still filling, and how far it has got."""
-        text = f"… {len(self._items)}" if self._pending is not None else ""
+        # The leading space is the note's own gap from the field: an empty
+        # note then takes no width at all, and the switcher beside it keeps
+        # the gutter it is supposed to have.
+        text = f"  … {len(self._items)}" if self._pending is not None else ""
         if self._progress.text != text:
             self._progress.text = text
             self.panel.render()
@@ -461,7 +544,7 @@ class ChooserWindow:
             else None
         offset = self._list.offset
         self._filtered = self._ranked(self._filtered + matched)
-        self._list.set_items(self._items_for_list())
+        self._list.set_items(self._rows())
         # set_items drops the viewport, so put it back first; then move the
         # selection, which scrolls itself into view if the row actually went
         # somewhere. Restoring in the other order would leave the selection
@@ -479,7 +562,7 @@ class ChooserWindow:
         self._match = self._matcher.compile(text)
         self._filtered = self._ranked(
             c for c in self._items if self._match.hit(c.match_text))
-        self._list.set_items(self._items_for_list())
+        self._list.set_items(self._rows())
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.
         self._list.selected = -1
@@ -557,6 +640,20 @@ class ChooserWindow:
                 # list did nothing at all, which reads as the window ignoring
                 # you: the query is right there on screen with a caret in it.
                 self._focus_edit()
+        elif self._resizer.handle(event):
+            # A press on the window's edge is a resize, so the Panel never
+            # sees it - which is also what keeps it from landing on the row
+            # or the field the edge is drawn beside.
+            self.panel.render()
+            return
+        elif event.type is EventType.MOUSE_MOVE:
+            # The edge is not a widget, so nothing hovers it and nothing would
+            # ask for its cursor; the frame that draws it asks on its behalf.
+            # The border, and nothing about the pointer's shape: macOS gives
+            # that to the key window, so a window that never becomes one
+            # could only change it after a click - an affordance that appears
+            # once you no longer need it is worse than none.
+            self._page.hot = self._resizer.edge_now(event.x, event.y) is not None
         self.panel.dispatch_event(event)
         self.panel.render()
 
