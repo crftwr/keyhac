@@ -453,6 +453,62 @@ found.
   raising (`ShellExecute` code 2), the full `Keymap.edit_config()` chain, and the
   deleted-config-recreated-from-template path.
 
+- **Candidate-window streaming, macOS** (PR #125, real `MacOSBackend`, not the
+  memory one). The measurement that mattered was of the *delivery*, not the walk:
+  a bare tick callback runs at the idle rate, **10.0 Hz measured** (median gap
+  100.0 ms), so `_drain`'s 2 ms slice is a 2% duty cycle. End to end, same window
+  and sources, before → after moving the accessibility walks to a worker:
+  Chrome menus **11,723 → 257 ms** (212 rows), VS Code menus 4,724 → 213,
+  iTerm2 menus 7,420 → 311, Chrome controls 9,544 → 342. First row 130 → ~60 ms.
+  A 212-row fill is 6 `_append` calls rather than 212. Dismissed 40 ms into a
+  walk: 0 rows landed afterwards and no worker thread survived.
+
+  What made the worker safe was measured rather than argued. **A frozen target
+  blocks only the worker**: against an application deliberately stopped on its
+  main thread, an AX call sat in the worker for 1.51 s — returning
+  `kAXErrorCannotComplete` on AX's own ~1.5 s messaging timeout — while the main
+  thread's Python throughput did not move (4.91M vs 5.0M iterations per half
+  second). **The contention runs the right way round**: a main thread busy with
+  Python starves the worker (149 AX calls/s against 24,400), not the reverse.
+  **Cost to the main thread** with the walk flat out: a hook-sized piece of work
+  goes from 0.06 ms median to 0.19 (p95 0.20, max 0.32). **One worker is the
+  right number**: six applications on six threads took 948 ms against 935 ms for
+  the same six in a row — the GIL is the ceiling, not the IPC wait. **No
+  autorelease pool needed**: RSS plateaus across 25 repeated walks with and
+  without one.
+
+  The rule that had ruled all this out was one level too broad — `platform/base.py`
+  says AX *into our own process* off the main thread SIGTRAPs, and design-notes
+  had generalised it. Both now say so.
+
+- **The chooser's keystrokes off the hook callback, macOS half** (PR #126, whose
+  own numbers were all measured on Windows and which says so). Verified here on
+  real hardware — real `MacOSBackend`, real `Keymap`, real `ChooserWindow`, keys
+  fed the way the hook feeds them — 7/7: keys are queued while the callback runs
+  and not acted on there; they land in order (`alp` from A, L, P) and filter;
+  five in a burst all land; a closing key is not followed by one acted on after
+  it; `dismiss()` drops what was queued. **The callback is 0.021 ms median with
+  8,000 candidates in the window.**
+
+  The macOS *before* figures, for comparison with the Windows table in #126 —
+  and the reason the two look so different is row length, not the platform:
+
+  | candidates | 45-char rows | 200-char | 800-char |
+  |---|---|---|---|
+  | 250 | 0.7 ms | 1.3 ms | 4.0 ms |
+  | 1,000 | 1.5 ms | 3.9 ms | 13.2 ms |
+  | 4,000 | 5.5 ms | 15.0 ms | 53.3 ms |
+  | 8,000 | 10.4 ms | 30.6 ms | 109.3 ms |
+
+  So Windows' 259 ms at 8,000 is not anomalous. macOS had more headroom than
+  Windows did — `kCGEventTapDisabledByTimeout` is less eager than a 300 ms
+  `LowLevelHooksTimeout` — but the shape is the same on both, and the deferral
+  is correct and harmless here. What makes deferring safe is not a macOS
+  property: `Keymap._on_key_down` returns True for a grab unconditionally,
+  without consulting the modal handler's return value, so the callback was
+  never deciding anything.
+
+
 ## The interactive pass before a release
 
 The genuinely-interactive checks were tracked in issue #10 and are all through
