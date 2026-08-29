@@ -135,7 +135,8 @@ specific ones override exactly the keys they bind.
 - **Key names**: letters, digits, punctuation (`Semicolon`, `Slash`,
   `OpenBracket`, …, plus JIS names like `Yen` and `Atmark`), `F1`–`F20` (to `F24`
   on Windows), the navigation cluster (`Left`, `Home`, `PageUp`, …), numpad
-  (`Num0`, `NumAdd`, …), `Kana`/`Eisu` (macOS), `Apps`/`PrintScreen`/`ScrollLock`/
+  (`Num0`, `NumAdd`, …), `Kana`/`Eisu`/`Menu`/`Help` (macOS — `Menu` is the
+  application key a PC keyboard sends), `Apps`/`PrintScreen`/`ScrollLock`/
   `Pause` (Windows), and the modifier keys themselves as primary keys (`LWin`,
   `RCmd`, …). Any unmapped key is expressible as its raw code: `"(124)"`.
 - **macOS Fn-arrow gotcha**: Apple keyboards translate `Fn-Left/Right/Up/Down` into
@@ -150,7 +151,7 @@ kt["Fn-J"] = "Left"                          # key -> key
 kt["Fn-N"] = "Cmd-1", "Cmd-2"                # key -> sequence
 kt["Fn-A"] = some_callable                   # key -> function / action object
 kt["Ctrl-X"] = kt_ctrlx                      # key -> multi-stroke table
-kt["O-RAlt"] = "Space"                       # one-shot
+kt["O-RCtrl"] = "Space"                      # one-shot
 ```
 
 Anything callable can be bound: a plain function, a lambda, or one of the action

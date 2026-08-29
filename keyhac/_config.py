@@ -4,8 +4,9 @@ This file is copied to ~/.keyhac/config.py on first run.  Edit that copy —
 Keyhac reloads it from the tray menu or the console's hook toggle.
 
 The same file runs on Windows and macOS.  Where the OSes genuinely differ,
-branch on `keymap.platform`; the two constants set up at the top (LEADER and
-MOD) absorb most of it.
+branch on `keymap.platform`; the two constants set up at the top (MOD1, the
+modifier this file claims for itself, and MOD2, the OS's own) absorb most of
+it.
 
 Everything here is a working example, not pseudo-code.  Delete what you do
 not want.  Every section has a fuller explanation — including the traps — in
@@ -20,6 +21,7 @@ logger = getLogger("Config")
 def configure(keymap):
 
     mac = keymap.platform == "mac"
+    win = keymap.platform == "windows"
 
     # ---- Setup -------------------------------------------------------
 
@@ -30,22 +32,25 @@ def configure(keymap):
     # left one becomes User0.  Win+L and Win+G still fire - the OS handles
     # those before any hook runs.  ("Remapping and user modifiers" in
     # doc/configuration.md.)
-    if not mac:
+    if win:
         keymap.replace_key("LWin", 235)     # 235, 255: unassigned key codes
         keymap.replace_key("RWin", 255)
         keymap.define_modifier(235, "User0")
 
     # --- the two portability constants ---------------------------------
-    # LEADER: the modifier most samples below hang off.  MOD: the OS's
-    # primary shortcut modifier, so one binding means Cmd-C on macOS and
-    # Ctrl-C on Windows.
-    LEADER = "Fn" if mac else "User0"
-    MOD = "Cmd" if mac else "Ctrl"
+    # MOD1 is yours: a modifier no application sees, which most of the
+    # samples below hang off.  MOD2 is the OS's primary shortcut modifier,
+    # so one binding means Cmd-C on macOS and Ctrl-C on Windows.
+    MOD1 = "Fn" if mac else "User0"
+    MOD2 = "Cmd" if mac else "Ctrl"
 
-    # --- swap a key entirely (uncomment to try) ------------------------
+    # --- swap a key entirely -------------------------------------------
     # replace_key runs before any key table, so the rest of the config only
-    # ever sees the replacement.
-    # keymap.replace_key("CapsLock", "LCtrl")
+    # ever sees the replacement.  Right Alt is a spare key on most keyboards,
+    # and a context menu key is missing from plenty of them.  Delete this if
+    # yours is an ISO layout: there the right Alt is AltGr, and typing @ or
+    # {} goes through it.
+    keymap.replace_key("RAlt", "Apps" if win else "Menu")
 
     # --- text editor for "Edit Config" ---------------------------------
     # Unset, a default is picked.  An application name, or a callable taking
@@ -61,27 +66,16 @@ def configure(keymap):
     kt = keymap.define_keytable(focus_path_pattern="*")
 
     # --- key -> key ----------------------------------------------------
-    # IJKL as arrow keys while LEADER is held.
-    kt[f"{LEADER}-I"] = "Up"
-    kt[f"{LEADER}-J"] = "Left"
-    kt[f"{LEADER}-K"] = "Down"
-    kt[f"{LEADER}-L"] = "Right"
-    kt[f"{LEADER}-U"] = "Home"
-    kt[f"{LEADER}-O"] = "End"
+    # IJKL as arrow keys while MOD1 is held.
+    kt[f"{MOD1}-I"] = "Up"
+    kt[f"{MOD1}-J"] = "Left"
+    kt[f"{MOD1}-K"] = "Down"
+    kt[f"{MOD1}-L"] = "Right"
+    kt[f"{MOD1}-U"] = "Home"
+    kt[f"{MOD1}-O"] = "End"
 
     # --- key -> sequence of keys ---------------------------------------
-    kt[f"{LEADER}-A"] = "Home", "Shift-End"        # select the whole line
-
-    # --- one-shot: tap for one key, hold to modify ---------------------
-    # Held, the key is still its modifier; only a lone tap-and-release
-    # fires.  Pick one where a stray tap is harmless.
-    if mac:
-        # Tap either Cmd alone for Eisu/Kana (IME off/on).  Both names work
-        # on Windows too, so this pair is portable if you want it there.
-        kt["O-LCmd"] = "Eisu"
-        kt["O-RCmd"] = "Kana"
-    else:
-        kt["O-RCtrl"] = "Win-S"                    # Start-menu search
+    kt[f"{MOD1}-A"] = "Home", "Shift-End"        # select the whole line
 
     # --- key -> your own function --------------------------------------
     def hello():
@@ -89,23 +83,29 @@ def configure(keymap):
         print("Hello from config.py")
         logger.info(f"platform={keymap.platform}")
 
-    kt[f"{LEADER}-H"] = hello
+    kt[f"{MOD1}-H"] = hello
 
     # --- typing literal text -------------------------------------------
     # InputText injects the characters themselves, so they land whatever the
     # IME is doing.
-    kt[f"{LEADER}-Semicolon"] = InputText("me@example.com")
+    kt[f"{MOD1}-Semicolon"] = InputText("me@example.com")
 
     # --- sending keys from your own function ---------------------------
     # One context batches the whole burst.  It is safe from a worker thread
     # as well (see ThreadedAction below).
     def duplicate_line():
         with keymap.get_input_context() as ctx:
-            for key in ("Home", "Shift-End", f"{MOD}-C",
-                        "End", "Enter", f"{MOD}-V"):
+            for key in ("Home", "Shift-End", f"{MOD2}-C",
+                        "End", "Enter", f"{MOD2}-V"):
                 ctx.send_key(key)
 
-    kt[f"{LEADER}-Q"] = duplicate_line
+    kt[f"{MOD1}-Q"] = duplicate_line
+
+    # --- one-shot: tap for one key, hold to modify ---------------------
+    # Held, the key is still its modifier; only a lone tap-and-release
+    # fires.  Pick one where a stray tap is harmless: here the right Cmd
+    # (right Ctrl on Windows), tapped alone, opens a terminal.
+    kt[f"O-R{MOD2}"] = LaunchApplication("Terminal.app" if mac else "wt.exe")
 
     # ---- IME ---------------------------------------------------------
 
@@ -126,13 +126,13 @@ def configure(keymap):
         if not keymap.set_ime_status(not status):
             logger.warning("The IME did not take the change.")
 
-    kt[f"{LEADER}-Space"] = toggle_ime
+    kt[f"{MOD1}-Space"] = toggle_ime
 
     # ---- Clipboard ---------------------------------------------------
 
     # --- history, in a chooser window ----------------------------------
     # Enter pastes; Shift-Enter only sets the clipboard.  Type to filter.
-    kt[f"{LEADER}-V"] = ShowClipboardHistory()
+    kt[f"{MOD1}-V"] = ShowClipboardHistory()
 
     # --- fixed snippets -------------------------------------------------
     # (icon, label) | (icon, label, text) | (icon, label, callable)
@@ -142,7 +142,7 @@ def configure(keymap):
         ("🕒", "Date", DateTimeSnippet("%Y-%m-%d")),
         ("🕒", "For filenames", DateTimeSnippet("%Y%m%d_%H%M%S")),
     ]
-    kt[f"{LEADER}-Shift-V"] = ShowClipboardSnippets(snippets)
+    kt[f"{MOD1}-Shift-V"] = ShowClipboardSnippets(snippets)
 
     # --- transform whatever is on the clipboard -------------------------
     # A tool is any callable taking the clipboard text and returning the
@@ -154,7 +154,7 @@ def configure(keymap):
         ("🔄", "Half width", ShowClipboardTools.to_half_width),
         ("🔄", "Full width", ShowClipboardTools.to_full_width),
     ]
-    kt[f"{LEADER}-Ctrl-V"] = ShowClipboardTools(tools)
+    kt[f"{MOD1}-Ctrl-V"] = ShowClipboardTools(tools)
 
     # ---- One window over several sources -----------------------------
 
@@ -193,7 +193,7 @@ def configure(keymap):
     # the scope holding it is opened, so the expensive ones get a scope of
     # their own.  They stream: the first rows are on screen while the rest
     # are still being read.
-    kt[f"{LEADER}-P"] = ShowCandidates([            # P for palette
+    kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
         Scope("All", [clipboard, snippet_source, keys, actions]
               + ([menus] if mac else [])),
         Scope("Clipboard", [clipboard, snippet_source]),
@@ -208,14 +208,14 @@ def configure(keymap):
     # A source does not have to be a class - a plain callable works when
     # there is one thing to do with every row:
     #
-    #     kt[f"{LEADER}-G"] = ShowCandidates(
+    #     kt[f"{MOD1}-G"] = ShowCandidates(
     #         lambda: [Candidate(display=b) for b in git_branches()],
     #         on_chosen=lambda c, mod: checkout(c.display))
 
     # ---- Windows and applications ------------------------------------
 
     # Apple keyboards translate Fn-Arrow into Home/End/PageUp/PageDown in
-    # hardware, so with LEADER = Fn the "...-Left" spellings never fire on
+    # hardware, so with MOD1 = Fn the "...-Left" spellings never fire on
     # macOS - bind the keys that actually arrive.  Ctrl/Alt rather than
     # Shift, because Fn-Shift-Arrow is how you select text on a Mac laptop.
     LEFT, RIGHT, UP, DOWN = (("Home", "End", "PageUp", "PageDown") if mac
@@ -226,9 +226,9 @@ def configure(keymap):
     # when already there).  Delete a line to drop that direction.
     for key, direction in ((LEFT, "left"), (RIGHT, "right"),
                            (UP, "up"), (DOWN, "down")):
-        kt[f"{LEADER}-Ctrl-{key}"] = MoveWindow(direction=direction,
+        kt[f"{MOD1}-Ctrl-{key}"] = MoveWindow(direction=direction,
                                                 distance=20)
-        kt[f"{LEADER}-Alt-{key}"] = MoveWindow(direction=direction,
+        kt[f"{MOD1}-Alt-{key}"] = MoveWindow(direction=direction,
                                                distance=9999,
                                                window_edge=True,
                                                screen_edge=True)
@@ -236,18 +236,18 @@ def configure(keymap):
     # --- snap to screen regions (tiling) --------------------------------
     # Inside the work area, so the menu bar, Dock and taskbar stay
     # uncovered.  ratio= picks a different split, e.g. ratio=2/3.
-    kt[f"{LEADER}-Ctrl-J"] = SnapWindow("left")
-    kt[f"{LEADER}-Ctrl-L"] = SnapWindow("right")
-    kt[f"{LEADER}-Ctrl-I"] = SnapWindow("top")
-    kt[f"{LEADER}-Ctrl-K"] = SnapWindow("bottom")
-    kt[f"{LEADER}-F"] = SnapWindow("full")
+    kt[f"{MOD1}-Ctrl-J"] = SnapWindow("left")
+    kt[f"{MOD1}-Ctrl-L"] = SnapWindow("right")
+    kt[f"{MOD1}-Ctrl-I"] = SnapWindow("top")
+    kt[f"{MOD1}-Ctrl-K"] = SnapWindow("bottom")
+    kt[f"{MOD1}-F"] = SnapWindow("full")
 
-    # --- bring an application forward, or launch one --------------------
+    # --- bring an application forward -----------------------------------
     # Matches like the focus conditions below: wildcards, "|" alternation,
-    # case-insensitive, ".exe" optional.
-    kt[f"{LEADER}-1"] = ActivateWindow(app="code|Visual Studio Code")
-    kt[f"{LEADER}-2"] = ActivateWindow(app="chrome|Google Chrome")
-    kt[f"{LEADER}-T"] = LaunchApplication("Terminal.app" if mac else "wt.exe")
+    # case-insensitive, ".exe" optional.  (LaunchApplication, which starts one
+    # instead, is the one-shot example above.)
+    kt[f"{MOD1}-1"] = ActivateWindow(app="code|Visual Studio Code")
+    kt[f"{MOD1}-2"] = ActivateWindow(app="chrome|Google Chrome")
 
     # --- inspect windows yourself ---------------------------------------
     # get_active_window() / find_window() / list_windows() return portable
@@ -259,12 +259,12 @@ def configure(keymap):
         if window is not None:
             window.minimize()
 
-    kt[f"{LEADER}-M"] = minimize_window
+    kt[f"{MOD1}-M"] = minimize_window
 
     # ---- Keyboard macros ---------------------------------------------
 
-    kt[f"{LEADER}-OpenBracket"] = ToggleRecordingKeys()    # record on/off
-    kt[f"{LEADER}-CloseBracket"] = PlaybackRecordedKeys()  # replay
+    kt[f"{MOD1}-OpenBracket"] = ToggleRecordingKeys()    # record on/off
+    kt[f"{MOD1}-CloseBracket"] = PlaybackRecordedKeys()  # replay
     # StartRecordingKeys() / StopRecordingKeys() exist too.
 
     # ---- Background work: ThreadedAction -----------------------------
@@ -291,26 +291,17 @@ def configure(keymap):
         def finished(self, result):
             logger.info(f"Typed {result} characters.")
 
-    kt[f"{LEADER}-Y"] = TypeSlowly("keyhac")
-
-    # --- an action written for you by an agent -------------------------
-    # It goes in ~/.keyhac/extensions/ as its own module, and while the MCP
-    # endpoint is on (AI Integration > MCP Server in the tray menu) an agent
-    # writes and runs it there without touching this file.  Two lines put it
-    # on a key of your own:
-    #
-    #     import open_issues                            # from extensions/
-    #     kt[f"{LEADER}-N"] = open_issues.OpenIssues()
+    kt[f"{MOD1}-Y"] = TypeSlowly("keyhac")
 
     # ---- Multi-stroke key tables -------------------------------------
 
-    # Press LEADER-X, then a second key.  A balloon shows the table's name
+    # Press MOD1-X, then a second key.  A balloon shows the table's name
     # while it is armed.
-    kt_x = keymap.define_keytable(name="LEADER-X")
-    kt[f"{LEADER}-X"] = kt_x
-    kt_x["C"] = f"{MOD}-C"
-    kt_x["V"] = f"{MOD}-V"
-    kt_x["S"] = f"{MOD}-S"
+    kt_x = keymap.define_keytable(name=f"{MOD1}-X")
+    kt[f"{MOD1}-X"] = kt_x
+    kt_x["C"] = f"{MOD2}-C"
+    kt_x["V"] = f"{MOD2}-V"
+    kt_x["S"] = f"{MOD2}-S"
 
     # --- balloon messages of your own ------------------------------------
     def show_balloon():
@@ -319,7 +310,7 @@ def configure(keymap):
         if pop:
             pop("hello", "Keyhac is running", 2.0)
 
-    kt[f"{LEADER}-B"] = show_balloon
+    kt[f"{MOD1}-B"] = show_balloon
 
     # ---- Application-specific key tables -----------------------------
     # Merged in definition order, later ones win, so anything below
@@ -327,15 +318,15 @@ def configure(keymap):
 
     # --- by application name (portable) ----------------------------------
     kt_browser = keymap.define_keytable(app="chrome|Google Chrome|firefox|Safari")
-    kt_browser[f"{LEADER}-R"] = f"{MOD}-R"          # reload
+    kt_browser[f"{MOD1}-R"] = f"{MOD2}-R"          # reload
 
     # --- by window title -------------------------------------------------
     # kt_docs = keymap.define_keytable(title="*Google Docs*")
 
     # --- by Win32 window class (Windows only) -----------------------------
-    if not mac:
+    if win:
         kt_notepad = keymap.define_keytable(app="notepad", class_name="Edit")
-        kt_notepad[f"{LEADER}-D"] = "Home", "Shift-Down", "Shift-End", "Delete"
+        kt_notepad[f"{MOD1}-D"] = "Home", "Shift-Down", "Shift-End", "Delete"
 
     # --- by focus path ----------------------------------------------------
     # The control hierarchy down to the focused element - watch the console's
@@ -344,7 +335,7 @@ def configure(keymap):
     # a name, so "*/Edit()" would only match unnamed ones.
     kt_textarea = keymap.define_keytable(
         focus_path_pattern="*/AXTextArea(*)" if mac else "*/Edit(*)")
-    kt_textarea[f"{LEADER}-Slash"] = InputText("# ")
+    kt_textarea[f"{MOD1}-Slash"] = InputText("# ")
 
     # --- by your own test -------------------------------------------------
     # custom_condition_func receives the portable Focus object: app_name,
@@ -358,12 +349,22 @@ def configure(keymap):
                                   "powershell", "pwsh")
 
     kt_terminal = keymap.define_keytable(custom_condition_func=is_terminal)
-    kt_terminal[f"{LEADER}-K"] = "Ctrl-K"     # clear, rather than "Down"
+    kt_terminal[f"{MOD1}-K"] = "Ctrl-K"     # clear, rather than "Down"
+
+    # ---- An action written for you by an agent ------------------------
+    # It goes in ~/.keyhac/extensions/ as its own module, and while the MCP
+    # endpoint is on (AI Integration > MCP Server in the tray menu) an agent
+    # writes and runs it there without touching this file.  Two lines put it
+    # on a key of your own:
+    #
+    #     import open_issues                            # from extensions/
+    #     kt[f"{MOD1}-N"] = open_issues.OpenIssues()
 
     # ---- More to explore ---------------------------------------------
     # keymap.focus            - the current Focus (app_name, window_title,
     #                           class_name, path, element, native)
-    # keymap.replay_buffer    - the macro buffer behind the record actions
+    # keymap.replay_buffer    - the macro buffer: .clear() and .max_seq
+    #                           have no action of their own
     # keymap.clipboard_history.items() / set_current(text)
     #
     # Full reference: doc/configuration.md in the Keyhac 2 source tree.

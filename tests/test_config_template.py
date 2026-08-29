@@ -79,7 +79,7 @@ def test_a_text_area_is_not_a_terminal(shipped):
     "Document")` when the application name did not match. `AXTextArea` means
     "multi-line text control", not "terminal": it caught the VS Code editor and
     every chat box on the machine, and *missed* VS Code's own integrated
-    terminal, which is an AXTextField. Since the sample rebinds `LEADER-K`
+    terminal, which is an AXTextField. Since the sample rebinds `MOD1-K`
     inside that table, a fresh install turned `Fn-K` into `Ctrl-K` everywhere
     text is typed and left it alone in an actual terminal.
     """
