@@ -470,7 +470,28 @@ class TestNarrowingToOneSource:
         _action, chooser = self._open()
         self._type(chooser, "@to")
         self._tab(chooser)
-        assert chooser._edit.text == "@Tool"
+        assert chooser._edit.text == "@Tool "
+
+    def test_a_finished_name_gets_a_space_to_type_on_from(self, ui_backend):
+        """One name left means the token is done, so the search terms follow
+        immediately - without a space the user has to reach for first."""
+        _action, chooser = self._open()
+        self._type(chooser, "@to")
+        self._tab(chooser)
+        self._type(chooser, "ham")
+        assert chooser._edit.text == "@Tool ham"
+        assert [c.display for c in chooser._filtered] == ["hammer"]
+
+    def test_the_space_is_not_doubled(self, ui_backend):
+        """Tab on a token that already has the rest of the query after it
+        completes the name and stops there - the space it would have added
+        is the one already in the field."""
+        _action, chooser = self._open()
+        self._type(chooser, "@to apr")
+        chooser._edit.cursor = 3        # back inside the `@to` token
+        self._tab(chooser)
+        assert chooser._edit.text == "@Tool apr"
+        assert chooser._edit.cursor == 5
 
     def test_tab_stops_at_the_common_prefix(self, ui_backend):
         from keyhac.actions import ChooserAction, ShowCandidates

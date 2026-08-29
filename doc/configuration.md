@@ -421,7 +421,8 @@ scarce thing here, but it is yours to spend.
 
 Inside whichever page you are on, type `@` and a source name — `@Clip`,
 `@Menu`, `@Key` — to see only that source's rows. `Tab` extends what you have
-typed as far as it is sure of.
+typed as far as it is sure of, and adds a space once one name is left, so the
+rest of the query follows straight on.
 
 The names are the ones already shown beside each row, so there is nothing to
 memorise, and a name that is not on this page simply matches nothing. The rest
