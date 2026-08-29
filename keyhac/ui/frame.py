@@ -11,6 +11,13 @@ _BORDER_STYLE = Style(fg=(120, 120, 132))
 #: this is the same statement: what the pointer is on is live.
 _HOT_FALLBACK = (0, 122, 204)
 
+#: How thick that border is drawn while it is hot, in device pixels, against
+#: the one pixel it is drawn at otherwise.  It costs the content nothing: the
+#: stroke is inset by half its width, so it grows *inward* from the same outer
+#: edge, and four pixels is still inside the page margin the content starts
+#: after - the layout does not move, and neither does anything under it.
+_HOT_PX = 4.0
+
 
 class Frame(LayoutView):
     """A LayoutView that draws a clear border line around its own extent.
@@ -61,27 +68,30 @@ class Frame(LayoutView):
         self._reserve_stroke(ctx)
         return super().measure(ctx, axis, available)
 
-    def line(self, ctx) -> Style:
-        """The border's style now: the accent while the pointer is somewhere
-        the window can be grabbed, its own line otherwise.
+    def line(self, ctx) -> tuple:
+        """The border's style and stroke width now: the accent, drawn thicker,
+        while the pointer is somewhere the window can be grabbed - its own
+        quiet line at one pixel otherwise.
 
         lazydocs: ignore
         """
         if not self.hot:
-            return self.line_style
+            return self.line_style, None
         accent = getattr(ctx.theme, "accent", None) if ctx.theme else None
-        return Style(fg=accent or _HOT_FALLBACK)
+        return Style(fg=accent or _HOT_FALLBACK), {"line_width": _HOT_PX}
 
     def draw(self, ctx) -> None:
         self._reserve_stroke(ctx.layout_context())
-        line = self.line(ctx)
+        line, hints = self.line(ctx)
         if self.radius_px and ctx.pixel_layout:
             bw, bh = ctx.base_pixel_size
             ix = self.inset_px / bw if bw else 0.0
             iy = self.inset_px / bh if bh else 0.0
             w, h = ctx.size_units
             ctx.round_rect(ix, iy, w - 2 * ix, h - 2 * iy,
-                           line, radius=self.radius_px)
+                           line, radius=self.radius_px, hints=hints)
         else:
+            # A character grid's stroke is one cell and has no other width to
+            # be drawn at; the colour is the whole of what changes there.
             ctx.draw_border(line)
         super().draw(ctx)

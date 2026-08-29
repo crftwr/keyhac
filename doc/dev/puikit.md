@@ -133,9 +133,11 @@ Keyhac2-side usage notes:
   to learn. `Frame.hot` draws the whole border in the theme's accent colour
   while the pointer is somewhere the window can be grabbed: the whole border,
   because which side is already where the pointer is, and the thing worth
-  saying is that the window is grabbable at all — and colour only, since a
-  border that also thickened would move the content under it and the window
-  would twitch on every hover.
+  saying is that the window is grabbable at all. Drawn thicker with it (four
+  pixels against one, through `round_rect`'s `line_width` hint), which costs
+  the content nothing: the stroke insets by half its width, so it grows
+  *inward* from the same outer edge and stays inside the page margin the
+  content begins after.
 
   puikit's diagonal resize cursors (PR #132) stay: they are right for any app
   that *can* shape the pointer, which is any app whose window becomes key.

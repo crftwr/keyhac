@@ -633,9 +633,44 @@ class TestTheBorderSaysItInTheAccentColour:
         accent = chooser.panel.theme.accent
         assert chooser.window.style_at(0, 0).fg == accent
 
-    def test_the_thickness_does_not_change(self, ui_backend):
-        # Colour alone: a border that also grew would move the content under
-        # it, and the window would twitch on every hover.
+    def test_it_is_drawn_thicker_without_moving_anything(self, ui_backend):
+        # The stroke is inset by half its width, so a thicker one grows
+        # inward from the same outer edge - and four pixels is still inside
+        # the page margin the content starts after. The rectangle asked for
+        # is the same one; only the width of the line drawn on it changes.
+        from puikit import PROFILE_GUI_DESKTOP
+        from puikit.backends.memory_backend import MemoryBackend
+        from puikit.capability import CapabilityProfile
+        from puikit.backends import memory_backend as mb
+
+        class VectorBackend(MemoryBackend):
+            @property
+            def capabilities(self):
+                return CapabilityProfile({**PROFILE_GUI_DESKTOP,
+                                          "vector_shapes": True})
+
+        backend = VectorBackend(width=100, height=30,
+                                capabilities=PROFILE_GUI_DESKTOP)
+        backend.open()
+        runtime.backend = backend
+        saved = mb._MemoryWindowHandle.corner_radius_px
+        mb._MemoryWindowHandle.corner_radius_px = property(lambda self: 15.0)
+        try:
+            chooser = _chooser(backend)
+            cold = backend.round_rect_calls[0]
+            backend.round_rect_calls.clear()
+            self._hot(chooser, 71.5, 10.0)
+            hot = backend.round_rect_calls[0]
+        finally:
+            mb._MemoryWindowHandle.corner_radius_px = saved
+            runtime.backend = ui_backend
+            backend.close()
+        assert hot[:5] == cold[:5], "the border moved instead of thickening"
+        assert cold[6].get("line_width") in (None, 1.0)
+        assert hot[6]["line_width"] == 4.0
+
+    def test_a_character_grid_only_changes_colour(self, ui_backend):
+        # Its stroke is one cell and has no other width to be drawn at.
         chooser = _chooser(ui_backend)
         before = ["".join(row) for row in chooser.window.snapshot()]
         self._hot(chooser, *RIGHT)
