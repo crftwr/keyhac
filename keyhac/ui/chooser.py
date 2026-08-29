@@ -178,8 +178,8 @@ class ChooserWindow:
     pending: an iterator of further rows, drained a slice at a time between
     renders.  None for a window whose rows are all already known.
 
-    scopes: names of the scopes Tab / Shift-Tab move between, or None for a
-    window with only one.  `on_scope(index)` is asked for the rows of the
+    scopes: names of the scopes, or None for a window with only one.  Tab
+    completes one by name; Shift-Tab with nothing typed offers them all.  `on_scope(index)` is asked for the rows of the
     scope being moved to, as `(candidates, badge_of)`.  **The query survives
     the move** - that is the whole reason the switch is a key rather than a
     typed prefix, and a prefix could not do it without the user editing the
@@ -259,6 +259,7 @@ class ChooserWindow:
         # units of its flex slot, so the cap is the widest window there can be
         # rather than the one this is - the window resizes, and a field still
         # capped at the width it opened with would stop short of its own box.
+        self._completion = None     # built below, once _edit exists
         self._edit = TextEdit(text="", on_change=self._on_filter_change,
                               width=_MAX_UNITS[0])
         # Dragging the window's own edge resizes it, since a frameless window
@@ -296,6 +297,14 @@ class ChooserWindow:
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
         # and the search-row/list gap collapse to nothing on a character grid.
+        # Tab completes a scope name rather than stepping to the next one.
+        # Stepping is the wrong shape past three: reaching the fourth means
+        # pressing Tab three times and reading the label each time, and the
+        # shipped config offers eight. Typed toward, the question "how many
+        # more presses" does not arise.
+        from keyhac.ui.completion import Completion
+        self._completion = Completion(self._edit, self._scope_matches)
+
         from keyhac.ui.scope_switcher import ScopeSwitcher
         self._scope_label = ScopeSwitcher(
             self._scope_name(), on_switch=self._switch_clicked)
@@ -445,6 +454,89 @@ class ChooserWindow:
         badge = self._badge_of
         return [(c.label, (badge(c) or "") if badge else "")
                 for c in self._filtered]
+
+    # --- completing a scope ------------------------------------------------
+
+    def _scope_matches(self, token: str):
+        """The scope names a token could mean, current one excluded.
+
+        Matched through the window's own matcher, so a scope is reached the
+        same way a row is - wildcards, and Migemo where the name is not
+        typeable without an input method. The chooser gave its input method
+        up, so a scope named in Japanese is otherwise unreachable, which is
+        the same argument that made Migemo a dependency for the rows.
+
+        **Anchored, unlike a row.** Filtering rows is a substring question;
+        completing is a prefix one, and the two disagree loudly: `c` finds
+        "Actions" as a substring, which then has no common prefix with
+        "Clipboard" for Tab to insert. So a name counts only when the match
+        lands at its start - `Match.spans` is what says where, and the same
+        reading `Match.rank` already uses for its best bucket.
+        """
+        names = [name for index, name in enumerate(self._scopes)
+                 if index != self._scope]
+        if not token:
+            return names
+        match = self._matcher.compile(token)
+        hits = []
+        for name in names:
+            if not match.hit(name):
+                continue
+            spans = match.spans(name)
+            # No spans at all means a matcher that cannot localise its hit,
+            # and that is a valid answer: take it rather than drop the name.
+            if spans and spans[0][0] != 0:
+                continue
+            hits.append(name)
+        return hits
+
+    def _scope_rows(self):
+        return [(name, "") for name in self._completion.candidates]
+
+    def _sync_list(self) -> None:
+        """Put whichever list is current into the widget.
+
+        The scope candidates borrow the window's own list rather than opening
+        a second one: it is already a list being chosen from with the same
+        keys, and a picker that grows a different picker to pick with is one
+        more thing to explain. Rows arriving from a streaming source keep
+        accumulating underneath and are back the moment the completion ends.
+        """
+        if self._completion is not None and self._completion.active:
+            self._list.set_items(self._scope_rows())
+            self._list.selected = self._completion.focused_index
+        else:
+            self._list.set_items(self._rows())
+
+    def _complete_scope(self, forward: bool = True) -> None:
+        """Tab: advance the completion, and commit as soon as it is decided."""
+        if len(self._scopes) < 2 or self._on_scope is None:
+            return
+        if not self._completion.on_tab(forward):
+            return
+        if not self._completion.active and self._completion.candidates:
+            # One match is an answer, not a list.
+            self._commit_scope(self._completion.candidates[0])
+            return
+        self._sync_list()
+
+    def _open_scope_list(self) -> None:
+        """Shift-Tab with nothing open: everything, whatever is typed."""
+        if len(self._scopes) < 2 or self._on_scope is None:
+            return
+        if self._completion.open_all():
+            self._sync_list()
+
+    def _commit_scope(self, name: str) -> None:
+        """Switch to `name` and take its token back out of the query."""
+        self._completion.dismiss()
+        self._completion.take_token()
+        try:
+            index = self._scopes.index(name)
+        except ValueError:
+            self._sync_list()
+            return
+        self.switch_scope(index - self._scope)
 
     # --- focus ------------------------------------------------------------
     #
@@ -682,6 +774,10 @@ class ChooserWindow:
             else None
         offset = self._list.offset
         self._filtered = self._ranked(self._filtered + matched)
+        if self._completing:
+            # The rows go on accumulating; the list on screen belongs to the
+            # completion until it ends.
+            return
         self._list.set_items(self._rows())
         # set_items drops the viewport, so put it back first; then move the
         # selection, which scrolls itself into view if the row actually went
@@ -700,7 +796,10 @@ class ChooserWindow:
         self._match = self._matcher.compile(text)
         self._filtered = self._ranked(
             c for c in self._items if self._match.hit(c.match_text))
-        self._list.set_items(self._rows())
+        if self._completing:
+            # Typing narrows the scope list the same way it narrows the rows.
+            self._completion.on_text_changed()
+        self._sync_list()
         # A changed query re-proposes nothing: the focus is in the field, so
         # the list goes back to showing no selection.
         self._list.selected = -1
@@ -748,11 +847,32 @@ class ChooserWindow:
             if event.key == "tab":
                 # Intercepted before the Panel, which would otherwise spend it
                 # on focus traversal between the field and the list.
-                self.switch_scope(-1 if "shift" in event.modifiers else 1)
+                if "shift" in event.modifiers and not self._completing:
+                    # Nothing open, so there is nothing to step backwards
+                    # through: read it as "show me what there is".
+                    self._open_scope_list()
+                else:
+                    self._complete_scope("shift" not in event.modifiers)
                 self.panel.render()
                 return
             if event.key == "escape":
+                if self._completing:
+                    # One layer at a time: the list the user opened closes
+                    # first, and the window only on the Escape after it.
+                    self._completion.dismiss()
+                    self._sync_list()
+                    self.panel.render()
+                    return
                 self._finish(None, 0)
+                return
+            if event.key == "enter" and self._completing:
+                self._commit_scope(self._completion.accept())
+                self.panel.render()
+                return
+            if event.key in ("up", "down") and self._completing:
+                self._completion.move_focus(1 if event.key == "down" else -1)
+                self._sync_list()
+                self.panel.render()
                 return
             if event.key == "enter":
                 # With the focus in the field nothing is selected, and Enter
@@ -799,6 +919,11 @@ class ChooserWindow:
             self._page.hot = self._resizer.edge_now(event.x, event.y) is not None
         self.panel.dispatch_event(event)
         self.panel.render()
+
+    @property
+    def _completing(self) -> bool:
+        """Whether the scope list is open and owns the keys."""
+        return self._completion is not None and self._completion.active
 
     def _navigate(self, key: str) -> None:
         if not self._filtered:

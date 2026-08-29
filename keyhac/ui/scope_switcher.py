@@ -1,6 +1,6 @@
 """The scope indicator at the right of the filter field: `‹ Name ›`.
 
-The arrows carry two jobs. A key-driven switch (Tab / Shift-Tab) has no
+The arrows carry two jobs. A key-driven switch (Tab completes a name) has no
 visible affordance of its own, so they are what says one exists at all - the
 discoverability cost of preferring a key over a typed prefix, paid back. And
 they are clickable, for the moment the pointer is already in hand: the

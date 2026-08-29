@@ -192,12 +192,23 @@ def as_source(source: Any, name: str = "",
 class Scope:
     """A named set of sources the candidate window can switch between.
 
-    One key opens the window; Tab and Shift-Tab move along the cycle, and the
-    query survives the move - type `kensaku`, then look for it somewhere else
-    without retyping it. That is the thing a typed prefix (`>`, `@`) cannot
-    do, and the reason the switch is a key rather than a sigil. The other
-    reason is that with Migemo the query alphabet is exactly ASCII, so a sigil
-    sits in the middle of what the user is trying to type.
+    One key opens the window, and **Tab completes a scope by name**: type
+    enough of one and Tab goes there, `Shift-Tab` offers the whole list.
+    Stepping to the next scope instead is the wrong shape past three of them,
+    since reaching the fourth means pressing Tab three times and reading the
+    label each time.
+
+    The query survives the move - type `kensaku`, add a scope name, and Tab
+    takes the name back out and leaves the query behind. That is the thing a
+    typed prefix (`>`, `@`) cannot do, and the reason a completed name is not
+    left sitting in the field. The other reason a sigil is wrong is that with
+    Migemo the query alphabet is exactly ASCII, so one sits in the middle of
+    what the user is trying to type.
+
+    Name them so they can be *typed*: the names are matched by the window's
+    own matcher, so a scope named where an input method would be needed is
+    reachable only as far as Migemo reaches - the same argument that made
+    Migemo a dependency for the rows.
 
     Scopes are also how an *expensive* source stays affordable. A source that
     walks the accessibility tree costs a real traversal every time the window

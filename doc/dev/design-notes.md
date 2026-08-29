@@ -470,13 +470,47 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Candidate scopes
 
-- **The switch is a key (Tab / Shift-Tab), not a typed prefix**, for one
-  reason that a prefix cannot match: *the query survives the move*. Type
-  `kensaku`, cycle, and look for the same thing somewhere else without editing
-  what you already typed. The second reason is that with Migemo the query
-  alphabet is exactly ASCII, so a `>` or `@` sigil sits in the middle of what
-  the user is trying to type — the same collision the discussion notes between
-  letter labels and romaji filtering.
+- **Tab completes a scope by name; it does not step to the next one.** The
+  cycle was the right shape for two or three and the wrong one for eight,
+  which is what the shipped config offers: reaching the fourth meant pressing
+  Tab three times and reading the label each time, and nothing on screen said
+  how many more presses a named scope was away. Typed toward, that question
+  does not arise — and "show me the list" stops needing a permanent widget,
+  because an ambiguous Tab produces one.
+- **The completed name does not stay in the field.** A path completes into the
+  text because the text is the answer; a scope completes into a change of what
+  the window is showing, so committing one takes the token back out. That is
+  what keeps *the query surviving the move* — the invariant the cycle had, and
+  the reason a typed sigil (`>`, `@`) was rejected: `save menu` + Tab leaves
+  `save` behind and moves to Menus. The other reason a sigil is wrong is
+  unchanged: with Migemo the query alphabet is exactly ASCII, so one sits in
+  the middle of what the user is trying to type.
+- **Completion acts on the word under the caret**, which is what lets the rest
+  of the query survive without any special case.
+- **The span is remembered, not recomputed.** A completed name may contain a
+  space — `Tools only` from `too` is two words — and asking afterwards which
+  word the caret is in answers "only" and takes back half a name. So the
+  controller records where the token began.
+- **Scope names are matched by the window's own matcher**, so wildcards and
+  Migemo work on them exactly as on rows. That is not a flourish: the chooser
+  gave up its input method, so a scope named in Japanese is otherwise
+  unreachable — the same argument that made Migemo a dependency in the first
+  place. It does mean a config author's scope names are now a typed
+  vocabulary, and two scopes sharing a prefix cost a keystroke.
+- **The shape is XeFM's** (`xefm/completion.py`), ported rather than shared:
+  longest common prefix on Tab, a list when more than one thing could still be
+  meant, "a second Tab" stepping the highlight. What is dropped is its
+  threaded fetch — a directory listing can stall and a handful of scope names
+  cannot.
+- **The scope list borrows the window's own list** rather than opening a
+  second one. It is already a list being chosen from with the same keys, and a
+  picker that grows a different picker to pick with is one more thing to
+  explain. Rows from a streaming source keep accumulating underneath and are
+  back the moment the completion ends.
+- **One layer at a time.** Escape closes the completion; the Escape after it
+  closes the window. Enter takes the highlighted scope, or the first when
+  nothing is highlighted — a list is open only because it was asked for, so
+  Enter has an obvious meaning and no reason to dead-end.
 - Tab is **intercepted before the Panel**, which would otherwise spend it on
   focus traversal between the field and the list.
 - The scope name is drawn as `‹ Name ›` at the right of the search row

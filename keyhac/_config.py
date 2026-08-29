@@ -169,7 +169,8 @@ def configure(keymap):
 
     # A key is the scarce thing here, so a *source* is a value you hand to
     # one window instead, and one incremental search runs across the lot.
-    # Tab and Shift-Tab move along the scopes, and the query comes with you.
+    # Tab completes a scope by name (Shift-Tab lists them), and the query
+    # comes with you - so name them something you would not mind typing.
     # ("One window over several sources" in doc/configuration.md.)
 
     # --- your own source ------------------------------------------------

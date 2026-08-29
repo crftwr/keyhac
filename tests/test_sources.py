@@ -173,9 +173,15 @@ class TestClipboardPresets:
 
 
 class TestScopes:
-    """One key, several scopes, Tab between them - and the query survives the
-    move, which is the whole reason the switch is a key and not a typed
-    prefix."""
+    """One key, several scopes - and Tab *completes* a scope name rather than
+    stepping to the next one.
+
+    Stepping is the wrong shape past three: reaching the fourth means pressing
+    Tab three times and reading the label each time, and the shipped config
+    offers eight. Typed toward, "how many more presses" is not a question the
+    user has to answer. The query survives the move either way, which is the
+    thing a typed sigil could never offer and the reason the switch was a key
+    in the first place."""
 
     def _open(self, scopes):
         from keyhac.actions import ChooserAction, ShowCandidates
@@ -196,49 +202,159 @@ class TestScopes:
         chooser._on_event(Event(type=EventType.KEY, key="tab",
                                 modifiers=frozenset({"shift"} if shift else ())))
 
+    def _type(self, chooser, text):
+        from puikit.event import Event, EventType
+        for ch in text:
+            chooser._on_event(Event(type=EventType.KEY,
+                                    key=" " if ch == " " else ch, char=ch))
+
     def test_it_opens_on_the_first_scope(self, ui_backend):
         _action, chooser = self._open(self._scopes())
         assert chooser._scope == 0
         assert [c.display for c in chooser._filtered] == [
             "apple", "apricot", "hammer"]
 
-    def test_tab_moves_along_the_cycle(self, ui_backend):
+    def test_a_name_typed_and_completed_switches(self, ui_backend):
+        """The whole point: type toward the scope instead of stepping to it."""
         _action, chooser = self._open(self._scopes())
+        self._type(chooser, "fru")
         self._tab(chooser)
+        assert chooser._scope == 1
         assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+
+    def test_the_completed_name_does_not_stay_in_the_query(self, ui_backend):
+        """A path completes into the text because the text is the answer; a
+        scope completes into a change of what the window shows, so the token
+        goes back out."""
+        _action, chooser = self._open(self._scopes())
+        self._type(chooser, "too")
         self._tab(chooser)
-        assert [c.display for c in chooser._filtered] == ["hammer"]
+        assert chooser._edit.text == ""
+        assert chooser._scope == 2
 
-    def test_it_wraps_around(self, ui_backend):
+    def test_the_rest_of_the_query_survives(self, ui_backend):
+        """`a` filters, `too` names a scope, and only the second one is spent.
+        Typed for real: setting the field directly would prove nothing about
+        which characters the completion takes back."""
         _action, chooser = self._open(self._scopes())
-        for _ in range(3):
-            self._tab(chooser)
-        assert chooser._scope == 0
-
-    def test_shift_tab_goes_back(self, ui_backend):
-        _action, chooser = self._open(self._scopes())
-        self._tab(chooser, shift=True)
+        self._type(chooser, "a too")
+        self._tab(chooser)
+        assert chooser._edit.text == "a"
         assert chooser._scope == 2
         assert [c.display for c in chooser._filtered] == ["hammer"]
 
-    def test_the_query_survives_the_move(self, ui_backend):
-        """Look for the same thing somewhere else without retyping it - the
-        one thing a typed prefix cannot do without editing what is already
-        there. Typed for real: setting the filter directly would leave the
-        field empty and the assertion would pass on nothing."""
+    def test_an_ambiguous_prefix_opens_a_list_instead_of_guessing(self, ui_backend):
+        from keyhac.core.source import Scope
+        fruit, tool = _Fruit(), _Tool()
+        _action, chooser = self._open([Scope("All", [fruit, tool]),
+                                       Scope("Tools old", [tool]),
+                                       Scope("Tools new", [tool])])
+        self._type(chooser, "too")
+        self._tab(chooser)
+        assert chooser._completing
+        assert chooser._completion.candidates == ["Tools old", "Tools new"]
+        assert chooser._scope == 0, "it must not have guessed one"
+
+    def test_the_common_prefix_goes_in_and_stops_there(self, ui_backend):
+        from keyhac.core.source import Scope
+        fruit, tool = _Fruit(), _Tool()
+        _action, chooser = self._open([Scope("All", [fruit, tool]),
+                                       Scope("Tools old", [tool]),
+                                       Scope("Tools new", [tool])])
+        self._type(chooser, "to")
+        self._tab(chooser)
+        assert chooser._edit.text == "Tools ", chooser._edit.text
+
+    def test_tab_steps_the_open_list_over_what_matches(self, ui_backend):
+        """The old cycling gesture survives, but over the handful that match
+        rather than over everything."""
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)                       # nothing typed: offer them all
+        assert chooser._completing
+        assert chooser._completion.focused_index == -1
+        self._tab(chooser)
+        assert chooser._completion.focused_index == 0
+        self._tab(chooser)
+        assert chooser._completion.focused_index == 1
+        self._tab(chooser, shift=True)
+        assert chooser._completion.focused_index == 0
+
+    def test_shift_tab_with_nothing_open_shows_everything(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser, shift=True)
+        assert chooser._completion.candidates == ["Fruit only", "Tools only"]
+
+    def test_the_current_scope_is_not_offered(self, ui_backend):
+        """It is where you already are."""
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        assert "All" not in chooser._completion.candidates
+
+    def test_enter_takes_the_highlighted_scope(self, ui_backend):
         from puikit.event import Event, EventType
         _action, chooser = self._open(self._scopes())
-        chooser._on_event(Event(type=EventType.KEY, key="a", char="a"))
-        assert chooser._edit.text == "a"
-        assert [c.display for c in chooser._filtered] == [
-            "apple", "apricot", "hammer"]
         self._tab(chooser)
-        assert chooser._edit.text == "a"
-        assert [c.display for c in chooser._filtered] == ["apple", "apricot"]
+        self._tab(chooser)                       # highlight the first
+        chooser._on_event(Event(type=EventType.KEY, key="enter"))
+        assert chooser._scope == 1
+        assert not chooser._completing
+
+    def test_enter_with_nothing_highlighted_takes_the_first(self, ui_backend):
+        """A list is open only because it was asked for, so Enter has an
+        obvious thing to mean and no reason to dead-end."""
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        assert chooser._completion.focused_index == -1
+        chooser._on_event(Event(type=EventType.KEY, key="enter"))
+        assert chooser._scope == 1
+
+    def test_escape_closes_the_list_before_the_window(self, ui_backend):
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        chooser._on_event(Event(type=EventType.KEY, key="escape"))
+        assert not chooser._completing
+        assert not chooser._done, "the window went with it"
+        chooser._on_event(Event(type=EventType.KEY, key="escape"))
+        assert chooser._done
+
+    def test_the_list_shows_the_scopes_while_it_is_open(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        assert any("Fruit only" in r for r in rows), rows
+        assert any("Tools only" in r for r in rows), rows
+
+    def test_dismissing_puts_the_rows_back(self, ui_backend):
+        from puikit.event import Event, EventType
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        chooser._on_event(Event(type=EventType.KEY, key="escape"))
+        chooser.panel.render()
+        rows = ["".join(r) for r in chooser.window.snapshot()]
+        assert any("apple" in r for r in rows), rows
+
+    def test_typing_narrows_an_open_list(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._tab(chooser)
+        assert len(chooser._completion.candidates) == 2
+        self._type(chooser, "fru")
+        assert chooser._completion.candidates == ["Fruit only"]
+
+    def test_a_prefix_matching_nothing_leaves_it_alone(self, ui_backend):
+        _action, chooser = self._open(self._scopes())
+        self._type(chooser, "zzz")
+        self._tab(chooser)
+        assert not chooser._completing
+        assert chooser._scope == 0
+        assert chooser._edit.text == "zzz", "the query was not eaten"
 
     def test_the_current_scope_is_named_on_screen(self, ui_backend):
         _action, chooser = self._open(self._scopes())
         assert chooser._scope_label.text() == "‹ All ›"
+        self._type(chooser, "fru")
         self._tab(chooser)
         assert chooser._scope_label.text() == "‹ Fruit only ›"
         rows = ["".join(r) for r in chooser.window.snapshot()]
@@ -249,18 +365,20 @@ class TestScopes:
         _action, chooser = self._open(self._scopes())
         chooser._on_event(Event(type=EventType.KEY, key="down"))
         assert chooser.in_list
+        self._type(chooser, "fru")
         self._tab(chooser)
         assert not chooser.in_list, "the rows are different ones now"
 
     def test_choosing_still_routes_to_the_right_source(self, ui_backend):
         _action, chooser = self._open(self._scopes())
+        self._type(chooser, "too")
         self._tab(chooser)
-        self._tab(chooser)                     # Tools only
         chooser._finish(chooser._filtered[0], 0)
         assert self.tool.chosen == ["hammer"] and self.fruit.chosen == []
 
     def test_reopening_starts_at_the_first_scope_again(self, ui_backend):
         action, chooser = self._open(self._scopes())
+        self._type(chooser, "fru")
         self._tab(chooser)
         assert chooser._scope == 1
         action()                               # toggles closed
