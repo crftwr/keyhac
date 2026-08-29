@@ -418,6 +418,14 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 The last two read the front application on every invocation, so give each a
 `Scope` of its own rather than putting it in a merged one.
 
+`MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
+one per application, always at the top of the screen, and readable in full
+while it is closed — which is what makes a flat list of every command
+possible. A Windows menu belongs to a window, may not be there at all, and is
+filled only when it opens, so the source finds no menu bar and yields nothing;
+its top-level items are UI elements of the window instead, and
+`WindowControlsSource` lists them with everything else clickable.
+
 **Build each source once and share it between scopes.** A source is read once
 per window and remembered against the object, so a `MenuItemsSource` that
 appears both in an everything-scope and in a scope of its own walks the menu bar
