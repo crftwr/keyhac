@@ -582,3 +582,30 @@ class TestThePointerSaysWhereItCanBeGrabbed:
         chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=BOTTOM_RIGHT[0],
                                 y=BOTTOM_RIGHT[1]))
         assert chooser._page.cursor == "nwse-resize"
+
+    def test_the_shape_follows_the_live_pointer_not_the_event(self, ui_backend):
+        # A hand moving quickly crosses the boundary and comes to rest on the
+        # edge; the event reporting the arrival says where the boundary was
+        # crossed, which by then is a point the pointer has left. Shaping from
+        # that is why a fast approach from outside changed nothing.
+        chooser = _chooser(ui_backend)
+        frame = chooser.window.frame_px()
+        ui_backend.pointer_px = (frame[0] + BOTTOM_RIGHT[0],
+                                 frame[1] + BOTTOM_RIGHT[1])
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=36.0, y=4.0))
+        assert chooser._page.cursor == "nwse-resize"
+
+    def test_it_still_reads_the_event_when_the_backend_cannot_say(
+            self, ui_backend):
+        chooser = _chooser(ui_backend)
+        ui_backend.pointer_px = None
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=TOP[0], y=TOP[1]))
+        assert chooser._page.cursor == "ns-resize"
+
+    def test_a_pointer_resting_outside_shapes_nothing(self, ui_backend):
+        chooser = _chooser(ui_backend)
+        frame = chooser.window.frame_px()
+        ui_backend.pointer_px = (frame[0] - 40, frame[1] + 5)
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=RIGHT[0],
+                                y=RIGHT[1]))
+        assert chooser._page.cursor is None

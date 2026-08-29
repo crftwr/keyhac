@@ -192,12 +192,12 @@ class EdgeResizer:
     always keeps the top-left corner.
     """
 
-    #: How deep the grab strip is, in device pixels - about what a window
-    #: manager gives a frame, and thin enough to stay inside the window's own
-    #: margin, so the last row of the list is still a row and not an edge.
-    #: Capped at one base unit, which is all a character grid has to give: a
-    #: cell is one pixel there, and six of them would be six rows.
-    DEPTH_PX = 6.0
+    #: How deep the grab strip is, in device pixels.  A window manager gives
+    #: a frame about this much *plus* a band outside the window, which a
+    #: frameless window does not have to give - so this is the generous end
+    #: of what fits: the page margin is five pixels and the list's own frame
+    #: another four, so eight still lands on chrome rather than on a row.
+    DEPTH_PX = 8.0
     DEPTH_UNITS = 1.0
 
     #: How far along each edge a *corner* reaches, in the same pixels.  Deeper
@@ -290,6 +290,34 @@ class EdgeResizer:
         """The pointer shape for that point, or None away from every edge."""
         edge = self.edge_at(x, y)
         return self._CURSORS.get(edge) if edge else None
+
+    def cursor_now(self, x: float = None, y: float = None):
+        """The pointer shape for where the pointer is **now**, falling back to
+        the window coordinates given.
+
+        The live pointer, for the same reason the drag uses it: an event says
+        where the pointer was when the event was posted.  The one that reports
+        the pointer *arriving* says where it crossed the window's boundary,
+        which for a hand moving quickly is not where it has stopped - the
+        pointer came to rest on the edge and the window was told about a point
+        it had already left, so the shape never changed. Approached slowly the
+        same crossing produces moves all the way in, and it worked.
+        """
+        here = self._pointer_in_window()
+        if here is None:
+            here = (x, y) if x is not None else None
+        return self.cursor_at(*here) if here else None
+
+    def _pointer_in_window(self):
+        """The live pointer in window base units, or None where the backend
+        cannot say."""
+        pointer = _pointer_on_screen(self._backend, lambda: None)
+        frame = self._window.frame_px()
+        scale = _scale(self._window)
+        if pointer is None or frame is None or scale is None:
+            return None
+        return ((pointer[0] - frame[0]) / scale[0],
+                (pointer[1] - frame[1]) / scale[1])
 
     def handle(self, event) -> bool:
         """Take the event if it belongs to a resize; leave it otherwise.

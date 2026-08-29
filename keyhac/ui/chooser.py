@@ -639,7 +639,7 @@ class ChooserWindow:
         elif event.type is EventType.MOUSE_MOVE:
             # The edge is not a widget, so nothing hovers it and nothing would
             # ask for its cursor; the frame that draws it asks on its behalf.
-            self._page.cursor = self._resizer.cursor_at(event.x, event.y)
+            self._page.cursor = self._resizer.cursor_now(event.x, event.y)
         self.panel.dispatch_event(event)
         self.panel.render()
 
