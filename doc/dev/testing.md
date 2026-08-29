@@ -508,6 +508,122 @@ found.
   without consulting the modal handler's return value, so the callback was
   never deciding anything.
 
+- **Candidate-window streaming, Windows** (PR #125's other half, real
+  `WindowsBackend`, targets addressed by HWND so the same window is measured on
+  every repeat). The tick is a genuine 60 fps here, not macOS's idle 10 Hz:
+  **median gap 15.935 ms** over 40 intervals (62.76 Hz), which makes the 2 ms
+  slice a **12.55% duty cycle**. The improvement that predicts — about 8x — does
+  not appear, and the reason is worth keeping: **the slice is smaller than one
+  row costs.** A single `next()` on the controls walk is a median 2.77 ms
+  (Explorer), 3.19 (VS Code), 3.39 (Chrome), and **84-89% of rows exceed the
+  2 ms budget on their own**. `_drain` checks its deadline *after* appending, so
+  a slice that can only afford one row still takes one: the old path ran at
+  roughly one row per frame, ~16 ms/row, whatever the duty cycle said. Against
+  `rows x 15.9 ms`: Explorer 96 rows predicts 1527 and measured 1721; Chrome 36
+  predicts 572 and measured 723. The ceiling on the ratio is therefore
+  `tick / per-row cost`, ~15.9/5.6 ~= 2.8x.
+
+  | window (rows) | walk alone | before | after | ratio |
+  |---|---|---|---|---|
+  | Explorer, 5-file folder (96) | 517 ms | 2143 ms | 646 ms | 3.3x |
+  | VS Code (202) | 1296 ms | 5016 ms | 1637 ms | 3.1x |
+  | Chrome, `about:blank` (36) | 216 ms | 723 ms | 293 ms | 2.5x |
+  | Notepad, WinUI (22) | 144 ms | 367 ms | 228 ms | 1.6x |
+  | XeFM, PuiKit (10) | 32 ms | 65 ms | 78 ms | 0.83x |
+
+  First row is 47-162 ms after and 28-198 ms before — the old path was never slow
+  to *start*. **XeFM is the honest counter-example**: 10 rows at 0.44 ms each fit
+  several to a slice, so the drain was never the bottleneck and the worker's
+  cross-thread dispatch costs slightly more than it saves. The win scales with row
+  count, not with tree size. `MenuItemsSource` yields nothing on Windows and
+  `get_attribute_values` is a plain loop here, so all of this is the worker and
+  nothing else. A Settings (UWP) `CoreWindow` yields **0 named controls**; not
+  investigated.
+
+  These are the numbers the `CacheRequest` question was waiting on: the per-row
+  figures above are its sizing — ~5.6 ms mean per *reported* row against a 15.9 ms
+  frame.
+
+  **Cost to the main thread**, hook-sized work every 10 ms, 200 samples: idle
+  baseline 0.38 median / 0.75 p95, a worker walking with rows discarded 0.35 /
+  0.68 — *indistinguishable from idle* — and the full background path 0.55 / 5.41.
+  The tax is `_append` re-ranking each batch, not the UIA traffic. (`max` is not
+  trustworthy at this resolution: the idle baseline itself threw a 15.10 ms
+  outlier.) **A frozen target blocks only the worker**, same as macOS: against a
+  window that stops draining its message queue, `ElementFromHandle` sat in the
+  worker for **24,746 ms** — returning the instant the target resumed — while main
+  thread throughput held at **99.9%** of baseline. Note there is no timeout, and
+  `_stop_background`'s event is only checked between rows, so closing the chooser
+  does not free a worker wedged inside a call. It is a daemon thread, so it never
+  blocks exit; repeatedly opening the chooser against a hung application leaks one
+  thread per invocation. Not addressed.
+
+- **The COM apartment the walk runs in, Windows** (PR #126). The suspected failure
+  does not exist on this OS, and looking for it found a different one. **No failure
+  could be provoked**: 65,555 HRESULT-returning COM calls from uninitialised
+  workers into Explorer, Chrome, Notepad, VS Code, Settings and XeFM — including
+  six concurrent workers sharing the main thread's interface pointers — returned
+  not one negative HRESULT. Every vtable return was inspected by wrapping
+  `_com_call`, not just the ones callers look at. `CoGetApartmentType` says why: an
+  uninitialised worker reports **`MTA / IMPLICIT_MTA`**, Windows 8+ placing a
+  thread that touches COM without initialising it into the process-wide implicit
+  MTA — the apartment Microsoft recommends for UIA clients anyway.
+
+  **The reachable bug is the ordering.** Before anything in the process touches COM
+  a fresh thread reports `CO_E_NOTINITIALIZED`, and `get_automation()` initialises
+  *its own* thread as an STA. Measured: a worker reaching it before `main()`
+  becomes the process **MAINSTA**, leaving the cached process-wide automation
+  pointer bound to an apartment that dies with that thread. Only ordering stops it
+  today. Fixed by claiming `COINIT_MULTITHREADED` up front, after which the same
+  call returns `RPC_E_CHANGED_MODE` — already accepted.
+
+  **What the fix does not reach, with the evidence that sizes it**: element
+  pointers are made on the main thread and called from the worker unmarshalled.
+  Asked directly, `IUIAutomationElement` implements **`IAgileObject`** — the bulk
+  of the traffic is legitimate by declaration, not by luck. `IUIAutomation` and
+  `IUIAutomationTreeWalker` do **not** (`E_NOINTERFACE`; the root's `IMarshal`
+  names unmarshal class `0000033a-...`, not the free-threaded `0000001b-...`), and
+  the worker calls both — the root once per walk, the walker once per node. If a
+  failure ever appears, try a per-thread automation instance and walker, not
+  `CoMarshalInterThreadInterfaceInStream`. **Untested**: an elevated target.
+  `regedit` refused to launch (`WinError 740`) and nothing elevated had a window,
+  so the one case where UIPI could still produce the predicted `RPC_E_*` has not
+  been exercised.
+
+- **The chooser's keystrokes off the hook callback, Windows half** (PR #126, whose
+  numbers these are). Two warnings — 204 ms then 344 ms, both vk 67 — with two
+  separate causes. **Migemo's dictionary**, read lazily on the first query long
+  enough to reach the engine: `_load_engine`'s docstring budgets ~50 ms, measured
+  it is **190 ms alone and 267 ms through `compile()`**. Not one character's fault
+  — `MIN_LENGTH` is 3, and measured, a one- or two-character query never loads the
+  engine at all (0.04-0.19 ms, engine untouched); it lands on the third keystroke,
+  once. And **filtering, which is linear in the candidate count**: 250 rows 17 ms,
+  1,000 37 ms, 4,000 131 ms, 8,000 259 ms, nearly all of it the ranking sort and
+  needing no Migemo to get there. That reaches the warning at ~6,000 rows and
+  `LowLevelHooksTimeout` at ~9,000. After moving the work off the callback, the
+  callback is **0.05 ms whether the window holds 250 candidates or 8,000**, and the
+  dictionary read goes off it too, so both warnings go. Worst single query, found
+  by brute-forcing 400 three-letter romaji against the real 258-entry clipboard
+  history: `shi`, whose Migemo regex is 1,772 characters — hit 52 ms + rank 18 ms.
+  `_UnionMatch.spans` runs base *and* Migemo unconditionally where `hit` short-
+  circuits, so `rank` pays the finditer a second time; not fixed.
+
+- **The chooser could not be resized or moved on Windows**, and it was PuiKit's
+  (puikit #133; no Keyhac-side change). `_on_mouse_down` called
+  `SetCapture(self._hwnd)` — the *main* window — while also running for a secondary
+  window's messages inside `_window_scope`, so a press in the chooser handed the
+  capture to the console and every later move and the button-up went with it.
+  Capture is what keeps a drag alive once the pointer leaves the window it started
+  in, which is exactly what a frameless window's own resize edge and drag handle
+  are: dragging an edge outwards leaves the window within a few pixels. macOS
+  routes a drag to the window that took the mouse-down and has no capture to aim
+  wrong, so this was Windows-only. Measured with real `SendInput`, before → after:
+  a 90 px corner drag resized by nothing → 1224x780 to 1324x880, and a 90 px handle
+  drag moved (0, 0) → (90, 90). **The diagnostic trap worth remembering**: posting
+  the messages by hand works, because that skips the OS delivery the capture
+  governs; it reproduces only with `SendInput`. `WM_MOUSELEAVE` tracking had the
+  same mistake and moved with it.
+
 
 ## The interactive pass before a release
 
