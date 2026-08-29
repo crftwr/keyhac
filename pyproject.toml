@@ -30,8 +30,12 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # 1.4.0 is the first release with every puikit API/fix keyhac uses. What
-    # the floor last moved for: mark_screen() and ScreenMarker (PR #130,
+    # 1.4.1 is the first release with every puikit API/fix keyhac uses. What
+    # the floor last moved for: WindowHandle.resize_to_px (PR #131), without
+    # which the chooser cannot be resized at all - it is frameless, which is
+    # what makes it non-activating, and a frameless window has no edge for the
+    # user to drag, so the grip it draws itself is the only one there is
+    # (issue #117). Before that: mark_screen() and ScreenMarker (PR #130,
     # capability screen_markers). The balloon and the outline the chooser puts
     # around the control it is pointing at are screen marks now, and on an
     # older puikit both are the base's already-closed mark - on Windows they
@@ -51,7 +55,7 @@ dependencies = [
     # no longer does) - and ListView scrolling an assigned selection into view
     # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
     # develop against a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.4.0",
+    "puikit>=1.4.1",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',

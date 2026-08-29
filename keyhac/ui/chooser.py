@@ -56,7 +56,7 @@ import time
 from puikit import Panel, Style, WindowStyle
 from puikit.event import EventType
 from puikit.layout import HSplit, Item, VSplit
-from puikit.widgets import Label, LayoutView, ListView, TextEdit
+from puikit.widgets import Label, ListView, TextEdit
 
 from keyhac.core.const import (
     MODKEY_ALT, MODKEY_CMD, MODKEY_CTRL, MODKEY_SHIFT, MODKEY_WIN,
@@ -223,8 +223,11 @@ class ChooserWindow:
         # the whole of what makes a streaming source feel slow, rather than
         # the milliseconds.
         self._progress = Label("", style=_PROGRESS_STYLE)
+        # The magnifier is where a title bar would have put the drag handle,
+        # and a frameless window has no title bar to put one in (issue #117).
+        from keyhac.ui.grips import DragHandle, ResizeGrip
         search_row = [
-            Item(Label("🔍"), size="content", align="center"),
+            Item(DragHandle(self.window, "🔍"), size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
             Item(self._edit, weight=1),
             Item(Label(""), size_px=_MARGIN_PX),
@@ -234,12 +237,21 @@ class ChooserWindow:
             search_row.append(Item(Label(""), size_px=_MARGIN_PX))
             search_row.append(
                 Item(self._scope_label, size="content", align="center"))
+        # A corner to pull, since a frameless window has no edge to grab: the
+        # row costs one base unit, which is what a grip anywhere else would
+        # have cost the list anyway by sitting on top of a row of it.
+        self._grip = ResizeGrip(self.window, "◢")
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
             Item(self._frame, weight=1),
+            Item(HSplit(Item(Label(""), weight=1),
+                        Item(self._grip, size="content")), size="content"),
             gap=0.3,
         )
-        self._page = LayoutView(page, margin_px=_MARGIN_PX)
+        # Frame, not LayoutView: the window is frameless, so the only edge it
+        # can have is one it draws.  Without it the popup reads as a floating
+        # rectangle of text over a light background rather than as a window.
+        self._page = Frame(page, margin_px=_MARGIN_PX)
         self.panel.set_layout(VSplit(Item(self._page, weight=1)))
         self.panel.focus(self._page)
         self._focus_edit()

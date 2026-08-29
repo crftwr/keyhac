@@ -74,6 +74,19 @@ Keyhac2-side usage notes:
 - Guaranteeing the window opens on the active Space would want a `WindowStyle` field
   reaching `collectionBehavior` (`NSWindowCollectionBehaviorMoveToActiveSpace`).
   Not needed while the chooser builds a fresh window per invocation.
+- Being frameless costs the chooser everything a frame provides, so it draws its
+  own (issue #117): a border from the outermost `Frame`, a drag handle under the
+  magnifier and a resize grip in the bottom-right corner
+  ([grips.py](../../keyhac/ui/grips.py)). Only the last needed puikit —
+  `WindowHandle.resize_to_px` (PR #131), the pair to `move_to_px`, since nothing
+  could set a window's size. Moving and resizing stay Keyhac's: macOS
+  `movableByWindowBackground` and the Windows `WM_NCHITTEST` → `HTCAPTION` reply
+  both mean "drag from anywhere the content is not a control", which in a window
+  that is mostly a list is a gesture arguing with the list. A handle is a place,
+  and the place is the application's to choose.
+- macOS gives the chooser a window shadow already (its panel mask is not
+  borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
+  is the other half of why the edge is drawn rather than asked for.
 
 ## Known limit
 
