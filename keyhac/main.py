@@ -157,6 +157,9 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
     console = ConsoleWindow(keymap, hook, settings=settings)
     console.open()
     runtime.backend = console.backend
+    # The chooser is a new window every invocation, so what it remembers
+    # between them (its size) has to live somewhere that outlives it.
+    runtime.settings = settings
     # PuiKit's loop is the one turning in this mode, so it owns the hand-back
     # to the main thread (ThreadedAction.finished, keymap.call_on_main_thread).
     if console.backend.capabilities.supports("main_thread_dispatch"):

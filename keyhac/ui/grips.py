@@ -1,11 +1,11 @@
-"""The two places a frameless window can be grabbed: the handle it is moved
-by, and the grip it is resized from (issue #117).
+"""The two ways a frameless window is grabbed: the handle it is moved by, and
+its own edge, which resizes it (issue #117).
 
 Frameless is not decoration on the chooser - it is what makes the window
 genuinely non-activating, since the panel style mask that separates "key"
 from "active" forces a title bar and only frameless hides it.  So the window
-cannot have a title bar back to be dragged by, nor a resize edge back to be
-pulled: both have to be drawn inside the content and handled there.
+cannot have a title bar back to be dragged by, nor a resize edge the window
+manager offers: both have to be found in the content and handled there.
 
 Deliberately not asked of the toolkit.  macOS has `movableByWindowBackground`
 and Windows the `WM_NCHITTEST` -> `HTCAPTION` reply, and both mean "drag from
@@ -13,49 +13,58 @@ anywhere the content is not a control" - which, in a window that is mostly a
 list, is a gesture arguing with the list.  A handle is a *place*, and which
 place is the application's to choose.
 
-Both work in **screen coordinates**, not in the widget's own: a press
+Both work in **screen coordinates**, not in the window's own: a press
 remembers the window frame and where the pointer was on screen, and every
 drag applies the whole travel since then to that remembered frame.  Summing
-per-event deltas instead would be wrong twice over - the widget slides out
-from under the pointer as the window follows it, and a size held at its
+per-event deltas instead would be wrong twice over - what was grabbed slides
+out from under the pointer as the window follows it, and a size held at its
 minimum would go on accumulating travel the window never made, so it would
 not start growing again where the pointer turned round.
 """
 
-from puikit import DEFAULT_STYLE, Style
+from puikit import Style
 from puikit.event import EventType
 from puikit.layout import SizeRequest
 from puikit.widgets.base import Widget
 
-#: Chrome, not content: the same quiet grey the badges use, so neither grip
-#: competes with the rows for attention.
+#: Chrome, not content: the same quiet grey the badges use, so the handle
+#: does not compete with the rows for attention.
 _GRIP_STYLE = Style(fg=(130, 130, 140))
 
 #: The smallest the window may be dragged to, in base units.  Below this the
 #: filter field has no room to show what was typed into it, which is the one
 #: thing the window cannot do without.
-_MIN_UNITS = (24.0, 6.0)
+MIN_UNITS = (24.0, 6.0)
 
 
-class _Grip(Widget):
-    """A widget that turns a drag into a change to its window's frame.
+def _scale(window):
+    """Pixels per base unit, both axes, or None when the window cannot say.
+    Derived rather than asked for: a frameless window's frame *is* its
+    drawable area, so the two numbers the backend already reports divide."""
+    frame = window.frame_px()
+    units = window.size_units
+    if frame is None or not units[0] or not units[1]:
+        return None
+    return (frame[2] / units[0], frame[3] / units[1])
 
-    Not focusable, and never selects anything: like the scope arrows, a grip
+
+class DragHandle(Widget):
+    """Drag the window by its magnifier.
+
+    The glyph is dead space and sits where a title bar would have put the
+    drag handle, which is the whole argument for it being this one.
+
+    Not focusable, and it never selects anything: like the scope arrows, it
     is for the moment the pointer is already in hand, and taking the focus
     off the filter field would break the thing the window is for.
     """
-
-    #: Pointer shape while hovering, and while dragging.
-    cursor = None
-    cursor_active = None
 
     def __init__(self, window, glyph: str, style: Style = _GRIP_STYLE):
         self._window = window
         self.glyph = glyph
         self.style = style
         #: Where this widget sits in the window, in base units, read off the
-        #: last draw - a drag can only follow one, and the widget moves
-        #: whenever the window it is anchored to changes size.
+        #: last draw - a drag can only follow one.
         self._origin = (0.0, 0.0)
         #: (pointer on screen, window frame) at the press, or None.
         self._press = None
@@ -71,9 +80,9 @@ class _Grip(Widget):
         """lazydocs: ignore"""
         self._origin = ctx.screen_rect[:2]
         if self._press is not None:
-            ctx.set_cursor(self.cursor_active or self.cursor)
+            ctx.set_cursor("grabbing")
         elif ctx.hovered:
-            ctx.set_cursor(self.cursor)
+            ctx.set_cursor("grab")
         ctx.draw_text(0, 0, self.glyph, self.style)
 
     def handle_event(self, event) -> bool:
@@ -85,45 +94,28 @@ class _Grip(Widget):
             return True
         if event.type is EventType.MOUSE_DRAG and self._press is not None:
             pointer = self._pointer_px(event)
-            if pointer is None:
-                return True
-            (px, py), frame = self._press
-            self.apply(pointer[0] - px, pointer[1] - py, frame)
+            if pointer is not None:
+                (px, py), frame = self._press
+                self._window.move_to_px(frame[0] + pointer[0] - px,
+                                        frame[1] + pointer[1] - py)
             return True
         if event.type in (EventType.MOUSE_UP, EventType.MOUSE_CLICK):
-            # The click a release synthesizes is swallowed with it: a grip
+            # The click a release synthesizes is swallowed with it: a handle
             # that has just moved the window must not also read as a click on
             # whatever it is drawn over.
             self._press = None
             return True
         return False
 
-    def apply(self, dx: float, dy: float, frame) -> None:
-        """Act on a total travel of (dx, dy) px since the press, which found
-        the window at `frame`.  Overridden by each grip."""
-
-    # -- geometry -----------------------------------------------------------
-
-    def _scale(self):
-        """Pixels per base unit, both axes, or None when the window cannot
-        say.  Derived rather than asked for: a frameless window's frame *is*
-        its drawable area, so the two the backend already reports divide."""
-        frame = self._window.frame_px()
-        units = self._window.size_units
-        if frame is None or not units[0] or not units[1]:
-            return None
-        return (frame[2] / units[0], frame[3] / units[1])
-
     def _pointer_px(self, event):
         """Where the pointer is on screen, in the coordinates `frame_px`
         reports.  The event's own x/y are clamped to this widget once a drag
-        leaves it, so the unclamped position the Panel keeps alongside them
-        is what a gesture that has wandered across the screen is measured by.
-        """
+        leaves it, so the unclamped position the Panel keeps alongside them is
+        what a gesture that has wandered across the screen is measured by."""
         if event.x is None:
             return None
         frame = self._window.frame_px()
-        scale = self._scale()
+        scale = _scale(self._window)
         if frame is None or scale is None:
             return None
         x = event.hints.get("pointer_x", event.x)
@@ -132,36 +124,146 @@ class _Grip(Widget):
                 frame[1] + (self._origin[1] + y) * scale[1])
 
 
-class DragHandle(_Grip):
-    """Drag the window by its magnifier.
+class EdgeResizer:
+    """Resize the window by dragging its own edge - the place a window manager
+    would have offered if the window had a frame.
 
-    The glyph is dead space and sits where a title bar would have put the
-    drag handle, which is the whole argument for it being this one.
+    Not a widget, and that is the point.  The first version of this drew a
+    grip in the bottom-right corner, which needed a row of its own, and a row
+    is a candidate the window stopped being able to show.  The edge costs the
+    content nothing: it is the strip the border is drawn in, where no row can
+    be anyway, so it is read straight off the window's event stream before
+    the Panel sees it.
+
+    Every edge and corner works, so the window opens out in whichever
+    direction there is room - which means the ones that hold the *far* side
+    still have to move the window as they resize it, since `resize_to_px`
+    always keeps the top-left corner.
     """
 
-    cursor = "grab"
-    cursor_active = "grabbing"
+    #: How deep the grab strip is, in device pixels - about what a window
+    #: manager gives a frame, and thin enough to stay inside the window's own
+    #: margin, so the last row of the list is still a row and not an edge.
+    #: Capped at one base unit, which is all a character grid has to give: a
+    #: cell is one pixel there, and six of them would be six rows.
+    DEPTH_PX = 6.0
+    DEPTH_UNITS = 1.0
 
-    def apply(self, dx: float, dy: float, frame) -> None:
-        """lazydocs: ignore"""
-        self._window.move_to_px(frame[0] + dx, frame[1] + dy)
+    #: What the pointer looks like over each edge.  macOS has no public
+    #: diagonal resize cursor, so a corner shows the cursor of whichever axis
+    #: it shares with an edge; Windows does not shape the pointer at all yet.
+    _CURSORS = {(-1, 0): "ew-resize", (1, 0): "ew-resize",
+                (0, -1): "ns-resize", (0, 1): "ns-resize",
+                (-1, -1): "nwse-resize", (1, 1): "nwse-resize",
+                (1, -1): "nesw-resize", (-1, 1): "nesw-resize"}
 
+    def __init__(self, window, min_units=MIN_UNITS, on_resized=None):
+        self._window = window
+        self._min_units = min_units
+        #: Called with the new size in base units once a resize ends, for a
+        #: caller that remembers it.
+        self.on_resized = on_resized
+        #: ((ex, ey), pointer on screen, window frame) at the press, or None.
+        self._press = None
 
-class ResizeGrip(_Grip):
-    """Resize the window from its bottom-right corner.
+    @property
+    def resizing(self) -> bool:
+        return self._press is not None
 
-    Bottom-right because that is the corner `WindowHandle.resize_to_px` grows
-    towards: it holds the top-left still, so the window opens out under the
-    pointer instead of walking away from it.
-    """
+    def edge_at(self, x: float, y: float):
+        """Which edge (ex, ey) the point (x, y) in window base units is on,
+        each -1 / 0 / +1, or None for a point that is not on one."""
+        units = self._window.size_units
+        scale = _scale(self._window)
+        if scale is None:
+            return None
+        dx = min(self.DEPTH_UNITS, self.DEPTH_PX / scale[0])
+        dy = min(self.DEPTH_UNITS, self.DEPTH_PX / scale[1])
+        ex = -1 if x < dx else (1 if x > units[0] - dx else 0)
+        ey = -1 if y < dy else (1 if y > units[1] - dy else 0)
+        return (ex, ey) if (ex or ey) else None
 
-    cursor = "nwse-resize"
+    def cursor_at(self, x: float, y: float):
+        """The pointer shape for that point, or None away from every edge."""
+        edge = self.edge_at(x, y)
+        return self._CURSORS.get(edge) if edge else None
 
-    def apply(self, dx: float, dy: float, frame) -> None:
-        """lazydocs: ignore"""
-        scale = self._scale()
+    def handle(self, event) -> bool:
+        """Take the event if it belongs to a resize; leave it otherwise.
+
+        lazydocs: ignore
+        """
+        if event.type is EventType.MOUSE_DOWN:
+            return self._start(event)
+        if self._press is None:
+            return False
+        if event.type is EventType.MOUSE_DRAG:
+            self._apply(event)
+            return True
+        if event.type in (EventType.MOUSE_UP, EventType.MOUSE_CLICK):
+            ending, self._press = self._press, None
+            if ending is not None and event.type is EventType.MOUSE_UP:
+                self._announce()
+            return True
+        return False
+
+    # -- internals ----------------------------------------------------------
+
+    def _start(self, event) -> bool:
+        if event.x is None:
+            return False
+        edge = self.edge_at(event.x, event.y)
+        frame = self._window.frame_px()
+        pointer = self._pointer_px(event)
+        if edge is None or frame is None or pointer is None:
+            return False
+        self._press = (edge, pointer, frame)
+        return True
+
+    def _apply(self, event) -> None:
+        pointer = self._pointer_px(event)
+        if pointer is None:
+            return
+        (ex, ey), (px, py), (fx, fy, fw, fh) = self._press
+        dx, dy = pointer[0] - px, pointer[1] - py
+        scale = _scale(self._window)
         if scale is None:
             return
-        self._window.resize_to_px(
-            max(_MIN_UNITS[0] * scale[0], frame[2] + dx),
-            max(_MIN_UNITS[1] * scale[1], frame[3] + dy))
+        x, w = self._axis(fx, fw, dx, ex, self._min_units[0] * scale[0])
+        y, h = self._axis(fy, fh, dy, ey, self._min_units[1] * scale[1])
+        if (x, y) != (fx, fy):
+            # Before the resize, not after: resize_to_px holds whatever the
+            # top-left corner is when it runs, so an edge that moves the
+            # corner has to have moved it already.
+            self._window.move_to_px(x, y)
+        self._window.resize_to_px(w, h)
+
+    @staticmethod
+    def _axis(origin, length, travel, edge, minimum):
+        """One axis of the new frame: where the window starts and how long it
+        is, given which side was grabbed."""
+        if edge > 0:
+            return origin, max(minimum, length + travel)
+        if edge < 0:
+            # The far side stays put, so everything the near side gives up in
+            # length it takes back in origin - including when the minimum
+            # stops it, or the window would go on sliding while not shrinking.
+            new_length = max(minimum, length - travel)
+            return origin + length - new_length, new_length
+        return origin, length
+
+    def _announce(self) -> None:
+        if self.on_resized is None:
+            return
+        w, h = self._window.size_units
+        self.on_resized(w, h)
+
+    def _pointer_px(self, event):
+        """The pointer on screen, from an event in window coordinates."""
+        frame = self._window.frame_px()
+        scale = _scale(self._window)
+        if event.x is None or frame is None or scale is None:
+            return None
+        x = event.hints.get("pointer_x", event.x)
+        y = event.hints.get("pointer_y", event.y)
+        return (frame[0] + x * scale[0], frame[1] + y * scale[1])

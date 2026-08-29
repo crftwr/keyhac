@@ -76,17 +76,28 @@ Keyhac2-side usage notes:
   Not needed while the chooser builds a fresh window per invocation.
 - Being frameless costs the chooser everything a frame provides, so it draws its
   own (issue #117): a border from the outermost `Frame`, a drag handle under the
-  magnifier and a resize grip in the bottom-right corner
-  ([grips.py](../../keyhac/ui/grips.py)). Only the last needed puikit —
-  `WindowHandle.resize_to_px` (PR #131), the pair to `move_to_px`, since nothing
-  could set a window's size. Moving and resizing stay Keyhac's: macOS
-  `movableByWindowBackground` and the Windows `WM_NCHITTEST` → `HTCAPTION` reply
-  both mean "drag from anywhere the content is not a control", which in a window
-  that is mostly a list is a gesture arguing with the list. A handle is a place,
-  and the place is the application's to choose.
+  magnifier, and its own edge as the resize grip
+  ([grips.py](../../keyhac/ui/grips.py)) — read off the window's event stream
+  before the Panel sees it, since the edge is the one strip that costs the list
+  no row. Only resizing needed puikit — `WindowHandle.resize_to_px` (PR #131),
+  the pair to `move_to_px`, since nothing could set a window's size. The
+  gestures stay Keyhac's: macOS `movableByWindowBackground` and the Windows
+  `WM_NCHITTEST` → `HTCAPTION` reply both mean "drag from anywhere the content
+  is not a control", which in a window that is mostly a list is a gesture
+  arguing with the list.
+- **The border has to be rounded.** A macOS window is clipped to a rounded
+  rectangle — 15 pt on macOS 26, read off `NSThemeFrame`'s private
+  `cornerRadius` for the chooser's exact style mask (a borderless window is 0)
+  — and Windows 11 rounds a popup too, so a square line drawn at the window's
+  extent loses its four corners to the clip. `Frame(radius_px=, inset_px=)`
+  draws it concentric with that corner and just inside it.
 - macOS gives the chooser a window shadow already (its panel mask is not
   borderless, so AppKit's default applies); a Windows `WS_POPUP` has none, which
   is the other half of why the edge is drawn rather than asked for.
+- The chooser's *size* is remembered in `settings.json` (`runtime.settings`),
+  because the window is rebuilt per invocation and would otherwise undo every
+  resize. Its position is not: that is decided per invocation from the window it
+  opens over (issue #4), and where it should open is issue #118.
 
 ## Known limit
 

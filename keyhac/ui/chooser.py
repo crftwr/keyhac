@@ -64,7 +64,9 @@ from keyhac.core.const import (
 from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
+from keyhac.ui import runtime
 from keyhac.ui.frame import Frame
+from keyhac.ui.grips import MIN_UNITS, EdgeResizer
 
 logger = log.getLogger("Chooser")
 
@@ -73,6 +75,26 @@ logger = log.getLogger("Chooser")
 # the list frame's interior inset. Both collapse on a character grid.
 _MARGIN_PX = 5
 _LIST_PAD_PX = 3
+
+#: The window's own edge: rounded to the radius macOS clips a window to (15 pt
+#: off `NSThemeFrame`, less the inset, so the line stays concentric with the
+#: corner it sits in) and drawn just inside the frame, where the clip cannot
+#: reach it.  The inset stays under the page margin, so no content moves.
+_EDGE_RADIUS_PX = 13.0
+_EDGE_INSET_PX = 2.0
+
+#: The window's size before anything has been remembered, in base units, and
+#: the ceiling a remembered one is clamped to - a settings file written by
+#: hand, or on a much larger screen, must not open a window that does not fit
+#: on this one.
+_DEFAULT_SIZE = (72, 20)
+_MAX_UNITS = (300, 100)
+
+#: Where a resize is kept between invocations.  The window is rebuilt every
+#: time it opens, so without this every resize is undone by the next press of
+#: the key that opened it.  Size only: *where* the window goes is decided per
+#: invocation from the window it opens over (issue #4).
+_SIZE_KEY = "chooser_size"
 
 #: How long one streaming slice may hold the main thread.  Small enough that a
 #: keystroke lands between slices; large enough that a cheap source finishes in
@@ -102,6 +124,29 @@ _EVENT_MODKEYS = {
     "shift": MODKEY_SHIFT, "ctrl": MODKEY_CTRL, "alt": MODKEY_ALT,
     "cmd": MODKEY_CMD, "win": MODKEY_WIN,
 }
+
+
+def _remembered_size() -> tuple:
+    """The size the last resize left, or the default - clamped, because this
+    comes off disk and a window too small to read or too large for the screen
+    is one the user cannot undo from inside the window."""
+    store = getattr(runtime, "settings", None)
+    size = store.get(_SIZE_KEY) if store is not None else None
+    try:
+        width, height = int(size[0]), int(size[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return _DEFAULT_SIZE
+    return (max(int(MIN_UNITS[0]), min(width, _MAX_UNITS[0])),
+            max(int(MIN_UNITS[1]), min(height, _MAX_UNITS[1])))
+
+
+def _remember_size(width: float, height: float) -> None:
+    """Keep the size a resize ended on, for the next window (this one is
+    thrown away when it closes).  Silently nothing while running headless,
+    where there is no settings store to write to."""
+    store = getattr(runtime, "settings", None)
+    if store is not None:
+        store.set(_SIZE_KEY, [round(width), round(height)])
 
 
 class ChooserWindow:
@@ -160,7 +205,7 @@ class ChooserWindow:
         self._pointing_at = None
 
         self.window = backend.create_window(
-            72, 20, title=title,
+            *_remembered_size(), title=title,
             # tool: a transient picker gets no taskbar button (no-op on macOS)
             style=WindowStyle(topmost=True, resizable=False, tool=True,
                               activates=activates,
@@ -180,9 +225,14 @@ class ChooserWindow:
         self.window.on_close = self._on_user_close
 
         # width is a cap, not a request: TextEdit draws at most `width` base
-        # units of its flex slot, so pass the full window width to let the
-        # field fill whatever the layout resolves (the window is not resizable).
-        self._edit = TextEdit(text="", on_change=self._on_filter_change, width=72)
+        # units of its flex slot, so the cap is the widest window there can be
+        # rather than the one this is - the window resizes, and a field still
+        # capped at the width it opened with would stop short of its own box.
+        self._edit = TextEdit(text="", on_change=self._on_filter_change,
+                              width=_MAX_UNITS[0])
+        # Dragging the window's own edge resizes it, since a frameless window
+        # gets nothing from the window manager to drag (issue #117).
+        self._resizer = EdgeResizer(self.window, on_resized=_remember_size)
         self._scopes = list(scopes) if scopes else []
         self._on_scope = on_scope
         self._scope = 0
@@ -225,7 +275,7 @@ class ChooserWindow:
         self._progress = Label("", style=_PROGRESS_STYLE)
         # The magnifier is where a title bar would have put the drag handle,
         # and a frameless window has no title bar to put one in (issue #117).
-        from keyhac.ui.grips import DragHandle, ResizeGrip
+        from keyhac.ui.grips import DragHandle
         search_row = [
             Item(DragHandle(self.window, "🔍"), size="content", align="center"),
             Item(Label(""), size_px=_MARGIN_PX),
@@ -237,21 +287,20 @@ class ChooserWindow:
             search_row.append(Item(Label(""), size_px=_MARGIN_PX))
             search_row.append(
                 Item(self._scope_label, size="content", align="center"))
-        # A corner to pull, since a frameless window has no edge to grab: the
-        # row costs one base unit, which is what a grip anywhere else would
-        # have cost the list anyway by sitting on top of a row of it.
-        self._grip = ResizeGrip(self.window, "◢")
         page = VSplit(
             Item(HSplit(*search_row, gap=0), size="content"),
             Item(self._frame, weight=1),
-            Item(HSplit(Item(Label(""), weight=1),
-                        Item(self._grip, size="content")), size="content"),
             gap=0.3,
         )
         # Frame, not LayoutView: the window is frameless, so the only edge it
         # can have is one it draws.  Without it the popup reads as a floating
         # rectangle of text over a light background rather than as a window.
-        self._page = Frame(page, margin_px=_MARGIN_PX)
+        # Rounded and inset, because a macOS window is clipped to a rounded
+        # rectangle (15 pt, measured off NSThemeFrame) and Windows 11 rounds a
+        # popup too: a square line drawn at the window's extent loses its four
+        # corners to that clip, which is what it did.
+        self._page = Frame(page, margin_px=_MARGIN_PX,
+                           radius_px=_EDGE_RADIUS_PX, inset_px=_EDGE_INSET_PX)
         self.panel.set_layout(VSplit(Item(self._page, weight=1)))
         self.panel.focus(self._page)
         self._focus_edit()
@@ -569,6 +618,16 @@ class ChooserWindow:
                 # list did nothing at all, which reads as the window ignoring
                 # you: the query is right there on screen with a caret in it.
                 self._focus_edit()
+        elif self._resizer.handle(event):
+            # A press on the window's edge is a resize, so the Panel never
+            # sees it - which is also what keeps it from landing on the row
+            # or the field the edge is drawn beside.
+            self.panel.render()
+            return
+        elif event.type is EventType.MOUSE_MOVE:
+            # The edge is not a widget, so nothing hovers it and nothing would
+            # ask for its cursor; the frame that draws it asks on its behalf.
+            self._page.cursor = self._resizer.cursor_at(event.x, event.y)
         self.panel.dispatch_event(event)
         self.panel.render()
 
