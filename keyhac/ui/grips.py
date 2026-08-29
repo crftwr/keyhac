@@ -243,6 +243,13 @@ class EdgeResizer:
         scale = _scale(self._window)
         if scale is None:
             return None
+        if not (0 <= x <= units[0] and 0 <= y <= units[1]):
+            # Outside the window is not an edge of it.  Worth saying out
+            # loud, because the arithmetic below would happily call it one:
+            # "near the start of the axis" is true of every negative number,
+            # and the pointer leaving arrives as a move to (-1, -1) - so the
+            # window asked for a top-left corner cursor on the way out.
+            return None
         # The corner square first, and it reaches further along both axes
         # than the edge strips do: inside it the answer is both axes, so the
         # region that resizes width and height together is a target rather

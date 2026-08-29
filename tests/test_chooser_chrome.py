@@ -561,3 +561,24 @@ class TestThePointerSaysWhereItCanBeGrabbed:
         assert chooser._page.cursor == "ew-resize"
         chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=36, y=10))
         assert chooser._page.cursor is None
+
+    def test_a_pointer_that_has_left_is_not_on_an_edge(self, ui_backend):
+        # The pointer leaving arrives as a move to (-1, -1), and "near the
+        # start of the axis" is true of every negative number - so the window
+        # was asking for a corner cursor on the way out, and then keeping it.
+        chooser = _chooser(ui_backend)
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=RIGHT[0],
+                                y=RIGHT[1]))
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=-1.0, y=-1.0))
+        assert chooser._resizer.edge_at(-1.0, -1.0) is None
+        assert chooser._page.cursor is None
+
+    def test_arriving_on_an_edge_shapes_the_pointer_at_once(self, ui_backend):
+        # Crossing into the window and stopping on its edge is an entry and no
+        # move (puikit 1.4.2 reports the arrival as a move at that point), so
+        # this is the whole of what the user sees approaching from outside.
+        chooser = _chooser(ui_backend)
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=-1.0, y=-1.0))
+        chooser._on_event(Event(type=EventType.MOUSE_MOVE, x=BOTTOM_RIGHT[0],
+                                y=BOTTOM_RIGHT[1]))
+        assert chooser._page.cursor == "nwse-resize"

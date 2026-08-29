@@ -107,6 +107,10 @@ Keyhac2-side usage notes:
     gesture. The chooser draws its own handle, so it owns the drag; a chooser
     that opts back into `activates=True` is an ordinary titled window and
     keeps the window manager's.
+  - A `MOUSE_MOVE` on **entry**, not only on exit. Crossing into the window
+    and stopping on its edge is an entry and no move — every move event in
+    that gesture was outside — so the edge said nothing until the hand moved
+    again, which is exactly how a resize edge is approached from outside.
   - The diagonal resize cursors. `nwse-resize` / `nesw-resize` resolved to
     nothing, so every corner read as "nothing to drag here" — which is where
     a resize is most often started. AppKit has them and does not publish
