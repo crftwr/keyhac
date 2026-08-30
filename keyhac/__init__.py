@@ -3,7 +3,7 @@
 Configuration files do `from keyhac import *` and get the user-facing API.
 """
 
-__version__ = "2.2.3"
+__version__ = "2.3.0"
 
 from keyhac.core.keymap import Keymap
 from keyhac.core.key import KeyCondition, KeyTable
