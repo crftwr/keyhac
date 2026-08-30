@@ -1059,6 +1059,19 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   alone**, the column being the one thing the field cannot say and the reason
   to read a caret at all. Only for a field — under a document's bottom edge
   is nowhere near the caret, which is what `_is_place` is for.
+- **Every limit here is written in logical units, and Windows answers in
+  pixels.** Keyhac is per-monitor DPI aware before its first window exists, so
+  UIA reports physical pixels: on a 200% display every rectangle arrives twice
+  the size it is described at, while `_MAX_PLACE_HEIGHT` counts lines of text
+  and the caret slack counts points. Measured in Chrome's New Tab on one: the
+  Google search field, one line high, is `(1180, 1086, 1179, 112)` — refused
+  as a place, and the balloon went to the title bar of the window whose search
+  box the user was typing in. macOS never showed it, AX being in points on
+  every display. So the element is asked `get_coordinate_scale()` — the DPI of
+  the monitor *its own rectangle* is on, two displays at different scales
+  being ordinary — and the limits are multiplied by it. It answers 1.0 on
+  macOS and means it, and 1.0 for anything that cannot answer, which is the
+  old behaviour exactly.
 - The flip is refused when above is no better. A popup taller than the space
   over the caret would be flipped and then clamped straight back, which only
   changes which end of it covers the text.

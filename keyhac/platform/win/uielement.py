@@ -83,6 +83,21 @@ if sys.platform == "win32":
     oleaut32.SafeArrayDestroy.argtypes = [ctypes.c_void_p]
     oleaut32.SafeArrayDestroy.restype = ctypes.c_long
 
+    # Not UIA at all: the display a rectangle landed on, for get_coordinate_scale.
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+    user32.MonitorFromPoint.restype = wintypes.HANDLE
+    MONITOR_DEFAULTTONEAREST = 0x2
+    MDT_EFFECTIVE_DPI = 0
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        shcore.GetDpiForMonitor.argtypes = [
+            wintypes.HANDLE, ctypes.c_int,
+            ctypes.POINTER(wintypes.UINT), ctypes.POINTER(wintypes.UINT)]
+        shcore.GetDpiForMonitor.restype = ctypes.c_long
+    except (OSError, AttributeError):     # pre-8.1: one DPI for the desktop
+        shcore = None
+
     COINIT_APARTMENTTHREADED = 0x2
     COINIT_MULTITHREADED = 0x0
     CLSCTX_INPROC_SERVER = 0x1
@@ -858,6 +873,34 @@ class UIElement:
         """
         rect = self.get_attribute_value("BoundingRectangle")
         return tuple(rect) if isinstance(rect, (tuple, list)) and len(rect) == 4 else None
+
+    def get_coordinate_scale(self) -> float:
+        """Physical pixels per logical unit on the display this element is on.
+
+        The counterpart of the macOS method that answers 1.0 and means it.
+        Keyhac makes itself per-monitor DPI aware before any window exists, so
+        UIA hands back physical pixels: on a 200% display every rectangle
+        arrives twice the size it is described at, and a rule written in text
+        lines - `keyhac.core.anchor`'s "a field is at most three of them" -
+        has to be told which pixels those are.
+
+        The monitor is asked for rather than assumed: two displays at
+        different scales are ordinary, and the answer that matters is the
+        scale where the *element* is, not where Keyhac's own window sits.
+        """
+        rect = self.get_rect()
+        if rect is None:
+            return 1.0
+        if shcore is not None:
+            point = wintypes.POINT(int(rect[0] + rect[2] / 2),
+                                   int(rect[1] + rect[3] / 2))
+            monitor = user32.MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+            dpi_x, dpi_y = wintypes.UINT(), wintypes.UINT()
+            if monitor and shcore.GetDpiForMonitor(
+                    monitor, MDT_EFFECTIVE_DPI,
+                    ctypes.byref(dpi_x), ctypes.byref(dpi_y)) == S_OK and dpi_x.value:
+                return dpi_x.value / 96.0
+        return 1.0
 
     def get_caret_rect(self) -> tuple | None:
         """The text insertion point's screen rectangle, or None.

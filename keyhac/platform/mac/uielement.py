@@ -227,6 +227,17 @@ class UIElement:
             return (position[0], position[1], size[0], size[1])
         return None
 
+    def get_coordinate_scale(self) -> float:
+        """Screen units per logical unit: always 1.0 here.
+
+        AX rectangles are in points, and a point is a point on a Retina
+        display exactly as on any other - the backing scale never reaches
+        this API. `keyhac.core.anchor` asks because its Windows twin has a
+        different answer, where the same call reports physical pixels and a
+        one-line field on a 200% display measures 112 of them.
+        """
+        return 1.0
+
     def get_caret_rect(self) -> tuple | None:
         """The text insertion point's screen rectangle, or None.
 

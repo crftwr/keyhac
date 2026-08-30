@@ -1249,7 +1249,11 @@ class ReportCaretAnchor:
         return "ReportCaretAnchor()"
 
     def __call__(self):
-        from keyhac.core.anchor import popup_anchor, place_below, usable_caret
+        # The height limit by its own name: this report exists to explain the
+        # rule, and a copy of the number here would be a second rule.
+        from keyhac.core.anchor import (_MAX_PLACE_HEIGHT, display_scale,
+                                        place_below, popup_anchor, usable_caret)
+        from keyhac.ui.balloon import _focused_window_rect
 
         keymap = Keymap.get_instance()
         provider = getattr(keymap, "_focus_provider", None)
@@ -1282,8 +1286,11 @@ class ReportCaretAnchor:
 
         rect = getattr(element, "get_rect", lambda: None)()
         caret = getattr(element, "get_caret_rect", lambda: None)()
+        scale = display_scale(element)
         lines = [f"Caret report - {where} / {self._role(element)}",
-                 f"  focused element : {rect}"]
+                 f"  focused element : {rect}",
+                 f"  screen units    : x{scale:g} - a field is anything up to "
+                 f"{_MAX_PLACE_HEIGHT * scale:.0f} tall here"]
         if asked is None:
             lines.append("  (from the keystroke's focus snapshot - asking for "
                          "the focus now returned nothing)")
@@ -1294,17 +1301,24 @@ class ReportCaretAnchor:
         for label, value in self._detail(element):
             lines.append(f"  {label:<32}: {value}")
         lines.append(f"  caret as we take it: {caret} "
-                     f"-> {'believed' if usable_caret(caret, rect) else 'not believed'}")
+                     f"-> {'believed' if usable_caret(caret, rect, scale) else 'not believed'}")
 
-        found = popup_anchor(element)
+        # The window is passed because the balloon passes it: without it the
+        # report would answer "nowhere" for every application whose fall-back
+        # is the title bar, which is the commonest answer there is.
+        found = popup_anchor(element, _focused_window_rect(keymap))
         if found is None:
-            lines.append("  anchor          : none - a popup opens in the "
-                         "window's centre, and a balloon in the corner")
+            lines.append("  anchor          : none - not even a window: a "
+                         "popup opens in the screen's centre, and a balloon "
+                         "in the corner")
         else:
             anchored, kind = found
-            lines.append(f"  anchor          : {kind} {anchored}")
-            lines.append(f"  a 400x200 popup would go to "
-                         f"{place_below((400, 200), anchored)}")
+            lines.append(f"  anchor          : {kind} {anchored}"
+                         + (" - the balloon sits on its title bar, a chooser "
+                            "centres on it" if kind == "window" else ""))
+            if kind != "window":
+                lines.append(f"  a 400x200 popup would go to "
+                             f"{place_below((400, 200), anchored)}")
         logger.info("\n".join(lines))
         self._show(found, "nothing to place against")
 

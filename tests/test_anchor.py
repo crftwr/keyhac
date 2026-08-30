@@ -50,14 +50,18 @@ class TestUsableCaret:
 
 
 class _Element:
-    def __init__(self, caret=None, rect=None):
-        self._caret, self._rect = caret, rect
+    def __init__(self, caret=None, rect=None, scale=None):
+        self._caret, self._rect, self._scale = caret, rect, scale
 
     def get_caret_rect(self):
         return self._caret
 
     def get_rect(self):
         return self._rect
+
+    def get_coordinate_scale(self):
+        """None where a platform does not answer, which is a scale of 1."""
+        return self._scale
 
 
 class TestARectangleTheSizeOfItsOwnElement:
@@ -196,6 +200,65 @@ class TestPopupAnchor:
 
     def test_nowhere_to_point_at(self):
         assert popup_anchor(None) is None
+
+
+class TestADisplayThatCountsInPixels:
+    """Every rule here measures something, and Windows measures in pixels.
+
+    Keyhac is per-monitor DPI aware, so UIA answers in physical pixels: a
+    200% display doubles every number that arrives, while the limits it is
+    compared against are written in lines of text. Measured in Chrome's New
+    Tab on one - the Google search field, one line high, reporting its own
+    frame as the caret (the marker API's way of saying nothing) and leaving
+    the field as the only thing left to place against.
+    """
+
+    CHROME_SEARCH = (1180.0, 1086.0, 1179.0, 112.0)
+    WINDOW = (0.0, 0.0, 3420.0, 2146.0)
+
+    def _chrome(self, scale=None):
+        return _Element(self.CHROME_SEARCH, self.CHROME_SEARCH, scale)
+
+    def test_read_as_points_a_one_line_field_is_no_place_at_all(self):
+        """What the report from that machine said: no caret, no field, and a
+        balloon on the title bar of a window whose search box it was in."""
+        assert popup_anchor(self._chrome(), self.WINDOW)[1] == "window"
+
+    def test_at_200_percent_it_is_a_field_again(self):
+        assert popup_anchor(self._chrome(2.0), self.WINDOW) == (
+            self.CHROME_SEARCH, "element")
+
+    def test_a_document_is_still_a_document_at_200_percent(self):
+        """The limit scales; it does not stop meaning anything. 800 pixels on
+        that display is 400 points, which is no field."""
+        assert popup_anchor(_Element(rect=(100.0, 100.0, 1200.0, 800.0),
+                                     scale=2.0), self.WINDOW)[1] == "window"
+
+    def test_the_slack_around_a_caret_grows_with_it(self):
+        """A line box a little proud of its field is proud by twice as much
+        when the numbers are twice the size."""
+        field, caret = (100.0, 200.0, 300.0, 40.0), (412.0, 210.0, 0.0, 18.0)
+        assert not usable_caret(caret, field)
+        assert usable_caret(caret, field, 2.0)
+
+    def test_a_caret_in_that_field_clears_it(self):
+        """The field's own bottom edge, 1198 - and it is the scaled limit that
+        decides the field is a field at all."""
+        anchored = caret_anchor(_Element((1220.0, 1120.0, 0.0, 34.0),
+                                         self.CHROME_SEARCH, 2.0))
+        assert anchored[1] + anchored[3] == 1198.0
+
+    def test_what_an_element_that_cannot_say_is_taken_to_mean(self):
+        """macOS answers 1.0 and means it; anything that does not answer, or
+        answers nonsense, is read the same way."""
+        from keyhac.core.anchor import display_scale
+        assert display_scale(None) == 1.0
+        assert display_scale(object()) == 1.0
+        assert display_scale(_Element()) == 1.0
+        assert display_scale(_Element(scale=0.0)) == 1.0
+        assert display_scale(_Element(scale="2")) == 1.0
+        assert display_scale(_Element(scale=True)) == 1.0
+        assert display_scale(_Element(scale=2)) == 2.0
 
 
 class TestPlaceBelow:

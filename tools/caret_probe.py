@@ -44,12 +44,12 @@ import time
 
 
 def _read(element):
-    from keyhac.core.anchor import popup_anchor, usable_caret
+    from keyhac.core.anchor import display_scale, popup_anchor, usable_caret
     rect = element.get_rect() if hasattr(element, "get_rect") else None
     caret = (element.get_caret_rect()
              if hasattr(element, "get_caret_rect") else None)
     anchor = popup_anchor(element)
-    return rect, caret, usable_caret(caret, rect), anchor
+    return rect, caret, usable_caret(caret, rect, display_scale(element)), anchor
 
 
 def _role(element) -> str:

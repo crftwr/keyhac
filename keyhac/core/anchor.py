@@ -23,13 +23,24 @@ is supposed to be inside, and a caret that fails is no caret.
 when there is no room below, clamped to the screen - what an IME does with
 its candidate window, and the caret's own reason for existing: the text you
 are typing has to stay visible, so the popup goes where the text is not.
+
+Both rules judge sizes, and a size on screen is not a number until you know
+what the platform counts in. macOS answers in points, so a line of text is a
+line of text on any display. Windows answers a per-monitor-DPI-aware process
+in physical pixels, so a 200% display doubles every number that arrives here:
+Chrome's New Tab search field, one line of text, measures 112. Every measured
+constant below is therefore written in *logical* units and multiplied by the
+scale the element's own display reports - `get_coordinate_scale()`, asked of
+the element and 1.0 when it cannot answer, which is every platform whose
+coordinates were already logical.
 """
 
 from keyhac.core import log
 
 logger = log.getLogger("Anchor")
 
-#: A caret is a line: no width is ordinary, no height is not.
+#: A caret is a line: no width is ordinary, no height is not. Not scaled -
+#: this one says "some" rather than a measured amount.
 _MIN_HEIGHT = 1.0
 
 #: How far outside its element a caret may sit and still be believed. Web
@@ -49,7 +60,26 @@ _GAP_PX = 4.0
 _MAX_PLACE_HEIGHT = 72.0
 
 
-def usable_caret(caret, element_rect) -> bool:
+def display_scale(element) -> float:
+    """How many screen units the element's display packs into a logical one.
+
+    1.0 wherever the platform already answers in logical units - all of
+    macOS, and any element that does not offer the question. Windows reports
+    physical pixels, so this is the monitor's own scale factor: 2.0 at 200%.
+
+    Args:
+        element: the focused element (a platform UIElement), or None.
+
+    Returns:
+        A positive float; 1.0 when there is no answer to be had.
+    """
+    scale = _ask(element, "get_coordinate_scale")
+    if isinstance(scale, (int, float)) and not isinstance(scale, bool) and scale > 0:
+        return float(scale)
+    return 1.0
+
+
+def usable_caret(caret, element_rect, scale: float = 1.0) -> bool:
     """Whether a reported caret rectangle is worth placing anything against.
 
     Args:
@@ -57,6 +87,10 @@ def usable_caret(caret, element_rect) -> bool:
         element_rect: the focused element's own rectangle, or None when it
             could not be read - in which case the caret is taken on trust,
             there being nothing to check it against.
+        scale: screen units per logical unit, from `display_scale()`. The
+            slack a caret is allowed outside its element is a measured
+            amount, so it grows with the display like everything it is
+            being compared against.
 
     Returns:
         True when the rectangle has height and sits within the element.
@@ -70,9 +104,10 @@ def usable_caret(caret, element_rect) -> bool:
         return True
     if _is_the_element_itself(caret, element_rect):
         return False
+    slack = _SLACK * scale
     ex, ey, ew, eh = element_rect
-    return (ex - _SLACK <= x <= ex + ew + _SLACK
-            and ey - _SLACK <= y <= ey + eh + _SLACK)
+    return (ex - slack <= x <= ex + ew + slack
+            and ey - slack <= y <= ey + eh + slack)
 
 
 def _is_the_element_itself(rect, own) -> bool:
@@ -103,7 +138,7 @@ def _is_the_element_itself(rect, own) -> bool:
         abs(a - b) < 1.0 for a, b in zip(rect, own))
 
 
-def caret_anchor(element):
+def caret_anchor(element, scale: float | None = None):
     """The caret alone, believed or not at all.
 
     For a popup with no second-best place to be. The balloon is that: under
@@ -113,14 +148,18 @@ def caret_anchor(element):
 
     Args:
         element: the focused element (a platform UIElement), or None.
+        scale: screen units per logical unit, when the caller has already
+            asked; None to ask the element itself.
 
     Returns:
         (x, y, w, h), or None.
     """
+    if scale is None:
+        scale = display_scale(element)
     caret = _ask(element, "get_caret_rect")
     element_rect = _ask(element, "get_rect")
-    if usable_caret(caret, element_rect):
-        return _clear_the_field(tuple(caret), element_rect)
+    if usable_caret(caret, element_rect, scale):
+        return _clear_the_field(tuple(caret), element_rect, scale)
     # The one line that says *why* a popup went where it went. Without it a
     # refused caret and an application that has none look identical from the
     # outside - both are simply a popup that did not move - and those two
@@ -130,7 +169,7 @@ def caret_anchor(element):
     return None
 
 
-def _clear_the_field(caret, element_rect):
+def _clear_the_field(caret, element_rect, scale: float = 1.0):
     """Extend a caret down to the bottom of the field it is typed in.
 
     A caret is the text; a field is the text plus its padding and its border,
@@ -146,7 +185,7 @@ def _clear_the_field(caret, element_rect):
     The x is left alone: the column is what the caret is for, and it is the
     one thing the field cannot say.
     """
-    if not _is_place(element_rect):
+    if not _is_place(element_rect, scale):
         return caret
     bottom = max(caret[1] + caret[3], element_rect[1] + element_rect[3])
     return (caret[0], caret[1], caret[2], bottom - caret[1])
@@ -170,12 +209,21 @@ def popup_anchor(element, window_rect=None):
         frame and means *centre on this*; the other two are small and mean
         *sit under this*.
     """
-    caret = caret_anchor(element)
+    scale = display_scale(element)
+    caret = caret_anchor(element, scale)
     if caret is not None:
         return caret, "caret"
     element_rect = _ask(element, "get_rect")
-    if _is_place(element_rect):
+    if _is_place(element_rect, scale):
         return tuple(element_rect), "element"
+    # The other silent refusal, and the one that sends a balloon to the title
+    # bar of a window whose search field was right there: say what was
+    # measured and what it was measured against, in the units it arrived in.
+    if _is_box(element_rect):
+        logger.debug(f"The focused element at {_fmt(element_rect)} is no place "
+                     f"to put a popup: {element_rect[3]:.0f} tall against a "
+                     f"limit of {_MAX_PLACE_HEIGHT * scale:.0f} "
+                     f"({_MAX_PLACE_HEIGHT:.0f} x {scale:g}).")
     if _is_box(window_rect):
         return tuple(window_rect), "window"
     return None
@@ -316,7 +364,7 @@ def _is_box(rect) -> bool:
             and rect[2] > 0 and rect[3] > 0)
 
 
-def _is_place(rect) -> bool:
+def _is_place(rect, scale: float = 1.0) -> bool:
     """Whether an element is small enough that under it means anything.
 
     The objection this answers is a real one: a control is not a caret, and
@@ -325,5 +373,12 @@ def _is_place(rect) -> bool:
     a one-line field is within a line of the caret, which is the whole point,
     and is what Electron applications leave as the best available answer -
     they return CGRectZero for the caret and no amount of asking changes it.
+
+    **Three lines of what, on whose display.** The limit is a count of text
+    lines and the rectangle is in the platform's screen units, so the two
+    only mean the same thing at 100%. Measured in Chrome's New Tab on a 200%
+    display: the search field, one line high, is `(1180, 1086, 1179, 112)` -
+    a field by every honest description and half as tall again as a limit
+    meant for three lines. Scaled, it is 56 against 72 and a field again.
     """
-    return _is_box(rect) and rect[3] <= _MAX_PLACE_HEIGHT
+    return _is_box(rect) and rect[3] <= _MAX_PLACE_HEIGHT * scale
