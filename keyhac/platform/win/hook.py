@@ -217,6 +217,16 @@ class WinInputHook(InputHook):
     #: only evidence afterwards that a key that leaked was a key that overran.
     SLOW_CALLBACK_SECONDS = 0.2
 
+    #: Sent before a Windows key is released on recovery, so the release does
+    #: not read as a Win *tap* and open the Start menu: the menu opens when a
+    #: Win down is followed by its up with nothing in between. 0xE8 is
+    #: unassigned - Windows does nothing with it, no layout produces it - and
+    #: it is the same masking key AutoHotkey uses, for the same reason.
+    MASK_VK = 0xE8
+
+    #: The two of `_modifier_vks` that a bare tap is a command in.
+    WIN_VKS = (0x5B, 0x5C)
+
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinInputHook requires Windows")
@@ -383,8 +393,46 @@ class WinInputHook(InputHook):
                 on_mouse = self._on_mouse
                 self.uninstall()
                 self.install(on_key, on_restored, on_mouse)
+                self.release_stuck_modifiers()
                 if on_restored is not None:
                     on_restored()
+
+    def release_stuck_modifiers(self) -> None:
+        """Let go of the modifiers Windows still believes are held.
+
+        **The gap is not symmetrical.** While the hook is gone the physical
+        events go straight to the OS; when it comes back, the ones the config
+        swallows never arrive there. A user modifier is never emitted, and a
+        replaced key is emitted as something else, so a *down* Windows
+        received during the gap is matched by an up it will never see.
+        Reported with LWin retired to User0, which is the recommended way to
+        get a spare modifier on Windows: after a force-cancellation the Start
+        menu's modifier stays armed, every letter afterwards is a Win chord,
+        and the only cure the user has is to press and release the key again
+        - having first worked out which key it was.
+
+        So every modifier the OS reports as down is released here, as our own
+        injected event. A key the user is genuinely still holding is released
+        with them, and that is the right trade: this runs only where events
+        have already been missed, and a modifier that has to be pressed again
+        is a great deal better than one nobody can find.
+
+        `MASK_VK` goes first when a Windows key is among them, or the release
+        would complete a Win tap and open the Start menu.
+
+        lazydocs: ignore
+        """
+        held = [vk for vk in self._modifier_vks
+                if user32.GetAsyncKeyState(vk) & 0x8000]
+        if not held:
+            return
+        logger.warning("Releasing modifiers Windows still holds down: "
+                       + ", ".join(f"0x{vk:02X}" for vk in held) + ".")
+        events = []
+        if any(vk in WinInputHook.WIN_VKS for vk in held):
+            events += [(WinInputHook.MASK_VK, True), (WinInputHook.MASK_VK, False)]
+        events += [(vk, False) for vk in held]
+        self.send(events)
 
     def keyboard_layout(self) -> str:
         # GetKeyboardType(0) == 7 means a Japanese keyboard (keyhac-win rule)

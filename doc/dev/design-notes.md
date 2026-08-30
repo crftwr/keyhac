@@ -393,6 +393,24 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   warning is the only evidence available that a key which leaked was a key
   that overran, and the only notice at all *before* the recovery. It is
   Windows-only because macOS's tap reports its own timeout.
+- **Recovery has to put the OS's modifier state back, not only ours.** The
+  gap the sanity check recovers from is not symmetrical: while the hook is
+  gone the physical events go straight to the OS, and when it returns the
+  ones the config swallows never arrive there — a user modifier is never
+  emitted, a replaced key is emitted as something else. So a *down* Windows
+  received during the gap is matched by an up it will never see. Reported
+  with LWin retired to User0, which is the recommended way to get a spare
+  modifier on Windows: after a force-cancellation the Start menu's modifier
+  stayed armed and every letter afterwards was a Win chord.
+  `release_stuck_modifiers()` therefore releases every modifier
+  `GetAsyncKeyState` still reports as down, right after the re-install and
+  before `on_restored` resets the engine's own state. A key genuinely still
+  held is released with them — this runs only where events have already been
+  missed, and a modifier that has to be pressed again beats one nobody can
+  find. `MASK_VK` (0xE8, unassigned, AutoHotkey's masking key) goes first
+  when a Windows key is among them: a Win down followed by its up with
+  nothing in between *is* the Start menu's shortcut, and the down already
+  happened.
 
 ## An element source reads `window.element`, never `window.native`
 
