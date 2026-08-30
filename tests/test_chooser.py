@@ -1088,8 +1088,9 @@ class TestBalloonIsAMark:
         multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid),
                                            window=(400.0, 200.0, 1100.0, 800.0)))("sub")
         mark = backend.marks[0]
-        # "Multi-stroke: sub" is 17 characters: 17 x 8 + 24 = 160 wide.
-        assert (mark.x, mark.y) == (400.0 + (1100.0 - 160.0) / 2, 200.0)
+        # "Multi-stroke: sub" is 17 characters: 17 x 8 + 24 = 160 wide, and
+        # it hangs two pixels below the top edge rather than flush with it.
+        assert (mark.x, mark.y) == (400.0 + (1100.0 - 160.0) / 2, 202.0)
 
     def test_with_no_window_either_it_is_still_the_corner(self):
         from keyhac.ui.balloon import multi_stroke_help

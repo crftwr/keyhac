@@ -27,6 +27,12 @@ _MAX_WIDTH_UNITS = 70
 #: Distance from the corner of the work area.
 _INSET_PX = 24
 
+#: How far below a window's top edge the title-bar placement starts.  Flush
+#: with the edge reads as part of the window's frame rather than as something
+#: laid on top of it; a couple of pixels is enough to say "on the title bar"
+#: without leaving the bar.
+_TITLE_DROP_PX = 2
+
 #: A tooltip reads as a note, not as a window: a warm fill, dark text, and a
 #: soft corner.  `None` anywhere here means "the theme's", which a balloon
 #: cannot ask for - it has no Panel and therefore no theme.
@@ -176,8 +182,10 @@ class BalloonManager:
             f"{len(text)} chars -> {columns} column(s) x {base_w} and "
             f"{lines} line(s) x {base_h}, + {_INSET_PX:.0f} -> estimated "
             f"{width:.0f}x{height:.0f} (wraps at {max_width:.0f})")
-        place = place_below if near is not None else place_over_top
-        return place((width, height), anchor, self._work_area(anchor))
+        if near is not None:
+            return place_below((width, height), anchor, self._work_area(anchor))
+        return place_over_top((width, height), anchor, self._work_area(anchor),
+                              drop=_TITLE_DROP_PX)
 
     def _work_area(self, near) -> tuple | None:
         """The work area of the screen the anchor is on, or None.

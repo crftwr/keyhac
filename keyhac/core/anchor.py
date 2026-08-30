@@ -229,8 +229,9 @@ def place_below(size, anchor, screen=None, gap: float = _GAP_PX):
     return x, y
 
 
-def place_over_top(size, anchor, screen=None):
-    """Top-left for a box centred on the top edge of `anchor`.
+def place_over_top(size, anchor, screen=None, drop: float = 0.0):
+    """Top-left for a box centred on the top edge of `anchor`, dropped by
+    `drop`.
 
     Where a popup goes when there is nothing in the window to point at - no
     caret, and no control small enough to be a place. Over the window's own
@@ -246,14 +247,17 @@ def place_over_top(size, anchor, screen=None):
         size: (w, h) of the box being placed.
         anchor: (x, y, w, h) whose top edge to sit on.
         screen: (x, y, w, h) to stay inside, or None for no clamping.
+        drop: how far below that edge to start, so the box hangs *on* the
+            title bar rather than from the window's very corner.
 
     Returns:
         (x, y) for the box.
     """
     w, _h = size
     ax, ay, aw, _ah = anchor
-    x, y = ax + (aw - w) / 2, ay
-    steps = [f"centred on {ax:.0f}+{aw:.0f}/2 -> x={x:.0f}, at its top y={y:.0f}"]
+    x, y = ax + (aw - w) / 2, ay + drop
+    steps = [f"centred on {ax:.0f}+{aw:.0f}/2 -> x={x:.0f}, "
+             f"its top {ay:.0f}+{drop:.0f} -> y={y:.0f}"]
     x, y = _clamp((x, y), size, screen, steps)
     _trace("place_over_top", anchor, size, screen, steps, x, y)
     return x, y

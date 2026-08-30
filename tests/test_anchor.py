@@ -239,6 +239,12 @@ class TestPlaceOverTop:
         assert place_over_top((160.0, 40.0), (400.0, 200.0, 1100.0, 800.0),
                               self.SCREEN) == (870.0, 200.0)
 
+    def test_the_drop_starts_it_below_that_edge(self):
+        """Flush with the edge reads as part of the window's frame rather
+        than as something laid on top of it."""
+        assert place_over_top((160.0, 40.0), (400.0, 200.0, 1100.0, 800.0),
+                              self.SCREEN, drop=2.0) == (870.0, 202.0)
+
     def test_a_window_off_the_left_of_the_screen_is_clamped(self):
         x, _y = place_over_top((160.0, 40.0), (-500.0, 200.0, 300.0, 800.0),
                                self.SCREEN)
