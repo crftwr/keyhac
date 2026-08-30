@@ -490,9 +490,10 @@ kt["Fn-O"] = ShowCandidates([ChooserPage("Windows", [OpenWindows()])],
                             anchor="window")
 ```
 
-`tools/caret_probe.py` prints what the application in front of you actually
+`make caret-probe` prints what the application in front of you actually
 reports, which is the only way to find out whether a given one can be placed
-against.
+against. It repeats for twenty seconds: start it, switch to the application
+under test, and type in it.
 
 ### Writing a chooser as a class
 

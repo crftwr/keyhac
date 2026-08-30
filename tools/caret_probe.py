@@ -14,12 +14,14 @@ comes back as (0, 1112, 0, 0) for an element whose own frame is
 - and nothing about the return value says so.  That measurement is why
 `usable_caret` exists, and this is the tool that finds the next one.
 
-Run:  .venv/bin/python tools/caret_probe.py [--survey] [--repeat N]
+Run:  make caret-probe          (repeats for twenty seconds)
+      make caret-probe ARGS=--survey
+      .venv/bin/python tools/caret_probe.py [--survey] [--repeat N]
 
-Without arguments it reads the *frontmost* application, which is the case
-that matters: switch to the application under test, then run it from a
-terminal that is not in front - or use --repeat, which prints once a second
-so there is time to click into a field and watch the numbers change.
+It reads the *frontmost* application, which is the case that matters and the
+one a terminal cannot see from in front of it - so `make caret-probe` repeats
+once a second, leaving time to switch to the application under test, click
+into a field, and watch the numbers change.
 
 --survey walks every windowed running application instead.  It is a much
 weaker check: a background application legitimately reports no focused

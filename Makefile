@@ -54,7 +54,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 # pyproject.toml changes.
 VENV_STAMP := $(VENV)/.installed
 
-.PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo icons icons-check \
+.PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe icons icons-check \
         api-reference api-reference-check skill-bundle \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
@@ -75,6 +75,9 @@ help:
 	@echo "                     leaving ~/.keyhac/config.py alone"
 	@echo "  make echo        - run the hook echo tool (platform layer only, never"
 	@echo "                     consumes keys; use this first on a new machine/OS)"
+	@echo "  make caret-probe - print what the front application reports for the caret"
+	@echo "                     (popup placement, issue #118). Repeats for 20 seconds,"
+	@echo "                     so start it, switch to the app under test and type."
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
@@ -178,6 +181,14 @@ run-sandbox: $(VENV_STAMP)
 
 echo: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/hook_echo.py
+
+# Only the application *in front* can answer where its caret is, and this
+# terminal is in front while make runs - so it repeats rather than printing
+# once, giving you the time to switch to the application under test and click
+# into a field. ARGS passes the rest through (--survey, or another --repeat,
+# which wins over the one here).
+caret-probe: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/caret_probe.py --repeat 20 $(ARGS)
 
 # The generated icon assets are committed; `icons` regenerates them from the
 # SVG masters, `icons-check` verifies the two have not drifted.
