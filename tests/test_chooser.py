@@ -1028,7 +1028,9 @@ class TestBalloonIsAMark:
             rect=(390.0, 290.0, 300.0, 40.0))))("sub")
         mark = backend.marks[0]
         assert mark.kwargs["text"] == "Multi-stroke: sub"
-        assert (mark.x, mark.y) == (400.0, 322.0)
+        # 330 is the field's bottom edge, not the caret's - a balloon under
+        # the caret would cover the box it was typed into.
+        assert (mark.x, mark.y) == (400.0, 334.0)
 
     def test_a_caret_it_cannot_believe_falls_to_the_field(self):
         """The VS Code measurement, reaching the balloon: the call succeeds,

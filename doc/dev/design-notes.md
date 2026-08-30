@@ -1013,6 +1013,16 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   room and clamped to the screen — what an IME does with its candidate window,
   and for the caret's own reason: the text being typed has to stay visible.
   Centring on a caret would put half the popup over what was just typed.
+- **Below a caret in a field means below the field.** A caret is the text; a
+  field is the text plus its padding and its border, and they do not end in
+  the same place. Measured in Finder's search field: the caret is
+  `(924.5, 202, 0, 16)` inside a field at `(891, 207, 242, 38)` — it starts
+  five points *above* the field and ends twenty-seven above its bottom, so a
+  popup under the caret opened inside the box it had been typed into. The
+  caret's height is extended to the field's bottom edge; its **x is left
+  alone**, the column being the one thing the field cannot say and the reason
+  to read a caret at all. Only for a field — under a document's bottom edge
+  is nowhere near the caret, which is what `_is_place` is for.
 - The flip is refused when above is no better. A popup taller than the space
   over the caret would be flipped and then clamped straight back, which only
   changes which end of it covers the text.

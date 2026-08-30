@@ -90,7 +90,7 @@ def caret_anchor(element):
     caret = _ask(element, "get_caret_rect")
     element_rect = _ask(element, "get_rect")
     if usable_caret(caret, element_rect):
-        return tuple(caret)
+        return _clear_the_field(tuple(caret), element_rect)
     # The one line that says *why* a popup went where it went. Without it a
     # refused caret and an application that has none look identical from the
     # outside - both are simply a popup that did not move - and those two
@@ -98,6 +98,28 @@ def caret_anchor(element):
     logger.debug(f"No caret to place against: reported {caret} for an "
                  f"element at {element_rect}.")
     return None
+
+
+def _clear_the_field(caret, element_rect):
+    """Extend a caret down to the bottom of the field it is typed in.
+
+    A caret is the text; a field is the text plus its padding and its border,
+    and the two do not end in the same place. Measured in Finder's search
+    field: the caret is `(924.5, 202, 0, 16)` inside a field at
+    `(891, 207, 242, 38)` - it *starts* five points above the field and ends
+    twenty-seven points above the field's bottom. A popup placed under that
+    caret opens inside the box it was typed into, covering half of it.
+
+    Only for a field. Under a document's bottom edge is nowhere near the
+    caret, which is the whole reason a tall element is not a place.
+
+    The x is left alone: the column is what the caret is for, and it is the
+    one thing the field cannot say.
+    """
+    if not _is_place(element_rect):
+        return caret
+    bottom = max(caret[1] + caret[3], element_rect[1] + element_rect[3])
+    return (caret[0], caret[1], caret[2], bottom - caret[1])
 
 
 def popup_anchor(element, window_rect=None):

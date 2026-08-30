@@ -63,7 +63,13 @@ class _Element:
 class TestCaretAnchor:
 
     def test_a_believable_caret(self):
+        """Kept at the caret's column, and grown to the bottom of the field it
+        is in - see TestClearTheField."""
         element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0))
+        assert caret_anchor(element) == (100.0, 200.0, 0.0, 30.0)
+
+    def test_a_caret_in_a_document_is_left_as_it_is(self):
+        element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 800.0))
         assert caret_anchor(element) == (100.0, 200.0, 0.0, 18.0)
 
     def test_a_lie_is_no_caret(self):
@@ -87,12 +93,49 @@ class TestCaretAnchor:
         assert caret_anchor(_Gone()) is None
 
 
+class TestClearTheField:
+    """A caret is the text; a field is the text plus its padding and border.
+
+    Measured in Finder's search field: the caret is (924.5, 202, 0, 16) inside
+    a field at (891, 207, 242, 38) - starting five points *above* the field
+    and ending twenty-seven above its bottom. Under that caret is inside the
+    box it was typed into."""
+
+    FINDER_CARET = (924.5, 202.0, 0.0, 16.0)
+    FINDER_FIELD = (891.0, 207.0, 242.0, 38.0)
+
+    def test_it_reaches_the_bottom_of_the_field(self):
+        anchored = caret_anchor(_Element(self.FINDER_CARET, self.FINDER_FIELD))
+        assert anchored[1] + anchored[3] == 245.0, "the field's bottom edge"
+
+    def test_the_popup_then_clears_the_field(self):
+        anchored = caret_anchor(_Element(self.FINDER_CARET, self.FINDER_FIELD))
+        _x, y = place_below((400.0, 200.0), anchored, gap=4.0)
+        assert y == 249.0
+
+    def test_the_column_is_still_the_caret_s(self):
+        """The one thing the field cannot say, and the reason to read a caret
+        at all."""
+        anchored = caret_anchor(_Element(self.FINDER_CARET, self.FINDER_FIELD))
+        assert anchored[0] == 924.5
+
+    def test_a_document_is_not_a_field(self):
+        """Under a text area's bottom edge is nowhere near the caret."""
+        caret = (100.0, 300.0, 0.0, 14.0)
+        assert caret_anchor(_Element(caret, (90.0, 100.0, 600.0, 800.0))) == caret
+
+    def test_a_caret_already_past_the_field_is_left_alone(self):
+        caret = (100.0, 200.0, 0.0, 60.0)
+        anchored = caret_anchor(_Element(caret, (90.0, 195.0, 300.0, 30.0)))
+        assert anchored == caret
+
+
 class TestPopupAnchor:
 
     def test_the_caret_wins(self):
         element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0))
         assert popup_anchor(element, (0, 0, 800, 600)) == (
-            (100.0, 200.0, 0.0, 18.0), "caret")
+            (100.0, 200.0, 0.0, 30.0), "caret")
 
     def test_the_control_when_the_caret_is_not_believed(self):
         element = _Element(VSCODE_CARET, VSCODE_ELEMENT)
@@ -181,7 +224,7 @@ class TestReportCaretAnchor:
         element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0))
         with caplog.at_level("INFO"):
             self._run(monkeypatch, element, popped)
-        assert popped == [("anchor: caret", (100.0, 200.0, 0.0, 18.0))]
+        assert popped == [("anchor: caret", (100.0, 200.0, 0.0, 30.0))]
         assert "anchor          : caret" in caplog.text
 
     def test_it_reports_at_info_rather_than_debug(self, monkeypatch, caplog):
