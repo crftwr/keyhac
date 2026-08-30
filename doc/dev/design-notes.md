@@ -1011,6 +1011,26 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   `usable_caret`'s, not any platform's: it was written once in the macOS
   marker read and Excel walked straight past it through the other road, which
   is what a rule in the wrong layer does.
+- **A newline is not drawn where the caret is** — the Windows half of the
+  same character macOS meets from the other side. Measured in the Claude Code
+  chat input inside VS Code, empty, caret at the start of it:
+
+      the selection's text                : ''
+      its first bounding rectangle        : None
+      expanded to its character, that is  : '\n'
+      its first bounding rectangle        : (3316, 1803, 32, 32)
+      the caret's line                    : 'Queue another message…'
+      the line's rectangle                : (2156, 1805, 276, 32)
+
+  The degenerate range answers nothing, so the read expands to the character
+  at the caret — and that character is a newline, whose rectangle Chromium
+  draws at the end of the *line box*, which in a field 1240 wide is the far
+  right of it. The balloon opened five hundred points right of the caret, in
+  an empty box. macOS asks for the character *before* the caret and reads a
+  newline as "the caret is at the start of the line below"; the Windows
+  expansion runs forward instead, where a newline means only that there is
+  nothing at the caret to bound. So it is refused, and the field — one line
+  tall, and a place — is what the balloon opens under.
 - **An element of no size is not something to check a caret against.**
   Measured in VS Code on Windows, which is the same editor answering the
   opposite way round: the focused element is Monaco's input proxy and UIA
