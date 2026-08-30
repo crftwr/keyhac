@@ -205,6 +205,14 @@ class ChooserAction:
     #: so that is the one thing the default gives up.
     activates = False
 
+    #: Where the window opens.  ``"caret"`` puts it under the text insertion
+    #: point, falling through to the focused control and then to the focused
+    #: window's centre when the caret cannot be read *or cannot be believed*
+    #: (`keyhac.core.anchor`).  ``"window"`` is that centre alone, which is
+    #: what a chooser acting on the window rather than on a place in it wants
+    #: - a window switcher has no business opening beside your caret.
+    anchor = "caret"
+
     def __repr__(self):
         return f"{type(self).__name__}()"
 
@@ -250,6 +258,13 @@ class ChooserAction:
         # portable top-left screen coordinates on both OSes; clamp to the
         # screen the window mostly lives on. UI thread here, so the window
         # accessors are allowed.
+        #
+        # The *caret* is not read here. This runs on the hook's clock (see the
+        # deadline note below), and reading it is two more cross-process
+        # round trips into an application that may not be answering. It is
+        # read in _open_window instead, one turn of the loop later, where the
+        # window is built - and where the answer is just as good, the chooser
+        # taking no focus and the caret therefore not having moved.
         center_on = clamp_to = None
         active = keymap.get_active_window()
         if active is not None:
@@ -315,6 +330,52 @@ class ChooserAction:
         else:
             _open_now()
 
+    def _below(self, keymap, clamp_to):
+        """The caret or the focused control to open under, or None.
+
+        None means the window's centre, which is where `center_on` already
+        points - so every fall-through in the chain ends at the behaviour
+        this replaced rather than at nothing.
+
+        lazydocs: ignore
+        """
+        if self.anchor != "caret" or keymap is None:
+            return None
+        from keyhac.core.anchor import popup_anchor
+        provider = getattr(keymap, "_focus_provider", None)
+        if provider is None:
+            return None
+        try:
+            element = provider.get_focused_element()
+        except Exception:
+            return None
+        found = popup_anchor(element)
+        if found is None:
+            return None
+        rect, kind = found
+        logger.debug(f"Chooser anchored on the {kind}: {rect}")
+        return rect
+
+    def _would_be_buried(self, keymap) -> bool:
+        """Whether the window would open under something we cannot rise above.
+
+        The activating path is exempt: taking the focus closes the Start menu,
+        which is the surface this is about, and a chooser that comes forward
+        on its own account is one the user can see.
+
+        lazydocs: ignore
+        """
+        if self.activates:
+            return False
+        provider = getattr(keymap, "window_provider", None)
+        ask = getattr(provider, "foreground_hides_our_windows", None)
+        if ask is None:
+            return False
+        try:
+            return bool(ask())
+        except Exception:
+            return False
+
     def _open_window(self, original_pid, center_on, clamp_to) -> None:
         """Build and show the window, one turn of the loop after the key that
         asked for it (see __call__).
@@ -327,6 +388,16 @@ class ChooserAction:
         if runtime.backend is None:
             return
         keymap = Keymap.get_instance()
+        if self._would_be_buried(keymap):
+            # Nothing else is safe to do with the key: the chooser reads
+            # keystrokes through the hook without taking the focus, so one
+            # opened behind the Start menu is one that eats what the user
+            # types into it. Not opening at all is the whole remedy.
+            logger.info(
+                f"{self!r} did not open: the window in front is in a z-order "
+                f"band above ours (the Start menu is), so the chooser would "
+                f"be invisible while taking the keystrokes meant for it.")
+            return
 
         def _refocus_original_app():
             self._refocus(original_pid)
@@ -355,6 +426,7 @@ class ChooserAction:
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
+                                below=self._below(keymap, clamp_to),
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
                                 pages=self.page_names(),
@@ -582,7 +654,8 @@ class ShowCandidates(ChooserAction):
     this, activate that, press the other.
     """
 
-    def __init__(self, sources, on_chosen=None, matcher=None, activates=None):
+    def __init__(self, sources, on_chosen=None, matcher=None, activates=None,
+                 anchor=None):
         """Build the action.
 
         Args:
@@ -602,6 +675,9 @@ class ShowCandidates(ChooserAction):
             activates: Whether the window takes OS keyboard focus.  Leave it
                 alone unless the filter field genuinely needs an input method
                 - see `ChooserAction.activates`.
+            anchor: Where the window opens - "caret" (the default) under the
+                text insertion point, or "window" in the focused window's
+                middle.  See `ChooserAction.anchor`.
         """
         from keyhac.core.source import ChooserPage, as_source
 
@@ -618,6 +694,8 @@ class ShowCandidates(ChooserAction):
             self.matcher = matcher
         if activates is not None:
             self.activates = activates
+        if anchor is not None:
+            self.anchor = anchor
 
     def __repr__(self):
         if len(self._pages) > 1:
@@ -1167,6 +1245,162 @@ class MoveWindow(ThreadedAction):
 
     def __repr__(self):
         return f'MoveWindow(direction="{self.direction}")'
+
+
+class ReportCaretAnchor:
+    """Say where a popup would open right now, and why.
+
+    Bind it to a key and press it inside the application you are asking
+    about.  The report goes to the console at INFO - no debug logging to turn
+    on - and a balloon appears at the place it found, so the numbers and the
+    result are visible together.
+
+    ```python
+    kt["Fn-Ctrl-C"] = ReportCaretAnchor()
+    ```
+
+    **Why a key rather than a command-line tool.**  `tools/caret_probe.py`
+    asks about whatever is in front, and while it runs that is the terminal.
+    Reaching the application under test means switching to it and racing a
+    timer, and the Accessibility permission it needs belongs to the terminal
+    rather than to Keyhac - a second grant, in a second place, easy to have
+    given to a different terminal last time.  Pressed as a key, none of that
+    applies: Keyhac is already trusted and the application under test already
+    has the focus.
+
+    What it reports is the chain `keyhac.core.anchor` walks - the caret, then
+    the focused control if it is small enough to be a place, then the window -
+    and, above it, what each way of asking the caret question answered.  That
+    last part is what tells a control with no caret from one whose caret
+    cannot be believed, and those want opposite things done about them.
+    """
+
+    def __repr__(self):
+        return "ReportCaretAnchor()"
+
+    def __call__(self):
+        # The height limit by its own name: this report exists to explain the
+        # rule, and a copy of the number here would be a second rule.
+        from keyhac.core.anchor import (_MAX_PLACE_HEIGHT, display_scale,
+                                        place_below, popup_anchor, usable_caret)
+        from keyhac.ui.balloon import _focused_window_rect
+
+        keymap = Keymap.get_instance()
+        provider = getattr(keymap, "_focus_provider", None)
+        asked = None
+        if provider is not None:
+            try:
+                asked = provider.get_focused_element()
+            except Exception:
+                logger.error("Could not ask where the focus is.")
+                return
+
+        # What both callers now do: the provider for the truth *now*, and the
+        # keystroke's snapshot behind it - that snapshot falls back to the
+        # window and then to the application, where the provider would rather
+        # say nothing (issue #44). Where the two disagree, the snapshot is
+        # stale, and the report says so: on Windows it is a cache that cannot
+        # see the focus move inside a window.
+        focus = getattr(keymap, "focus", None)
+        snapshot = getattr(focus, "element", None)
+        where = getattr(focus, "app_name", None) or "the front application"
+        element = asked if asked is not None else snapshot
+        if element is None:
+            logger.info(f"Caret report - {where} reports no focused element. "
+                        f"A Chromium application answers that until an "
+                        f"assistive client asks it to build its accessibility "
+                        f"tree (keymap.ui.enable_content_access()).")
+            self._show(None, "no focused element")
+            return
+
+        rect = getattr(element, "get_rect", lambda: None)()
+        caret = getattr(element, "get_caret_rect", lambda: None)()
+        scale = display_scale(element)
+        lines = [f"Caret report - {where} / {self._role(element)}",
+                 f"  focused element : {rect}",
+                 f"  screen units    : x{scale:g} - a field is anything up to "
+                 f"{_MAX_PLACE_HEIGHT * scale:.0f} tall here"]
+        if asked is None:
+            lines.append("  (from the keystroke's focus snapshot - asking for "
+                         "the focus now returned nothing)")
+        elif snapshot is not None and not self._same(asked, snapshot):
+            lines.append(f"  (the keystroke's snapshot is a different element "
+                         f"- {self._role(snapshot)} "
+                         f"{getattr(snapshot, 'get_rect', lambda: None)()} - "
+                         f"and has gone stale; nothing is placed against it)")
+        for label, value in self._detail(element):
+            lines.append(f"  {label:<32}: {value}")
+        lines.append(f"  caret as we take it: {caret} "
+                     f"-> {'believed' if usable_caret(caret, rect, scale) else 'not believed'}")
+
+        # The window is passed because the balloon passes it: without it the
+        # report would answer "nowhere" for every application whose fall-back
+        # is the title bar, which is the commonest answer there is.
+        found = popup_anchor(element, _focused_window_rect(keymap))
+        if found is None:
+            lines.append("  anchor          : none - not even a window: a "
+                         "popup opens in the screen's centre, and a balloon "
+                         "in the corner")
+        else:
+            anchored, kind = found
+            lines.append(f"  anchor          : {kind} {anchored}"
+                         + (" - the balloon sits on its title bar, a chooser "
+                            "centres on it" if kind == "window" else ""))
+            if kind != "window":
+                lines.append(f"  a 400x200 popup would go to "
+                             f"{place_below((400, 200), anchored)}")
+        logger.info("\n".join(lines))
+        self._show(found, "nothing to place against")
+
+    @staticmethod
+    def _same(one, other) -> bool:
+        """Whether two reads landed on the same element.
+
+        Each read builds a fresh Python proxy, so `is` never says yes;
+        `identity_key()` is the platform reference underneath.
+        """
+        try:
+            return one.identity_key() == other.identity_key()
+        except Exception:
+            return False
+
+    @staticmethod
+    def _role(element) -> str:
+        for attribute in ("AXRole", "ControlType"):
+            try:
+                value = element.get_attribute_value(attribute)
+            except Exception:
+                continue
+            if value:
+                return str(value)
+        return "?"
+
+    @staticmethod
+    def _detail(element):
+        """Whatever the platform can say about how it looked for the caret."""
+        describe = getattr(element, "describe_caret", None)
+        if describe is None:
+            return []
+        try:
+            return describe()
+        except Exception:
+            return [("describe_caret", "raised")]
+
+    @staticmethod
+    def _show(found, caption: str) -> None:
+        """Put a balloon where the real one would go, by the same rules."""
+        keymap = Keymap.get_instance()
+        pop = getattr(keymap, "pop_balloon", None)
+        if pop is None:
+            return
+        where = {}
+        if found is not None:
+            rect, caption = found[0], found[1]
+            where = {"over": rect} if caption == "window" else {"near": rect}
+        try:
+            pop("CaretAnchor", f"anchor: {caption}", 4.0, **where)
+        except Exception:
+            logger.debug("No balloon to show the anchor with.")
 
 
 class SnapWindow:

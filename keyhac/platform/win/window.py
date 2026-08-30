@@ -102,6 +102,17 @@ if sys.platform == "win32":
     user32.GetShellWindow.argtypes = []
     user32.GetShellWindow.restype = wintypes.HWND
 
+    #: The band an ordinary application's windows land in - ours included,
+    #: measured. Anything above it is the shell's own, and out of reach.
+    ZBID_DESKTOP = 1
+
+    # Undocumented, exported since Windows 8, read-only here: see
+    # WinWindowProvider.foreground_hides_our_windows.
+    _GetWindowBand = getattr(user32, "GetWindowBand", None)
+    if _GetWindowBand is not None:
+        _GetWindowBand.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        _GetWindowBand.restype = wintypes.BOOL
+
     # DWM cloaking: a suspended UWP app keeps a visible top-level HWND that is
     # not on screen at all, so IsWindowVisible alone over-reports on Windows 10+.
     DWMWA_CLOAKED = 14
@@ -343,6 +354,38 @@ class WinWindowProvider(WindowProvider):
         proc = ENUMWINDOWSPROC(_callback)
         user32.EnumWindows(proc, 0)
         return windows
+
+    def foreground_hides_our_windows(self) -> bool:
+        """Whether the window in front is in a z-order band above ours.
+
+        **A band is absolute.** `WS_EX_TOPMOST` and `SetWindowPos` sort a
+        window within its own band and cannot lift it out of one, and the
+        shell keeps its own surfaces above every band an application can
+        reach. Measured on Windows 11 26200 with the Start menu open - which
+        is `SearchHost.exe`'s `Windows.UI.Core.CoreWindow` on this build,
+        `StartMenuExperienceHost.exe` on others, hence a band rather than a
+        name:
+
+            the Start menu                      band 6 (IMMERSIVE_MOGO)
+            a PuiKit window / a screen mark     band 1 (DESKTOP)
+
+        and `SetWindowPos(HWND_TOPMOST)` moved ours no further than the top
+        of band 1.
+
+        `GetWindowBand` is undocumented and has been exported since Windows
+        8; it is only read here, and a build without it answers False - the
+        same as any other failure, because refusing to open a chooser is the
+        more damaging way to be wrong.
+        """
+        if _GetWindowBand is None:
+            return False
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        band = wintypes.DWORD()
+        if not _GetWindowBand(hwnd, ctypes.byref(band)):
+            return False
+        return band.value > ZBID_DESKTOP
 
     def screen_frames(self):
         return self._monitor_frames("rcMonitor")

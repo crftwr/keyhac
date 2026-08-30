@@ -201,6 +201,96 @@ if sys.platform == "win32":
     kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
     kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
+    # Integrity levels, for "is the window in front one we can even see keys
+    # for" - see WinInputHook._foreground_is_out_of_reach.
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND,
+                                                ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                          ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.GetSidSubAuthorityCount.argtypes = [ctypes.c_void_p]
+    advapi32.GetSidSubAuthorityCount.restype = ctypes.c_void_p
+    advapi32.GetSidSubAuthority.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    advapi32.GetSidSubAuthority.restype = ctypes.c_void_p
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    TOKEN_QUERY = 0x0008
+    TokenIntegrityLevel = 25
+
+
+def _hex(level) -> str:
+    """An integrity level as it is written, or "unreadable"."""
+    return "unreadable" if level is None else f"0x{level:04X}"
+
+
+def _integrity_level(pid: int | None) -> int | None:
+    """A process's integrity level as its SID's last sub-authority, or None.
+
+    `None` for our own process. 0x2000 is medium (an ordinary application),
+    0x3000 high (elevated); the numbers are compared, never named, because
+    what matters is only whether one is above another.
+
+    None when it cannot be read at all, which is an answer this is asked to
+    make a decision *against*: the caller treats "cannot tell" as "in reach",
+    so an unreadable process can never talk it out of a recovery.
+    """
+    try:
+        if pid is None:
+            handle, opened = kernel32.GetCurrentProcess(), False
+        else:
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                          False, pid)
+            opened = bool(handle)
+            if not handle:
+                return None
+        token = wintypes.HANDLE()
+        try:
+            if not advapi32.OpenProcessToken(handle, TOKEN_QUERY,
+                                             ctypes.byref(token)):
+                return None
+            try:
+                size = wintypes.DWORD()
+                advapi32.GetTokenInformation(token, TokenIntegrityLevel, None,
+                                             0, ctypes.byref(size))
+                if not size.value:
+                    return None
+                buffer = ctypes.create_string_buffer(size.value)
+                if not advapi32.GetTokenInformation(token, TokenIntegrityLevel,
+                                                    buffer, size.value,
+                                                    ctypes.byref(size)):
+                    return None
+                # TOKEN_MANDATORY_LABEL is a SID_AND_ATTRIBUTES: the SID
+                # pointer first, and the level is its last sub-authority.
+                sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+                count = ctypes.cast(advapi32.GetSidSubAuthorityCount(sid),
+                                    ctypes.POINTER(ctypes.c_ubyte))[0]
+                return ctypes.cast(advapi32.GetSidSubAuthority(sid, count - 1),
+                                   ctypes.POINTER(wintypes.DWORD))[0]
+            finally:
+                kernel32.CloseHandle(token)
+        finally:
+            if opened:
+                kernel32.CloseHandle(handle)
+    except Exception:
+        logger.debug("Could not read an integrity level.", exc_info=True)
+        return None
+
 
 class WinInputHook(InputHook):
 
@@ -217,6 +307,16 @@ class WinInputHook(InputHook):
     #: only evidence afterwards that a key that leaked was a key that overran.
     SLOW_CALLBACK_SECONDS = 0.2
 
+    #: Sent before a Windows key is released on recovery, so the release does
+    #: not read as a Win *tap* and open the Start menu: the menu opens when a
+    #: Win down is followed by its up with nothing in between. 0xE8 is
+    #: unassigned - Windows does nothing with it, no layout produces it - and
+    #: it is the same masking key AutoHotkey uses, for the same reason.
+    MASK_VK = 0xE8
+
+    #: The two of `_modifier_vks` that a bare tap is a command in.
+    WIN_VKS = (0x5B, 0x5C)
+
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinInputHook requires Windows")
@@ -232,6 +332,10 @@ class WinInputHook(InputHook):
         self._sanity_state = None
         self._sanity_count = 0
         self._modifier_vks = (0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C)
+        self._own_integrity = None      # read once, on the first strike
+        #: Physical keys we have been shown the down of - see _let_go_of.
+        self._seen_down = set()
+        self._out_of_reach_title = None  # said so about this window already
 
     # ------------------------------------------------------------------
 
@@ -305,6 +409,15 @@ class WinInputHook(InputHook):
             return user32.CallNextHookEx(None, n_code, w_param, l_param)
         kind = "replay" if extra == EXTRA_INFO_REPLAY else "real"
 
+        # Which physical keys we have actually been shown the *down* of, so
+        # an up can tell whether the OS is holding one we never saw pressed.
+        orphan = False
+        if down:
+            self._seen_down.add(vk)
+        else:
+            orphan = vk not in self._seen_down
+            self._seen_down.discard(vk)
+
         started = time.perf_counter()
         try:
             consumed = self._on_key(KeyEvent(vk, down, kind)) if self._on_key else False
@@ -320,6 +433,8 @@ class WinInputHook(InputHook):
                 f"callback (ThreadedAction, or call_on_main_thread).")
 
         if consumed:
+            if orphan and vk in self._modifier_vks:
+                self._let_go_of(vk)
             return 1
         return user32.CallNextHookEx(None, n_code, w_param, l_param)
 
@@ -375,16 +490,154 @@ class WinInputHook(InputHook):
 
         if state != self._sanity_state:
             self._sanity_state = state
+            # Asked on *every* strike, not once the fourth has been reached:
+            # by then the window that was keeping the keys from us may be gone,
+            # and the evidence of blindness is four ticks old while the
+            # foreground is read now. Four hundred milliseconds is long enough
+            # to close Task Manager in.
+            if self._foreground_is_out_of_reach():
+                # Not a cancellation: the hook is installed and working, and
+                # the keys are simply not ours to see.
+                self._sanity_count = 0
+                return
             self._sanity_count += 1
             if self._sanity_count >= WinInputHook.SANITY_CHECK_STRIKES:
-                logger.warning("Key hook force cancellation detected - re-installing.")
+                title, theirs, ours = self._foreground_reach()
+                logger.warning(
+                    f"Key hook force cancellation detected - re-installing. "
+                    f"The window in front is {title!r}, integrity "
+                    f"{_hex(theirs)} against our {_hex(ours)}.")
                 self._sanity_count = 0
                 on_key, on_restored = self._on_key, self._on_restored
                 on_mouse = self._on_mouse
                 self.uninstall()
                 self.install(on_key, on_restored, on_mouse)
+                self.release_stuck_modifiers()
                 if on_restored is not None:
                     on_restored()
+
+    def _foreground_is_out_of_reach(self) -> bool:
+        """Whether the window in front is one whose keys we never see anyway.
+
+        **A hook that is given nothing looks exactly like a hook that was
+        taken away**, and the sanity check cannot tell them apart on its own:
+        both are modifier state moving while no callback arrives. UIPI is the
+        second cause. A low-level hook installed by a medium-integrity process
+        is not called for input aimed at a *higher* integrity window, and
+        Task Manager is that window - measured on the machine this was
+        reported from: Keyhac at integrity 0x2000 and Task Manager at 0x3000,
+        elevated. Every keystroke typed in there produced a strike, so the
+        hook was torn down and rebuilt over and over while nothing was wrong
+        with it, and each rebuild is a gap physical events flow through.
+
+        Keyhac's bindings do not work in such a window, and cannot without
+        running elevated - that is Windows protecting it, not a bug to fix.
+        What is a bug is calling it a force cancellation.
+
+        The token read costs a process open, and runs on a strike - which is
+        to say only where something already looks wrong, and where the
+        alternative is a needless re-install.
+        """
+        title, theirs, ours = self._foreground_reach()
+        if theirs is None or ours is None or theirs <= ours:
+            return False
+        if self._out_of_reach_title != title:
+            self._out_of_reach_title = title
+            logger.info(
+                f"{title!r} runs at integrity {_hex(theirs)} and we are "
+                f"{_hex(ours)}: Windows does not show us its keys, so no "
+                f"binding fires there. Not a hook failure - and not treated "
+                f"as one.")
+        return True
+
+    def _foreground_reach(self) -> tuple:
+        """(what is in front, its integrity level, ours).
+
+        A title rather than a process name because it is the log a person
+        reads: "Task Manager" says which window it was, and the level beside
+        it says why nothing fired in it. `None` for a level that could not be
+        read, which every caller treats as *in* reach - the hook being gone is
+        the case that costs the user their keyboard, so "cannot tell" must
+        never talk the recovery out of running.
+        """
+        if self._own_integrity is None:
+            self._own_integrity = _integrity_level(None)
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ("nothing at all", None, self._own_integrity)
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        buffer = ctypes.create_unicode_buffer(120)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        return (buffer.value or f"pid {pid.value}",
+                _integrity_level(pid.value), self._own_integrity)
+
+    def _let_go_of(self, vk: int) -> None:
+        """Undo, at the OS level, a modifier down we were never shown.
+
+        **An up whose down we never saw belongs to somebody else.** Windows
+        hides input aimed at a higher-integrity window from our hook, so the
+        *down* went to the OS while we were blind; if the up is then consumed
+        - and a user modifier's up always is, it being a key no application
+        may see - nothing is left to tell Windows the key came back up, and it
+        holds it forever.
+
+        Reported with LWin as User0 and Task Manager in front, which is the
+        shortest road to it there is: pressing the Windows key opens the Start
+        menu, the Start menu is *not* elevated, so the up arrives at a hook
+        that never saw the down. The key stayed held afterwards, in every
+        application, until it was pressed and released again.
+
+        The physical up stays consumed - passing it through would hand the
+        application a bare up, and for a user modifier that is exactly the
+        event the whole feature promises never to send. An injected one is
+        sent instead, masked for the same reason
+        `release_stuck_modifiers()` masks: a Win down with its up and nothing
+        in between is the Start menu's own shortcut.
+        """
+        logger.debug(f"Releasing 0x{vk:02X}: its up reached us, its down "
+                     f"never did, so Windows is holding a key nobody pressed.")
+        events = []
+        if vk in WinInputHook.WIN_VKS:
+            events += [(WinInputHook.MASK_VK, True), (WinInputHook.MASK_VK, False)]
+        self.send(events + [(vk, False)])
+
+    def release_stuck_modifiers(self) -> None:
+        """Let go of the modifiers Windows still believes are held.
+
+        **The gap is not symmetrical.** While the hook is gone the physical
+        events go straight to the OS; when it comes back, the ones the config
+        swallows never arrive there. A user modifier is never emitted, and a
+        replaced key is emitted as something else, so a *down* Windows
+        received during the gap is matched by an up it will never see.
+        Reported with LWin retired to User0, which is the recommended way to
+        get a spare modifier on Windows: after a force-cancellation the Start
+        menu's modifier stays armed, every letter afterwards is a Win chord,
+        and the only cure the user has is to press and release the key again
+        - having first worked out which key it was.
+
+        So every modifier the OS reports as down is released here, as our own
+        injected event. A key the user is genuinely still holding is released
+        with them, and that is the right trade: this runs only where events
+        have already been missed, and a modifier that has to be pressed again
+        is a great deal better than one nobody can find.
+
+        `MASK_VK` goes first when a Windows key is among them, or the release
+        would complete a Win tap and open the Start menu.
+
+        lazydocs: ignore
+        """
+        held = [vk for vk in self._modifier_vks
+                if user32.GetAsyncKeyState(vk) & 0x8000]
+        if not held:
+            return
+        logger.warning("Releasing modifiers Windows still holds down: "
+                       + ", ".join(f"0x{vk:02X}" for vk in held) + ".")
+        events = []
+        if any(vk in WinInputHook.WIN_VKS for vk in held):
+            events += [(WinInputHook.MASK_VK, True), (WinInputHook.MASK_VK, False)]
+        events += [(vk, False) for vk in held]
+        self.send(events)
 
     def keyboard_layout(self) -> str:
         # GetKeyboardType(0) == 7 means a Japanese keyboard (keyhac-win rule)

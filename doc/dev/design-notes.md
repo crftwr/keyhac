@@ -393,6 +393,93 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   warning is the only evidence available that a key which leaked was a key
   that overran, and the only notice at all *before* the recovery. It is
   Windows-only because macOS's tap reports its own timeout.
+- **A hook that is given nothing looks exactly like a hook that was taken
+  away**, and the sanity check cannot tell them apart: both are modifier state
+  moving while no callback arrives. UIPI is the second cause. A low-level hook
+  installed by a medium-integrity process is not called for input aimed at a
+  *higher* integrity window, and Task Manager is one — measured on the machine
+  this was reported from: Keyhac at integrity 0x2000, Task Manager at 0x3000
+  and elevated. So every key typed in there was a strike, the hook was torn
+  down and rebuilt over and over with nothing wrong with it, and each rebuild
+  was a gap physical events flowed through — which is where the stuck Windows
+  key below came from. `_foreground_is_out_of_reach()` reads the foreground
+  window's integrity level on *every* strike (0.16 ms, and a strike is
+  already "something looks wrong") and, above our own, calls it what it is.
+  Every strike rather than the fourth: four hundred milliseconds is long
+  enough to close Task Manager in, and the evidence of blindness would then
+  be four ticks old while the foreground is read now. Keyhac's bindings genuinely do not work in such a window and cannot
+  without running elevated: that is Windows protecting it. Calling it a force
+  cancellation was the bug. "Cannot tell" counts as in reach — the hook being
+  gone is the case that costs the user their keyboard.
+- **An up whose down we never saw belongs to somebody else.** Suppressing the
+  false positive above removed the re-install, and with it the modifier
+  release that had been accidentally covering the real leak. The leak needs no
+  hook failure at all: while an elevated window is in front the *down* goes to
+  the OS unseen, and if the up is then consumed — and a user modifier's up
+  always is, it being a key no application may see — nothing tells Windows the
+  key came back up. The shortest road to it, and the one it was reported
+  from: LWin as User0 with Task Manager in front, where pressing the Windows
+  key opens the Start menu, the Start menu is *not* elevated, and the up
+  therefore arrives at a hook that never saw the down. So the hook tracks
+  which physical downs it has been shown, and a consumed modifier up with no
+  down behind it is undone with an injected up (masked, as below). The
+  physical up stays consumed: passing it through would hand the application
+  the bare modifier event the feature promises never to send.
+- **Recovery has to put the OS's modifier state back, not only ours.** The
+  gap the sanity check recovers from is not symmetrical: while the hook is
+  gone the physical events go straight to the OS, and when it returns the
+  ones the config swallows never arrive there — a user modifier is never
+  emitted, a replaced key is emitted as something else. So a *down* Windows
+  received during the gap is matched by an up it will never see. Reported
+  with LWin retired to User0, which is the recommended way to get a spare
+  modifier on Windows: after a force-cancellation the Start menu's modifier
+  stayed armed and every letter afterwards was a Win chord.
+  `release_stuck_modifiers()` therefore releases every modifier
+  `GetAsyncKeyState` still reports as down, right after the re-install and
+  before `on_restored` resets the engine's own state. A key genuinely still
+  held is released with them — this runs only where events have already been
+  missed, and a modifier that has to be pressed again beats one nobody can
+  find. `MASK_VK` (0xE8, unassigned, AutoHotkey's masking key) goes first
+  when a Windows key is among them: a Win down followed by its up with
+  nothing in between *is* the Start menu's shortcut, and the down already
+  happened.
+
+## The Start menu is above every band we can reach
+
+- **A z-order band is absolute.** `WS_EX_TOPMOST` and `SetWindowPos` sort a
+  window *within* its band and cannot lift it out of one. Measured on Windows
+  11 26200 with the Start menu open — which is `SearchHost.exe`'s
+  `Windows.UI.Core.CoreWindow` on this build and
+  `StartMenuExperienceHost.exe` on others, which is why the check is a band
+  and not a name:
+
+      the Start menu                    band 6 (ZBID_IMMERSIVE_MOGO)
+      a PuiKit window / a screen mark   band 1 (ZBID_DESKTOP)
+
+  `SetWindowPos(HWND_TOPMOST)` moved ours no further than the top of band 1.
+  So a balloon under the Start menu is hidden, and there is no arrangement of
+  window styles that changes it.
+- **The only way up is UIAccess, and it is closed to us.** A process with
+  `uiAccess="true"`, Authenticode-signed and installed under `%ProgramFiles%`,
+  may create windows in `ZBID_UIACCESS` and is exempt from UIPI — it would fix
+  both this and the Task Manager blindness above. But a packaged app cannot
+  have it: a Desktop AppX process with uiAccess fails to launch outright
+  (`UI Access is not supported for Desktop AppX processes`, 0x80070032,
+  microsoft/WindowsAppSDK#1669), and Keyhac ships through the Store as an
+  MSIX. The classic road is shaky too — uiAccess apps meeting every stated
+  requirement are reported failing to launch on 24H2. So: accepted, not
+  fixed.
+- **A hidden balloon is a nuisance; a hidden chooser is a bug.** The chooser
+  does not take the focus — it reads keystrokes through the key hook — so one
+  opened behind the Start menu eats what the user types into the Start menu,
+  invisibly. `WindowProvider.foreground_hides_our_windows()` answers whether
+  the window in front is in a band above ours (`GetWindowBand`, undocumented,
+  exported since Windows 8, read-only, and False on any failure), and a
+  non-activating chooser refuses to open when it is. The activating path is
+  exempt: taking the focus closes the Start menu, so that chooser is seen.
+  Refusing to open is the whole remedy — there is nothing else safe to do
+  with the key, since the alternative is a window that captures input nobody
+  can see.
 
 ## An element source reads `window.element`, never `window.native`
 
@@ -913,12 +1000,216 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - The old window sized itself with `min(70, max(14, len(text) + 4))`. That was
   a wrap width with no name, and no way for a long balloon to do anything but
   be cut short; it is `max_width` now and the text wraps.
-- Placement: top-right of the main screen's work area, at the widest the mark
-  could be rather than at its actual left edge — a mark sized to its text does
-  not know that edge until it exists, and this keeps a short balloon a little
-  further in rather than letting a long one run off.
+- Placement: under the caret when one can be read and believed, and otherwise
+  the top-right of the main screen's work area, at the widest the mark could be
+  rather than at its actual left edge — a mark sized to its text does not know
+  that edge until it exists, and this keeps a short balloon a little further in
+  rather than letting a long one run off.
+- **The caret, then the focused control if it is small enough to be a place,
+  then the focused window's title bar, then a corner.** The title-bar step is
+  what Excel needed: with no cell being edited its grid has no caret and is
+  far too tall to be a place, and a balloon in a screen corner for a window
+  in front of you is a balloon somewhere else entirely. The top edge of a
+  window, centred, is a strip that holds nothing anyone is reading, it names
+  the window the balloon is about, and it is where the work is. The corner is
+  left for having no window either.
+- **Why the control step exists at all.** "A control is not a better corner,
+  it is a worse caret" was the first rule here, and the measurement overturned
+  half of it: under a one-line field is within a line of where the caret is.
+  It is only a *tall* element that is neither where you are looking nor out of
+  the way, so it is refused by height (`_MAX_PLACE_HEIGHT`) rather than by
+  category. Without that step every Electron application is a corner forever —
+  see below.
+- The size it flips and clamps with is an **estimate**, and has to be: the
+  mark sizes itself to its text and does not exist yet. Being wrong by a line
+  moves the balloon by a line. The chooser has no such problem, its window
+  knowing its own frame before it is shown.
+- **The estimated width is the text's, not the wrap width.** The corner
+  placement uses the widest the mark could be, deliberately — it is being
+  pushed against the right edge of the screen, and a short balloon then sits a
+  little further in rather than a long one running off. At a caret that same
+  number is a bug: measured with Terminal.app near the right edge of a
+  1710-wide screen, a caret at x=1406 and an eighteen-character balloon
+  measured as seventy columns decided it would not fit and clamped to
+  1710 − 560 = 1150, a quarter of the screen left of the caret it was meant to
+  be under.
+- **The focus is asked for when the prefix is armed, not taken from
+  `keymap.focus`.** The snapshot was the free answer — refreshed at the top
+  of `_on_key_down`, so it belongs to the very keystroke that armed the
+  prefix, and reading it keeps a second focus lookup off the hook's clock.
+  On macOS it is also true: that provider reads `AXFocusedUIElement` fresh
+  every time. On Windows it is a cache keyed on (foreground window, focused
+  child window, title), because a full UIA walk measures 33 ms and cannot run
+  on every key — and none of those three change when the focus moves *inside*
+  a window. In a Chromium or Electron window they cannot: the whole UI is one
+  HWND, so tabbing from the address bar into the page changes nothing the
+  probe can see, and the balloon opened at the field the user had just left.
+  Issue #44 is the same staleness found in the action API, where
+  `keymap.ui.focused()` stopped reading the snapshot for the same reason.
+  `get_focused_element()` measures 2.1 ms against a cross-process Edit, paid
+  once per armed prefix rather than once per key, against a 300 ms hook
+  deadline. The snapshot stays as the fall-back: it holds the window, and
+  then the application, where the provider would rather say nothing. The
+  chooser never had the problem — it reads the caret one turn of the loop
+  later, where nothing is on the hook's deadline.
 - Used for multi-stroke help (restores a keyhac-mac FIXME) and macro record
   state.
+
+## Where a popup opens (issue #118)
+
+- **A successful call is not a true answer.** Both OSes offer the caret —
+  macOS `AXBoundsForRange` over `AXSelectedTextRange`, Windows
+  `GetBoundingRectangles` over the TextPattern selection — and applications
+  answer wrongly without failing. Measured in VS Code: the caret comes back as
+  `(0, 1112, 0, 0)` for a text area whose own frame is
+  `(1275, 981, 409, 40)`. No height, x at the screen edge, y outside the
+  element entirely. A popup placed there is *worse* than the window centre it
+  replaced, and nothing in the return value says so.
+- **That answer is CGRectZero, flipped.** The y is the screen's height on
+  every reading, whatever the element — which is Cocoa's origin converted to
+  the top-left space. Electron is not reporting a wrong caret; it is reporting
+  no rectangle at all through an API that has no way to say so. Asking the
+  application to build its accessibility tree first
+  (`set_manual_accessibility`, which exists for exactly this class of
+  Chromium problem) changes nothing: measured before and after, identical.
+- **The marker API answers where `AXBoundsForRange` does not.** Chromium and
+  WebKit carry a second text interface keyed on opaque markers, and in a
+  Gmail compose body — 24 characters of real text, `AXBoundsForRange` dead to
+  both spellings and `AXLineForIndex` with it —
+  `AXBoundsForTextMarkerRange` over `AXSelectedTextMarkerRange` answers
+  `(142, 413, 0, 14)` for an element at `(107, 341, 512, 295)`. Zero width,
+  one line tall, inside its element: a caret. So it is the last road tried,
+  and it is tried only after the first has failed, being two more
+  cross-process round trips.
+- **A rectangle the size of its own element is not a caret**, and two
+  unrelated roads answer that way — both of them a way of saying "nothing"
+  through an API with no way to say it:
+  - `AXBoundsForRange` in **Excel**, with no cell being edited. The grid is
+    an `AXLayoutArea` of no characters, and every spelling — the character,
+    the insertion point, even the caret's line — comes back as
+    `(482, 293, 945, 624)`, which is the grid.
+  - the **marker API** for an empty range. VS Code's editor is that case:
+    Monaco's input proxy carries no text, so the selection covers nothing and
+    the bounds of nothing are the whole element.
+
+  Believing either is worse than having no caret at all, because a caret
+  bypasses the height limit that keeps a popup from opening under a document
+  — and a grid and an editor are exactly what that limit is for. The rule is
+  `usable_caret`'s, not any platform's: it was written once in the macOS
+  marker read and Excel walked straight past it through the other road, which
+  is what a rule in the wrong layer does.
+- **A newline is not drawn where the caret is** — the Windows half of the
+  same character macOS meets from the other side. Measured in the Claude Code
+  chat input inside VS Code, empty, caret at the start of it:
+
+      the selection's text                : ''
+      its first bounding rectangle        : None
+      expanded to its character, that is  : '\n'
+      its first bounding rectangle        : (3316, 1803, 32, 32)
+      the caret's line                    : 'Queue another message…'
+      the line's rectangle                : (2156, 1805, 276, 32)
+
+  The degenerate range answers nothing, so the read expands to the character
+  at the caret — and that character is a newline, whose rectangle Chromium
+  draws at the end of the *line box*, which in a field 1240 wide is the far
+  right of it. The balloon opened five hundred points right of the caret, in
+  an empty box. macOS asks for the character *before* the caret and reads a
+  newline as "the caret is at the start of the line below"; the Windows
+  expansion runs forward instead, where a newline means only that there is
+  nothing at the caret to bound. So it is refused, and the field — one line
+  tall, and a place — is what the balloon opens under.
+- **An element of no size is not something to check a caret against.**
+  Measured in VS Code on Windows, which is the same editor answering the
+  opposite way round: the focused element is Monaco's input proxy and UIA
+  reports its frame as `(0, 0, 0, 0)` — what an element moved off screen
+  answers — while the TextPattern selection over it is a *true* caret,
+  `(900, 1116, 1, 32)` on a 200% display. Checking that caret against a
+  rectangle at the origin rejected it for being nowhere near an element that
+  is nowhere, and the balloon went to the title bar with a perfectly good
+  caret in hand. An empty frame is the same answer as no frame at all: there
+  is nothing to check against, so the caret is taken on trust, exactly as it
+  is when `get_rect()` returns nothing.
+- **Which is why the element fall-through gets the y right and the x wrong.**
+  Monaco moves that proxy to the caret's *line*, so it is on screen where the
+  caret is vertically — it has to be, or an IME would put its candidate
+  window in the wrong place — but it spans the line rather than sitting at the
+  caret's column. So a popup under it opens on the right line at the line's
+  left edge. That is the ceiling for Electron, not a bug to be found later:
+  the caret's x is not in the accessibility tree at all.
+- **Native AppKit does implement it.** Measured against XeFM:
+  `AXBoundsForRange(0, 1)` on a static text at `(88, 47, 40, 16)` answers
+  `(88, 47, 8.8, 16)` — inside the element, one character wide, the line's
+  height. So the mechanism is sound and the split is per-toolkit: native
+  answers, Chromium/Electron does not, and the size fall-through above is
+  what keeps the second half usable.
+- So a reported caret is checked against the element it is supposed to be
+  inside, and one that fails is no caret. That rule is `usable_caret` in
+  `keyhac/core/anchor.py` rather than in either platform, because the two
+  platforms must not disagree about it and because it has to be testable
+  without an application to be wrong.
+- A caret has **no width and that is ordinary** — it is a line. Requiring
+  width would reject every honest answer and keep the dishonest ones, whose
+  distinguishing feature is missing *height*.
+- **Past the last character, ask the one before it.** There is no character
+  at the caret to bound then, and the insertion point is TextEdit's weakest
+  answer. The character before the caret has bounds, and the caret is at its
+  trailing edge — except after a *newline*, where the caret is at the start of
+  the line below and nothing else in the AX vocabulary says so. Measured at
+  the end of a TextEdit document: the insertion point gives
+  `(101, 497, 0, 14)`, the newline at offset 62 gives `(101, 497, 576, 14)`,
+  the caret's line agrees with both of them — and the caret is at
+  `(101, 511)`. The balloon covered the line being typed on, and only ever on
+  the last one, which is what a document ending in a newline makes of every
+  other answer.
+- **Ask twice: the insertion point, then the character at it.** Applications
+  disagree about which spelling they answer, and the disagreement is not
+  along any line you could guess. Terminal.app refuses the zero-length range
+  (CGRectZero) and answers `(378, 1)` with `(524, 619, 756, 15)`; TextEdit
+  answers the zero-length one and has nothing at `(44, 1)`, the caret being
+  past its last character. Neither spelling alone reaches both. The second's
+  width is whatever that character occupies — a newline runs to the end of
+  the line, hence 756 — which costs nothing: placement uses the left edge and
+  the height. Windows has the same split, a degenerate `TextRange` being
+  allowed to have no bounding rectangles at all, and the same answer:
+  `ExpandToEnclosingUnit(Character)` and ask again.
+- The chain is caret → focused control → window centre, each falling through
+  when it cannot be read *or cannot be believed*, so every failure ends at the
+  behaviour issue #4 shipped rather than at nothing. `anchor="window"` opts a
+  chooser out at the top: a window switcher has no business opening beside
+  your caret.
+- Placement is **below, left edges aligned**, flipped above when there is no
+  room and clamped to the screen — what an IME does with its candidate window,
+  and for the caret's own reason: the text being typed has to stay visible.
+  Centring on a caret would put half the popup over what was just typed.
+- **Below a caret in a field means below the field.** A caret is the text; a
+  field is the text plus its padding and its border, and they do not end in
+  the same place. Measured in Finder's search field: the caret is
+  `(924.5, 202, 0, 16)` inside a field at `(891, 207, 242, 38)` — it starts
+  five points *above* the field and ends twenty-seven above its bottom, so a
+  popup under the caret opened inside the box it had been typed into. The
+  caret's height is extended to the field's bottom edge; its **x is left
+  alone**, the column being the one thing the field cannot say and the reason
+  to read a caret at all. Only for a field — under a document's bottom edge
+  is nowhere near the caret, which is what `_is_place` is for.
+- **Every limit here is written in logical units, and Windows answers in
+  pixels.** Keyhac is per-monitor DPI aware before its first window exists, so
+  UIA reports physical pixels: on a 200% display every rectangle arrives twice
+  the size it is described at, while `_MAX_PLACE_HEIGHT` counts lines of text
+  and the caret slack counts points. Measured in Chrome's New Tab on one: the
+  Google search field, one line high, is `(1180, 1086, 1179, 112)` — refused
+  as a place, and the balloon went to the title bar of the window whose search
+  box the user was typing in. macOS never showed it, AX being in points on
+  every display. So the element is asked `get_coordinate_scale()` — the DPI of
+  the monitor *its own rectangle* is on, two displays at different scales
+  being ordinary — and the limits are multiplied by it. It answers 1.0 on
+  macOS and means it, and 1.0 for anything that cannot answer, which is the
+  old behaviour exactly.
+- The flip is refused when above is no better. A popup taller than the space
+  over the caret would be flipped and then clamped straight back, which only
+  changes which end of it covers the text.
+- `tools/caret_probe.py` is how the next bad answer gets found; the survey
+  mode is the weak one, since a background application reports no focused
+  element and a blank row there means "not asked", not "cannot answer".
 
 ## Tray / menu-bar extra
 

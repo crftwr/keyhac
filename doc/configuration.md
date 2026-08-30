@@ -473,14 +473,44 @@ to do — walking the window's controls, asking a server — costs that work eve
 time it is in the page being opened, so putting it in a page of its own means
 it is paid for only when you ask for it.
 
+### Where the window opens
+
+By default the chooser opens **under the caret**, falling back to the focused
+control and then to the middle of the focused window. Each step falls through
+when the one before it cannot be read *or cannot be believed* — a good many
+applications answer the caret question with a rectangle that is not where the
+caret is, and a popup placed on one of those lands somewhere nobody was
+looking.
+
+Pass `anchor="window"` for a chooser that acts on the window rather than on a
+place in it — a window switcher has no business opening beside your caret:
+
+```python
+kt["Fn-O"] = ShowCandidates([ChooserPage("Windows", [OpenWindows()])],
+                            anchor="window")
+```
+
+Applications differ enormously here, so **find out about one rather than
+guessing**. Bind `ReportCaretAnchor()` to a key and press it inside the
+application in question:
+
+```python
+kt["Fn-Ctrl-C"] = ReportCaretAnchor()
+```
+
+The console gets the caret Keyhac can read there — or why it cannot — at INFO,
+with no debug logging to turn on first, and a balloon appears at the place it
+found. `make caret-probe` does the same from a terminal, but a terminal is
+what is in front while it runs, so the key is usually the one you want.
+
 ### Writing a chooser as a class
 
 Custom choosers may also derive from `ChooserAction`: implement
 `list_items() -> [(icon, label, ...)]` and `on_chosen(item, modifier_flags)`; the
-open/filter flow is inherited. Two class attributes tune it: `matcher` (default
-substring + Migemo; `WildcardMatcher()` for `*` and `?`) and `activates` (default
+open/filter flow is inherited. Three class attributes tune it: `matcher` (default
+substring + Migemo; `WildcardMatcher()` for `*` and `?`), `activates` (default
 `False`; set it `True` only if the filter field genuinely needs an input method,
-which costs the focus of the application underneath).
+which costs the focus of the application underneath) and `anchor` (above).
 
 ## Windows, screens and applications
 

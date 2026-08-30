@@ -214,6 +214,214 @@ class UIElement:
         collect(self, 0)
         return "\n".join(parts) if parts else (value if isinstance(value, str) else None)
 
+    def get_rect(self) -> tuple | None:
+        """This element's screen rectangle as (x, y, w, h), or None.
+
+        Two attribute reads where `describe()` makes eight, for the callers
+        that want a place and nothing else - placing a popup beside the
+        focused control, checking that a caret rectangle is not a lie.
+        """
+        position = self.get_attribute_value("AXPosition")
+        size = self.get_attribute_value("AXSize")
+        if isinstance(position, tuple) and isinstance(size, tuple):
+            return (position[0], position[1], size[0], size[1])
+        return None
+
+    def get_coordinate_scale(self) -> float:
+        """Screen units per logical unit: always 1.0 here.
+
+        AX rectangles are in points, and a point is a point on a Retina
+        display exactly as on any other - the backing scale never reaches
+        this API. `keyhac.core.anchor` asks because its Windows twin has a
+        different answer, where the same call reports physical pixels and a
+        one-line field on a 200% display measures 112 of them.
+        """
+        return 1.0
+
+    def get_caret_rect(self) -> tuple | None:
+        """The text insertion point's screen rectangle, or None.
+
+        `AXSelectedTextRange` gives the caret its character offset and
+        `AXBoundsForRange` turns a range there into a rectangle: the pair an
+        IME places its candidate window with.
+
+        **The character at the caret is asked first, and the insertion point
+        second.**  Both name the same place - a length of one starts where a
+        length of zero sits - and the character is the one applications get
+        right.  Checked against the bounds of the caret's own line, which is
+        the truth an answer has to agree with:
+
+            app             len 0      len 1      the line
+            iTerm2          y=425      y=425      y=425
+            Terminal.app    CGRectZero y=649      y=649
+            TextEdit        y=399      y=413      y=413   <- len 0 is a
+            (its find field)y=362      y=362      y=362      whole line high
+
+        Four elements, and the zero-length range is wrong or absent on two of
+        them while the character agrees every time.  TextEdit's is the one
+        that shows on screen: a balloon placed under a caret reported a line
+        too high lands on top of the line being typed.
+
+        The character's width is whatever it occupies - a newline runs to the
+        end of the line - which costs nothing, placement using the left edge
+        and the height.
+
+        A caret past the last character has no character to bound.  The
+        character *before* it does, and says more than the insertion point
+        does: the caret is at that character's trailing edge - or at the
+        start of the line below it, when that character is a newline.  That
+        last case is TextEdit at the end of a document, where every other
+        answer names the line the newline is on and the caret is on the empty
+        line under it:
+
+            AXBoundsForRange(63, 0)  (101, 497, 0, 14)     <- a line too high
+            AXBoundsForRange(62, 1)  (101, 497, 576, 14)   <- the newline
+            the caret's line         (101, 497, 576, 14)   <- agrees, wrongly
+            where the caret is       (101, 511, 0, 14)
+
+        The insertion point is the last resort, with its y and height taken
+        from the caret's line where that can be had.
+
+        **Reported as the element gives it, lies included**, except that a
+        rectangle with no height is not an answer and the other spelling is
+        tried instead.  Measured in VS Code (Electron): both answer
+        (0, 1112, 0, 0) for an element whose own frame is
+        (1275, 981, 409, 40) - CGRectZero, flipped - and the first of them
+        comes back for the log to show.  Judging *that* is
+        `keyhac.core.anchor`'s job, so the rule is one rule and can be tested
+        without an application to be wrong.
+        """
+        selection = self.get_attribute_value("AXSelectedTextRange")
+        if not isinstance(selection, tuple):
+            return None
+        location = selection[0]
+        refused = None
+        for length in (1, 0):
+            rect = self.get_parameterized_attribute_value(
+                "AXBoundsForRange", "range", (location, length))
+            if not isinstance(rect, tuple) or len(rect) != 4:
+                continue
+            if rect[3] <= 0:
+                # Kept so the caller can log what was actually said. "Said
+                # nothing" and "said a rectangle with no height" are different
+                # applications behaving differently, and the log is where that
+                # difference gets noticed.
+                refused = refused or rect
+                continue
+            if length == 1:
+                return rect
+            trailing = self._after_the_last_character(location)
+            if trailing is not None:
+                return trailing
+            line = self._caret_line_rect(location)
+            return (rect[0], line[1], rect[2], line[3]) if line else rect
+        # No line lookup here: reaching this means AXBoundsForRange answered
+        # uselessly or not at all, and the line is asked through the same
+        # attribute. Three more round trips into an application that has
+        # already said nothing, on the key hook's clock, for nothing.
+        #
+        # The marker API is a different attribute and a different
+        # implementation, which is exactly why it is worth the two round
+        # trips: in a Gmail compose body it answers (142, 413, 0, 14) for an
+        # element at (107, 341, 512, 295) where AXBoundsForRange answers
+        # CGRectZero to both spellings.
+        return self._caret_marker_rect() or refused
+
+    def _caret_marker_rect(self) -> tuple | None:
+        """The caret through Chromium's and WebKit's own text API, or None.
+
+        Those two carry a second text interface keyed on opaque "text
+        markers", and it is implemented where `AXBoundsForRange` is not.  It
+        is asked only as a fallback: on a native control the first road works
+        and this one costs two more cross-process round trips.
+
+        **An empty range degenerates to the element itself** - VS Code's
+        editor being the case, its input proxy carrying no text - and that is
+        reported as given, like every other answer here.  Refusing it is
+        `keyhac.core.anchor.usable_caret`'s, which refuses the same shape
+        from `AXBoundsForRange` (Excel's grid answers that way) and would
+        have to agree with itself about both.
+        """
+        err, marker_range = AS.AXUIElementCopyAttributeValue(
+            self._ref, "AXSelectedTextMarkerRange", None)
+        if err != 0 or marker_range is None:
+            return None
+        err, bounds = AS.AXUIElementCopyParameterizedAttributeValue(
+            self._ref, "AXBoundsForTextMarkerRange", marker_range, None)
+        if err != 0:
+            return None
+        rect = _from_ax(bounds)
+        if not isinstance(rect, tuple) or len(rect) != 4 or rect[3] <= 0:
+            return None
+        return rect
+
+    def describe_caret(self) -> list:
+        """Every way of asking where the caret is, and what each answered.
+
+        For `ReportCaretAnchor`, which has to say *why* a popup went where it
+        did - and the why is always which spelling of the question this
+        particular application chose to answer.
+        """
+        selection = self.get_attribute_value("AXSelectedTextRange")
+        rows = [("AXSelectedTextRange", selection),
+                ("AXNumberOfCharacters",
+                 self.get_attribute_value("AXNumberOfCharacters"))]
+        if not isinstance(selection, tuple):
+            return rows
+        for length in (1, 0):
+            rows.append((f"AXBoundsForRange(caret, {length})",
+                         self.get_parameterized_attribute_value(
+                             "AXBoundsForRange", "range",
+                             (selection[0], length))))
+        rows.append(("bounds of the caret's line",
+                     self._caret_line_rect(selection[0])))
+        rows.append(("AXBoundsForTextMarkerRange (the marker API)",
+                     self._caret_marker_rect()))
+        return rows
+
+    def _after_the_last_character(self, location: int) -> tuple | None:
+        """Where a caret past the end of the text is, or None.
+
+        Read from the character before it, which is the only one there is to
+        ask.  A newline is the case worth the extra round trip: the caret is
+        then on the line *below* the one that character is on, at its start,
+        and nothing else in the AX vocabulary says so.
+
+        Without the text - `AXStringForRange` is not universal - the trailing
+        edge is used for everything, which is right except after a newline,
+        where it gives the correct line and the far end of it.
+        """
+        if location <= 0:
+            return None
+        previous = self.get_parameterized_attribute_value(
+            "AXBoundsForRange", "range", (location - 1, 1))
+        if not isinstance(previous, tuple) or len(previous) != 4 \
+                or previous[3] <= 0:
+            return None
+        text = self.get_parameterized_attribute_value(
+            "AXStringForRange", "range", (location - 1, 1))
+        if text in ("\n", "\r", "\r\n", "\u2028", "\u2029"):
+            line = self._caret_line_rect(location)
+            return ((line[0] if line else previous[0]),
+                    previous[1] + previous[3], 0.0, previous[3])
+        return (previous[0] + previous[2], previous[1], 0.0, previous[3])
+
+    def _caret_line_rect(self, location: int) -> tuple | None:
+        """The bounds of the line a character offset is on, or None."""
+        line = self.get_parameterized_attribute_value(
+            "AXLineForIndex", "int", location)
+        if line is None:
+            return None
+        line_range = self.get_parameterized_attribute_value(
+            "AXRangeForLine", "int", line)
+        if not isinstance(line_range, tuple):
+            return None
+        rect = self.get_parameterized_attribute_value(
+            "AXBoundsForRange", "range", line_range)
+        if isinstance(rect, tuple) and len(rect) == 4 and rect[3] > 0:
+            return rect
+        return None
+
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on, without the user selecting anything.
 

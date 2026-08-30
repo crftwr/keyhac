@@ -219,7 +219,8 @@ class TestChooserScrolling:
 
 
 class TestChooserCentering:
-    """Issue #4: the chooser centers on the focused window's frame.
+    """Where the window opens: the focused window's centre (issue #4), or
+    under the caret when there is one to sit under (issue #118).
 
     The memory backend creates 72x20 windows at (160, 160) with 1 px per
     cell, so the geometry below is exact."""
@@ -246,6 +247,24 @@ class TestChooserCentering:
         chooser = self._window(ui_backend, center_on=(-500, -500, 100, 100),
                                clamp_to=(0, 0, 800, 600))
         assert chooser.window.frame_px() == (0.0, 0.0, 72.0, 20.0)
+
+    def test_below_sits_under_the_caret(self, ui_backend):
+        chooser = self._window(ui_backend, below=(300, 400, 0, 18),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px() == (300.0, 422.0, 72.0, 20.0)
+
+    def test_below_wins_over_the_window_s_centre(self, ui_backend):
+        """Both are answers to "where does it open"; one of them knows where
+        the eye already is."""
+        chooser = self._window(ui_backend, below=(300, 400, 0, 18),
+                               center_on=(100, 100, 400, 300),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px()[:2] == (300.0, 422.0)
+
+    def test_below_flips_above_a_caret_near_the_bottom(self, ui_backend):
+        chooser = self._window(ui_backend, below=(300, 780, 0, 18),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px()[:2] == (300.0, 756.0)
 
 
 class TestChooserFiltering:
@@ -481,6 +500,11 @@ class _ActiveWindowProvider(WindowProvider):
 
     def __init__(self):
         self.active = _ActiveWindow(1, "Original Window")
+        #: What the Start menu makes true: a band we cannot rise above.
+        self.buried = False
+
+    def foreground_hides_our_windows(self):
+        return self.buried
 
     def get_active_window(self):
         return self.active
@@ -955,6 +979,40 @@ class TestBalloonIsAMark:
         assert mark.y == 25 + 24
         assert mark.x == 1920 - 70 * 8 - 24
 
+    def test_a_caret_puts_it_under_the_caret(self):
+        """Multi-stroke help arrives while the user is typing, and a corner of
+        the screen is not where they are looking."""
+        manager, backend = self._manager()
+        manager.pop("help", "Multi-stroke: sub", near=(400.0, 300.0, 0.0, 18.0))
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (400.0, 322.0)
+
+    def test_a_short_balloon_near_the_right_edge_stays_at_the_caret(self):
+        """The bug this replaced: measured against the wrap width instead of
+        its own, an eighteen-character balloon at x=1406 on a 1710 screen
+        decided it would not fit and clamped a quarter of the screen left of
+        the caret it was meant to be under."""
+        manager, backend = self._manager()
+        manager.pop("help", "Multi-stroke: Fn-X", near=(1500.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1500.0
+
+    def test_a_short_balloon_is_clamped_by_its_own_width(self):
+        manager, backend = self._manager()
+        manager.pop("help", "hi", near=(1900.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1920 - (2 * 8 + 24)
+
+    def test_a_long_balloon_is_clamped_by_the_wrap_width(self):
+        """It really is that wide once it wraps, so it really does have to
+        move that far."""
+        manager, backend = self._manager()
+        manager.pop("help", "x" * 300, near=(1900.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1920 - (70 * 8 + 24)
+
+    def test_no_caret_is_still_the_corner(self):
+        manager, backend = self._manager()
+        manager.pop("help", "hi", near=None)
+        assert backend.marks[0].y == 25 + 24
+
     def test_popping_the_same_name_replaces_it(self):
         manager, backend = self._manager()
         manager.pop("help", "first")
@@ -978,6 +1036,111 @@ class TestBalloonIsAMark:
         manager.close()
         assert backend.marks[1].closed
 
+    def test_multi_stroke_help_reads_the_caret_where_it_is_now(self):
+        """The provider is asked when the prefix is armed, rather than the
+        snapshot being taken at its word."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(400.0, 300.0, 0.0, 18.0),
+            rect=(390.0, 290.0, 300.0, 40.0))))("sub")
+        mark = backend.marks[0]
+        assert mark.kwargs["text"] == "Multi-stroke: sub"
+        # 330 is the field's bottom edge, not the caret's - a balloon under
+        # the caret would cover the box it was typed into.
+        assert (mark.x, mark.y) == (400.0, 334.0)
+
+    def test_a_snapshot_that_has_gone_stale_does_not_place_the_balloon(self):
+        """Windows caches the focus on (foreground window, focused child
+        window, title), none of which change when the focus moves inside a
+        Chromium window - the whole UI being one HWND. The balloon opened at
+        the field the user had left; it asks the provider now."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        here = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                        rect=(390.0, 290.0, 300.0, 40.0))
+        left_behind = _Focused(caret=(900.0, 700.0, 0.0, 18.0),
+                               rect=(890.0, 690.0, 300.0, 40.0))
+        multi_stroke_help(manager, _Keymap(here, snapshot=left_behind))("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_the_snapshot_is_what_a_provider_with_no_answer_leaves(self):
+        """It says nothing rather than hand back a window pretending to be
+        the focus (issue #44), and the snapshot has no such scruples."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        remembered = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                              rect=(390.0, 290.0, 300.0, 40.0))
+        multi_stroke_help(manager, _Keymap(None, snapshot=remembered))("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_a_provider_that_raises_is_not_a_balloon_that_fails(self):
+        from keyhac.ui.balloon import multi_stroke_help
+
+        class _Raises:
+            def get_focused_element(self):
+                raise RuntimeError("no focus for you")
+
+        manager, backend = self._manager()
+        keymap = _Keymap(_Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                                  rect=(390.0, 290.0, 300.0, 40.0)))
+        keymap._focus_provider = _Raises()
+        multi_stroke_help(manager, keymap)("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_a_caret_it_cannot_believe_falls_to_the_field(self):
+        """The VS Code measurement, reaching the balloon: the call succeeds,
+        the rectangle is CGRectZero flipped, and the field it came from is one
+        line tall - so under the field is within a line of where the caret
+        actually is, and a great deal better than the corner."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(0.0, 1112.0, 0.0, 0.0),
+            rect=(1275.0, 981.0, 409.0, 40.0))))("sub")
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (1275.0, 1025.0)
+
+    def test_a_document_is_not_a_place_and_the_corner_is(self):
+        """The objection the size rule answers: under a full-window text area
+        is neither where you are looking nor out of the way."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(0.0, 1112.0, 0.0, 0.0),
+            rect=(100.0, 100.0, 1200.0, 800.0))))("sub")
+        assert backend.marks[0].y == 25 + 24
+
+    def test_no_focus_at_all_is_the_corner_too(self):
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(None))(None)
+        assert backend.marks[0].kwargs["text"] == "Multi-stroke: ..."
+        assert backend.marks[0].y == 25 + 24
+
+    def test_no_caret_and_no_field_puts_it_on_the_title_bar(self):
+        """Excel with no cell being edited: the grid answers every spelling
+        with its own rectangle, so there is no caret and the grid is far too
+        tall to be a place. The window's top edge is where that leaves it -
+        on screen where the work is, rather than a corner of another
+        monitor."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        grid = (482.0, 293.0, 945.0, 624.0)
+        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid),
+                                           window=(400.0, 200.0, 1100.0, 800.0)))("sub")
+        mark = backend.marks[0]
+        # "Multi-stroke: sub" is 17 characters: 17 x 8 + 24 = 160 wide, and
+        # it hangs two pixels below the top edge rather than flush with it.
+        assert (mark.x, mark.y) == (400.0 + (1100.0 - 160.0) / 2, 202.0)
+
+    def test_with_no_window_either_it_is_still_the_corner(self):
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        grid = (482.0, 293.0, 945.0, 624.0)
+        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid)))("sub")
+        assert backend.marks[0].y == 25 + 24
+
     def test_a_platform_that_cannot_mark_is_not_an_error(self):
         from keyhac.ui.balloon import BalloonManager
 
@@ -988,6 +1151,61 @@ class TestBalloonIsAMark:
         BalloonManager(_Refuses()).pop("help", "hi")   # must not raise
 
 
+class _Focused:
+    """A focus element that answers the two questions the anchor asks."""
+
+    def __init__(self, caret=None, rect=None):
+        self._caret, self._rect = caret, rect
+
+    def get_caret_rect(self):
+        return self._caret
+
+    def get_rect(self):
+        return self._rect
+
+
+#: "the snapshot is whatever the provider says", which is the ordinary case.
+_FRESH = object()
+
+
+class _Keymap:
+    """What multi_stroke_help reads: the provider it asks where the focus is,
+    the snapshot it falls back to, and the focused window.
+
+    `snapshot=` is what the last keystroke left behind, for the cases where
+    Windows' focus cache and the truth have come apart."""
+
+    def __init__(self, element, window=None, snapshot=_FRESH):
+        self._focus_provider = _Provider(element)
+        remembered = element if snapshot is _FRESH else snapshot
+        self.focus = None if remembered is None else _Focus(remembered)
+        self._window = window
+
+    def get_active_window(self):
+        return None if self._window is None else _Window(self._window)
+
+
+class _Provider:
+    def __init__(self, element):
+        self._element = element
+
+    def get_focused_element(self):
+        return self._element
+
+
+class _Window:
+    def __init__(self, frame):
+        self._frame = frame
+
+    def get_frame(self):
+        return self._frame
+
+
+class _Focus:
+    def __init__(self, element):
+        self.element = element
+
+
 class _Mark:
     def __init__(self, x, y, kwargs):
         self.x, self.y, self.kwargs = x, y, kwargs
@@ -995,3 +1213,47 @@ class _Mark:
 
     def close(self):
         self.closed = True
+
+
+class TestAWindowThatCannotBeSeen:
+    """A chooser does not take the focus - it reads the keystrokes through the
+    key hook - so one that opens where nobody can see it is one that silently
+    eats what the user types into whatever they *can* see.
+
+    Windows sorts top-level windows into absolute z-order bands, and neither
+    WS_EX_TOPMOST nor SetWindowPos lifts a window out of its own. Measured
+    with the Start menu open: band 6 against our band 1, and raising ours
+    moved it no further than the top of band 1."""
+
+    @pytest.fixture(autouse=True)
+    def _windows(self, keyhac_engine):
+        keyhac_engine.keymap.window_provider = _ActiveWindowProvider()
+
+    def test_it_does_not_open_behind_the_start_menu(self, keyhac_engine,
+                                                    ui_backend, caplog):
+        keyhac_engine.keymap.window_provider.buried = True
+        with caplog.at_level("INFO"):
+            _Items()()
+        assert ChooserAction._open is None
+        assert "band above ours" in caplog.text
+
+    def test_it_opens_when_nothing_is_above_us(self, keyhac_engine, ui_backend):
+        _Items()()
+        assert ChooserAction._open is not None
+
+    def test_the_activating_path_is_exempt(self, keyhac_engine, ui_backend):
+        """Taking the focus closes the Start menu, which is the surface this
+        is about."""
+        class _Activates(_Items):
+            activates = True
+
+        keyhac_engine.keymap.window_provider.buried = True
+        _Activates()()
+        assert ChooserAction._open is not None
+
+    def test_a_provider_that_cannot_say_opens_as_before(self, keyhac_engine,
+                                                        ui_backend):
+        """Refusing to open is the more damaging way to be wrong."""
+        keyhac_engine.keymap.window_provider = None
+        _Items()()
+        assert ChooserAction._open is not None

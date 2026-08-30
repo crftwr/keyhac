@@ -96,3 +96,35 @@ def test_a_worker_walking_the_tree_gets_the_mta():
     # MTA by our own CoInitializeEx - not APTTYPEQUALIFIER_IMPLICIT_MTA, which
     # is what an uninitialised thread would have reported.
     assert seen["apartment"] == (APTTYPE_MTA, APTTYPEQUALIFIER_NONE)
+
+
+def test_a_newline_is_not_where_the_caret_is():
+    r"""Measured in the Claude Code chat input inside VS Code, empty, caret at
+    the start of it: the degenerate selection has no rectangles, expanding it
+    to a character gives '\n', and that newline's rectangle is
+    (3316, 1803, 32, 32) - the end of the line *box*, five hundred points
+    right of the caret, in a field whose own line runs (2156, 1805, 276, 32).
+
+    macOS meets the same character from the other side, asking for the one
+    *before* the caret; here the expansion runs forward, and a newline means
+    only that there is nothing at the caret to bound.
+    """
+    from keyhac.platform.win.uielement import _is_a_place_in_a_line
+
+    assert not _is_a_place_in_a_line("\n")
+    assert not _is_a_place_in_a_line("\r\n")
+    assert not _is_a_place_in_a_line("")
+    assert not _is_a_place_in_a_line(None)      # an empty range, or a failure
+    assert _is_a_place_in_a_line("a")
+    assert _is_a_place_in_a_line(" "), "a space is drawn where it is"
+    assert _is_a_place_in_a_line("あ")
+
+
+def test_a_range_s_text_is_shown_as_itself():
+    """Quoted, so a newline in the report is visible as one, and cut short -
+    a line of source is not a diagnosis."""
+    from keyhac.platform.win.uielement import _shown
+
+    assert _shown("\n") == repr("\n")
+    assert _shown(None).startswith("nothing")
+    assert _shown("x" * 60).endswith("...'")

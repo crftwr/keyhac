@@ -168,12 +168,11 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
 
     # Tray icon (reopen console / reload / quit) + balloons (multi-stroke help)
     from keyhac.ui.tray import install_tray
-    from keyhac.ui.balloon import BalloonManager
+    from keyhac.ui.balloon import BalloonManager, multi_stroke_help
     balloon = BalloonManager(console.backend)
     keymap.pop_balloon = balloon.pop
     keymap.close_balloon = balloon.close
-    keymap.on_enter_multi_stroke = (
-        lambda name: balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}"))
+    keymap.on_enter_multi_stroke = multi_stroke_help(balloon, keymap)
     keymap.on_leave_multi_stroke = lambda: balloon.close("MultiStroke")
     install_tray(console, keymap, hook)
 

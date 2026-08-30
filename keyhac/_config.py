@@ -340,6 +340,13 @@ def configure(keymap):
 
     kt[f"{MOD1}-B"] = show_balloon
 
+    # --- where would a popup open? ---------------------------------------
+    # Press it inside the application you are asking about: the console gets
+    # the caret Keyhac can read there (or why it cannot), and a balloon
+    # appears at the place it found.  Applications differ enormously here, so
+    # this is how you find out about one rather than guessing.
+    kt[f"{MOD1}-Ctrl-C"] = ReportCaretAnchor()
+
     # ---- Application-specific key tables -----------------------------
     # Merged in definition order, later ones win, so anything below
     # overrides the global table for the apps it matches.

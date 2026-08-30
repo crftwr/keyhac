@@ -66,6 +66,37 @@ if sys.platform == "win32":
     oleaut32.SysFreeString.restype = None
     oleaut32.SysAllocString.argtypes = [ctypes.c_wchar_p]
     oleaut32.SysAllocString.restype = ctypes.c_void_p
+    # GetBoundingRectangles hands back a SAFEARRAY of doubles rather than a
+    # plain out-parameter, which is why these three are here and nowhere else
+    # in the module.
+    oleaut32.SafeArrayGetLBound.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_long)]
+    oleaut32.SafeArrayGetLBound.restype = ctypes.c_long
+    oleaut32.SafeArrayGetUBound.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_long)]
+    oleaut32.SafeArrayGetUBound.restype = ctypes.c_long
+    oleaut32.SafeArrayAccessData.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    oleaut32.SafeArrayAccessData.restype = ctypes.c_long
+    oleaut32.SafeArrayUnaccessData.argtypes = [ctypes.c_void_p]
+    oleaut32.SafeArrayUnaccessData.restype = ctypes.c_long
+    oleaut32.SafeArrayDestroy.argtypes = [ctypes.c_void_p]
+    oleaut32.SafeArrayDestroy.restype = ctypes.c_long
+
+    # Not UIA at all: the display a rectangle landed on, for get_coordinate_scale.
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+    user32.MonitorFromPoint.restype = wintypes.HANDLE
+    MONITOR_DEFAULTTONEAREST = 0x2
+    MDT_EFFECTIVE_DPI = 0
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        shcore.GetDpiForMonitor.argtypes = [
+            wintypes.HANDLE, ctypes.c_int,
+            ctypes.POINTER(wintypes.UINT), ctypes.POINTER(wintypes.UINT)]
+        shcore.GetDpiForMonitor.restype = ctypes.c_long
+    except (OSError, AttributeError):     # pre-8.1: one DPI for the desktop
+        shcore = None
 
     COINIT_APARTMENTTHREADED = 0x2
     COINIT_MULTITHREADED = 0x0
@@ -185,6 +216,12 @@ class _IUIAutomationTextRange:
     # it as GetText(int, BSTR*) wrote through a bogus address and access-
     # violated. Verified live, not read off a header.
     ExpandToEnclosingUnit = 6    # UNVERIFIED on hardware - see below
+    #: UNVERIFIED on hardware. Sits between the two slots that *are* pinned:
+    #: ExpandToEnclosingUnit at 6 and GetEnclosingElement at 11, with
+    #: FindAttribute, FindText and GetAttributeValue filling 7-9. A wrong
+    #: index here calls a different method with a SAFEARRAY out-parameter's
+    #: address, so `get_caret_rect()` treats every failure as "no caret".
+    GetBoundingRectangles = 10
     GetText = 12
 
 
@@ -270,6 +307,42 @@ def _element_out(ptr, index, *args):
     return out
 
 
+def _first_bounding_rect(text_range) -> tuple | None:
+    """The first (x, y, w, h) of a text range's bounding rectangles.
+
+    `GetBoundingRectangles` answers a SAFEARRAY of doubles - four per
+    rectangle, one rectangle per line the range spans.  A caret spans one
+    line, so the first four doubles are the whole answer.
+
+    A collapsed range is allowed to answer with no rectangles at all, which
+    is why a short array is "no caret" rather than an error worth logging.
+    """
+    array = ctypes.c_void_p()
+    hr = _com_call(text_range, _IUIAutomationTextRange.GetBoundingRectangles,
+                   ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                   ctypes.byref(array))
+    if hr != S_OK or not array.value:
+        return None
+    try:
+        lower, upper = ctypes.c_long(), ctypes.c_long()
+        if oleaut32.SafeArrayGetLBound(array, 1, ctypes.byref(lower)) != S_OK:
+            return None
+        if oleaut32.SafeArrayGetUBound(array, 1, ctypes.byref(upper)) != S_OK:
+            return None
+        if upper.value - lower.value + 1 < 4:
+            return None
+        data = ctypes.c_void_p()
+        if oleaut32.SafeArrayAccessData(array, ctypes.byref(data)) != S_OK:
+            return None
+        try:
+            values = ctypes.cast(data, ctypes.POINTER(ctypes.c_double))
+            return (values[0], values[1], values[2], values[3])
+        finally:
+            oleaut32.SafeArrayUnaccessData(array)
+    finally:
+        oleaut32.SafeArrayDestroy(array)
+
+
 def _range_text(text_range, max_length: int = -1) -> str | None:
     """The text of one IUIAutomationTextRange (-1 meaning no limit)."""
     out = ctypes.c_void_p()
@@ -282,6 +355,45 @@ def _range_text(text_range, max_length: int = -1) -> str | None:
         return ctypes.wstring_at(out.value)
     finally:
         oleaut32.SysFreeString(out)
+
+
+def _is_a_place_in_a_line(text) -> bool:
+    """Whether the character a caret was expanded to says where the caret is.
+
+    **A newline is not drawn where the caret is.** Measured in the Claude
+    Code chat input inside VS Code, empty, with the caret at the start of it:
+    the degenerate selection has no rectangles at all, expanding it to a
+    character gives `'\\n'`, and that newline's rectangle is
+    `(3316, 1803, 32, 32)` - the end of the line *box*, which for a field
+    1240 wide is the far right of it, while the caret's own line runs
+    `(2156, 1805, 276, 32)`. A balloon opened five hundred points right of
+    the caret.
+
+    macOS reached the same rule from the other side: there the character
+    *before* the caret is asked and a newline means the caret is at the start
+    of the line below, which nothing in the AX vocabulary can express. Here
+    the expansion runs forward instead, and a newline means only that there
+    is no character at the caret to be bounded - so there is no caret to
+    report, and the field the caret is in is a better answer than a rectangle
+    at the end of a line box.
+
+    An empty answer is refused for the same reason: the bounds of nothing are
+    not a place.
+    """
+    return bool(text) and bool(text.strip("\r\n"))
+
+
+def _shown(text) -> str:
+    """A range's text as a report should read it.
+
+    Quoted, so a space or a newline is visible as itself, and cut short - a
+    line of source is not a diagnosis. `None` is the answer for an empty
+    range *and* for a call that failed, `_range_text` having no way to tell
+    them apart: GetText hands back an empty BSTR either way.
+    """
+    if text is None:
+        return "nothing - an empty range, or the call failed"
+    return repr(text if len(text) <= 40 else text[:40] + "...")
 
 
 class _POINT(ctypes.Structure):
@@ -790,6 +902,195 @@ class UIElement:
                 _release(text_range)
         finally:
             _release(pattern)
+
+    def get_rect(self) -> tuple | None:
+        """This element's screen rectangle as (x, y, w, h), or None.
+
+        The single property `describe()` reads for the same thing, for the
+        callers that want a place and nothing else - placing a popup beside
+        the focused control, checking that a caret rectangle is not a lie.
+        """
+        rect = self.get_attribute_value("BoundingRectangle")
+        return tuple(rect) if isinstance(rect, (tuple, list)) and len(rect) == 4 else None
+
+    def get_coordinate_scale(self) -> float:
+        """Physical pixels per logical unit on the display this element is on.
+
+        The counterpart of the macOS method that answers 1.0 and means it.
+        Keyhac makes itself per-monitor DPI aware before any window exists, so
+        UIA hands back physical pixels: on a 200% display every rectangle
+        arrives twice the size it is described at, and a rule written in text
+        lines - `keyhac.core.anchor`'s "a field is at most three of them" -
+        has to be told which pixels those are.
+
+        The monitor is asked for rather than assumed: two displays at
+        different scales are ordinary, and the answer that matters is the
+        scale where the *element* is, not where Keyhac's own window sits.
+        """
+        rect = self.get_rect()
+        if rect is None:
+            return 1.0
+        if shcore is not None:
+            point = wintypes.POINT(int(rect[0] + rect[2] / 2),
+                                   int(rect[1] + rect[3] / 2))
+            monitor = user32.MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+            dpi_x, dpi_y = wintypes.UINT(), wintypes.UINT()
+            if monitor and shcore.GetDpiForMonitor(
+                    monitor, MDT_EFFECTIVE_DPI,
+                    ctypes.byref(dpi_x), ctypes.byref(dpi_y)) == S_OK and dpi_x.value:
+                return dpi_x.value / 96.0
+        return 1.0
+
+    def get_caret_rect(self, trace: list | None = None) -> tuple | None:
+        """The text insertion point's screen rectangle, or None.
+
+        UIA has no caret call.  The selection with nothing selected *is* the
+        caret - a degenerate range - and `GetBoundingRectangles` turns a range
+        into rectangles, one per line it spans.  A caret spans one, so the
+        first is the answer.
+
+        **A degenerate range is allowed to have no rectangles**, and providers
+        differ on whether it does, exactly as they differ on macOS: there the
+        same control answers a zero-length range with CGRectZero and a
+        length-of-one with a real rectangle (Terminal.app), or the reverse
+        (TextEdit at the end of its text).  So an empty answer is retried on
+        the caret's *character*, whose left edge is the same place.
+
+        **The character has to be one.** An empty range expands to whatever
+        is at the caret, and where that is a newline the rectangle is the end
+        of the line *box* rather than anywhere the caret has been - see
+        `_is_a_place_in_a_line`, which is the Windows half of the newline
+        case macOS meets from the other side.
+
+        **Reported as the control gives it, lies included**; whether a
+        rectangle is usable is `keyhac.core.anchor`'s single rule, tested
+        without an application to be wrong.  A control that says nothing here
+        - and a great many say nothing, this being the least-implemented
+        corner of TextPattern - simply has no caret to offer.
+
+        Args:
+            trace: a list to append `(label, value)` rows to, one per step
+                actually taken. `describe_caret()` passes one so the report
+                cannot describe a road this method does not walk - two
+                spellings answer here, and which one did is the whole
+                diagnosis when a balloon opens a character away from the
+                caret.
+        """
+        def note(label, value):
+            if trace is not None:
+                trace.append((label, value))
+
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return None
+        try:
+            ranges = ctypes.c_void_p()
+            hr = _com_call(pattern, _IUIAutomationTextPattern.GetSelection,
+                           ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                           ctypes.byref(ranges))
+            if hr != S_OK or not ranges.value:
+                note("GetSelection", f"nothing (0x{hr & 0xffffffff:08x})")
+                return None
+            try:
+                text_range = _element_out(ranges,
+                                          _IUIAutomationTextRangeArray.GetElement,
+                                          ctypes.c_int(0))
+                if text_range is None:
+                    note("GetSelection", "an empty array - no selection at all")
+                    return None
+                try:
+                    note("the selection's text", _shown(_range_text(text_range)))
+                    rect = _first_bounding_rect(text_range)
+                    note("its first bounding rectangle", rect)
+                    if rect is not None and rect[3] > 0:
+                        return rect
+                    # Expanding the snapshot moves nothing the user can see:
+                    # GetSelection hands back a range object, not the
+                    # selection itself.
+                    hr = _com_call(text_range,
+                                   _IUIAutomationTextRange.ExpandToEnclosingUnit,
+                                   ctypes.c_long, [ctypes.c_int],
+                                   ctypes.c_int(_TextUnit.Character))
+                    if hr != S_OK:
+                        note("ExpandToEnclosingUnit(Character)",
+                             f"failed (0x{hr & 0xffffffff:08x})")
+                        return rect
+                    text = _range_text(text_range)
+                    note("expanded to its character, that is", _shown(text))
+                    expanded = _first_bounding_rect(text_range)
+                    note("its first bounding rectangle", expanded)
+                    if not _is_a_place_in_a_line(text):
+                        note("which is not the caret",
+                             "a newline is drawn at the end of its line box")
+                        return rect
+                    return expanded or rect
+                finally:
+                    _release(text_range)
+            finally:
+                _release(ranges)
+        finally:
+            _release(pattern)
+
+    def _selection_expanded_to(self, unit: int):
+        """(text, first rectangle) of the selection widened to `unit`.
+
+        Diagnostic only - `describe_caret()` asks for the caret's *line*,
+        which is the answer a suspect caret has to agree with: a rectangle
+        that is not on the caret's line is not the caret, whatever else it
+        might be.
+        """
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return None, None
+        try:
+            ranges = ctypes.c_void_p()
+            hr = _com_call(pattern, _IUIAutomationTextPattern.GetSelection,
+                           ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                           ctypes.byref(ranges))
+            if hr != S_OK or not ranges.value:
+                return None, None
+            try:
+                text_range = _element_out(ranges,
+                                          _IUIAutomationTextRangeArray.GetElement,
+                                          ctypes.c_int(0))
+                if text_range is None:
+                    return None, None
+                try:
+                    hr = _com_call(text_range,
+                                   _IUIAutomationTextRange.ExpandToEnclosingUnit,
+                                   ctypes.c_long, [ctypes.c_int],
+                                   ctypes.c_int(unit))
+                    if hr != S_OK:
+                        return None, None
+                    return _range_text(text_range), _first_bounding_rect(text_range)
+                finally:
+                    _release(text_range)
+            finally:
+                _release(ranges)
+        finally:
+            _release(pattern)
+
+    def describe_caret(self) -> list:
+        """What the caret read had to work with (the macOS twin's counterpart).
+
+        Every row is a step `get_caret_rect()` took, recorded by the method
+        itself rather than re-derived here - UIA has one spelling of the
+        question but two roads through it, the degenerate selection and the
+        character it is expanded to, and they can answer a character apart.
+        The caret's *line* comes last, as the truth the answer has to agree
+        with: a rectangle at the far end of the line the caret is on is not
+        the caret, and nothing else in the report says so.
+        """
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return [("TextPattern", "not supported by this control")]
+        _release(pattern)
+        rows = [("TextPattern", "supported")]
+        self.get_caret_rect(rows)
+        line_text, line_rect = self._selection_expanded_to(_TextUnit.Line)
+        rows.append(("the caret's line", _shown(line_text)))
+        rows.append(("the line's rectangle", line_rect))
+        return rows
 
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on.
