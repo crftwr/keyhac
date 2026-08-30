@@ -106,8 +106,10 @@ class BalloonManager:
         chooser places, which knows its own frame before it is shown.
         """
         if near is None:
+            logger.debug("Balloon in the corner: nothing to place it against.")
             return self._corner(max_width)
         from keyhac.core.anchor import place_below
+        logger.debug(f"Balloon under {near}.")
         _base_w, base_h = self._backend.base_size
         lines = max(1, -(-len(text) // _MAX_WIDTH_UNITS))
         return place_below((max_width, lines * base_h + _INSET_PX),

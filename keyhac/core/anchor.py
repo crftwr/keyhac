@@ -25,6 +25,10 @@ its candidate window, and the caret's own reason for existing: the text you
 are typing has to stay visible, so the popup goes where the text is not.
 """
 
+from keyhac.core import log
+
+logger = log.getLogger("Anchor")
+
 #: A caret is a line: no width is ordinary, no height is not.
 _MIN_HEIGHT = 1.0
 
@@ -76,8 +80,15 @@ def caret_anchor(element):
         (x, y, w, h), or None.
     """
     caret = _ask(element, "get_caret_rect")
-    if usable_caret(caret, _ask(element, "get_rect")):
+    element_rect = _ask(element, "get_rect")
+    if usable_caret(caret, element_rect):
         return tuple(caret)
+    # The one line that says *why* a popup went where it went. Without it a
+    # refused caret and an application that has none look identical from the
+    # outside - both are simply a popup that did not move - and those two
+    # want opposite things done about them.
+    logger.debug(f"No caret to place against: reported {caret} for an "
+                 f"element at {element_rect}.")
     return None
 
 
