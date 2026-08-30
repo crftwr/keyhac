@@ -4,8 +4,8 @@ What the chooser and the balloon do with them is in test_chooser.py; these
 pin the arithmetic and the disbelief, which is where the surprises are.
 """
 
-from keyhac.core.anchor import (caret_anchor, place_below, popup_anchor,
-                                usable_caret)
+from keyhac.core.anchor import (caret_anchor, place_below, place_over_top,
+                                popup_anchor, usable_caret)
 
 #: The measurement this whole module exists for: VS Code's text area, and the
 #: caret rectangle it answers with for a caret inside it.
@@ -227,6 +227,31 @@ class TestPlaceBelow:
     def test_a_screen_that_is_not_a_screen_does_not_clamp(self):
         assert place_below((200.0, 100.0), (950.0, 400.0, 0.0, 18.0),
                            None, gap=4.0) == (950.0, 422.0)
+
+
+class TestPlaceOverTop:
+    """Where a popup goes when there is nothing in the window to point at:
+    the title bar, which holds nothing anyone is reading."""
+
+    SCREEN = (0.0, 25.0, 1920.0, 1055.0)
+
+    def test_centred_on_the_top_edge(self):
+        assert place_over_top((160.0, 40.0), (400.0, 200.0, 1100.0, 800.0),
+                              self.SCREEN) == (870.0, 200.0)
+
+    def test_a_window_off_the_left_of_the_screen_is_clamped(self):
+        x, _y = place_over_top((160.0, 40.0), (-500.0, 200.0, 300.0, 800.0),
+                               self.SCREEN)
+        assert x == 0.0
+
+    def test_a_window_whose_title_bar_is_above_the_work_area(self):
+        _x, y = place_over_top((160.0, 40.0), (400.0, 0.0, 1100.0, 800.0),
+                               self.SCREEN)
+        assert y == 25.0, "the menu bar's strip is not ours to draw in"
+
+    def test_without_a_screen_it_is_arithmetic_alone(self):
+        assert place_over_top((160.0, 40.0),
+                              (400.0, 200.0, 1100.0, 800.0)) == (870.0, 200.0)
 
 
 class TestReportCaretAnchor:

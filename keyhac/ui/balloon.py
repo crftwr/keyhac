@@ -47,9 +47,14 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     It takes the focused *field* when there is no caret to be had, which is
     every Electron application: they answer `AXBoundsForRange` with
     CGRectZero and building their accessibility tree first does not change
-    it. Under a one-line field is within a line of where the caret is. Only
-    a tall element is refused (`popup_anchor`), and then this falls to the
-    corner, which is where a balloon with nothing to point at belongs.
+    it. Under a one-line field is within a line of where the caret is.
+
+    When even that is refused - a tall element, or none at all, which is what
+    Excel reports with no cell being edited - it falls to the **top edge of
+    the focused window**, centred: the title bar. That is a strip holding
+    nothing the user is reading, it names the window the balloon is about,
+    and it is on screen where the work is rather than in a corner of another
+    monitor. The corner is left for having no window either.
 
     Args:
         balloon: the BalloonManager to pop on.
@@ -61,11 +66,35 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     def show(name):
         from keyhac.core.anchor import popup_anchor
         focus = keymap.focus
-        found = popup_anchor(getattr(focus, "element", None))
-        balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}",
-                    near=found[0] if found else None)
+        found = popup_anchor(getattr(focus, "element", None),
+                             _focused_window_rect(keymap))
+        text = f"Multi-stroke: {name or '...'}"
+        if found is None:
+            balloon.pop("MultiStroke", text)
+        elif found[1] == "window":
+            balloon.pop("MultiStroke", text, over=found[0])
+        else:
+            balloon.pop("MultiStroke", text, near=found[0])
 
     return show
+
+
+def _focused_window_rect(keymap):
+    """The focused window's frame, or None.
+
+    On the key hook's clock, like the rest of this callback - and affordable
+    for the same reason the chooser's own centring is: it asks the window
+    provider the same question from inside the hook callback, and has since
+    issue #4.
+    """
+    ask = getattr(keymap, "get_active_window", None)
+    if ask is None:
+        return None
+    try:
+        window = ask()
+        return window.get_frame() if window is not None else None
+    except Exception:
+        return None
 
 
 class BalloonManager:
@@ -75,18 +104,25 @@ class BalloonManager:
         self._balloons = {}  # name -> ScreenMarker
 
     def pop(self, name: str, text: str, timeout: float = None,
-            near=None) -> None:
+            near=None, over=None) -> None:
         """Show (or replace) a named balloon; timeout in seconds.
 
-        `near` is a screen rect to sit under - the caret, for the multi-stroke
-        help that appears while the user is typing into something.
+        Args:
+            name: Which balloon this is; popping the same name replaces it.
+            text: What it says. It wraps rather than being cut short.
+            timeout: Seconds until it closes itself, or None to leave it.
+            near: A screen rect to sit *under* - the caret, for the
+                multi-stroke help that appears while the user is typing.
+            over: A screen rect to sit centred on the *top edge* of - the
+                focused window, for when there is nothing inside it to point
+                at. `near` wins if both are given.
         """
         self.close(name)
         base_w, _base_h = self._backend.base_size
         max_width = _MAX_WIDTH_UNITS * base_w
         try:
             marker = self._backend.mark_screen(
-                *self._place(max_width, text, near), text=text, fill=True,
+                *self._place(max_width, text, near, over), text=text, fill=True,
                 style=_STYLE, radius=_RADIUS, max_width=max_width,
                 timeout=timeout,
                 # A balloon appears in a corner nobody was watching.
@@ -104,8 +140,8 @@ class BalloonManager:
             if marker is not None:
                 marker.close()
 
-    def _place(self, max_width: float, text: str, near) -> tuple:
-        """Under `near` when there is one, and the corner when there is not.
+    def _place(self, max_width: float, text: str, near, over=None) -> tuple:
+        """Under `near`, else on `over`'s top edge, else the corner.
 
         **Both are estimates**, and have to be: a screen mark sizes itself to
         its text and does not exist yet.  They decide only whether the balloon
@@ -122,23 +158,26 @@ class BalloonManager:
         character balloon, clamped to 1710 - 560 = 1150 - a quarter of the
         screen to the left of the caret it was meant to be under.
         """
-        if near is None:
+        if near is None and over is None:
             corner = self._corner(max_width)
             logger.debug(f"Balloon in the corner {corner}: nothing to place "
-                         f"it against.")
+                         f"it against, not even a window.")
             return corner
-        from keyhac.core.anchor import place_below
+        from keyhac.core.anchor import place_below, place_over_top
         base_w, base_h = self._backend.base_size
         columns = min(_MAX_WIDTH_UNITS, len(text))
         lines = max(1, -(-len(text) // _MAX_WIDTH_UNITS))
         width = columns * base_w + _INSET_PX
         height = lines * base_h + _INSET_PX
+        anchor = near if near is not None else over
         logger.debug(
-            f"Balloon anchored on {tuple(round(v) for v in near)}: "
+            f"Balloon {'under' if near is not None else 'on the top edge of'} "
+            f"{tuple(round(v) for v in anchor)}: "
             f"{len(text)} chars -> {columns} column(s) x {base_w} and "
             f"{lines} line(s) x {base_h}, + {_INSET_PX:.0f} -> estimated "
             f"{width:.0f}x{height:.0f} (wraps at {max_width:.0f})")
-        return place_below((width, height), near, self._work_area(near))
+        place = place_below if near is not None else place_over_top
+        return place((width, height), anchor, self._work_area(anchor))
 
     def _work_area(self, near) -> tuple | None:
         """The work area of the screen the anchor is on, or None.

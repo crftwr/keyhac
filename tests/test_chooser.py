@@ -1076,6 +1076,28 @@ class TestBalloonIsAMark:
         assert backend.marks[0].kwargs["text"] == "Multi-stroke: ..."
         assert backend.marks[0].y == 25 + 24
 
+    def test_no_caret_and_no_field_puts_it_on_the_title_bar(self):
+        """Excel with no cell being edited: the grid answers every spelling
+        with its own rectangle, so there is no caret and the grid is far too
+        tall to be a place. The window's top edge is where that leaves it -
+        on screen where the work is, rather than a corner of another
+        monitor."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        grid = (482.0, 293.0, 945.0, 624.0)
+        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid),
+                                           window=(400.0, 200.0, 1100.0, 800.0)))("sub")
+        mark = backend.marks[0]
+        # "Multi-stroke: sub" is 17 characters: 17 x 8 + 24 = 160 wide.
+        assert (mark.x, mark.y) == (400.0 + (1100.0 - 160.0) / 2, 200.0)
+
+    def test_with_no_window_either_it_is_still_the_corner(self):
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        grid = (482.0, 293.0, 945.0, 624.0)
+        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid)))("sub")
+        assert backend.marks[0].y == 25 + 24
+
     def test_a_platform_that_cannot_mark_is_not_an_error(self):
         from keyhac.ui.balloon import BalloonManager
 
@@ -1100,10 +1122,23 @@ class _Focused:
 
 
 class _Keymap:
-    """Just the focus snapshot, which is all multi_stroke_help reads."""
+    """The focus snapshot and the focused window - what multi_stroke_help
+    reads, and no more."""
 
-    def __init__(self, element):
+    def __init__(self, element, window=None):
         self.focus = None if element is None else _Focus(element)
+        self._window = window
+
+    def get_active_window(self):
+        return None if self._window is None else _Window(self._window)
+
+
+class _Window:
+    def __init__(self, frame):
+        self._frame = frame
+
+    def get_frame(self):
+        return self._frame
 
 
 class _Focus:

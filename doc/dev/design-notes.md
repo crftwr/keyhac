@@ -919,13 +919,20 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   that edge until it exists, and this keeps a short balloon a little further in
   rather than letting a long one run off.
 - **The caret, then the focused control if it is small enough to be a place,
-  then a corner.** "A control is not a better corner, it is a worse caret" was
-  the first rule here, and the measurement overturned half of it: under a
-  one-line field is within a line of where the caret is. It is only a *tall*
-  element that is neither where you are looking nor out of the way, so the
-  fall-through is refused by height (`_MAX_PLACE_HEIGHT`) rather than by
-  category. Without it every Electron application is a corner forever — see
-  below.
+  then the focused window's title bar, then a corner.** The title-bar step is
+  what Excel needed: with no cell being edited its grid has no caret and is
+  far too tall to be a place, and a balloon in a screen corner for a window
+  in front of you is a balloon somewhere else entirely. The top edge of a
+  window, centred, is a strip that holds nothing anyone is reading, it names
+  the window the balloon is about, and it is where the work is. The corner is
+  left for having no window either.
+- **Why the control step exists at all.** "A control is not a better corner,
+  it is a worse caret" was the first rule here, and the measurement overturned
+  half of it: under a one-line field is within a line of where the caret is.
+  It is only a *tall* element that is neither where you are looking nor out of
+  the way, so it is refused by height (`_MAX_PLACE_HEIGHT`) rather than by
+  category. Without that step every Electron application is a corner forever —
+  see below.
 - The size it flips and clamps with is an **estimate**, and has to be: the
   mark sizes itself to its text and does not exist yet. Being wrong by a line
   moves the balloon by a line. The chooser has no such problem, its window

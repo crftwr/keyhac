@@ -1306,8 +1306,7 @@ class ReportCaretAnchor:
             lines.append(f"  a 400x200 popup would go to "
                          f"{place_below((400, 200), anchored)}")
         logger.info("\n".join(lines))
-        self._show(found[0] if found else None,
-                   found[1] if found else "nothing to place against")
+        self._show(found, "nothing to place against")
 
     @staticmethod
     def _same(one, other) -> bool:
@@ -1344,13 +1343,18 @@ class ReportCaretAnchor:
             return [("describe_caret", "raised")]
 
     @staticmethod
-    def _show(anchored, caption: str) -> None:
+    def _show(found, caption: str) -> None:
+        """Put a balloon where the real one would go, by the same rules."""
         keymap = Keymap.get_instance()
         pop = getattr(keymap, "pop_balloon", None)
         if pop is None:
             return
+        where = {}
+        if found is not None:
+            rect, caption = found[0], found[1]
+            where = {"over": rect} if caption == "window" else {"near": rect}
         try:
-            pop("CaretAnchor", f"anchor: {caption}", 4.0, near=anchored)
+            pop("CaretAnchor", f"anchor: {caption}", 4.0, **where)
         except Exception:
             logger.debug("No balloon to show the anchor with.")
 

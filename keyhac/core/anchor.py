@@ -207,7 +207,7 @@ def place_below(size, anchor, screen=None, gap: float = _GAP_PX):
     steps = [f"under {ay:.0f}+{ah:.0f}+{gap:.0f} -> y={y:.0f}"]
     if not _is_box(screen):
         steps.append("no screen: neither flipped nor clamped")
-        _trace(anchor, size, screen, steps, x, y)
+        _trace("place_below", anchor, size, screen, steps, x, y)
         return x, y
     sx, sy, sw, sh = screen
     bottom, right = sy + sh, sx + sw
@@ -224,18 +224,58 @@ def place_below(size, anchor, screen=None, gap: float = _GAP_PX):
         else:
             steps.append(f"y+h={y + h:.0f} past bottom {bottom:.0f}, but"
                          f" above ({above:.0f}) is off the top {sy:.0f}: not flipped")
-    before = (x, y)
-    x = max(sx, min(x, right - w))
-    y = max(sy, min(y, bottom - h))
-    if (x, y) != before:
-        steps.append(f"clamped from ({before[0]:.0f}, {before[1]:.0f})"
-                     f" into {sx:.0f}..{right - w:.0f} x {sy:.0f}..{bottom - h:.0f}")
-    _trace(anchor, size, screen, steps, x, y)
+    x, y = _clamp((x, y), size, screen, steps)
+    _trace("place_below", anchor, size, screen, steps, x, y)
     return x, y
 
 
-def _trace(anchor, size, screen, steps, x, y) -> None:
-    logger.debug(f"place_below: anchor={_fmt(anchor)} size={_fmt(size)} "
+def place_over_top(size, anchor, screen=None):
+    """Top-left for a box centred on the top edge of `anchor`.
+
+    Where a popup goes when there is nothing in the window to point at - no
+    caret, and no control small enough to be a place. Over the window's own
+    top edge, which on both OSes is its title bar: the window being talked
+    about is named by the balloon sitting on it, and a title bar is the one
+    strip of a window that holds nothing the user is reading.
+
+    Centred, because with nothing to point at there is no side to prefer, and
+    the middle of the top edge is the part of a window the eye passes over
+    anyway.
+
+    Args:
+        size: (w, h) of the box being placed.
+        anchor: (x, y, w, h) whose top edge to sit on.
+        screen: (x, y, w, h) to stay inside, or None for no clamping.
+
+    Returns:
+        (x, y) for the box.
+    """
+    w, _h = size
+    ax, ay, aw, _ah = anchor
+    x, y = ax + (aw - w) / 2, ay
+    steps = [f"centred on {ax:.0f}+{aw:.0f}/2 -> x={x:.0f}, at its top y={y:.0f}"]
+    x, y = _clamp((x, y), size, screen, steps)
+    _trace("place_over_top", anchor, size, screen, steps, x, y)
+    return x, y
+
+
+def _clamp(position, size, screen, steps):
+    """Keep a box inside a screen, recording it when it had to move."""
+    if not _is_box(screen):
+        steps.append("no screen to clamp against")
+        return position
+    x, y = position
+    w, h = size
+    sx, sy, sw, sh = screen
+    moved = (max(sx, min(x, sx + sw - w)), max(sy, min(y, sy + sh - h)))
+    if moved != position:
+        steps.append(f"clamped from ({x:.0f}, {y:.0f}) into "
+                     f"{sx:.0f}..{sx + sw - w:.0f} x {sy:.0f}..{sy + sh - h:.0f}")
+    return moved
+
+
+def _trace(what, anchor, size, screen, steps, x, y) -> None:
+    logger.debug(f"{what}: anchor={_fmt(anchor)} size={_fmt(size)} "
                  f"screen={_fmt(screen)} | " + "; ".join(steps)
                  + f" | -> ({x:.0f}, {y:.0f})")
 
