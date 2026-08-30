@@ -225,12 +225,6 @@ class ChooserAction:
 
         keymap = Keymap.get_instance()
 
-        # Which key is opening it, so that the same key can close it. A
-        # non-activating chooser takes the keyboard through a grab, and a grab
-        # outranks every table - so the second press never reaches this method
-        # to be toggled, and the window has to recognise the key itself.
-        self._opened_by = getattr(keymap, "_dispatching_key", None)
-
         # A second press while the first one's window is still queued is that
         # same press twice - there is no window on screen for it to toggle
         # yet. Drop the queued open; for this action that *is* the toggle, and
@@ -336,6 +330,22 @@ class ChooserAction:
         else:
             _open_now()
 
+    @staticmethod
+    def _another_chooser(action) -> bool:
+        """Which keys the grab declines: the ones that open a chooser.
+
+        Those are this class's own promises - the key that opened the window
+        closes it, another chooser's key replaces it - and a grab outranking
+        every table is what stopped either from happening. Handing them back
+        to the tables means `__call__` runs, which has done the toggling and
+        the replacing all along.
+
+        Nothing else is handed back. A key bound to `Left` is the list's while
+        this window is up, not the application's underneath, and a bound key
+        arriving as a letter is what a filter field is for.
+        """
+        return isinstance(action, ChooserAction)
+
     def _below(self, keymap, clamp_to):
         """The caret or the focused control to open under, or None.
 
@@ -433,7 +443,7 @@ class ChooserAction:
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
                                 below=self._below(keymap, clamp_to),
-                                close_key=getattr(self, "_opened_by", None),
+                                passes_through=self._another_chooser,
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
                                 pages=self.page_names(),

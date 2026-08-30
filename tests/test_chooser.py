@@ -154,19 +154,22 @@ class TestOpeningLeavesTheHookCallback:
         assert not queued, "closing needs no turn of the loop"
 
 
-class TestTheOpeningKeyCloses:
-    """`ChooserAction` promises that pressing the same key again closes the
-    window. A non-activating chooser takes the keyboard through a grab, and a
-    grab outranks every table - so the second press never reached the action,
-    and arrived in the filter field as the letter it was bound to."""
+class TestAChooserKeyReachesItsAction:
+    """`ChooserAction` promises that the key which opened a chooser closes it
+    and that another chooser's key replaces it. A non-activating chooser takes
+    the keyboard through a grab, a grab outranks every table, so neither press
+    ever reached an action - both arrived in the filter field as the letters
+    they were bound to."""
 
-    def _open(self, keyhac_engine):
-        keyhac_engine.keymap.define_keytable(
-            focus_path_pattern="*")["Fn-P"] = _Items()
+    def _open(self, keyhac_engine, second=None):
+        table = keyhac_engine.keymap.define_keytable(focus_path_pattern="*")
+        table["Fn-P"] = _Items()
+        if second is not None:
+            table["Fn-V"] = second
 
-    def _press(self, keyhac_engine):
+    def _press(self, keyhac_engine, name="P"):
         keyhac_engine.down("Fn")
-        keyhac_engine.stroke("P")
+        keyhac_engine.stroke(name)
         keyhac_engine.up("Fn")
 
     def test_the_second_press_closes_it(self, keyhac_engine, ui_backend):
@@ -190,6 +193,35 @@ class TestTheOpeningKeyCloses:
         chooser = ChooserAction._open[1]
         keyhac_engine.stroke("A")
         assert chooser._edit.text == "a"
+        assert ChooserAction._open is not None
+
+    def test_another_chooser_s_key_replaces_it(self, keyhac_engine, ui_backend):
+        class _Other(_Items):
+            def list_items(self):
+                return [("*", "clip one", 1), ("*", "clip two", 2)]
+
+        other = _Other()
+        self._open(keyhac_engine, second=other)
+        self._press(keyhac_engine)
+        assert ChooserAction._open[0] is not other
+        self._press(keyhac_engine, "V")
+        action, chooser, _pid = ChooserAction._open
+        assert action is other
+        assert [c.display for c in chooser._filtered] == ["clip one", "clip two"]
+        assert chooser._edit.text == "", "the bug: a 'v' typed into the query"
+
+    def test_a_key_bound_to_something_else_still_belongs_to_the_window(
+            self, keyhac_engine, ui_backend):
+        """Only the keys that open a chooser are handed back. A key bound to
+        `Left` is the list's while this window is up, not the application's
+        underneath."""
+        self._open(keyhac_engine)
+        keyhac_engine.keymap.define_keytable(
+            focus_path_pattern="*")["Fn-J"] = "Left"
+        self._press(keyhac_engine)
+        chooser = ChooserAction._open[1]
+        self._press(keyhac_engine, "J")
+        assert chooser._edit.text == "j"
         assert ChooserAction._open is not None
 
 

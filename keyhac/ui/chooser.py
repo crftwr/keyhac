@@ -213,11 +213,12 @@ class ChooserWindow:
     given screen rect. Both are in puikit's portable screen coordinates
     (top-left origin), the same space keyhac's Window/WindowProvider report.
 
-    close_key: the KeyCondition that opened the window, which then also
-    closes it. A non-activating chooser takes the keyboard through a grab,
-    and a grab outranks every table - so a second press of the opening key
-    never reaches the action that would toggle it, and arrives here as
-    ordinary text instead. Recognised here, it cancels.
+    passes_through: optional `callable(action) -> bool` handed to the key
+    grab, deciding which keys the key tables should have rather than this
+    window. Without it a grab outranks every table, and the chooser's own
+    promises go with it: the key that opened the window cannot close it, and
+    another chooser's key cannot replace it, both arriving here as the
+    letters they are bound to.
 
     below: a screen rect to sit *under* instead, left edges aligned - the
     caret or the focused control (issue #118). It wins over center_on when
@@ -229,7 +230,7 @@ class ChooserWindow:
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
                  pages=None, on_page=None, pending=None, background=None,
-                 source_of=None, below=None, close_key=None):
+                 source_of=None, below=None, passes_through=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -240,8 +241,8 @@ class ChooserWindow:
         # batches. None is the ordinary case.
         self._background = background
         self._bg_stop = None
-        #: What the window was opened with, and closes on.  See close_key.
-        self._close_key = close_key
+        #: Which keys the tables should have instead.  See passes_through.
+        self._passes_through = passes_through
         #: Keystrokes taken by _grab_keys but not yet acted on.  The hook
         #: callback appends; the main thread drains.  See _grab_keys.
         self._keys = []
@@ -430,18 +431,10 @@ class ChooserWindow:
             logger.error("No Keymap: a non-activating chooser has no key route.")
             return
 
-        from puikit.event import Event
-
         def handler(key):
             # to_event stays here: it is a pure O(1) translation, and it is
             # what says whether there is anything worth queueing at all.
-            #
-            # The opening key is turned into the cancel Escape performs
-            # rather than acted on here: this runs on the hook's thread, and
-            # closing a window is the main thread's. Queued like any other
-            # keystroke, it also keeps its order with the typing around it.
-            event = (Event(type=EventType.KEY, key="escape")
-                     if self._closes_on(key) else to_event(key))
+            event = to_event(key)
             if event is None:
                 return
             if not self.panel.dispatches_to_main_thread:
@@ -454,20 +447,8 @@ class ChooserWindow:
             self._keys.append(event)
             self._backend.call_on_main_thread(self._drain_keys)
 
-        keymap.push_modal_input(handler)
+        keymap.push_modal_input(handler, self._passes_through)
         self._grabbed = True
-
-    def _closes_on(self, key) -> bool:
-        """Whether this keystroke is the one the window was opened with.
-
-        `KeyCondition.__eq__` is left/right-agnostic, so a window opened with
-        the left modifier closes on the right one - which is the same promise
-        the key table itself makes about that binding.
-        """
-        try:
-            return self._close_key is not None and key == self._close_key
-        except Exception:
-            return False
 
     def _drain_keys(self) -> None:
         """One queued keystroke, on the main thread.

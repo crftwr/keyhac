@@ -210,13 +210,8 @@ class Keymap:
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
-        #: The KeyCondition whose action is running, for the length of the
-        #: call and no longer.  An action that opens a window which then takes
-        #: the keyboard needs to know which key opened it, so that the same
-        #: key can close it - and by the time the window exists, the key is
-        #: long gone.
-        self._dispatching_key = None
         self._modal_input = None            # sticky key grab - see push_modal_input
+        self._modal_passthrough = None      # its owner's say - _grab_declines
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
         self._vk_vk_map = {}                # replace_key map
@@ -939,14 +934,15 @@ class Keymap:
         # already ran in the caller, and consuming them here would strand
         # the modifier state of the application underneath.
         if self._modal_input is not None and key.vk not in self._vk_mod_map:
-            if key.down and not key.oneshot:
-                try:
-                    self._modal_input(key)
-                except Exception:
-                    logger.error(f"Modal input handler failed:\n"
-                                 f"{traceback.format_exc()}")
-                    self._modal_input = None
-            return True
+            if not self._grab_declines(key):
+                if key.down and not key.oneshot:
+                    try:
+                        self._modal_input(key)
+                    except Exception:
+                        logger.error(f"Modal input handler failed:\n"
+                                     f"{traceback.format_exc()}")
+                        self._modal_input = None
+                return True
 
         action = None
         if key in self._unified_keytable:
@@ -967,11 +963,7 @@ class Keymap:
             action_name = getattr(action, "__name__", None) or repr(action)
             logger.debug(f"CALL     : {action_name}")
             self._cancel_oneshot_win_alt()
-            previous, self._dispatching_key = self._dispatching_key, key
-            try:
-                action()
-            finally:
-                self._dispatching_key = previous
+            action()
 
         elif isinstance(action, KeyTable):
             self._cancel_oneshot_win_alt()
@@ -995,7 +987,33 @@ class Keymap:
     # ------------------------------------------------------------------
     # Modal input (spike - discussion #112)
 
-    def push_modal_input(self, handler) -> None:
+    def _grab_declines(self, key) -> bool:
+        """Whether the grab leaves this key to the key tables.
+
+        A grab outranking every table is what a window with no OS focus
+        needs, and it is also how the chooser's own promises were broken:
+        the key that opened it could not close it and another chooser's key
+        could not replace it, because neither press ever reached an action.
+        The grab's owner therefore gets a say - it is handed whatever the
+        tables bind the key to, and answers whether it would rather the
+        tables had it.
+
+        **Key downs carrying a modifier only.**  An unmodified key is text as
+        far as a filter field is concerned, and a filter field is what is
+        grabbing; a key up follows whatever its down did, the grab having
+        been released by then if the down closed the window.
+        """
+        if self._modal_passthrough is None or key.oneshot or not key.down \
+                or not key.mod:
+            return False
+        try:
+            return bool(self._modal_passthrough(self._unified_keytable.get(key)))
+        except Exception:
+            logger.error(f"Modal input passthrough failed:\n"
+                         f"{traceback.format_exc()}")
+            return False
+
+    def push_modal_input(self, handler, passes_through=None) -> None:
         """Route every non-modifier key to `handler` until it is popped.
 
         The mechanism a non-activating candidate window needs: the window
@@ -1026,11 +1044,16 @@ class Keymap:
                 keys keep their normal bookkeeping so the handler sees
                 correct modifier state; every non-modifier key is consumed,
                 so the focused application sees nothing while the grab is up.
+            passes_through: Optional `callable(action) -> bool`, asked of a
+                modified key down with whatever the tables bind it to (None
+                where they bind nothing).  True leaves the key to the tables
+                instead of consuming it - see `_grab_declines`.
 
         lazydocs: ignore
         """
         self._leave_multi_stroke()
         self._modal_input = handler
+        self._modal_passthrough = passes_through
 
     def pop_modal_input(self) -> None:
         """Release the grab pushed by :meth:`push_modal_input`.
@@ -1038,6 +1061,7 @@ class Keymap:
         lazydocs: ignore
         """
         self._modal_input = None
+        self._modal_passthrough = None
 
     def modal_input_active(self) -> bool:
         """Whether a key grab is up.

@@ -252,18 +252,21 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   both paths at once double every character), it takes key status away from the
   window being pasted into, and it would leave the two OSes with different
   input paths. Not worth it for what Migemo already covers.
-- **The key that opened it has to be recognised by the window, not the key
-  table.** `ChooserAction` promises that pressing the same key again closes
-  the chooser, and for a non-activating one it did not: a grab outranks every
-  table, so the second press never reached the action that would have toggled
-  it and arrived in the filter field as the letter it was bound to — `Fn-P`
-  typing a `p`. The window is therefore told what opened it
-  (`ChooserWindow(close_key=...)`, from `Keymap._dispatching_key`, which is
-  set only for the length of an action call because by the time the window
-  exists the key is long gone). It turns that keystroke into the cancel Escape
-  performs, and queues it like any other: closing a window is the main
-  thread's work, and queueing keeps the close in order with the typing around
-  it.
+- **The grab's owner gets a say in what the grab takes.** `ChooserAction`
+  promises that the key which opened a chooser closes it and that another
+  chooser's key replaces it, and for a non-activating one neither happened: a
+  grab outranks every table, so neither press ever reached an action. Both
+  arrived in the filter field as the letters they were bound to — `Fn-P`
+  typing a `p`, `Fn-V` typing a `v` instead of opening the clipboard.
+  `push_modal_input` therefore takes a second callback, asked of a **modified
+  key down** with whatever the tables bind it to; the chooser answers True for
+  a `ChooserAction`, and the key is left to the tables. `__call__` then does
+  the toggling and the replacing it has done all along.
+- **Only those keys.** A key bound to `Left` stays the list's while the window
+  is up rather than the application's underneath, and an unmodified key is
+  text as far as a filter field is concerned. The narrow version of this fix
+  passed only the *opening* key back, which left `Fn-V` broken in exactly the
+  way `Fn-P` had been — half of one promise.
 - The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
   named keys, and — through `InputHook.char_for_key` — every digit and
