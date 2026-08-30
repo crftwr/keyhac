@@ -140,20 +140,52 @@ def place_below(size, anchor, screen=None, gap: float = _GAP_PX):
     w, h = size
     ax, ay, _aw, ah = anchor
     x, y = ax, ay + ah + gap
+    # Each step records what it decided and the comparison it decided on.
+    # "the popup did not move" is the only symptom this arithmetic has, so
+    # the numbers behind it are worth a line of debug rather than a
+    # re-derivation by hand from four rectangles.
+    steps = [f"under {ay:.0f}+{ah:.0f}+{gap:.0f} -> y={y:.0f}"]
     if not _is_box(screen):
+        steps.append("no screen: neither flipped nor clamped")
+        _trace(anchor, size, screen, steps, x, y)
         return x, y
     sx, sy, sw, sh = screen
-    if y + h > sy + sh:
+    bottom, right = sy + sh, sx + sw
+    if y + h > bottom:
         # Above instead - but only when it fits there, or a tall popup over a
         # caret near the bottom would be flipped into an equally bad place and
         # then clamped anyway. Clamping alone at least keeps the caret's line
         # at an edge of the popup rather than in the middle of it.
         above = ay - gap - h
         if above >= sy:
+            steps.append(f"y+h={y + h:.0f} past bottom {bottom:.0f}"
+                         f" -> flipped above to y={above:.0f}")
             y = above
-    x = max(sx, min(x, sx + sw - w))
-    y = max(sy, min(y, sy + sh - h))
+        else:
+            steps.append(f"y+h={y + h:.0f} past bottom {bottom:.0f}, but"
+                         f" above ({above:.0f}) is off the top {sy:.0f}: not flipped")
+    before = (x, y)
+    x = max(sx, min(x, right - w))
+    y = max(sy, min(y, bottom - h))
+    if (x, y) != before:
+        steps.append(f"clamped from ({before[0]:.0f}, {before[1]:.0f})"
+                     f" into {sx:.0f}..{right - w:.0f} x {sy:.0f}..{bottom - h:.0f}")
+    _trace(anchor, size, screen, steps, x, y)
     return x, y
+
+
+def _trace(anchor, size, screen, steps, x, y) -> None:
+    logger.debug(f"place_below: anchor={_fmt(anchor)} size={_fmt(size)} "
+                 f"screen={_fmt(screen)} | " + "; ".join(steps)
+                 + f" | -> ({x:.0f}, {y:.0f})")
+
+
+def _fmt(rect) -> str:
+    """Rectangles as integers: this is a screen, and a tenth of a pixel in the
+    log is a tenth of a pixel nobody can act on."""
+    if not isinstance(rect, (tuple, list)):
+        return str(rect)
+    return "(" + ", ".join(f"{v:.0f}" for v in rect) + ")"
 
 
 def _ask(element, method):

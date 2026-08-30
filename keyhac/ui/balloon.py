@@ -106,14 +106,20 @@ class BalloonManager:
         chooser places, which knows its own frame before it is shown.
         """
         if near is None:
-            logger.debug("Balloon in the corner: nothing to place it against.")
-            return self._corner(max_width)
+            corner = self._corner(max_width)
+            logger.debug(f"Balloon in the corner {corner}: nothing to place "
+                         f"it against.")
+            return corner
         from keyhac.core.anchor import place_below
-        logger.debug(f"Balloon under {near}.")
         _base_w, base_h = self._backend.base_size
         lines = max(1, -(-len(text) // _MAX_WIDTH_UNITS))
-        return place_below((max_width, lines * base_h + _INSET_PX),
-                           near, self._work_area(near))
+        height = lines * base_h + _INSET_PX
+        logger.debug(
+            f"Balloon anchored on {tuple(round(v) for v in near)}: "
+            f"{len(text)} chars / {_MAX_WIDTH_UNITS} per line = {lines} line(s)"
+            f" x {base_h} + {_INSET_PX:.0f} -> estimated "
+            f"{max_width:.0f}x{height:.0f}")
+        return place_below((max_width, height), near, self._work_area(near))
 
     def _work_area(self, near) -> tuple | None:
         """The work area of the screen the anchor is on, or None.
@@ -128,10 +134,14 @@ class BalloonManager:
         if not frames:
             return None
         x, y = near[0], near[1]
-        for _full, work in frames:
+        for index, (_full, work) in enumerate(frames):
             wx, wy, ww, wh = work
             if wx <= x < wx + ww and wy <= y < wy + wh:
+                logger.debug(f"Balloon on screen {index} of {len(frames)}, "
+                             f"work area {work}.")
                 return work
+        logger.debug(f"Balloon anchor ({x}, {y}) is on no screen's work area "
+                     f"of {len(frames)}; clamping to the first.")
         return frames[0][1]
 
     def _corner(self, max_width: float) -> tuple:
