@@ -982,12 +982,26 @@ class TestBalloonIsAMark:
         mark = backend.marks[0]
         assert (mark.x, mark.y) == (400.0, 322.0)
 
-    def test_a_caret_near_the_right_edge_is_clamped(self):
-        """The mark does not exist yet, so the width it is placed with is the
-        widest it could be - which is what keeps a long balloon on screen."""
+    def test_a_short_balloon_near_the_right_edge_stays_at_the_caret(self):
+        """The bug this replaced: measured against the wrap width instead of
+        its own, an eighteen-character balloon at x=1406 on a 1710 screen
+        decided it would not fit and clamped a quarter of the screen left of
+        the caret it was meant to be under."""
+        manager, backend = self._manager()
+        manager.pop("help", "Multi-stroke: Fn-X", near=(1500.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1500.0
+
+    def test_a_short_balloon_is_clamped_by_its_own_width(self):
         manager, backend = self._manager()
         manager.pop("help", "hi", near=(1900.0, 300.0, 0.0, 18.0))
-        assert backend.marks[0].x == 1920 - 70 * 8
+        assert backend.marks[0].x == 1920 - (2 * 8 + 24)
+
+    def test_a_long_balloon_is_clamped_by_the_wrap_width(self):
+        """It really is that wide once it wraps, so it really does have to
+        move that far."""
+        manager, backend = self._manager()
+        manager.pop("help", "x" * 300, near=(1900.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1920 - (70 * 8 + 24)
 
     def test_no_caret_is_still_the_corner(self):
         manager, backend = self._manager()

@@ -926,10 +926,19 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   fall-through is refused by height (`_MAX_PLACE_HEIGHT`) rather than by
   category. Without it every Electron application is a corner forever — see
   below.
-- The height it flips and clamps with is an **estimate**, and has to be: the
+- The size it flips and clamps with is an **estimate**, and has to be: the
   mark sizes itself to its text and does not exist yet. Being wrong by a line
   moves the balloon by a line. The chooser has no such problem, its window
   knowing its own frame before it is shown.
+- **The estimated width is the text's, not the wrap width.** The corner
+  placement uses the widest the mark could be, deliberately — it is being
+  pushed against the right edge of the screen, and a short balloon then sits a
+  little further in rather than a long one running off. At a caret that same
+  number is a bug: measured with Terminal.app near the right edge of a
+  1710-wide screen, a caret at x=1406 and an eighteen-character balloon
+  measured as seventy columns decided it would not fit and clamped to
+  1710 − 560 = 1150, a quarter of the screen left of the caret it was meant to
+  be under.
 - The caret is taken from `keymap.focus` — the snapshot this very keystroke
   was dispatched against — so the balloon costs two attribute reads on the
   hook's clock and no second focus lookup. The chooser cannot do that: it

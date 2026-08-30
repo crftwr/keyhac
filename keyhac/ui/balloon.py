@@ -107,11 +107,20 @@ class BalloonManager:
     def _place(self, max_width: float, text: str, near) -> tuple:
         """Under `near` when there is one, and the corner when there is not.
 
-        **The height is an estimate**, and has to be: a screen mark sizes
-        itself to its text and does not exist yet.  It is used only to decide
-        whether the balloon would run off the bottom, so an estimate that is
-        wrong by a line moves the balloon by a line - unlike the window the
-        chooser places, which knows its own frame before it is shown.
+        **Both are estimates**, and have to be: a screen mark sizes itself to
+        its text and does not exist yet.  They decide only whether the balloon
+        would run off an edge, so an estimate wrong by a line moves it by a
+        line - unlike the window the chooser places, which knows its own frame
+        before it is shown.
+
+        **The width has to be the text's, not the wrap width.**  `_corner()`
+        places at the widest the mark could be, which is right when it is
+        being pushed against the right edge of the screen; here it is being
+        put at a caret, and a short balloon measured as 70 columns wide is
+        one that thinks it will not fit.  Measured with Terminal.app near the
+        right edge of a 1710-wide screen: a caret at x=1406 and an eighteen
+        character balloon, clamped to 1710 - 560 = 1150 - a quarter of the
+        screen to the left of the caret it was meant to be under.
         """
         if near is None:
             corner = self._corner(max_width)
@@ -119,15 +128,17 @@ class BalloonManager:
                          f"it against.")
             return corner
         from keyhac.core.anchor import place_below
-        _base_w, base_h = self._backend.base_size
+        base_w, base_h = self._backend.base_size
+        columns = min(_MAX_WIDTH_UNITS, len(text))
         lines = max(1, -(-len(text) // _MAX_WIDTH_UNITS))
+        width = columns * base_w + _INSET_PX
         height = lines * base_h + _INSET_PX
         logger.debug(
             f"Balloon anchored on {tuple(round(v) for v in near)}: "
-            f"{len(text)} chars / {_MAX_WIDTH_UNITS} per line = {lines} line(s)"
-            f" x {base_h} + {_INSET_PX:.0f} -> estimated "
-            f"{max_width:.0f}x{height:.0f}")
-        return place_below((max_width, height), near, self._work_area(near))
+            f"{len(text)} chars -> {columns} column(s) x {base_w} and "
+            f"{lines} line(s) x {base_h}, + {_INSET_PX:.0f} -> estimated "
+            f"{width:.0f}x{height:.0f} (wraps at {max_width:.0f})")
+        return place_below((width, height), near, self._work_area(near))
 
     def _work_area(self, near) -> tuple | None:
         """The work area of the screen the anchor is on, or None.
