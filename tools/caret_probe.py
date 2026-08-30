@@ -63,6 +63,36 @@ def _role(element) -> str:
     return "?"
 
 
+def _check_permission() -> None:
+    """Refuse to print "nothing focused" when the answer is "not allowed".
+
+    The Accessibility permission belongs to the *terminal application* this
+    is run from, not to python and not to Keyhac - and not necessarily to the
+    terminal it was granted to last time. Every AX call from an untrusted
+    process returns nothing at all, which is indistinguishable from an
+    application that has no focused element until somebody says so.
+    """
+    if sys.platform != "darwin":
+        return
+    import ApplicationServices as AS
+    if AS.AXIsProcessTrusted():
+        return
+    raise SystemExit(
+        "Not trusted for Accessibility, so every AX call comes back empty.\n"
+        "Grant it to the terminal application you are running this from:\n"
+        "  System Settings > Privacy & Security > Accessibility\n"
+        "The permission is per application - VS Code's built-in terminal and\n"
+        "Terminal.app are two different grants.")
+
+
+def _front_app() -> str:
+    if sys.platform != "darwin":
+        return "the front application"
+    from AppKit import NSWorkspace
+    app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return str(app.localizedName()) if app else "nothing"
+
+
 def _frontmost():
     """The focused element of the application in front, or None."""
     if sys.platform == "darwin":
@@ -186,6 +216,7 @@ def main() -> None:
     parser.add_argument("--deep", action="store_true",
                         help="also ask the marker-based text API (macOS)")
     args = parser.parse_args()
+    _check_permission()
 
     for turn in range(args.repeat):
         if turn:
@@ -196,7 +227,13 @@ def main() -> None:
             continue
         element = _frontmost()
         if element is None:
-            print("nothing focused")
+            # Which application said so matters: a Chromium one ships its
+            # accessibility tree switched off and answers nothing until an
+            # assistive client asks, so "no focused element" from Chrome or
+            # Electron is a different problem from the same words out of a
+            # native application.
+            print(f"nothing focused - {_front_app()} is in front and reports "
+                  f"no focused element")
             continue
         _report("frontmost", element, deep=args.deep)
 

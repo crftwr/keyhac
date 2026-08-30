@@ -917,6 +917,21 @@ class UIElement:
         finally:
             _release(pattern)
 
+    def describe_caret(self) -> list:
+        """What the caret read had to work with (the macOS twin's counterpart).
+
+        Thinner than the macOS one, and for a reason: there the question has
+        two spellings and the interesting fact is which one answered. UIA has
+        one, asked of a range that may or may not be degenerate, so what there
+        is to report is whether the control offers TextPattern at all.
+        """
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return [("TextPattern", "not supported by this control")]
+        _release(pattern)
+        return [("TextPattern", "supported"),
+                ("GetBoundingRectangles of the selection", self.get_caret_rect())]
+
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on.
 

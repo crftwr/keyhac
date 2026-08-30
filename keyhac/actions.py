@@ -1217,6 +1217,144 @@ class MoveWindow(ThreadedAction):
         return f'MoveWindow(direction="{self.direction}")'
 
 
+class ReportCaretAnchor:
+    """Say where a popup would open right now, and why.
+
+    Bind it to a key and press it inside the application you are asking
+    about.  The report goes to the console at INFO - no debug logging to turn
+    on - and a balloon appears at the place it found, so the numbers and the
+    result are visible together.
+
+    ```python
+    kt["Fn-Ctrl-C"] = ReportCaretAnchor()
+    ```
+
+    **Why a key rather than a command-line tool.**  `tools/caret_probe.py`
+    asks about whatever is in front, and while it runs that is the terminal.
+    Reaching the application under test means switching to it and racing a
+    timer, and the Accessibility permission it needs belongs to the terminal
+    rather than to Keyhac - a second grant, in a second place, easy to have
+    given to a different terminal last time.  Pressed as a key, none of that
+    applies: Keyhac is already trusted and the application under test already
+    has the focus.
+
+    What it reports is the chain `keyhac.core.anchor` walks - the caret, then
+    the focused control if it is small enough to be a place, then the window -
+    and, above it, what each way of asking the caret question answered.  That
+    last part is what tells a control with no caret from one whose caret
+    cannot be believed, and those want opposite things done about them.
+    """
+
+    def __repr__(self):
+        return "ReportCaretAnchor()"
+
+    def __call__(self):
+        from keyhac.core.anchor import popup_anchor, place_below, usable_caret
+
+        keymap = Keymap.get_instance()
+        provider = getattr(keymap, "_focus_provider", None)
+        asked = None
+        if provider is not None:
+            try:
+                asked = provider.get_focused_element()
+            except Exception:
+                logger.error("Could not ask where the focus is.")
+                return
+
+        # The two callers do not read the focus from the same place, and the
+        # answers can differ: the chooser asks the provider for the truth
+        # *now*, the balloon takes the snapshot the keystroke was dispatched
+        # against - and that snapshot falls back to the window, and then to
+        # the application, where the provider would rather say nothing
+        # (issue #44). A report that showed one of them would be describing
+        # half of what is on screen.
+        focus = getattr(keymap, "focus", None)
+        snapshot = getattr(focus, "element", None)
+        where = getattr(focus, "app_name", None) or "the front application"
+        element = asked if asked is not None else snapshot
+        if element is None:
+            logger.info(f"Caret report - {where} reports no focused element. "
+                        f"A Chromium application answers that until an "
+                        f"assistive client asks it to build its accessibility "
+                        f"tree (keymap.ui.enable_content_access()).")
+            self._show(None, "no focused element")
+            return
+
+        rect = getattr(element, "get_rect", lambda: None)()
+        caret = getattr(element, "get_caret_rect", lambda: None)()
+        lines = [f"Caret report - {where} / {self._role(element)}",
+                 f"  focused element : {rect}"]
+        if asked is None:
+            lines.append("  (from the keystroke's focus snapshot - asking for "
+                         "the focus now returned nothing)")
+        elif snapshot is not None and not self._same(asked, snapshot):
+            lines.append(f"  (the balloon would use a different element: "
+                         f"{self._role(snapshot)} "
+                         f"{getattr(snapshot, 'get_rect', lambda: None)()})")
+        for label, value in self._detail(element):
+            lines.append(f"  {label:<32}: {value}")
+        lines.append(f"  caret as we take it: {caret} "
+                     f"-> {'believed' if usable_caret(caret, rect) else 'not believed'}")
+
+        found = popup_anchor(element)
+        if found is None:
+            lines.append("  anchor          : none - a popup opens in the "
+                         "window's centre, and a balloon in the corner")
+        else:
+            anchored, kind = found
+            lines.append(f"  anchor          : {kind} {anchored}")
+            lines.append(f"  a 400x200 popup would go to "
+                         f"{place_below((400, 200), anchored)}")
+        logger.info("\n".join(lines))
+        self._show(found[0] if found else None,
+                   found[1] if found else "nothing to place against")
+
+    @staticmethod
+    def _same(one, other) -> bool:
+        """Whether two reads landed on the same element.
+
+        Each read builds a fresh Python proxy, so `is` never says yes;
+        `identity_key()` is the platform reference underneath.
+        """
+        try:
+            return one.identity_key() == other.identity_key()
+        except Exception:
+            return False
+
+    @staticmethod
+    def _role(element) -> str:
+        for attribute in ("AXRole", "ControlType"):
+            try:
+                value = element.get_attribute_value(attribute)
+            except Exception:
+                continue
+            if value:
+                return str(value)
+        return "?"
+
+    @staticmethod
+    def _detail(element):
+        """Whatever the platform can say about how it looked for the caret."""
+        describe = getattr(element, "describe_caret", None)
+        if describe is None:
+            return []
+        try:
+            return describe()
+        except Exception:
+            return [("describe_caret", "raised")]
+
+    @staticmethod
+    def _show(anchored, caption: str) -> None:
+        keymap = Keymap.get_instance()
+        pop = getattr(keymap, "pop_balloon", None)
+        if pop is None:
+            return
+        try:
+            pop("CaretAnchor", f"anchor: {caption}", 4.0, near=anchored)
+        except Exception:
+            logger.debug("No balloon to show the anchor with.")
+
+
 class SnapWindow:
     """Snap the focused window to a region of its screen (tiling).
 

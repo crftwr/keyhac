@@ -150,3 +150,76 @@ class TestPlaceBelow:
     def test_a_screen_that_is_not_a_screen_does_not_clamp(self):
         assert place_below((200.0, 100.0), (950.0, 400.0, 0.0, 18.0),
                            None, gap=4.0) == (950.0, 422.0)
+
+
+class TestReportCaretAnchor:
+    """The diagnostic action: press a key inside the application in question
+    and it says where a popup would go and why, at INFO."""
+
+    def _run(self, monkeypatch, element, popped, focus_element=...):
+        from keyhac.core.keymap import Keymap
+        from keyhac.actions import ReportCaretAnchor
+
+        class _Provider:
+            def get_focused_element(self):
+                return element
+
+        class _Stub:
+            _focus_provider = _Provider()
+            focus = type("F", (), {
+                "element": element if focus_element is ... else focus_element,
+                "app_name": "Fake.app"})()
+
+            def pop_balloon(self, name, text, timeout=None, near=None):
+                popped.append((text, near))
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(lambda: _Stub()))
+        ReportCaretAnchor()()
+
+    def test_it_shows_the_anchor_it_found(self, monkeypatch, caplog):
+        popped = []
+        element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0))
+        with caplog.at_level("INFO"):
+            self._run(monkeypatch, element, popped)
+        assert popped == [("anchor: caret", (100.0, 200.0, 0.0, 18.0))]
+        assert "anchor          : caret" in caplog.text
+
+    def test_it_reports_at_info_rather_than_debug(self, monkeypatch, caplog):
+        """The whole point of the action: no log level to turn on first."""
+        element = _Element((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0))
+        with caplog.at_level("INFO"):
+            self._run(monkeypatch, element, [])
+        assert any(record.levelname == "INFO" and "Caret report" in record.message
+                   for record in caplog.records)
+
+    def test_it_says_what_each_way_of_asking_answered(self, monkeypatch, caplog):
+        """Which spelling the application answered is the whole diagnosis - it
+        is what tells a control with no caret from one whose caret is a lie."""
+        class _Detailed(_Element):
+            def describe_caret(self):
+                return [("AXBoundsForRange(caret, 1)", (100.0, 200.0, 5.0, 18.0)),
+                        ("AXBoundsForRange(caret, 0)", VSCODE_CARET)]
+
+        with caplog.at_level("INFO"):
+            self._run(monkeypatch,
+                      _Detailed((100.0, 200.0, 0.0, 18.0), (90.0, 190.0, 300.0, 40.0)),
+                      [])
+        assert "AXBoundsForRange(caret, 1)" in caplog.text
+        assert "AXBoundsForRange(caret, 0)" in caplog.text
+
+    def test_a_lie_is_reported_as_not_believed(self, monkeypatch, caplog):
+        popped = []
+        with caplog.at_level("INFO"):
+            self._run(monkeypatch, _Element(VSCODE_CARET, VSCODE_ELEMENT), popped)
+        assert "not believed" in caplog.text
+        assert popped == [("anchor: element", VSCODE_ELEMENT)]
+
+    def test_nothing_focused_names_the_chromium_case(self, monkeypatch, caplog):
+        """"No focused element" out of a Chromium application means something
+        specific and fixable, and the report says so rather than leaving it as
+        a dead end."""
+        popped = []
+        with caplog.at_level("INFO"):
+            self._run(monkeypatch, None, popped, focus_element=None)
+        assert "enable_content_access" in caplog.text
+        assert popped == [("anchor: no focused element", None)]

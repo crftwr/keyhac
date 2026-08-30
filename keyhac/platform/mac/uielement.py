@@ -296,6 +296,28 @@ class UIElement:
         # already said nothing, on the key hook's clock, for nothing.
         return refused
 
+    def describe_caret(self) -> list:
+        """Every way of asking where the caret is, and what each answered.
+
+        For `ReportCaretAnchor`, which has to say *why* a popup went where it
+        did - and the why is always which spelling of the question this
+        particular application chose to answer.
+        """
+        selection = self.get_attribute_value("AXSelectedTextRange")
+        rows = [("AXSelectedTextRange", selection),
+                ("AXNumberOfCharacters",
+                 self.get_attribute_value("AXNumberOfCharacters"))]
+        if not isinstance(selection, tuple):
+            return rows
+        for length in (1, 0):
+            rows.append((f"AXBoundsForRange(caret, {length})",
+                         self.get_parameterized_attribute_value(
+                             "AXBoundsForRange", "range",
+                             (selection[0], length))))
+        rows.append(("bounds of the caret's line",
+                     self._caret_line_rect(selection[0])))
+        return rows
+
     def _caret_line_rect(self, location: int) -> tuple | None:
         """The bounds of the line a character offset is on, or None."""
         line = self.get_parameterized_attribute_value(

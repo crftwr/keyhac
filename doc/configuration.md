@@ -490,10 +490,18 @@ kt["Fn-O"] = ShowCandidates([ChooserPage("Windows", [OpenWindows()])],
                             anchor="window")
 ```
 
-`make caret-probe` prints what the application in front of you actually
-reports, which is the only way to find out whether a given one can be placed
-against. It repeats for twenty seconds: start it, switch to the application
-under test, and type in it.
+Applications differ enormously here, so **find out about one rather than
+guessing**. Bind `ReportCaretAnchor()` to a key and press it inside the
+application in question:
+
+```python
+kt["Fn-Ctrl-C"] = ReportCaretAnchor()
+```
+
+The console gets the caret Keyhac can read there — or why it cannot — at INFO,
+with no debug logging to turn on first, and a balloon appears at the place it
+found. `make caret-probe` does the same from a terminal, but a terminal is
+what is in front while it runs, so the key is usually the one you want.
 
 ### Writing a chooser as a class
 
