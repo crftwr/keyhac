@@ -973,14 +973,23 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   one line tall, inside its element: a caret. So it is the last road tried,
   and it is tried only after the first has failed, being two more
   cross-process round trips.
-- **An empty range degenerates to the element itself, and that is not a
-  caret.** VS Code's editor is that case: what holds the focus is Monaco's
-  input proxy, which carries no text (`AXNumberOfCharacters: 0`), so the
-  selection covers nothing and the bounds of nothing come back as the whole
-  element — `(1274, 981, 409, 40)` for an element at `(1274, 981, 409, 40)`.
-  Believing it would be worse than having no caret, because a caret bypasses
-  the height limit that keeps a popup from opening under a document. Hence
-  `_is_the_element_itself`.
+- **A rectangle the size of its own element is not a caret**, and two
+  unrelated roads answer that way — both of them a way of saying "nothing"
+  through an API with no way to say it:
+  - `AXBoundsForRange` in **Excel**, with no cell being edited. The grid is
+    an `AXLayoutArea` of no characters, and every spelling — the character,
+    the insertion point, even the caret's line — comes back as
+    `(482, 293, 945, 624)`, which is the grid.
+  - the **marker API** for an empty range. VS Code's editor is that case:
+    Monaco's input proxy carries no text, so the selection covers nothing and
+    the bounds of nothing are the whole element.
+
+  Believing either is worse than having no caret at all, because a caret
+  bypasses the height limit that keeps a popup from opening under a document
+  — and a grid and an editor are exactly what that limit is for. The rule is
+  `usable_caret`'s, not any platform's: it was written once in the macOS
+  marker read and Excel walked straight past it through the other road, which
+  is what a rule in the wrong layer does.
 - **Which is why the element fall-through gets the y right and the x wrong.**
   Monaco moves that proxy to the caret's *line*, so it is on screen where the
   caret is vertically — it has to be, or an IME would put its candidate

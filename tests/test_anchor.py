@@ -60,6 +60,40 @@ class _Element:
         return self._rect
 
 
+class TestARectangleTheSizeOfItsOwnElement:
+    """A caret is not the size of the thing it is in, and two different roads
+    answer that way - both of them a way of saying "nothing".
+
+    Excel with no cell being edited: the grid is an AXLayoutArea of no
+    characters, and every spelling of the question - the character, the
+    insertion point, even the caret's line - comes back as (482, 293, 945,
+    624), which is the grid. VS Code's editor: the marker API for an empty
+    range, Monaco's input proxy carrying no text, so the bounds of nothing
+    are the whole element."""
+
+    EXCEL_GRID = (482.0, 293.0, 945.0, 624.0)
+
+    def test_excels_grid_is_not_a_caret(self):
+        assert not usable_caret(self.EXCEL_GRID, self.EXCEL_GRID)
+
+    def test_vs_codes_marker_answer_is_not_a_caret(self):
+        rect = (1274.0, 981.0, 409.0, 40.0)
+        assert not usable_caret(rect, rect)
+
+    def test_a_fraction_out_is_still_the_element(self):
+        """Screen coordinates that have been through a coordinate flip."""
+        assert not usable_caret((1274.4, 981.0, 409.0, 40.0),
+                                (1274.0, 981.0, 409.0, 40.0))
+
+    def test_a_real_caret_inside_a_large_element_is_kept(self):
+        """Gmail's compose body, which is the answer this road exists for."""
+        assert usable_caret((142.0, 413.0, 0.0, 14.0),
+                            (107.0, 341.0, 512.0, 295.0))
+
+    def test_nothing_to_compare_against_is_not_a_refusal(self):
+        assert usable_caret((142.0, 413.0, 0.0, 14.0), None)
+
+
 class TestCaretAnchor:
 
     def test_a_believable_caret(self):

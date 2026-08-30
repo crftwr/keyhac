@@ -52,33 +52,3 @@ def test_from_ax_scalars_bridge():
     assert _from_ax(NSNumber.numberWithBool_(True)) == True  # noqa: E712 (bridged NSNumber)
     assert _from_ax(NSNumber.numberWithInt_(7)) == 7
 
-
-class TestTheMarkerApiGuard:
-    """Chromium answers the marker API where AXBoundsForRange is dead - and
-    for an empty range it answers with the element itself.
-
-    Measured: a Gmail compose body at (107, 341, 512, 295) reports the caret
-    as (142, 413, 0, 14), which is the answer this whole road exists for. VS
-    Code's editor reports (1274, 981, 409, 40) for an element at
-    (1274, 981, 409, 40), because Monaco's input proxy holds no text and the
-    bounds of nothing are the whole element.
-    """
-
-    def test_the_element_itself_is_not_a_caret(self):
-        from keyhac.platform.mac.uielement import _is_the_element_itself
-        assert _is_the_element_itself((1274.0, 981.0, 409.0, 40.0),
-                                      (1274.0, 981.0, 409.0, 40.0))
-
-    def test_a_flipped_coordinate_may_be_a_fraction_out(self):
-        from keyhac.platform.mac.uielement import _is_the_element_itself
-        assert _is_the_element_itself((1274.4, 981.0, 409.0, 40.0),
-                                      (1274.0, 981.0, 409.0, 40.0))
-
-    def test_a_real_caret_is_kept(self):
-        from keyhac.platform.mac.uielement import _is_the_element_itself
-        assert not _is_the_element_itself((142.0, 413.0, 0.0, 14.0),
-                                          (107.0, 341.0, 512.0, 295.0))
-
-    def test_no_element_rectangle_to_compare_against(self):
-        from keyhac.platform.mac.uielement import _is_the_element_itself
-        assert not _is_the_element_itself((142.0, 413.0, 0.0, 14.0), None)

@@ -68,9 +68,39 @@ def usable_caret(caret, element_rect) -> bool:
         return False
     if not isinstance(element_rect, (tuple, list)) or len(element_rect) != 4:
         return True
+    if _is_the_element_itself(caret, element_rect):
+        return False
     ex, ey, ew, eh = element_rect
     return (ex - _SLACK <= x <= ex + ew + _SLACK
             and ey - _SLACK <= y <= ey + eh + _SLACK)
+
+
+def _is_the_element_itself(rect, own) -> bool:
+    """Whether a reported caret is just the element's own frame.
+
+    **A caret is not the size of the thing it is in.**  Two different roads
+    answer this way and they are both a way of saying "nothing":
+
+    - `AXBoundsForRange` in Excel, with no cell being edited. The grid is an
+      `AXLayoutArea` of no characters, and every spelling - the character,
+      the insertion point, even the caret's line - comes back as
+      `(482, 293, 945, 624)`, which is the grid.
+    - the marker API for an empty range. VS Code's editor is that case: what
+      holds the focus is Monaco's input proxy, which carries no text, so the
+      selection covers nothing and the bounds of nothing are the whole
+      element.
+
+    Believing either is worse than having no caret at all, because a caret
+    bypasses the height limit that keeps a popup from opening under a
+    document - which is exactly what those two elements are.
+
+    Within a point: these are screen coordinates that have been through a
+    coordinate flip.
+    """
+    if not isinstance(rect, (tuple, list)) or not isinstance(own, (tuple, list)):
+        return False
+    return len(rect) == len(own) == 4 and all(
+        abs(a - b) < 1.0 for a, b in zip(rect, own))
 
 
 def caret_anchor(element):

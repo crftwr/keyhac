@@ -63,24 +63,6 @@ def _from_ax(value):
         return None
 
 
-def _is_the_element_itself(rect, own) -> bool:
-    """Whether a reported rectangle is just the element's own frame.
-
-    A caret is not the size of the thing it is in.  The marker API returns
-    exactly that for an empty range - VS Code's editor being the case, its
-    input proxy carrying no text - and believing it would be worse than
-    having no caret at all: a caret bypasses the height limit that keeps a
-    popup from opening under a whole document.
-
-    Within a point, since these are screen coordinates that have been through
-    a coordinate flip.
-    """
-    if not isinstance(rect, tuple) or not isinstance(own, tuple):
-        return False
-    return len(rect) == len(own) == 4 and all(
-        abs(a - b) < 1.0 for a, b in zip(rect, own))
-
-
 def _to_ax(type_name, value):
     if type_name == "bool":
         return bool(value)
@@ -328,13 +310,12 @@ class UIElement:
         is asked only as a fallback: on a native control the first road works
         and this one costs two more cross-process round trips.
 
-        **An empty range degenerates to the element itself.**  VS Code's
-        editor is the case: what holds the focus is Monaco's input proxy,
-        which carries no text, so the selection covers nothing and the bounds
-        of nothing come back as the whole element.  A rectangle the size of
-        its own element is not a caret - and believing it would be worse than
-        having none, since a caret bypasses the height limit that keeps a
-        popup from opening under a document.
+        **An empty range degenerates to the element itself** - VS Code's
+        editor being the case, its input proxy carrying no text - and that is
+        reported as given, like every other answer here.  Refusing it is
+        `keyhac.core.anchor.usable_caret`'s, which refuses the same shape
+        from `AXBoundsForRange` (Excel's grid answers that way) and would
+        have to agree with itself about both.
         """
         err, marker_range = AS.AXUIElementCopyAttributeValue(
             self._ref, "AXSelectedTextMarkerRange", None)
@@ -347,7 +328,7 @@ class UIElement:
         rect = _from_ax(bounds)
         if not isinstance(rect, tuple) or len(rect) != 4 or rect[3] <= 0:
             return None
-        return None if _is_the_element_itself(rect, self.get_rect()) else rect
+        return rect
 
     def describe_caret(self) -> list:
         """Every way of asking where the caret is, and what each answered.
