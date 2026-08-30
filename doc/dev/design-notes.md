@@ -955,13 +955,23 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   application to build its accessibility tree first
   (`set_manual_accessibility`, which exists for exactly this class of
   Chromium problem) changes nothing: measured before and after, identical.
-- **In VS Code's editor there is no text to bound.** What holds the focus is
-  Monaco's hidden input proxy, and it is *empty* —
-  `AXNumberOfCharacters: 0`, `AXSelectedTextRange: (0, 0)` — so there is no
-  character 0 for `AXBoundsForRange` to answer about. Chromium's second,
-  marker-keyed text API does answer (`AXBoundsForTextMarkerRange` over
-  `AXSelectedTextMarkerRange`) and answers with the element's own rectangle,
-  not a caret's. Both roads end at the element.
+- **The marker API answers where `AXBoundsForRange` does not.** Chromium and
+  WebKit carry a second text interface keyed on opaque markers, and in a
+  Gmail compose body — 24 characters of real text, `AXBoundsForRange` dead to
+  both spellings and `AXLineForIndex` with it —
+  `AXBoundsForTextMarkerRange` over `AXSelectedTextMarkerRange` answers
+  `(142, 413, 0, 14)` for an element at `(107, 341, 512, 295)`. Zero width,
+  one line tall, inside its element: a caret. So it is the last road tried,
+  and it is tried only after the first has failed, being two more
+  cross-process round trips.
+- **An empty range degenerates to the element itself, and that is not a
+  caret.** VS Code's editor is that case: what holds the focus is Monaco's
+  input proxy, which carries no text (`AXNumberOfCharacters: 0`), so the
+  selection covers nothing and the bounds of nothing come back as the whole
+  element — `(1274, 981, 409, 40)` for an element at `(1274, 981, 409, 40)`.
+  Believing it would be worse than having no caret, because a caret bypasses
+  the height limit that keeps a popup from opening under a document. Hence
+  `_is_the_element_itself`.
 - **Which is why the element fall-through gets the y right and the x wrong.**
   Monaco moves that proxy to the caret's *line*, so it is on screen where the
   caret is vertically — it has to be, or an IME would put its candidate

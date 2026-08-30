@@ -63,6 +63,24 @@ def _from_ax(value):
         return None
 
 
+def _is_the_element_itself(rect, own) -> bool:
+    """Whether a reported rectangle is just the element's own frame.
+
+    A caret is not the size of the thing it is in.  The marker API returns
+    exactly that for an empty range - VS Code's editor being the case, its
+    input proxy carrying no text - and believing it would be worse than
+    having no caret at all: a caret bypasses the height limit that keeps a
+    popup from opening under a whole document.
+
+    Within a point, since these are screen coordinates that have been through
+    a coordinate flip.
+    """
+    if not isinstance(rect, tuple) or not isinstance(own, tuple):
+        return False
+    return len(rect) == len(own) == 4 and all(
+        abs(a - b) < 1.0 for a, b in zip(rect, own))
+
+
 def _to_ax(type_name, value):
     if type_name == "bool":
         return bool(value)
@@ -294,7 +312,42 @@ class UIElement:
         # uselessly or not at all, and the line is asked through the same
         # attribute. Three more round trips into an application that has
         # already said nothing, on the key hook's clock, for nothing.
-        return refused
+        #
+        # The marker API is a different attribute and a different
+        # implementation, which is exactly why it is worth the two round
+        # trips: in a Gmail compose body it answers (142, 413, 0, 14) for an
+        # element at (107, 341, 512, 295) where AXBoundsForRange answers
+        # CGRectZero to both spellings.
+        return self._caret_marker_rect() or refused
+
+    def _caret_marker_rect(self) -> tuple | None:
+        """The caret through Chromium's and WebKit's own text API, or None.
+
+        Those two carry a second text interface keyed on opaque "text
+        markers", and it is implemented where `AXBoundsForRange` is not.  It
+        is asked only as a fallback: on a native control the first road works
+        and this one costs two more cross-process round trips.
+
+        **An empty range degenerates to the element itself.**  VS Code's
+        editor is the case: what holds the focus is Monaco's input proxy,
+        which carries no text, so the selection covers nothing and the bounds
+        of nothing come back as the whole element.  A rectangle the size of
+        its own element is not a caret - and believing it would be worse than
+        having none, since a caret bypasses the height limit that keeps a
+        popup from opening under a document.
+        """
+        err, marker_range = AS.AXUIElementCopyAttributeValue(
+            self._ref, "AXSelectedTextMarkerRange", None)
+        if err != 0 or marker_range is None:
+            return None
+        err, bounds = AS.AXUIElementCopyParameterizedAttributeValue(
+            self._ref, "AXBoundsForTextMarkerRange", marker_range, None)
+        if err != 0:
+            return None
+        rect = _from_ax(bounds)
+        if not isinstance(rect, tuple) or len(rect) != 4 or rect[3] <= 0:
+            return None
+        return None if _is_the_element_itself(rect, self.get_rect()) else rect
 
     def describe_caret(self) -> list:
         """Every way of asking where the caret is, and what each answered.
@@ -316,6 +369,8 @@ class UIElement:
                              (selection[0], length))))
         rows.append(("bounds of the caret's line",
                      self._caret_line_rect(selection[0])))
+        rows.append(("AXBoundsForTextMarkerRange (the marker API)",
+                     self._caret_marker_rect()))
         return rows
 
     def _caret_line_rect(self, location: int) -> tuple | None:
