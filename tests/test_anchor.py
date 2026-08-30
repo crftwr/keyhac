@@ -106,6 +106,17 @@ class TestPopupAnchor:
         assert popup_anchor(_Element(rect=(10, 10, 0, 0)), (0, 0, 800, 600))[1] \
             == "window"
 
+    def test_a_document_sized_control_is_not_a_place_either(self):
+        """Under a full-window text area is neither where you are looking nor
+        out of the way. Only the tall ones fail that way - a field is fine,
+        which is what keeps Electron applications placeable at all."""
+        assert popup_anchor(_Element(rect=(100, 100, 1200, 800)),
+                            (0, 0, 800, 600))[1] == "window"
+
+    def test_a_field_is_a_place(self):
+        assert popup_anchor(_Element(rect=(343, 680, 473, 19)),
+                            (0, 0, 800, 600)) == ((343, 680, 473, 19), "element")
+
     def test_nowhere_to_point_at(self):
         assert popup_anchor(None) is None
 

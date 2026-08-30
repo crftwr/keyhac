@@ -40,6 +40,14 @@ _SLACK = 8.0
 #: Between the anchor and the popup, so the two do not touch.
 _GAP_PX = 4.0
 
+#: Tall enough to be a document rather than a field, and therefore not a
+#: place. Under a single-line field is within a line of where the caret is;
+#: under a code editor is the bottom of the editor, which the caret may be
+#: nowhere near. Three lines of ordinary text is the generous end of "field" -
+#: a two-line box with padding still fits, and nothing that holds a document
+#: comes close.
+_MAX_PLACE_HEIGHT = 72.0
+
 
 def usable_caret(caret, element_rect) -> bool:
     """Whether a reported caret rectangle is worth placing anything against.
@@ -114,7 +122,7 @@ def popup_anchor(element, window_rect=None):
     if caret is not None:
         return caret, "caret"
     element_rect = _ask(element, "get_rect")
-    if _is_box(element_rect):
+    if _is_place(element_rect):
         return tuple(element_rect), "element"
     if _is_box(window_rect):
         return tuple(window_rect), "window"
@@ -210,3 +218,16 @@ def _ask(element, method):
 def _is_box(rect) -> bool:
     return (isinstance(rect, (tuple, list)) and len(rect) == 4
             and rect[2] > 0 and rect[3] > 0)
+
+
+def _is_place(rect) -> bool:
+    """Whether an element is small enough that under it means anything.
+
+    The objection this answers is a real one: a control is not a caret, and
+    a popup under a full-window text area is neither where you are looking
+    nor out of the way. It is only the *tall* ones that fail that way. Under
+    a one-line field is within a line of the caret, which is the whole point,
+    and is what Electron applications leave as the best available answer -
+    they return CGRectZero for the caret and no amount of asking changes it.
+    """
+    return _is_box(rect) and rect[3] <= _MAX_PLACE_HEIGHT

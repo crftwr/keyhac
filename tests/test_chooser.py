@@ -1030,15 +1030,27 @@ class TestBalloonIsAMark:
         assert mark.kwargs["text"] == "Multi-stroke: sub"
         assert (mark.x, mark.y) == (400.0, 322.0)
 
-    def test_a_caret_it_cannot_believe_sends_it_back_to_the_corner(self):
-        """The VS Code measurement, reaching the balloon: the call succeeds
-        and the rectangle is nonsense, and a balloon in a corner beats one at
-        the edge of a screen nobody is looking at."""
+    def test_a_caret_it_cannot_believe_falls_to_the_field(self):
+        """The VS Code measurement, reaching the balloon: the call succeeds,
+        the rectangle is CGRectZero flipped, and the field it came from is one
+        line tall - so under the field is within a line of where the caret
+        actually is, and a great deal better than the corner."""
         from keyhac.ui.balloon import multi_stroke_help
         manager, backend = self._manager()
         multi_stroke_help(manager, _Keymap(_Focused(
             caret=(0.0, 1112.0, 0.0, 0.0),
             rect=(1275.0, 981.0, 409.0, 40.0))))("sub")
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (1275.0, 1025.0)
+
+    def test_a_document_is_not_a_place_and_the_corner_is(self):
+        """The objection the size rule answers: under a full-window text area
+        is neither where you are looking nor out of the way."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(0.0, 1112.0, 0.0, 0.0),
+            rect=(100.0, 100.0, 1200.0, 800.0))))("sub")
         assert backend.marks[0].y == 25 + 24
 
     def test_no_focus_at_all_is_the_corner_too(self):

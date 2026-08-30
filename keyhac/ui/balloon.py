@@ -44,6 +44,13 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     keeps a second focus lookup off the hook's clock. That is a claim worth a
     test, and a lambda inside `main()` cannot have one.
 
+    It takes the focused *field* when there is no caret to be had, which is
+    every Electron application: they answer `AXBoundsForRange` with
+    CGRectZero and building their accessibility tree first does not change
+    it. Under a one-line field is within a line of where the caret is. Only
+    a tall element is refused (`popup_anchor`), and then this falls to the
+    corner, which is where a balloon with nothing to point at belongs.
+
     Args:
         balloon: the BalloonManager to pop on.
         keymap: the Keymap whose focus the caret is read from.
@@ -52,10 +59,11 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
         A `callable(name)` for `on_enter_multi_stroke`.
     """
     def show(name):
-        from keyhac.core.anchor import caret_anchor
+        from keyhac.core.anchor import popup_anchor
         focus = keymap.focus
+        found = popup_anchor(getattr(focus, "element", None))
         balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}",
-                    near=caret_anchor(getattr(focus, "element", None)))
+                    near=found[0] if found else None)
 
     return show
 

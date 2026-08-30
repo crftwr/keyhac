@@ -918,11 +918,14 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   rather than at its actual left edge — a mark sized to its text does not know
   that edge until it exists, and this keeps a short balloon a little further in
   rather than letting a long one run off.
-- **The caret alone, with no second-best rectangle.** The chooser falls from
-  the caret to the focused control to the window; the balloon falls from the
-  caret to a corner. A control is not a better corner, it is a worse caret —
-  a balloon pinned under a full-window text area's bottom edge is neither
-  where you are looking nor out of the way.
+- **The caret, then the focused control if it is small enough to be a place,
+  then a corner.** "A control is not a better corner, it is a worse caret" was
+  the first rule here, and the measurement overturned half of it: under a
+  one-line field is within a line of where the caret is. It is only a *tall*
+  element that is neither where you are looking nor out of the way, so the
+  fall-through is refused by height (`_MAX_PLACE_HEIGHT`) rather than by
+  category. Without it every Electron application is a corner forever — see
+  below.
 - The height it flips and clamps with is an **estimate**, and has to be: the
   mark sizes itself to its text and does not exist yet. Being wrong by a line
   moves the balloon by a line. The chooser has no such problem, its window
@@ -945,6 +948,19 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   `(1275, 981, 409, 40)`. No height, x at the screen edge, y outside the
   element entirely. A popup placed there is *worse* than the window centre it
   replaced, and nothing in the return value says so.
+- **That answer is CGRectZero, flipped.** The y is the screen's height on
+  every reading, whatever the element — which is Cocoa's origin converted to
+  the top-left space. Electron is not reporting a wrong caret; it is reporting
+  no rectangle at all through an API that has no way to say so. Asking the
+  application to build its accessibility tree first
+  (`set_manual_accessibility`, which exists for exactly this class of
+  Chromium problem) changes nothing: measured before and after, identical.
+- **Native AppKit does implement it.** Measured against XeFM:
+  `AXBoundsForRange(0, 1)` on a static text at `(88, 47, 40, 16)` answers
+  `(88, 47, 8.8, 16)` — inside the element, one character wide, the line's
+  height. So the mechanism is sound and the split is per-toolkit: native
+  answers, Chromium/Electron does not, and the size fall-through above is
+  what keeps the second half usable.
 - So a reported caret is checked against the element it is supposed to be
   inside, and one that fails is no caret. That rule is `usable_caret` in
   `keyhac/core/anchor.py` rather than in either platform, because the two
