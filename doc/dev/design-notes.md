@@ -393,6 +393,38 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   warning is the only evidence available that a key which leaked was a key
   that overran, and the only notice at all *before* the recovery. It is
   Windows-only because macOS's tap reports its own timeout.
+- **A hook that is given nothing looks exactly like a hook that was taken
+  away**, and the sanity check cannot tell them apart: both are modifier state
+  moving while no callback arrives. UIPI is the second cause. A low-level hook
+  installed by a medium-integrity process is not called for input aimed at a
+  *higher* integrity window, and Task Manager is one — measured on the machine
+  this was reported from: Keyhac at integrity 0x2000, Task Manager at 0x3000
+  and elevated. So every key typed in there was a strike, the hook was torn
+  down and rebuilt over and over with nothing wrong with it, and each rebuild
+  was a gap physical events flowed through — which is where the stuck Windows
+  key below came from. `_foreground_is_out_of_reach()` reads the foreground
+  window's integrity level on *every* strike (0.16 ms, and a strike is
+  already "something looks wrong") and, above our own, calls it what it is.
+  Every strike rather than the fourth: four hundred milliseconds is long
+  enough to close Task Manager in, and the evidence of blindness would then
+  be four ticks old while the foreground is read now. Keyhac's bindings genuinely do not work in such a window and cannot
+  without running elevated: that is Windows protecting it. Calling it a force
+  cancellation was the bug. "Cannot tell" counts as in reach — the hook being
+  gone is the case that costs the user their keyboard.
+- **An up whose down we never saw belongs to somebody else.** Suppressing the
+  false positive above removed the re-install, and with it the modifier
+  release that had been accidentally covering the real leak. The leak needs no
+  hook failure at all: while an elevated window is in front the *down* goes to
+  the OS unseen, and if the up is then consumed — and a user modifier's up
+  always is, it being a key no application may see — nothing tells Windows the
+  key came back up. The shortest road to it, and the one it was reported
+  from: LWin as User0 with Task Manager in front, where pressing the Windows
+  key opens the Start menu, the Start menu is *not* elevated, and the up
+  therefore arrives at a hook that never saw the down. So the hook tracks
+  which physical downs it has been shown, and a consumed modifier up with no
+  down behind it is undone with an injected up (masked, as below). The
+  physical up stays consumed: passing it through would hand the application
+  the bare modifier event the feature promises never to send.
 - **Recovery has to put the OS's modifier state back, not only ours.** The
   gap the sanity check recovers from is not symmetrical: while the hook is
   gone the physical events go straight to the OS, and when it returns the
