@@ -214,6 +214,40 @@ class UIElement:
         collect(self, 0)
         return "\n".join(parts) if parts else (value if isinstance(value, str) else None)
 
+    def get_rect(self) -> tuple | None:
+        """This element's screen rectangle as (x, y, w, h), or None.
+
+        Two attribute reads where `describe()` makes eight, for the callers
+        that want a place and nothing else - placing a popup beside the
+        focused control, checking that a caret rectangle is not a lie.
+        """
+        position = self.get_attribute_value("AXPosition")
+        size = self.get_attribute_value("AXSize")
+        if isinstance(position, tuple) and isinstance(size, tuple):
+            return (position[0], position[1], size[0], size[1])
+        return None
+
+    def get_caret_rect(self) -> tuple | None:
+        """The text insertion point's screen rectangle, or None.
+
+        `AXSelectedTextRange` gives the caret its character offset and
+        `AXBoundsForRange` turns a zero-length range there into a rectangle:
+        the pair an IME places its candidate window with.
+
+        **Reported as the element gives it, lies included.**  Measured in VS
+        Code (Electron): the call succeeds and answers (0, 1112, 0, 0) for an
+        element whose own frame is (1275, 981, 409, 40) - x at the screen
+        edge, no size at all, and a y outside the element.  Judging that is
+        `keyhac.core.anchor`'s job, so that the rule is one rule and can be
+        tested without an application to be wrong.
+        """
+        selection = self.get_attribute_value("AXSelectedTextRange")
+        if not isinstance(selection, tuple):
+            return None
+        rect = self.get_parameterized_attribute_value(
+            "AXBoundsForRange", "range", (selection[0], 0))
+        return rect if isinstance(rect, tuple) and len(rect) == 4 else None
+
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on, without the user selecting anything.
 

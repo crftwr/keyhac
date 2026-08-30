@@ -913,12 +913,61 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - The old window sized itself with `min(70, max(14, len(text) + 4))`. That was
   a wrap width with no name, and no way for a long balloon to do anything but
   be cut short; it is `max_width` now and the text wraps.
-- Placement: top-right of the main screen's work area, at the widest the mark
-  could be rather than at its actual left edge — a mark sized to its text does
-  not know that edge until it exists, and this keeps a short balloon a little
-  further in rather than letting a long one run off.
+- Placement: under the caret when one can be read and believed, and otherwise
+  the top-right of the main screen's work area, at the widest the mark could be
+  rather than at its actual left edge — a mark sized to its text does not know
+  that edge until it exists, and this keeps a short balloon a little further in
+  rather than letting a long one run off.
+- **The caret alone, with no second-best rectangle.** The chooser falls from
+  the caret to the focused control to the window; the balloon falls from the
+  caret to a corner. A control is not a better corner, it is a worse caret —
+  a balloon pinned under a full-window text area's bottom edge is neither
+  where you are looking nor out of the way.
+- The height it flips and clamps with is an **estimate**, and has to be: the
+  mark sizes itself to its text and does not exist yet. Being wrong by a line
+  moves the balloon by a line. The chooser has no such problem, its window
+  knowing its own frame before it is shown.
+- The caret is taken from `keymap.focus` — the snapshot this very keystroke
+  was dispatched against — so the balloon costs two attribute reads on the
+  hook's clock and no second focus lookup. The chooser cannot do that: it
+  reads the caret one turn of the loop later, where the window is built and
+  where nothing is on the hook's deadline.
 - Used for multi-stroke help (restores a keyhac-mac FIXME) and macro record
   state.
+
+## Where a popup opens (issue #118)
+
+- **A successful call is not a true answer.** Both OSes offer the caret —
+  macOS `AXBoundsForRange` over `AXSelectedTextRange`, Windows
+  `GetBoundingRectangles` over the TextPattern selection — and applications
+  answer wrongly without failing. Measured in VS Code: the caret comes back as
+  `(0, 1112, 0, 0)` for a text area whose own frame is
+  `(1275, 981, 409, 40)`. No height, x at the screen edge, y outside the
+  element entirely. A popup placed there is *worse* than the window centre it
+  replaced, and nothing in the return value says so.
+- So a reported caret is checked against the element it is supposed to be
+  inside, and one that fails is no caret. That rule is `usable_caret` in
+  `keyhac/core/anchor.py` rather than in either platform, because the two
+  platforms must not disagree about it and because it has to be testable
+  without an application to be wrong.
+- A caret has **no width and that is ordinary** — it is a line. Requiring
+  width would reject every honest answer and keep the dishonest ones, whose
+  distinguishing feature is missing *height*.
+- The chain is caret → focused control → window centre, each falling through
+  when it cannot be read *or cannot be believed*, so every failure ends at the
+  behaviour issue #4 shipped rather than at nothing. `anchor="window"` opts a
+  chooser out at the top: a window switcher has no business opening beside
+  your caret.
+- Placement is **below, left edges aligned**, flipped above when there is no
+  room and clamped to the screen — what an IME does with its candidate window,
+  and for the caret's own reason: the text being typed has to stay visible.
+  Centring on a caret would put half the popup over what was just typed.
+- The flip is refused when above is no better. A popup taller than the space
+  over the caret would be flipped and then clamped straight back, which only
+  changes which end of it covers the text.
+- `tools/caret_probe.py` is how the next bad answer gets found; the survey
+  mode is the weak one, since a background application reports no focused
+  element and a blank row there means "not asked", not "cannot answer".
 
 ## Tray / menu-bar extra
 

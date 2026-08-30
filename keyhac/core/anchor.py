@@ -1,0 +1,169 @@
+"""Where a popup goes: the caret, the focused control, or the window.
+
+The chooser has centred on the focused window's frame since issue #4, which
+is right when the *window* is what you are acting on and wrong when a place
+in it is - completing a word at the caret, acting on the control you just
+tabbed to. The eye is already somewhere; the window arrives somewhere else.
+
+Two rules live here rather than in either caller, and both for the same
+reason: they have to be one rule.
+
+**Whether a caret rectangle can be believed.** Asking is easy on both OSes -
+macOS answers `AXBoundsForRange` over `AXSelectedTextRange`, Windows answers
+`GetBoundingRectangles` over the TextPattern selection - and the answer is
+not always true. Measured in VS Code: the call succeeds and returns
+`(0, 1112, 0, 0)` for a text area whose own frame is `(1275, 981, 409, 40)`.
+No height, x at the screen edge, y outside the element. A popup placed there
+lands in a corner of the screen nobody was looking at, which is worse than
+the window centre it replaced, and *nothing in the return value says so* -
+the call did not fail. So a reported caret is checked against the element it
+is supposed to be inside, and a caret that fails is no caret.
+
+**Where the box goes once there is a rectangle.** Under it, flipped above
+when there is no room below, clamped to the screen - what an IME does with
+its candidate window, and the caret's own reason for existing: the text you
+are typing has to stay visible, so the popup goes where the text is not.
+"""
+
+#: A caret is a line: no width is ordinary, no height is not.
+_MIN_HEIGHT = 1.0
+
+#: How far outside its element a caret may sit and still be believed. Web
+#: content reports a line box a little proud of the field's own bounds, and a
+#: caret at the very end of a line sits on the boundary rather than inside it.
+_SLACK = 8.0
+
+#: Between the anchor and the popup, so the two do not touch.
+_GAP_PX = 4.0
+
+
+def usable_caret(caret, element_rect) -> bool:
+    """Whether a reported caret rectangle is worth placing anything against.
+
+    Args:
+        caret: (x, y, w, h) as the platform reported it, or None.
+        element_rect: the focused element's own rectangle, or None when it
+            could not be read - in which case the caret is taken on trust,
+            there being nothing to check it against.
+
+    Returns:
+        True when the rectangle has height and sits within the element.
+    """
+    if not isinstance(caret, (tuple, list)) or len(caret) != 4:
+        return False
+    x, y, _w, h = caret
+    if h < _MIN_HEIGHT:
+        return False
+    if not isinstance(element_rect, (tuple, list)) or len(element_rect) != 4:
+        return True
+    ex, ey, ew, eh = element_rect
+    return (ex - _SLACK <= x <= ex + ew + _SLACK
+            and ey - _SLACK <= y <= ey + eh + _SLACK)
+
+
+def caret_anchor(element):
+    """The caret alone, believed or not at all.
+
+    For a popup with no second-best place to be. The balloon is that: under
+    the caret is where multi-stroke help belongs, and its fall-back is a
+    corner of the screen rather than another rectangle - the focused control
+    is not a better corner, it is a worse caret.
+
+    Args:
+        element: the focused element (a platform UIElement), or None.
+
+    Returns:
+        (x, y, w, h), or None.
+    """
+    caret = _ask(element, "get_caret_rect")
+    if usable_caret(caret, _ask(element, "get_rect")):
+        return tuple(caret)
+    return None
+
+
+def popup_anchor(element, window_rect=None):
+    """What to place a popup against, and what it turned out to be.
+
+    The chain issue #118 presumed: the caret, then the focused control, then
+    the window. Each falls through when it cannot be read *or cannot be
+    believed*, which is the same thing from the caller's side.
+
+    Args:
+        element: the focused element (a platform UIElement), or None.
+        window_rect: the focused window's frame, used when the element
+            offers nothing.
+
+    Returns:
+        `(rect, kind)` where kind is "caret", "element" or "window", or None
+        when there is nowhere to point at. A "window" anchor is the whole
+        frame and means *centre on this*; the other two are small and mean
+        *sit under this*.
+    """
+    caret = caret_anchor(element)
+    if caret is not None:
+        return caret, "caret"
+    element_rect = _ask(element, "get_rect")
+    if _is_box(element_rect):
+        return tuple(element_rect), "element"
+    if _is_box(window_rect):
+        return tuple(window_rect), "window"
+    return None
+
+
+def place_below(size, anchor, screen=None, gap: float = _GAP_PX):
+    """Top-left for a box of `size` placed under `anchor`.
+
+    Left edges aligned, because the caret is where the text is going and the
+    eye is already at that column - centring on a caret puts half the popup
+    where the user just came from.
+
+    Args:
+        size: (w, h) of the box being placed.
+        anchor: (x, y, w, h) to sit under.
+        screen: (x, y, w, h) to stay inside, or None for no clamping.
+        gap: distance between the anchor and the box.
+
+    Returns:
+        (x, y) for the box.
+    """
+    w, h = size
+    ax, ay, _aw, ah = anchor
+    x, y = ax, ay + ah + gap
+    if not _is_box(screen):
+        return x, y
+    sx, sy, sw, sh = screen
+    if y + h > sy + sh:
+        # Above instead - but only when it fits there, or a tall popup over a
+        # caret near the bottom would be flipped into an equally bad place and
+        # then clamped anyway. Clamping alone at least keeps the caret's line
+        # at an edge of the popup rather than in the middle of it.
+        above = ay - gap - h
+        if above >= sy:
+            y = above
+    x = max(sx, min(x, sx + sw - w))
+    y = max(sy, min(y, sy + sh - h))
+    return x, y
+
+
+def _ask(element, method):
+    """Call an optional element method, treating anything at all as absence.
+
+    Focus elements are duck-typed - an AX element on macOS, a UIA one on
+    Windows, whatever a test supplies - so a missing method is an ordinary
+    answer here, and so is one that raises: the element may have been
+    destroyed between being handed over and being asked.
+    """
+    if element is None:
+        return None
+    call = getattr(element, method, None)
+    if call is None:
+        return None
+    try:
+        return call()
+    except Exception:
+        return None
+
+
+def _is_box(rect) -> bool:
+    return (isinstance(rect, (tuple, list)) and len(rect) == 4
+            and rect[2] > 0 and rect[3] > 0)

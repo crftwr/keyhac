@@ -1626,7 +1626,7 @@ Enter runs whatever the chosen row's source says to do, so rows from different s
 ### <kbd>method</kbd> `ShowCandidates.__init__`
 
 ```python
-__init__(sources, on_chosen=None, matcher=None, activates=None)
+__init__(sources, on_chosen=None, matcher=None, activates=None, anchor=None)
 ```
 
 Build the action. 
@@ -1640,6 +1640,7 @@ Build the action.
  - <b>`matcher`</b>:  How the filter text is matched; the default is  case-insensitive substring unioned with Migemo. 
  - <b>`activates`</b>:  Whether the window takes OS keyboard focus.  Leave it  alone unless the filter field genuinely needs an input method 
         - see `ChooserAction.activates`. 
+ - <b>`anchor`</b>:  Where the window opens - "caret" (the default) under the  text insertion point, or "window" in the focused window's  middle.  See `ChooserAction.anchor`. 
 
 ---
 

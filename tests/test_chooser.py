@@ -219,7 +219,8 @@ class TestChooserScrolling:
 
 
 class TestChooserCentering:
-    """Issue #4: the chooser centers on the focused window's frame.
+    """Where the window opens: the focused window's centre (issue #4), or
+    under the caret when there is one to sit under (issue #118).
 
     The memory backend creates 72x20 windows at (160, 160) with 1 px per
     cell, so the geometry below is exact."""
@@ -246,6 +247,24 @@ class TestChooserCentering:
         chooser = self._window(ui_backend, center_on=(-500, -500, 100, 100),
                                clamp_to=(0, 0, 800, 600))
         assert chooser.window.frame_px() == (0.0, 0.0, 72.0, 20.0)
+
+    def test_below_sits_under_the_caret(self, ui_backend):
+        chooser = self._window(ui_backend, below=(300, 400, 0, 18),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px() == (300.0, 422.0, 72.0, 20.0)
+
+    def test_below_wins_over_the_window_s_centre(self, ui_backend):
+        """Both are answers to "where does it open"; one of them knows where
+        the eye already is."""
+        chooser = self._window(ui_backend, below=(300, 400, 0, 18),
+                               center_on=(100, 100, 400, 300),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px()[:2] == (300.0, 422.0)
+
+    def test_below_flips_above_a_caret_near_the_bottom(self, ui_backend):
+        chooser = self._window(ui_backend, below=(300, 780, 0, 18),
+                               clamp_to=(0, 0, 1000, 800))
+        assert chooser.window.frame_px()[:2] == (300.0, 756.0)
 
 
 class TestChooserFiltering:
@@ -954,6 +973,26 @@ class TestBalloonIsAMark:
         mark = backend.marks[0]
         assert mark.y == 25 + 24
         assert mark.x == 1920 - 70 * 8 - 24
+
+    def test_a_caret_puts_it_under_the_caret(self):
+        """Multi-stroke help arrives while the user is typing, and a corner of
+        the screen is not where they are looking."""
+        manager, backend = self._manager()
+        manager.pop("help", "Multi-stroke: sub", near=(400.0, 300.0, 0.0, 18.0))
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (400.0, 322.0)
+
+    def test_a_caret_near_the_right_edge_is_clamped(self):
+        """The mark does not exist yet, so the width it is placed with is the
+        widest it could be - which is what keeps a long balloon on screen."""
+        manager, backend = self._manager()
+        manager.pop("help", "hi", near=(1900.0, 300.0, 0.0, 18.0))
+        assert backend.marks[0].x == 1920 - 70 * 8
+
+    def test_no_caret_is_still_the_corner(self):
+        manager, backend = self._manager()
+        manager.pop("help", "hi", near=None)
+        assert backend.marks[0].y == 25 + 24
 
     def test_popping_the_same_name_replaces_it(self):
         manager, backend = self._manager()

@@ -211,13 +211,19 @@ class ChooserWindow:
     center_on: a screen rect (x, y, w, h) to center the window on - the
     focused window's frame (issue #4); clamp_to keeps the result on the
     given screen rect. Both are in puikit's portable screen coordinates
-    (top-left origin), the same space keyhac's Window/WindowProvider report."""
+    (top-left origin), the same space keyhac's Window/WindowProvider report.
+
+    below: a screen rect to sit *under* instead, left edges aligned - the
+    caret or the focused control (issue #118). It wins over center_on when
+    both are given, because it is the more specific answer to the same
+    question. Flipped above and clamped by `keyhac.core.anchor.place_below`,
+    which is also what the balloon places with."""
 
     def __init__(self, backend, items, on_selected=None, on_canceled=None,
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
                  pages=None, on_page=None, pending=None, background=None,
-                 source_of=None):
+                 source_of=None, below=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -269,7 +275,9 @@ class ChooserWindow:
                               # PR #126).  Inert on Windows, where
                               # WS_EX_NOACTIVATE already refuses both.
                               overlay_input="mouse" if not activates else "none"))
-        if center_on is not None:
+        if below is not None:
+            self._place_below(below, clamp_to)
+        elif center_on is not None:
             self._center_on(center_on, clamp_to)
         # Install the event handler BEFORE binding the Panel so it stays ours.
         self.window.on_event = self._on_event
@@ -470,6 +478,20 @@ class ChooserWindow:
             x = max(sx, min(x, sx + sw - w))
             y = max(sy, min(y, sy + sh - h))
         self.window.move_to_px(x, y)
+
+    def _place_below(self, rect, clamp_to) -> None:
+        """Sit under a caret or a control rather than over a window's middle.
+
+        The same `frame_px()`-then-`move_to_px()` shape as `_center_on`; only
+        the arithmetic differs, and that lives in `keyhac.core.anchor` so the
+        balloon flips and clamps by the same rule.
+        """
+        frame = self.window.frame_px()
+        if frame is None:
+            return
+        from keyhac.core.anchor import place_below
+        _x, _y, w, h = frame
+        self.window.move_to_px(*place_below((w, h), rect, clamp_to))
 
     def _rows(self):
         badge = self._badge_of

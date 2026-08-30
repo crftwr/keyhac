@@ -66,6 +66,22 @@ if sys.platform == "win32":
     oleaut32.SysFreeString.restype = None
     oleaut32.SysAllocString.argtypes = [ctypes.c_wchar_p]
     oleaut32.SysAllocString.restype = ctypes.c_void_p
+    # GetBoundingRectangles hands back a SAFEARRAY of doubles rather than a
+    # plain out-parameter, which is why these three are here and nowhere else
+    # in the module.
+    oleaut32.SafeArrayGetLBound.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_long)]
+    oleaut32.SafeArrayGetLBound.restype = ctypes.c_long
+    oleaut32.SafeArrayGetUBound.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_long)]
+    oleaut32.SafeArrayGetUBound.restype = ctypes.c_long
+    oleaut32.SafeArrayAccessData.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    oleaut32.SafeArrayAccessData.restype = ctypes.c_long
+    oleaut32.SafeArrayUnaccessData.argtypes = [ctypes.c_void_p]
+    oleaut32.SafeArrayUnaccessData.restype = ctypes.c_long
+    oleaut32.SafeArrayDestroy.argtypes = [ctypes.c_void_p]
+    oleaut32.SafeArrayDestroy.restype = ctypes.c_long
 
     COINIT_APARTMENTTHREADED = 0x2
     COINIT_MULTITHREADED = 0x0
@@ -185,6 +201,12 @@ class _IUIAutomationTextRange:
     # it as GetText(int, BSTR*) wrote through a bogus address and access-
     # violated. Verified live, not read off a header.
     ExpandToEnclosingUnit = 6    # UNVERIFIED on hardware - see below
+    #: UNVERIFIED on hardware. Sits between the two slots that *are* pinned:
+    #: ExpandToEnclosingUnit at 6 and GetEnclosingElement at 11, with
+    #: FindAttribute, FindText and GetAttributeValue filling 7-9. A wrong
+    #: index here calls a different method with a SAFEARRAY out-parameter's
+    #: address, so `get_caret_rect()` treats every failure as "no caret".
+    GetBoundingRectangles = 10
     GetText = 12
 
 
@@ -268,6 +290,42 @@ def _element_out(ptr, index, *args):
     if hr != S_OK or not out.value:
         return None
     return out
+
+
+def _first_bounding_rect(text_range) -> tuple | None:
+    """The first (x, y, w, h) of a text range's bounding rectangles.
+
+    `GetBoundingRectangles` answers a SAFEARRAY of doubles - four per
+    rectangle, one rectangle per line the range spans.  A caret spans one
+    line, so the first four doubles are the whole answer.
+
+    A collapsed range is allowed to answer with no rectangles at all, which
+    is why a short array is "no caret" rather than an error worth logging.
+    """
+    array = ctypes.c_void_p()
+    hr = _com_call(text_range, _IUIAutomationTextRange.GetBoundingRectangles,
+                   ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                   ctypes.byref(array))
+    if hr != S_OK or not array.value:
+        return None
+    try:
+        lower, upper = ctypes.c_long(), ctypes.c_long()
+        if oleaut32.SafeArrayGetLBound(array, 1, ctypes.byref(lower)) != S_OK:
+            return None
+        if oleaut32.SafeArrayGetUBound(array, 1, ctypes.byref(upper)) != S_OK:
+            return None
+        if upper.value - lower.value + 1 < 4:
+            return None
+        data = ctypes.c_void_p()
+        if oleaut32.SafeArrayAccessData(array, ctypes.byref(data)) != S_OK:
+            return None
+        try:
+            values = ctypes.cast(data, ctypes.POINTER(ctypes.c_double))
+            return (values[0], values[1], values[2], values[3])
+        finally:
+            oleaut32.SafeArrayUnaccessData(array)
+    finally:
+        oleaut32.SafeArrayDestroy(array)
 
 
 def _range_text(text_range, max_length: int = -1) -> str | None:
@@ -788,6 +846,55 @@ class UIElement:
                 return _range_text(text_range)
             finally:
                 _release(text_range)
+        finally:
+            _release(pattern)
+
+    def get_rect(self) -> tuple | None:
+        """This element's screen rectangle as (x, y, w, h), or None.
+
+        The single property `describe()` reads for the same thing, for the
+        callers that want a place and nothing else - placing a popup beside
+        the focused control, checking that a caret rectangle is not a lie.
+        """
+        rect = self.get_attribute_value("BoundingRectangle")
+        return tuple(rect) if isinstance(rect, (tuple, list)) and len(rect) == 4 else None
+
+    def get_caret_rect(self) -> tuple | None:
+        """The text insertion point's screen rectangle, or None.
+
+        UIA has no caret call.  The selection with nothing selected *is* the
+        caret - a degenerate range - and `GetBoundingRectangles` turns a range
+        into rectangles, one per line it spans.  A caret spans one, so the
+        first is the answer.
+
+        **Reported as the control gives it, lies included**; whether a
+        rectangle is usable is `keyhac.core.anchor`'s single rule, tested
+        without an application to be wrong.  A control that says nothing here
+        - and a great many say nothing, this being the least-implemented
+        corner of TextPattern - simply has no caret to offer.
+        """
+        pattern = self._pattern(_PatternId.Text)
+        if pattern is None:
+            return None
+        try:
+            ranges = ctypes.c_void_p()
+            hr = _com_call(pattern, _IUIAutomationTextPattern.GetSelection,
+                           ctypes.c_long, [ctypes.POINTER(ctypes.c_void_p)],
+                           ctypes.byref(ranges))
+            if hr != S_OK or not ranges.value:
+                return None
+            try:
+                text_range = _element_out(ranges,
+                                          _IUIAutomationTextRangeArray.GetElement,
+                                          ctypes.c_int(0))
+                if text_range is None:
+                    return None
+                try:
+                    return _first_bounding_rect(text_range)
+                finally:
+                    _release(text_range)
+            finally:
+                _release(ranges)
         finally:
             _release(pattern)
 

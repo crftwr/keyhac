@@ -473,14 +473,35 @@ to do — walking the window's controls, asking a server — costs that work eve
 time it is in the page being opened, so putting it in a page of its own means
 it is paid for only when you ask for it.
 
+### Where the window opens
+
+By default the chooser opens **under the caret**, falling back to the focused
+control and then to the middle of the focused window. Each step falls through
+when the one before it cannot be read *or cannot be believed* — a good many
+applications answer the caret question with a rectangle that is not where the
+caret is, and a popup placed on one of those lands somewhere nobody was
+looking.
+
+Pass `anchor="window"` for a chooser that acts on the window rather than on a
+place in it — a window switcher has no business opening beside your caret:
+
+```python
+kt["Fn-O"] = ShowCandidates([ChooserPage("Windows", [OpenWindows()])],
+                            anchor="window")
+```
+
+`tools/caret_probe.py` prints what the application in front of you actually
+reports, which is the only way to find out whether a given one can be placed
+against.
+
 ### Writing a chooser as a class
 
 Custom choosers may also derive from `ChooserAction`: implement
 `list_items() -> [(icon, label, ...)]` and `on_chosen(item, modifier_flags)`; the
-open/filter flow is inherited. Two class attributes tune it: `matcher` (default
-substring + Migemo; `WildcardMatcher()` for `*` and `?`) and `activates` (default
+open/filter flow is inherited. Three class attributes tune it: `matcher` (default
+substring + Migemo; `WildcardMatcher()` for `*` and `?`), `activates` (default
 `False`; set it `True` only if the filter field genuinely needs an input method,
-which costs the focus of the application underneath).
+which costs the focus of the application underneath) and `anchor` (above).
 
 ## Windows, screens and applications
 

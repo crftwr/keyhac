@@ -205,6 +205,14 @@ class ChooserAction:
     #: so that is the one thing the default gives up.
     activates = False
 
+    #: Where the window opens.  ``"caret"`` puts it under the text insertion
+    #: point, falling through to the focused control and then to the focused
+    #: window's centre when the caret cannot be read *or cannot be believed*
+    #: (`keyhac.core.anchor`).  ``"window"`` is that centre alone, which is
+    #: what a chooser acting on the window rather than on a place in it wants
+    #: - a window switcher has no business opening beside your caret.
+    anchor = "caret"
+
     def __repr__(self):
         return f"{type(self).__name__}()"
 
@@ -250,6 +258,13 @@ class ChooserAction:
         # portable top-left screen coordinates on both OSes; clamp to the
         # screen the window mostly lives on. UI thread here, so the window
         # accessors are allowed.
+        #
+        # The *caret* is not read here. This runs on the hook's clock (see the
+        # deadline note below), and reading it is two more cross-process
+        # round trips into an application that may not be answering. It is
+        # read in _open_window instead, one turn of the loop later, where the
+        # window is built - and where the answer is just as good, the chooser
+        # taking no focus and the caret therefore not having moved.
         center_on = clamp_to = None
         active = keymap.get_active_window()
         if active is not None:
@@ -315,6 +330,32 @@ class ChooserAction:
         else:
             _open_now()
 
+    def _below(self, keymap, clamp_to):
+        """The caret or the focused control to open under, or None.
+
+        None means the window's centre, which is where `center_on` already
+        points - so every fall-through in the chain ends at the behaviour
+        this replaced rather than at nothing.
+
+        lazydocs: ignore
+        """
+        if self.anchor != "caret" or keymap is None:
+            return None
+        from keyhac.core.anchor import popup_anchor
+        provider = getattr(keymap, "_focus_provider", None)
+        if provider is None:
+            return None
+        try:
+            element = provider.get_focused_element()
+        except Exception:
+            return None
+        found = popup_anchor(element)
+        if found is None:
+            return None
+        rect, kind = found
+        logger.debug(f"Chooser anchored on the {kind}: {rect}")
+        return rect
+
     def _open_window(self, original_pid, center_on, clamp_to) -> None:
         """Build and show the window, one turn of the loop after the key that
         asked for it (see __call__).
@@ -355,6 +396,7 @@ class ChooserAction:
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
+                                below=self._below(keymap, clamp_to),
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
                                 pages=self.page_names(),
@@ -582,7 +624,8 @@ class ShowCandidates(ChooserAction):
     this, activate that, press the other.
     """
 
-    def __init__(self, sources, on_chosen=None, matcher=None, activates=None):
+    def __init__(self, sources, on_chosen=None, matcher=None, activates=None,
+                 anchor=None):
         """Build the action.
 
         Args:
@@ -602,6 +645,9 @@ class ShowCandidates(ChooserAction):
             activates: Whether the window takes OS keyboard focus.  Leave it
                 alone unless the filter field genuinely needs an input method
                 - see `ChooserAction.activates`.
+            anchor: Where the window opens - "caret" (the default) under the
+                text insertion point, or "window" in the focused window's
+                middle.  See `ChooserAction.anchor`.
         """
         from keyhac.core.source import ChooserPage, as_source
 
@@ -618,6 +664,8 @@ class ShowCandidates(ChooserAction):
             self.matcher = matcher
         if activates is not None:
             self.activates = activates
+        if anchor is not None:
+            self.anchor = anchor
 
     def __repr__(self):
         if len(self._pages) > 1:

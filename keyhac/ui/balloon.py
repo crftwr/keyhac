@@ -1,8 +1,9 @@
 """Balloon tooltips, drawn as screen marks.
 
 Restores keyhac-win's popBalloon/closeBalloon (multi-stroke help, macro
-status).  Placement: top-right of the main screen's work area - caret
-placement arrives with the platform caret provider.
+status).  Placement: under the caret when one can be read and believed
+(`keyhac.core.anchor`), and otherwise the top-right of the main screen's
+work area - which is where a balloon with nothing to point at belongs.
 
 **A balloon is a mark, not a window.**  It used to be a frameless topmost
 non-activating window with a `Label` in it, which is five window-style fields
@@ -39,14 +40,19 @@ class BalloonManager:
         self._backend = backend
         self._balloons = {}  # name -> ScreenMarker
 
-    def pop(self, name: str, text: str, timeout: float = None) -> None:
-        """Show (or replace) a named balloon; timeout in seconds."""
+    def pop(self, name: str, text: str, timeout: float = None,
+            near=None) -> None:
+        """Show (or replace) a named balloon; timeout in seconds.
+
+        `near` is a screen rect to sit under - the caret, for the multi-stroke
+        help that appears while the user is typing into something.
+        """
         self.close(name)
         base_w, _base_h = self._backend.base_size
         max_width = _MAX_WIDTH_UNITS * base_w
         try:
             marker = self._backend.mark_screen(
-                *self._corner(max_width), text=text, fill=True,
+                *self._place(max_width, text, near), text=text, fill=True,
                 style=_STYLE, radius=_RADIUS, max_width=max_width,
                 timeout=timeout,
                 # A balloon appears in a corner nobody was watching.
@@ -63,6 +69,42 @@ class BalloonManager:
             marker = self._balloons.pop(one, None)
             if marker is not None:
                 marker.close()
+
+    def _place(self, max_width: float, text: str, near) -> tuple:
+        """Under `near` when there is one, and the corner when there is not.
+
+        **The height is an estimate**, and has to be: a screen mark sizes
+        itself to its text and does not exist yet.  It is used only to decide
+        whether the balloon would run off the bottom, so an estimate that is
+        wrong by a line moves the balloon by a line - unlike the window the
+        chooser places, which knows its own frame before it is shown.
+        """
+        if near is None:
+            return self._corner(max_width)
+        from keyhac.core.anchor import place_below
+        _base_w, base_h = self._backend.base_size
+        lines = max(1, -(-len(text) // _MAX_WIDTH_UNITS))
+        return place_below((max_width, lines * base_h + _INSET_PX),
+                           near, self._work_area(near))
+
+    def _work_area(self, near) -> tuple | None:
+        """The work area of the screen the anchor is on, or None.
+
+        The screen the *caret* is on, not the main one: a balloon clamped to
+        a screen the user is not looking at is a balloon nobody sees.
+        """
+        try:
+            frames = self._backend.screen_frames()
+        except Exception:
+            return None
+        if not frames:
+            return None
+        x, y = near[0], near[1]
+        for _full, work in frames:
+            wx, wy, ww, wh = work
+            if wx <= x < wx + ww and wy <= y < wy + wh:
+                return work
+        return frames[0][1]
 
     def _corner(self, max_width: float) -> tuple:
         """Top-right of the main screen's work area.
