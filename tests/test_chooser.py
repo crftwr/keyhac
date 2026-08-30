@@ -1031,10 +1031,9 @@ class TestBalloonIsAMark:
         manager.close()
         assert backend.marks[1].closed
 
-    def test_multi_stroke_help_reads_the_caret_of_the_key_that_armed_it(self):
-        """`keymap.focus` is refreshed at the top of _on_key_down, so the
-        element in it belongs to the very keystroke that entered the prefix -
-        no second focus lookup on the hook's clock."""
+    def test_multi_stroke_help_reads_the_caret_where_it_is_now(self):
+        """The provider is asked when the prefix is armed, rather than the
+        snapshot being taken at its word."""
         from keyhac.ui.balloon import multi_stroke_help
         manager, backend = self._manager()
         multi_stroke_help(manager, _Keymap(_Focused(
@@ -1045,6 +1044,44 @@ class TestBalloonIsAMark:
         # 330 is the field's bottom edge, not the caret's - a balloon under
         # the caret would cover the box it was typed into.
         assert (mark.x, mark.y) == (400.0, 334.0)
+
+    def test_a_snapshot_that_has_gone_stale_does_not_place_the_balloon(self):
+        """Windows caches the focus on (foreground window, focused child
+        window, title), none of which change when the focus moves inside a
+        Chromium window - the whole UI being one HWND. The balloon opened at
+        the field the user had left; it asks the provider now."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        here = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                        rect=(390.0, 290.0, 300.0, 40.0))
+        left_behind = _Focused(caret=(900.0, 700.0, 0.0, 18.0),
+                               rect=(890.0, 690.0, 300.0, 40.0))
+        multi_stroke_help(manager, _Keymap(here, snapshot=left_behind))("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_the_snapshot_is_what_a_provider_with_no_answer_leaves(self):
+        """It says nothing rather than hand back a window pretending to be
+        the focus (issue #44), and the snapshot has no such scruples."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        remembered = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                              rect=(390.0, 290.0, 300.0, 40.0))
+        multi_stroke_help(manager, _Keymap(None, snapshot=remembered))("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_a_provider_that_raises_is_not_a_balloon_that_fails(self):
+        from keyhac.ui.balloon import multi_stroke_help
+
+        class _Raises:
+            def get_focused_element(self):
+                raise RuntimeError("no focus for you")
+
+        manager, backend = self._manager()
+        keymap = _Keymap(_Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                                  rect=(390.0, 290.0, 300.0, 40.0)))
+        keymap._focus_provider = _Raises()
+        multi_stroke_help(manager, keymap)("sub")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
 
     def test_a_caret_it_cannot_believe_falls_to_the_field(self):
         """The VS Code measurement, reaching the balloon: the call succeeds,
@@ -1122,16 +1159,33 @@ class _Focused:
         return self._rect
 
 
-class _Keymap:
-    """The focus snapshot and the focused window - what multi_stroke_help
-    reads, and no more."""
+#: "the snapshot is whatever the provider says", which is the ordinary case.
+_FRESH = object()
 
-    def __init__(self, element, window=None):
-        self.focus = None if element is None else _Focus(element)
+
+class _Keymap:
+    """What multi_stroke_help reads: the provider it asks where the focus is,
+    the snapshot it falls back to, and the focused window.
+
+    `snapshot=` is what the last keystroke left behind, for the cases where
+    Windows' focus cache and the truth have come apart."""
+
+    def __init__(self, element, window=None, snapshot=_FRESH):
+        self._focus_provider = _Provider(element)
+        remembered = element if snapshot is _FRESH else snapshot
+        self.focus = None if remembered is None else _Focus(remembered)
         self._window = window
 
     def get_active_window(self):
         return None if self._window is None else _Window(self._window)
+
+
+class _Provider:
+    def __init__(self, element):
+        self._element = element
+
+    def get_focused_element(self):
+        return self._element
 
 
 class _Window:

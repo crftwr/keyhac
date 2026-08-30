@@ -82,6 +82,15 @@ def display_scale(element) -> float:
 def usable_caret(caret, element_rect, scale: float = 1.0) -> bool:
     """Whether a reported caret rectangle is worth placing anything against.
 
+    **An element of no size is not a place to check a caret against.**
+    Measured in VS Code on Windows: the focused element is Monaco's input
+    proxy, and UIA reports its frame as `(0, 0, 0, 0)` - the answer for
+    something moved off screen, which that proxy is. The selection over it is
+    a *true* caret, `(900, 1116, 1, 32)`, and checking it against a rectangle
+    at the origin rejects it for being nowhere near an element that is
+    nowhere. An empty frame is the same answer as no frame at all, and both
+    mean there is nothing to check against rather than "check against this".
+
     Args:
         caret: (x, y, w, h) as the platform reported it, or None.
         element_rect: the focused element's own rectangle, or None when it
@@ -100,7 +109,7 @@ def usable_caret(caret, element_rect, scale: float = 1.0) -> bool:
     x, y, _w, h = caret
     if h < _MIN_HEIGHT:
         return False
-    if not isinstance(element_rect, (tuple, list)) or len(element_rect) != 4:
+    if not _is_box(element_rect):
         return True
     if _is_the_element_itself(caret, element_rect):
         return False

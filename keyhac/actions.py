@@ -1265,13 +1265,12 @@ class ReportCaretAnchor:
                 logger.error("Could not ask where the focus is.")
                 return
 
-        # The two callers do not read the focus from the same place, and the
-        # answers can differ: the chooser asks the provider for the truth
-        # *now*, the balloon takes the snapshot the keystroke was dispatched
-        # against - and that snapshot falls back to the window, and then to
-        # the application, where the provider would rather say nothing
-        # (issue #44). A report that showed one of them would be describing
-        # half of what is on screen.
+        # What both callers now do: the provider for the truth *now*, and the
+        # keystroke's snapshot behind it - that snapshot falls back to the
+        # window and then to the application, where the provider would rather
+        # say nothing (issue #44). Where the two disagree, the snapshot is
+        # stale, and the report says so: on Windows it is a cache that cannot
+        # see the focus move inside a window.
         focus = getattr(keymap, "focus", None)
         snapshot = getattr(focus, "element", None)
         where = getattr(focus, "app_name", None) or "the front application"
@@ -1295,9 +1294,10 @@ class ReportCaretAnchor:
             lines.append("  (from the keystroke's focus snapshot - asking for "
                          "the focus now returned nothing)")
         elif snapshot is not None and not self._same(asked, snapshot):
-            lines.append(f"  (the balloon would use a different element: "
-                         f"{self._role(snapshot)} "
-                         f"{getattr(snapshot, 'get_rect', lambda: None)()})")
+            lines.append(f"  (the keystroke's snapshot is a different element "
+                         f"- {self._role(snapshot)} "
+                         f"{getattr(snapshot, 'get_rect', lambda: None)()} - "
+                         f"and has gone stale; nothing is placed against it)")
         for label, value in self._detail(element):
             lines.append(f"  {label:<32}: {value}")
         lines.append(f"  caret as we take it: {caret} "

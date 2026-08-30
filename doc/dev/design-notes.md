@@ -946,11 +946,25 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   measured as seventy columns decided it would not fit and clamped to
   1710 − 560 = 1150, a quarter of the screen left of the caret it was meant to
   be under.
-- The caret is taken from `keymap.focus` — the snapshot this very keystroke
-  was dispatched against — so the balloon costs two attribute reads on the
-  hook's clock and no second focus lookup. The chooser cannot do that: it
-  reads the caret one turn of the loop later, where the window is built and
-  where nothing is on the hook's deadline.
+- **The focus is asked for when the prefix is armed, not taken from
+  `keymap.focus`.** The snapshot was the free answer — refreshed at the top
+  of `_on_key_down`, so it belongs to the very keystroke that armed the
+  prefix, and reading it keeps a second focus lookup off the hook's clock.
+  On macOS it is also true: that provider reads `AXFocusedUIElement` fresh
+  every time. On Windows it is a cache keyed on (foreground window, focused
+  child window, title), because a full UIA walk measures 33 ms and cannot run
+  on every key — and none of those three change when the focus moves *inside*
+  a window. In a Chromium or Electron window they cannot: the whole UI is one
+  HWND, so tabbing from the address bar into the page changes nothing the
+  probe can see, and the balloon opened at the field the user had just left.
+  Issue #44 is the same staleness found in the action API, where
+  `keymap.ui.focused()` stopped reading the snapshot for the same reason.
+  `get_focused_element()` measures 2.1 ms against a cross-process Edit, paid
+  once per armed prefix rather than once per key, against a 300 ms hook
+  deadline. The snapshot stays as the fall-back: it holds the window, and
+  then the application, where the provider would rather say nothing. The
+  chooser never had the problem — it reads the caret one turn of the loop
+  later, where nothing is on the hook's deadline.
 - Used for multi-stroke help (restores a keyhac-mac FIXME) and macro record
   state.
 
@@ -997,6 +1011,17 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   `usable_caret`'s, not any platform's: it was written once in the macOS
   marker read and Excel walked straight past it through the other road, which
   is what a rule in the wrong layer does.
+- **An element of no size is not something to check a caret against.**
+  Measured in VS Code on Windows, which is the same editor answering the
+  opposite way round: the focused element is Monaco's input proxy and UIA
+  reports its frame as `(0, 0, 0, 0)` — what an element moved off screen
+  answers — while the TextPattern selection over it is a *true* caret,
+  `(900, 1116, 1, 32)` on a 200% display. Checking that caret against a
+  rectangle at the origin rejected it for being nowhere near an element that
+  is nowhere, and the balloon went to the title bar with a perfectly good
+  caret in hand. An empty frame is the same answer as no frame at all: there
+  is nothing to check against, so the caret is taken on trust, exactly as it
+  is when `get_rect()` returns nothing.
 - **Which is why the element fall-through gets the y right and the x wrong.**
   Monaco moves that proxy to the caret's *line*, so it is on screen where the
   caret is vertically — it has to be, or an IME would put its candidate

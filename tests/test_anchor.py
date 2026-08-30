@@ -64,6 +64,40 @@ class _Element:
         return self._scale
 
 
+class TestAnElementOfNoSize:
+    """VS Code's editor on Windows, where the caret is real and the element
+    is not.
+
+    What holds the focus is Monaco's input proxy, and UIA reports its frame
+    as (0, 0, 0, 0) - what an element moved off screen answers. The selection
+    over it is a true caret, (900, 1116, 1, 32) on a 200% display, and there
+    is nothing at the origin for it to be inside of."""
+
+    PROXY = (0.0, 0.0, 0.0, 0.0)
+    CARET = (900.0, 1116.0, 1.0, 32.0)
+
+    def test_an_empty_frame_is_no_frame_at_all(self):
+        assert usable_caret(self.CARET, self.PROXY)
+
+    def test_the_caret_is_what_the_balloon_opens_under(self):
+        element = _Element(self.CARET, self.PROXY)
+        assert popup_anchor(element, (0.0, 0.0, 3420.0, 2050.0)) == (
+            self.CARET, "caret")
+
+    def test_and_it_is_not_stretched_to_a_field_that_is_not_there(self):
+        assert caret_anchor(_Element(self.CARET, self.PROXY)) == self.CARET
+
+    def test_no_caret_and_no_element_is_still_nothing(self):
+        """Both empty is the case the height rule already answers: a caret
+        is a line, and a rectangle with no height is not one."""
+        assert not usable_caret(self.PROXY, self.PROXY)
+        assert popup_anchor(_Element(self.PROXY, self.PROXY),
+                            (0.0, 0.0, 3420.0, 2050.0))[1] == "window"
+
+    def test_a_flat_element_is_no_frame_either(self):
+        assert usable_caret((900.0, 1116.0, 1.0, 32.0), (100.0, 200.0, 300.0, 0.0))
+
+
 class TestARectangleTheSizeOfItsOwnElement:
     """A caret is not the size of the thing it is in, and two different roads
     answer that way - both of them a way of saying "nothing".

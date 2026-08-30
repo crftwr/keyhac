@@ -44,11 +44,29 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     """The callback `main()` hands to `keymap.on_enter_multi_stroke`.
 
     A function rather than a lambda in the bootstrap because of what it
-    reads: `keymap.focus` is the focus snapshot the *current* keystroke was
-    dispatched against - refreshed at the top of `_on_key_down`, so it is the
-    caret of the key that armed the prefix - and taking it from there is what
-    keeps a second focus lookup off the hook's clock. That is a claim worth a
-    test, and a lambda inside `main()` cannot have one.
+    reads, and that is a claim worth a test that a lambda inside `main()`
+    cannot have.
+
+    **Where the focus is now, not where the keystroke found it.**
+    `keymap.focus` looked like the free answer - it is refreshed at the top
+    of `_on_key_down`, so it belongs to the very key that armed the prefix,
+    and reading it keeps a second focus lookup off the hook's clock. On
+    macOS it is also *true*: that provider reads `AXFocusedUIElement` fresh
+    every time. On Windows it is a cache keyed on the foreground window, the
+    focused child window and the title, because a full UIA walk measured
+    33 ms and cannot run on every key - and none of those three change when
+    the focus moves *inside* a window. In a Chromium or Electron window they
+    cannot: the whole UI is one HWND, so tabbing from the address bar into
+    the page changes nothing the probe can see, and the balloon kept opening
+    at the field the user had just left. Issue #44 is the same staleness,
+    found in the action API, and `keymap.ui.focused()` stopped reading the
+    snapshot for the same reason.
+
+    So the provider is asked, at 2.1 ms measured against a cross-process
+    Edit - once when a prefix is armed, not once per keystroke, against a
+    300 ms hook deadline. The snapshot stays as the fall-back: asking can
+    answer nothing where the snapshot still holds the window or the
+    application, which is a place when the fresh read is not.
 
     It takes the focused *field* when there is no caret to be had, which is
     every Electron application: they answer `AXBoundsForRange` with
@@ -71,9 +89,10 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     """
     def show(name):
         from keyhac.core.anchor import popup_anchor
-        focus = keymap.focus
-        found = popup_anchor(getattr(focus, "element", None),
-                             _focused_window_rect(keymap))
+        element = _focused_element_now(keymap)
+        if element is None:
+            element = getattr(keymap.focus, "element", None)
+        found = popup_anchor(element, _focused_window_rect(keymap))
         text = f"Multi-stroke: {name or '...'}"
         if found is None:
             balloon.pop("MultiStroke", text)
@@ -83,6 +102,27 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
             balloon.pop("MultiStroke", text, near=found[0])
 
     return show
+
+
+def _focused_element_now(keymap):
+    """The focused element as the platform reports it this instant, or None.
+
+    The same question `keymap.ui.focused()` asks, and for the same reason -
+    see this module's `multi_stroke_help`. None where the provider would
+    rather say nothing than hand back a window or an application pretending
+    to be the focus (issue #44), which is why the caller keeps the snapshot
+    behind it, and None too when the read raises: a balloon that fails to
+    open is worse than one in a corner.
+    """
+    provider = getattr(keymap, "_focus_provider", None)
+    ask = getattr(provider, "get_focused_element", None)
+    if ask is None:
+        return None
+    try:
+        return ask()
+    except Exception:
+        logger.debug("Could not ask where the focus is; using the snapshot.")
+        return None
 
 
 def _focused_window_rect(keymap):
