@@ -955,6 +955,20 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   application to build its accessibility tree first
   (`set_manual_accessibility`, which exists for exactly this class of
   Chromium problem) changes nothing: measured before and after, identical.
+- **In VS Code's editor there is no text to bound.** What holds the focus is
+  Monaco's hidden input proxy, and it is *empty* —
+  `AXNumberOfCharacters: 0`, `AXSelectedTextRange: (0, 0)` — so there is no
+  character 0 for `AXBoundsForRange` to answer about. Chromium's second,
+  marker-keyed text API does answer (`AXBoundsForTextMarkerRange` over
+  `AXSelectedTextMarkerRange`) and answers with the element's own rectangle,
+  not a caret's. Both roads end at the element.
+- **Which is why the element fall-through gets the y right and the x wrong.**
+  Monaco moves that proxy to the caret's *line*, so it is on screen where the
+  caret is vertically — it has to be, or an IME would put its candidate
+  window in the wrong place — but it spans the line rather than sitting at the
+  caret's column. So a popup under it opens on the right line at the line's
+  left edge. That is the ceiling for Electron, not a bug to be found later:
+  the caret's x is not in the accessibility tree at all.
 - **Native AppKit does implement it.** Measured against XeFM:
   `AXBoundsForRange(0, 1)` on a static text at `(88, 47, 40, 16)` answers
   `(88, 47, 8.8, 16)` — inside the element, one character wide, the line's

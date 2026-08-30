@@ -26,6 +26,14 @@ into a field, and watch the numbers change.
 --survey walks every windowed running application instead.  It is a much
 weaker check: a background application legitimately reports no focused
 element, so a blank row there means "not asked", not "cannot answer".
+
+--deep (macOS) additionally asks the *other* ways an application might know
+where its caret is: Chromium and WebKit carry a second, richer text API keyed
+on opaque "text markers", and an element that answers CGRectZero to
+AXBoundsForRange may still answer AXBoundsForTextMarkerRange.  Use it on an
+element the plain read refuses, and on the element that matters - VS Code's
+editor exposes its text area only while it holds the focus, so it cannot be
+reached by walking the tree from another process.
 """
 
 from __future__ import annotations
@@ -88,11 +96,65 @@ def _survey():
         _report(name, UIElement(focused))
 
 
-def _report(label: str, element) -> None:
+def _report(label: str, element, deep: bool = False) -> None:
     rect, caret, usable, anchor = _read(element)
     kind = anchor[1] if anchor else "-"
     print(f"{label:24} {_role(element):16} rect={rect} caret={caret} "
           f"usable={usable} anchor={kind}")
+    if deep:
+        _deep(element)
+
+
+def _deep(element) -> None:
+    """Everything else the element might know about where its caret is.
+
+    Printed rather than judged: this is the reconnaissance that decides
+    whether a second way of asking is worth building into the platform layer,
+    and what it should ask for.
+    """
+    if sys.platform != "darwin":
+        print("    (--deep is macOS-only for now)")
+        return
+    import ApplicationServices as AS
+    from keyhac.platform.mac.uielement import _from_ax
+
+    reference = getattr(element, "_ref", None)
+    if reference is None:
+        print("    (not a macOS element)")
+        return
+
+    for name in ("AXSelectedTextRange", "AXInsertionPointLineNumber",
+                 "AXNumberOfCharacters"):
+        print(f"    {name}: {element.get_attribute_value(name)}")
+    for length in (0, 1):
+        selection = element.get_attribute_value("AXSelectedTextRange")
+        if not isinstance(selection, tuple):
+            break
+        print(f"    AXBoundsForRange(caret, {length}): "
+              f"{element.get_parameterized_attribute_value('AXBoundsForRange', 'range', (selection[0], length))}")
+
+    err, marker_range = AS.AXUIElementCopyAttributeValue(
+        reference, "AXSelectedTextMarkerRange", None)
+    if err != 0 or marker_range is None:
+        print(f"    AXSelectedTextMarkerRange: absent (err={err}) - no marker API here")
+        return
+    for parameterized, argument, caption in (
+            ("AXBoundsForTextMarkerRange", marker_range, "the selection"),
+            ("AXLineTextMarkerRangeForTextMarker", marker_range, "its line (as a range)")):
+        err, value = AS.AXUIElementCopyParameterizedAttributeValue(
+            reference, parameterized, argument, None)
+        if err != 0:
+            print(f"    {parameterized}: err={err}")
+            continue
+        decoded = _from_ax(value)
+        if isinstance(decoded, tuple):
+            print(f"    {parameterized} ({caption}): {decoded}")
+            continue
+        # A marker range comes back opaque; ask what it covers on screen.
+        err, bounds = AS.AXUIElementCopyParameterizedAttributeValue(
+            reference, "AXBoundsForTextMarkerRange", value, None)
+        print(f"    bounds of {caption}: "
+              f"{_from_ax(bounds) if err == 0 else f'err {err}'}")
 
 
 def main() -> None:
@@ -101,6 +163,8 @@ def main() -> None:
                         help="every windowed application, not just the front one")
     parser.add_argument("--repeat", type=int, default=1, metavar="N",
                         help="print N times, one second apart")
+    parser.add_argument("--deep", action="store_true",
+                        help="also ask the marker-based text API (macOS)")
     args = parser.parse_args()
 
     for turn in range(args.repeat):
@@ -114,7 +178,7 @@ def main() -> None:
         if element is None:
             print("nothing focused")
             continue
-        _report("frontmost", element)
+        _report("frontmost", element, deep=args.deep)
 
 
 if __name__ == "__main__":
