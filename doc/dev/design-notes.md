@@ -444,6 +444,43 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   nothing in between *is* the Start menu's shortcut, and the down already
   happened.
 
+## The Start menu is above every band we can reach
+
+- **A z-order band is absolute.** `WS_EX_TOPMOST` and `SetWindowPos` sort a
+  window *within* its band and cannot lift it out of one. Measured on Windows
+  11 26200 with the Start menu open — which is `SearchHost.exe`'s
+  `Windows.UI.Core.CoreWindow` on this build and
+  `StartMenuExperienceHost.exe` on others, which is why the check is a band
+  and not a name:
+
+      the Start menu                    band 6 (ZBID_IMMERSIVE_MOGO)
+      a PuiKit window / a screen mark   band 1 (ZBID_DESKTOP)
+
+  `SetWindowPos(HWND_TOPMOST)` moved ours no further than the top of band 1.
+  So a balloon under the Start menu is hidden, and there is no arrangement of
+  window styles that changes it.
+- **The only way up is UIAccess, and it is closed to us.** A process with
+  `uiAccess="true"`, Authenticode-signed and installed under `%ProgramFiles%`,
+  may create windows in `ZBID_UIACCESS` and is exempt from UIPI — it would fix
+  both this and the Task Manager blindness above. But a packaged app cannot
+  have it: a Desktop AppX process with uiAccess fails to launch outright
+  (`UI Access is not supported for Desktop AppX processes`, 0x80070032,
+  microsoft/WindowsAppSDK#1669), and Keyhac ships through the Store as an
+  MSIX. The classic road is shaky too — uiAccess apps meeting every stated
+  requirement are reported failing to launch on 24H2. So: accepted, not
+  fixed.
+- **A hidden balloon is a nuisance; a hidden chooser is a bug.** The chooser
+  does not take the focus — it reads keystrokes through the key hook — so one
+  opened behind the Start menu eats what the user types into the Start menu,
+  invisibly. `WindowProvider.foreground_hides_our_windows()` answers whether
+  the window in front is in a band above ours (`GetWindowBand`, undocumented,
+  exported since Windows 8, read-only, and False on any failure), and a
+  non-activating chooser refuses to open when it is. The activating path is
+  exempt: taking the focus closes the Start menu, so that chooser is seen.
+  Refusing to open is the whole remedy — there is nothing else safe to do
+  with the key, since the alternative is a window that captures input nobody
+  can see.
+
 ## An element source reads `window.element`, never `window.native`
 
 - Both element-reading sources (`MenuItemsSource`, `WindowControlsSource`) go

@@ -356,6 +356,26 @@ class ChooserAction:
         logger.debug(f"Chooser anchored on the {kind}: {rect}")
         return rect
 
+    def _would_be_buried(self, keymap) -> bool:
+        """Whether the window would open under something we cannot rise above.
+
+        The activating path is exempt: taking the focus closes the Start menu,
+        which is the surface this is about, and a chooser that comes forward
+        on its own account is one the user can see.
+
+        lazydocs: ignore
+        """
+        if self.activates:
+            return False
+        provider = getattr(keymap, "window_provider", None)
+        ask = getattr(provider, "foreground_hides_our_windows", None)
+        if ask is None:
+            return False
+        try:
+            return bool(ask())
+        except Exception:
+            return False
+
     def _open_window(self, original_pid, center_on, clamp_to) -> None:
         """Build and show the window, one turn of the loop after the key that
         asked for it (see __call__).
@@ -368,6 +388,16 @@ class ChooserAction:
         if runtime.backend is None:
             return
         keymap = Keymap.get_instance()
+        if self._would_be_buried(keymap):
+            # Nothing else is safe to do with the key: the chooser reads
+            # keystrokes through the hook without taking the focus, so one
+            # opened behind the Start menu is one that eats what the user
+            # types into it. Not opening at all is the whole remedy.
+            logger.info(
+                f"{self!r} did not open: the window in front is in a z-order "
+                f"band above ours (the Start menu is), so the chooser would "
+                f"be invisible while taking the keystrokes meant for it.")
+            return
 
         def _refocus_original_app():
             self._refocus(original_pid)

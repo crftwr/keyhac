@@ -459,6 +459,25 @@ class WindowProvider(ABC):
                 return window
         return None
 
+    def foreground_hides_our_windows(self) -> bool:
+        """Whether a window opened now would be buried by what is in front.
+
+        Not "is something in front of us" - anything can be raised over. This
+        is the case where it cannot: Windows sorts top-level windows into
+        absolute z-order *bands*, and neither WS_EX_TOPMOST nor SetWindowPos
+        moves a window out of its own. Measured on Windows 11 with the Start
+        menu open: it is band 6 while a PuiKit window and a screen mark are
+        both band 1, so ours goes under it and stays there.
+
+        It matters because a chooser does not take the focus - it reads the
+        keystrokes through the key hook - so one that cannot be seen is one
+        that silently eats what the user types into whatever they *can* see.
+
+        Default False: a platform that cannot say assumes it can be seen.
+        Refusing to open is the more damaging way to be wrong.
+        """
+        return False
+
     @abstractmethod
     def screen_frames(self) -> list[tuple[float, float, float, float]]:
         """(x, y, w, h) per screen, primary first. Thread-safe."""

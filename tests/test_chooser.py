@@ -500,6 +500,11 @@ class _ActiveWindowProvider(WindowProvider):
 
     def __init__(self):
         self.active = _ActiveWindow(1, "Original Window")
+        #: What the Start menu makes true: a band we cannot rise above.
+        self.buried = False
+
+    def foreground_hides_our_windows(self):
+        return self.buried
 
     def get_active_window(self):
         return self.active
@@ -1208,3 +1213,47 @@ class _Mark:
 
     def close(self):
         self.closed = True
+
+
+class TestAWindowThatCannotBeSeen:
+    """A chooser does not take the focus - it reads the keystrokes through the
+    key hook - so one that opens where nobody can see it is one that silently
+    eats what the user types into whatever they *can* see.
+
+    Windows sorts top-level windows into absolute z-order bands, and neither
+    WS_EX_TOPMOST nor SetWindowPos lifts a window out of its own. Measured
+    with the Start menu open: band 6 against our band 1, and raising ours
+    moved it no further than the top of band 1."""
+
+    @pytest.fixture(autouse=True)
+    def _windows(self, keyhac_engine):
+        keyhac_engine.keymap.window_provider = _ActiveWindowProvider()
+
+    def test_it_does_not_open_behind_the_start_menu(self, keyhac_engine,
+                                                    ui_backend, caplog):
+        keyhac_engine.keymap.window_provider.buried = True
+        with caplog.at_level("INFO"):
+            _Items()()
+        assert ChooserAction._open is None
+        assert "band above ours" in caplog.text
+
+    def test_it_opens_when_nothing_is_above_us(self, keyhac_engine, ui_backend):
+        _Items()()
+        assert ChooserAction._open is not None
+
+    def test_the_activating_path_is_exempt(self, keyhac_engine, ui_backend):
+        """Taking the focus closes the Start menu, which is the surface this
+        is about."""
+        class _Activates(_Items):
+            activates = True
+
+        keyhac_engine.keymap.window_provider.buried = True
+        _Activates()()
+        assert ChooserAction._open is not None
+
+    def test_a_provider_that_cannot_say_opens_as_before(self, keyhac_engine,
+                                                        ui_backend):
+        """Refusing to open is the more damaging way to be wrong."""
+        keyhac_engine.keymap.window_provider = None
+        _Items()()
+        assert ChooserAction._open is not None
