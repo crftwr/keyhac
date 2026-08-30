@@ -133,22 +133,42 @@ def _deep(element) -> None:
         print(f"    AXBoundsForRange(caret, {length}): "
               f"{element.get_parameterized_attribute_value('AXBoundsForRange', 'range', (selection[0], length))}")
 
+    line = element.get_parameterized_attribute_value(
+        "AXLineForIndex", "int",
+        (element.get_attribute_value("AXSelectedTextRange") or (0,))[0])
+    line_range = (element.get_parameterized_attribute_value(
+        "AXRangeForLine", "int", line) if line is not None else None)
+    print(f"    the caret's line: {line} range={line_range} bounds="
+          f"{element.get_parameterized_attribute_value('AXBoundsForRange', 'range', line_range) if isinstance(line_range, tuple) else None}")
+
     err, marker_range = AS.AXUIElementCopyAttributeValue(
         reference, "AXSelectedTextMarkerRange", None)
     if err != 0 or marker_range is None:
         print(f"    AXSelectedTextMarkerRange: absent (err={err}) - no marker API here")
         return
-    for parameterized, argument, caption in (
-            ("AXBoundsForTextMarkerRange", marker_range, "the selection"),
-            ("AXLineTextMarkerRangeForTextMarker", marker_range, "its line (as a range)")):
+    # The marker API is Chromium's and WebKit's own, and it is the only road
+    # left where AXBoundsForRange is dead. AXUIElementForTextMarker is the
+    # interesting one: in a contenteditable the element *containing* the
+    # caret is the line's own box, which is the rectangle we could not get
+    # any other way.
+    for parameterized, caption in (
+            ("AXBoundsForTextMarkerRange", "the selection"),
+            ("AXUIElementForTextMarker", "the element holding the caret"),
+            ("AXLineTextMarkerRangeForTextMarker", "its line, as a range"),
+            ("AXLeftLineTextMarkerRangeForTextMarker", "its line, leftwards")):
         err, value = AS.AXUIElementCopyParameterizedAttributeValue(
-            reference, parameterized, argument, None)
+            reference, parameterized, marker_range, None)
         if err != 0:
             print(f"    {parameterized}: err={err}")
             continue
         decoded = _from_ax(value)
         if isinstance(decoded, tuple):
             print(f"    {parameterized} ({caption}): {decoded}")
+            continue
+        if hasattr(decoded, "get_rect"):
+            print(f"    {parameterized} ({caption}): "
+                  f"role={decoded.get_attribute_value('AXRole')} "
+                  f"rect={decoded.get_rect()}")
             continue
         # A marker range comes back opaque; ask what it covers on screen.
         err, bounds = AS.AXUIElementCopyParameterizedAttributeValue(
