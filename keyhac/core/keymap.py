@@ -210,6 +210,12 @@ class Keymap:
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
+        #: The KeyCondition whose action is running, for the length of the
+        #: call and no longer.  An action that opens a window which then takes
+        #: the keyboard needs to know which key opened it, so that the same
+        #: key can close it - and by the time the window exists, the key is
+        #: long gone.
+        self._dispatching_key = None
         self._modal_input = None            # sticky key grab - see push_modal_input
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
@@ -961,7 +967,11 @@ class Keymap:
             action_name = getattr(action, "__name__", None) or repr(action)
             logger.debug(f"CALL     : {action_name}")
             self._cancel_oneshot_win_alt()
-            action()
+            previous, self._dispatching_key = self._dispatching_key, key
+            try:
+                action()
+            finally:
+                self._dispatching_key = previous
 
         elif isinstance(action, KeyTable):
             self._cancel_oneshot_win_alt()

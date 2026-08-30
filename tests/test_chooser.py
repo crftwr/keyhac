@@ -154,6 +154,45 @@ class TestOpeningLeavesTheHookCallback:
         assert not queued, "closing needs no turn of the loop"
 
 
+class TestTheOpeningKeyCloses:
+    """`ChooserAction` promises that pressing the same key again closes the
+    window. A non-activating chooser takes the keyboard through a grab, and a
+    grab outranks every table - so the second press never reached the action,
+    and arrived in the filter field as the letter it was bound to."""
+
+    def _open(self, keyhac_engine):
+        keyhac_engine.keymap.define_keytable(
+            focus_path_pattern="*")["Fn-P"] = _Items()
+
+    def _press(self, keyhac_engine):
+        keyhac_engine.down("Fn")
+        keyhac_engine.stroke("P")
+        keyhac_engine.up("Fn")
+
+    def test_the_second_press_closes_it(self, keyhac_engine, ui_backend):
+        self._open(keyhac_engine)
+        self._press(keyhac_engine)
+        assert ChooserAction._open is not None, "the first press opens it"
+        self._press(keyhac_engine)
+        assert ChooserAction._open is None
+
+    def test_the_letter_does_not_reach_the_filter(self, keyhac_engine, ui_backend):
+        """The bug as it looked: a "p" typed into the query."""
+        self._open(keyhac_engine)
+        self._press(keyhac_engine)
+        chooser = ChooserAction._open[1]
+        self._press(keyhac_engine)
+        assert chooser._edit.text == ""
+
+    def test_another_key_is_still_typed(self, keyhac_engine, ui_backend):
+        self._open(keyhac_engine)
+        self._press(keyhac_engine)
+        chooser = ChooserAction._open[1]
+        keyhac_engine.stroke("A")
+        assert chooser._edit.text == "a"
+        assert ChooserAction._open is not None
+
+
 class TestChooserSingleInstance:
 
     def test_same_action_toggles(self, ui_backend):

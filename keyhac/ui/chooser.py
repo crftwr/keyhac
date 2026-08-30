@@ -213,6 +213,12 @@ class ChooserWindow:
     given screen rect. Both are in puikit's portable screen coordinates
     (top-left origin), the same space keyhac's Window/WindowProvider report.
 
+    close_key: the KeyCondition that opened the window, which then also
+    closes it. A non-activating chooser takes the keyboard through a grab,
+    and a grab outranks every table - so a second press of the opening key
+    never reaches the action that would toggle it, and arrives here as
+    ordinary text instead. Recognised here, it cancels.
+
     below: a screen rect to sit *under* instead, left edges aligned - the
     caret or the focused control (issue #118). It wins over center_on when
     both are given, because it is the more specific answer to the same
@@ -223,7 +229,7 @@ class ChooserWindow:
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
                  pages=None, on_page=None, pending=None, background=None,
-                 source_of=None, below=None):
+                 source_of=None, below=None, close_key=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -234,6 +240,8 @@ class ChooserWindow:
         # batches. None is the ordinary case.
         self._background = background
         self._bg_stop = None
+        #: What the window was opened with, and closes on.  See close_key.
+        self._close_key = close_key
         #: Keystrokes taken by _grab_keys but not yet acted on.  The hook
         #: callback appends; the main thread drains.  See _grab_keys.
         self._keys = []
@@ -422,10 +430,18 @@ class ChooserWindow:
             logger.error("No Keymap: a non-activating chooser has no key route.")
             return
 
+        from puikit.event import Event
+
         def handler(key):
             # to_event stays here: it is a pure O(1) translation, and it is
             # what says whether there is anything worth queueing at all.
-            event = to_event(key)
+            #
+            # The opening key is turned into the cancel Escape performs
+            # rather than acted on here: this runs on the hook's thread, and
+            # closing a window is the main thread's. Queued like any other
+            # keystroke, it also keeps its order with the typing around it.
+            event = (Event(type=EventType.KEY, key="escape")
+                     if self._closes_on(key) else to_event(key))
             if event is None:
                 return
             if not self.panel.dispatches_to_main_thread:
@@ -440,6 +456,18 @@ class ChooserWindow:
 
         keymap.push_modal_input(handler)
         self._grabbed = True
+
+    def _closes_on(self, key) -> bool:
+        """Whether this keystroke is the one the window was opened with.
+
+        `KeyCondition.__eq__` is left/right-agnostic, so a window opened with
+        the left modifier closes on the right one - which is the same promise
+        the key table itself makes about that binding.
+        """
+        try:
+            return self._close_key is not None and key == self._close_key
+        except Exception:
+            return False
 
     def _drain_keys(self) -> None:
         """One queued keystroke, on the main thread.

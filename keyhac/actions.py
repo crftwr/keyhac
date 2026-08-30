@@ -225,6 +225,12 @@ class ChooserAction:
 
         keymap = Keymap.get_instance()
 
+        # Which key is opening it, so that the same key can close it. A
+        # non-activating chooser takes the keyboard through a grab, and a grab
+        # outranks every table - so the second press never reaches this method
+        # to be toggled, and the window has to recognise the key itself.
+        self._opened_by = getattr(keymap, "_dispatching_key", None)
+
         # A second press while the first one's window is still queued is that
         # same press twice - there is no window on screen for it to toggle
         # yet. Drop the queued open; for this action that *is* the toggle, and
@@ -427,6 +433,7 @@ class ChooserAction:
                                 on_selected=_on_selected, on_canceled=_on_canceled,
                                 center_on=center_on, clamp_to=clamp_to,
                                 below=self._below(keymap, clamp_to),
+                                close_key=getattr(self, "_opened_by", None),
                                 matcher=self.matcher, activates=self.activates,
                                 badge_of=badge_of,
                                 pages=self.page_names(),
