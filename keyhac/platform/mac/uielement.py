@@ -234,21 +234,31 @@ class UIElement:
         `AXBoundsForRange` turns a range there into a rectangle: the pair an
         IME places its candidate window with.
 
-        **Asked two ways, because applications answer different ones.**  The
-        insertion point is a zero-length range and that is the exact question;
-        the character *at* the caret is a length of one, and its left edge is
-        the same place.  Measured:
+        **The character at the caret is asked first, and the insertion point
+        second.**  Both name the same place - a length of one starts where a
+        length of zero sits - and the character is the one applications get
+        right.  Checked against the bounds of the caret's own line, which is
+        the truth an answer has to agree with:
 
-            Terminal.app  (378, 0) -> CGRectZero
-                          (378, 1) -> (524, 619, 756, 15)
-            TextEdit      (44, 0)  -> (239.7, 427, 0, 14)
-                          (44, 1)  -> nothing (the caret is past the last
-                                      character, so there is none to bound)
+            app             len 0      len 1      the line
+            iTerm2          y=425      y=425      y=425
+            Terminal.app    CGRectZero y=649      y=649
+            TextEdit        y=399      y=413      y=413   <- len 0 is a
+            (its find field)y=362      y=362      y=362      whole line high
 
-        Neither spelling alone reaches both, and the second's width is
-        whatever the character occupies - a newline runs to the end of the
-        line, hence 756 - which costs nothing, since placement uses the left
-        edge and the height.
+        Four elements, and the zero-length range is wrong or absent on two of
+        them while the character agrees every time.  TextEdit's is the one
+        that shows on screen: a balloon placed under a caret reported a line
+        too high lands on top of the line being typed.
+
+        The character's width is whatever it occupies - a newline runs to the
+        end of the line - which costs nothing, placement using the left edge
+        and the height.
+
+        A caret past the last character has no character to bound, so the
+        insertion point is what is left.  Its *column* is right even in
+        TextEdit; only its line is wrong, so the line is asked for separately
+        and lends its y and height.
 
         **Reported as the element gives it, lies included**, except that a
         rectangle with no height is not an answer and the other spelling is
@@ -262,20 +272,45 @@ class UIElement:
         selection = self.get_attribute_value("AXSelectedTextRange")
         if not isinstance(selection, tuple):
             return None
+        location = selection[0]
         refused = None
-        for length in (0, 1):
+        for length in (1, 0):
             rect = self.get_parameterized_attribute_value(
-                "AXBoundsForRange", "range", (selection[0], length))
+                "AXBoundsForRange", "range", (location, length))
             if not isinstance(rect, tuple) or len(rect) != 4:
                 continue
-            if rect[3] > 0:
+            if rect[3] <= 0:
+                # Kept so the caller can log what was actually said. "Said
+                # nothing" and "said a rectangle with no height" are different
+                # applications behaving differently, and the log is where that
+                # difference gets noticed.
+                refused = refused or rect
+                continue
+            if length == 1:
                 return rect
-            # Kept so the caller can log what was actually said. "Reported
-            # nothing" and "reported a rectangle with no height" are different
-            # applications behaving differently, and the log is where that
-            # difference gets noticed.
-            refused = refused or rect
+            line = self._caret_line_rect(location)
+            return (rect[0], line[1], rect[2], line[3]) if line else rect
+        # No line lookup here: reaching this means AXBoundsForRange answered
+        # uselessly or not at all, and the line is asked through the same
+        # attribute. Three more round trips into an application that has
+        # already said nothing, on the key hook's clock, for nothing.
         return refused
+
+    def _caret_line_rect(self, location: int) -> tuple | None:
+        """The bounds of the line a character offset is on, or None."""
+        line = self.get_parameterized_attribute_value(
+            "AXLineForIndex", "int", location)
+        if line is None:
+            return None
+        line_range = self.get_parameterized_attribute_value(
+            "AXRangeForLine", "int", line)
+        if not isinstance(line_range, tuple):
+            return None
+        rect = self.get_parameterized_attribute_value(
+            "AXBoundsForRange", "range", line_range)
+        if isinstance(rect, tuple) and len(rect) == 4 and rect[3] > 0:
+            return rect
+        return None
 
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on, without the user selecting anything.
