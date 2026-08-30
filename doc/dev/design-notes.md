@@ -1018,6 +1018,17 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - A caret has **no width and that is ordinary** — it is a line. Requiring
   width would reject every honest answer and keep the dishonest ones, whose
   distinguishing feature is missing *height*.
+- **Past the last character, ask the one before it.** There is no character
+  at the caret to bound then, and the insertion point is TextEdit's weakest
+  answer. The character before the caret has bounds, and the caret is at its
+  trailing edge — except after a *newline*, where the caret is at the start of
+  the line below and nothing else in the AX vocabulary says so. Measured at
+  the end of a TextEdit document: the insertion point gives
+  `(101, 497, 0, 14)`, the newline at offset 62 gives `(101, 497, 576, 14)`,
+  the caret's line agrees with both of them — and the caret is at
+  `(101, 511)`. The balloon covered the line being typed on, and only ever on
+  the last one, which is what a document ending in a newline makes of every
+  other answer.
 - **Ask twice: the insertion point, then the character at it.** Applications
   disagree about which spelling they answer, and the disagreement is not
   along any line you could guess. Terminal.app refuses the zero-length range

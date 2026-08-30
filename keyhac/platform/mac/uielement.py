@@ -255,10 +255,21 @@ class UIElement:
         end of the line - which costs nothing, placement using the left edge
         and the height.
 
-        A caret past the last character has no character to bound, so the
-        insertion point is what is left.  Its *column* is right even in
-        TextEdit; only its line is wrong, so the line is asked for separately
-        and lends its y and height.
+        A caret past the last character has no character to bound.  The
+        character *before* it does, and says more than the insertion point
+        does: the caret is at that character's trailing edge - or at the
+        start of the line below it, when that character is a newline.  That
+        last case is TextEdit at the end of a document, where every other
+        answer names the line the newline is on and the caret is on the empty
+        line under it:
+
+            AXBoundsForRange(63, 0)  (101, 497, 0, 14)     <- a line too high
+            AXBoundsForRange(62, 1)  (101, 497, 576, 14)   <- the newline
+            the caret's line         (101, 497, 576, 14)   <- agrees, wrongly
+            where the caret is       (101, 511, 0, 14)
+
+        The insertion point is the last resort, with its y and height taken
+        from the caret's line where that can be had.
 
         **Reported as the element gives it, lies included**, except that a
         rectangle with no height is not an answer and the other spelling is
@@ -288,6 +299,9 @@ class UIElement:
                 continue
             if length == 1:
                 return rect
+            trailing = self._after_the_last_character(location)
+            if trailing is not None:
+                return trailing
             line = self._caret_line_rect(location)
             return (rect[0], line[1], rect[2], line[3]) if line else rect
         # No line lookup here: reaching this means AXBoundsForRange answered
@@ -353,6 +367,33 @@ class UIElement:
         rows.append(("AXBoundsForTextMarkerRange (the marker API)",
                      self._caret_marker_rect()))
         return rows
+
+    def _after_the_last_character(self, location: int) -> tuple | None:
+        """Where a caret past the end of the text is, or None.
+
+        Read from the character before it, which is the only one there is to
+        ask.  A newline is the case worth the extra round trip: the caret is
+        then on the line *below* the one that character is on, at its start,
+        and nothing else in the AX vocabulary says so.
+
+        Without the text - `AXStringForRange` is not universal - the trailing
+        edge is used for everything, which is right except after a newline,
+        where it gives the correct line and the far end of it.
+        """
+        if location <= 0:
+            return None
+        previous = self.get_parameterized_attribute_value(
+            "AXBoundsForRange", "range", (location - 1, 1))
+        if not isinstance(previous, tuple) or len(previous) != 4 \
+                or previous[3] <= 0:
+            return None
+        text = self.get_parameterized_attribute_value(
+            "AXStringForRange", "range", (location - 1, 1))
+        if text in ("\n", "\r", "\r\n", "\u2028", "\u2029"):
+            line = self._caret_line_rect(location)
+            return ((line[0] if line else previous[0]),
+                    previous[1] + previous[3], 0.0, previous[3])
+        return (previous[0] + previous[2], previous[1], 0.0, previous[3])
 
     def _caret_line_rect(self, location: int) -> tuple | None:
         """The bounds of the line a character offset is on, or None."""
