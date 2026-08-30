@@ -867,6 +867,13 @@ class UIElement:
         into rectangles, one per line it spans.  A caret spans one, so the
         first is the answer.
 
+        **A degenerate range is allowed to have no rectangles**, and providers
+        differ on whether it does, exactly as they differ on macOS: there the
+        same control answers a zero-length range with CGRectZero and a
+        length-of-one with a real rectangle (Terminal.app), or the reverse
+        (TextEdit at the end of its text).  So an empty answer is retried on
+        the caret's *character*, whose left edge is the same place.
+
         **Reported as the control gives it, lies included**; whether a
         rectangle is usable is `keyhac.core.anchor`'s single rule, tested
         without an application to be wrong.  A control that says nothing here
@@ -890,7 +897,19 @@ class UIElement:
                 if text_range is None:
                     return None
                 try:
-                    return _first_bounding_rect(text_range)
+                    rect = _first_bounding_rect(text_range)
+                    if rect is not None and rect[3] > 0:
+                        return rect
+                    # Expanding the snapshot moves nothing the user can see:
+                    # GetSelection hands back a range object, not the
+                    # selection itself.
+                    hr = _com_call(text_range,
+                                   _IUIAutomationTextRange.ExpandToEnclosingUnit,
+                                   ctypes.c_long, [ctypes.c_int],
+                                   ctypes.c_int(_TextUnit.Character))
+                    if hr != S_OK:
+                        return rect
+                    return _first_bounding_rect(text_range) or rect
                 finally:
                     _release(text_range)
             finally:

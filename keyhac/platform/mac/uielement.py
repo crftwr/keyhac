@@ -231,22 +231,51 @@ class UIElement:
         """The text insertion point's screen rectangle, or None.
 
         `AXSelectedTextRange` gives the caret its character offset and
-        `AXBoundsForRange` turns a zero-length range there into a rectangle:
-        the pair an IME places its candidate window with.
+        `AXBoundsForRange` turns a range there into a rectangle: the pair an
+        IME places its candidate window with.
 
-        **Reported as the element gives it, lies included.**  Measured in VS
-        Code (Electron): the call succeeds and answers (0, 1112, 0, 0) for an
-        element whose own frame is (1275, 981, 409, 40) - x at the screen
-        edge, no size at all, and a y outside the element.  Judging that is
-        `keyhac.core.anchor`'s job, so that the rule is one rule and can be
-        tested without an application to be wrong.
+        **Asked two ways, because applications answer different ones.**  The
+        insertion point is a zero-length range and that is the exact question;
+        the character *at* the caret is a length of one, and its left edge is
+        the same place.  Measured:
+
+            Terminal.app  (378, 0) -> CGRectZero
+                          (378, 1) -> (524, 619, 756, 15)
+            TextEdit      (44, 0)  -> (239.7, 427, 0, 14)
+                          (44, 1)  -> nothing (the caret is past the last
+                                      character, so there is none to bound)
+
+        Neither spelling alone reaches both, and the second's width is
+        whatever the character occupies - a newline runs to the end of the
+        line, hence 756 - which costs nothing, since placement uses the left
+        edge and the height.
+
+        **Reported as the element gives it, lies included**, except that a
+        rectangle with no height is not an answer and the other spelling is
+        tried instead.  Measured in VS Code (Electron): both answer
+        (0, 1112, 0, 0) for an element whose own frame is
+        (1275, 981, 409, 40) - CGRectZero, flipped - and the first of them
+        comes back for the log to show.  Judging *that* is
+        `keyhac.core.anchor`'s job, so the rule is one rule and can be tested
+        without an application to be wrong.
         """
         selection = self.get_attribute_value("AXSelectedTextRange")
         if not isinstance(selection, tuple):
             return None
-        rect = self.get_parameterized_attribute_value(
-            "AXBoundsForRange", "range", (selection[0], 0))
-        return rect if isinstance(rect, tuple) and len(rect) == 4 else None
+        refused = None
+        for length in (0, 1):
+            rect = self.get_parameterized_attribute_value(
+                "AXBoundsForRange", "range", (selection[0], length))
+            if not isinstance(rect, tuple) or len(rect) != 4:
+                continue
+            if rect[3] > 0:
+                return rect
+            # Kept so the caller can log what was actually said. "Reported
+            # nothing" and "reported a rectangle with no height" are different
+            # applications behaving differently, and the log is where that
+            # difference gets noticed.
+            refused = refused or rect
+        return refused
 
     def get_line_at_caret(self) -> str | None:
         """The line the caret is on, without the user selecting anything.

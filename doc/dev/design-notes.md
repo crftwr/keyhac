@@ -983,6 +983,17 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - A caret has **no width and that is ordinary** — it is a line. Requiring
   width would reject every honest answer and keep the dishonest ones, whose
   distinguishing feature is missing *height*.
+- **Ask twice: the insertion point, then the character at it.** Applications
+  disagree about which spelling they answer, and the disagreement is not
+  along any line you could guess. Terminal.app refuses the zero-length range
+  (CGRectZero) and answers `(378, 1)` with `(524, 619, 756, 15)`; TextEdit
+  answers the zero-length one and has nothing at `(44, 1)`, the caret being
+  past its last character. Neither spelling alone reaches both. The second's
+  width is whatever that character occupies — a newline runs to the end of
+  the line, hence 756 — which costs nothing: placement uses the left edge and
+  the height. Windows has the same split, a degenerate `TextRange` being
+  allowed to have no bounding rectangles at all, and the same answer:
+  `ExpandToEnclosingUnit(Character)` and ask again.
 - The chain is caret → focused control → window centre, each falling through
   when it cannot be read *or cannot be believed*, so every failure ends at the
   behaviour issue #4 shipped rather than at nothing. `anchor="window"` opts a
