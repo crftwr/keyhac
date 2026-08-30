@@ -34,6 +34,32 @@ _STYLE = Style(fg=(28, 28, 30), bg=(250, 240, 170))
 _RADIUS = 6.0
 
 
+def multi_stroke_help(balloon: "BalloonManager", keymap):
+    """The callback `main()` hands to `keymap.on_enter_multi_stroke`.
+
+    A function rather than a lambda in the bootstrap because of what it
+    reads: `keymap.focus` is the focus snapshot the *current* keystroke was
+    dispatched against - refreshed at the top of `_on_key_down`, so it is the
+    caret of the key that armed the prefix - and taking it from there is what
+    keeps a second focus lookup off the hook's clock. That is a claim worth a
+    test, and a lambda inside `main()` cannot have one.
+
+    Args:
+        balloon: the BalloonManager to pop on.
+        keymap: the Keymap whose focus the caret is read from.
+
+    Returns:
+        A `callable(name)` for `on_enter_multi_stroke`.
+    """
+    def show(name):
+        from keyhac.core.anchor import caret_anchor
+        focus = keymap.focus
+        balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}",
+                    near=caret_anchor(getattr(focus, "element", None)))
+
+    return show
+
+
 class BalloonManager:
 
     def __init__(self, backend):

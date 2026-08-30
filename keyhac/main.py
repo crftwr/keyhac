@@ -168,20 +168,11 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
 
     # Tray icon (reopen console / reload / quit) + balloons (multi-stroke help)
     from keyhac.ui.tray import install_tray
-    from keyhac.ui.balloon import BalloonManager
+    from keyhac.ui.balloon import BalloonManager, multi_stroke_help
     balloon = BalloonManager(console.backend)
     keymap.pop_balloon = balloon.pop
     keymap.close_balloon = balloon.close
-    def _multi_stroke_balloon(name):
-        # keymap.focus is the snapshot this very keystroke was dispatched
-        # against, so the element is already in hand: no second focus lookup,
-        # and none of it on the hook's clock beyond two attribute reads.
-        from keyhac.core.anchor import caret_anchor
-        focus = keymap.focus
-        balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}",
-                    near=caret_anchor(getattr(focus, "element", None)))
-
-    keymap.on_enter_multi_stroke = _multi_stroke_balloon
+    keymap.on_enter_multi_stroke = multi_stroke_help(balloon, keymap)
     keymap.on_leave_multi_stroke = lambda: balloon.close("MultiStroke")
     install_tray(console, keymap, hook)
 

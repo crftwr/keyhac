@@ -1017,6 +1017,37 @@ class TestBalloonIsAMark:
         manager.close()
         assert backend.marks[1].closed
 
+    def test_multi_stroke_help_reads_the_caret_of_the_key_that_armed_it(self):
+        """`keymap.focus` is refreshed at the top of _on_key_down, so the
+        element in it belongs to the very keystroke that entered the prefix -
+        no second focus lookup on the hook's clock."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(400.0, 300.0, 0.0, 18.0),
+            rect=(390.0, 290.0, 300.0, 40.0))))("sub")
+        mark = backend.marks[0]
+        assert mark.kwargs["text"] == "Multi-stroke: sub"
+        assert (mark.x, mark.y) == (400.0, 322.0)
+
+    def test_a_caret_it_cannot_believe_sends_it_back_to_the_corner(self):
+        """The VS Code measurement, reaching the balloon: the call succeeds
+        and the rectangle is nonsense, and a balloon in a corner beats one at
+        the edge of a screen nobody is looking at."""
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(_Focused(
+            caret=(0.0, 1112.0, 0.0, 0.0),
+            rect=(1275.0, 981.0, 409.0, 40.0))))("sub")
+        assert backend.marks[0].y == 25 + 24
+
+    def test_no_focus_at_all_is_the_corner_too(self):
+        from keyhac.ui.balloon import multi_stroke_help
+        manager, backend = self._manager()
+        multi_stroke_help(manager, _Keymap(None))(None)
+        assert backend.marks[0].kwargs["text"] == "Multi-stroke: ..."
+        assert backend.marks[0].y == 25 + 24
+
     def test_a_platform_that_cannot_mark_is_not_an_error(self):
         from keyhac.ui.balloon import BalloonManager
 
@@ -1025,6 +1056,31 @@ class TestBalloonIsAMark:
                 raise RuntimeError("no marks here")
 
         BalloonManager(_Refuses()).pop("help", "hi")   # must not raise
+
+
+class _Focused:
+    """A focus element that answers the two questions the anchor asks."""
+
+    def __init__(self, caret=None, rect=None):
+        self._caret, self._rect = caret, rect
+
+    def get_caret_rect(self):
+        return self._caret
+
+    def get_rect(self):
+        return self._rect
+
+
+class _Keymap:
+    """Just the focus snapshot, which is all multi_stroke_help reads."""
+
+    def __init__(self, element):
+        self.focus = None if element is None else _Focus(element)
+
+
+class _Focus:
+    def __init__(self, element):
+        self.element = element
 
 
 class _Mark:
