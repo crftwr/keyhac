@@ -171,6 +171,45 @@ class TestClipboardPresets:
         source.choose(source.candidates()[0], 0)
         assert pasted == []
 
+    def test_the_stock_converters_convert(self):
+        """Every one of these is named in the shipped config.py, so a tool
+        that raises is a shipped key that does nothing - which is how
+        `quote` lost its `quote_mark` and stayed broken."""
+        from keyhac.actions import ShowClipboardTools as T
+        assert T.to_plain("a\nb") == "a\nb"
+        assert T.quote("a\nb") == "> a\n> b"
+        assert T.unindent("    a\n    b\n") == "a\nb\n"
+        assert T.to_half_width("ＡＢ　１") == "AB 1"
+        assert T.to_full_width("AB 1") == "ＡＢ　１"
+
+    def test_a_tool_converts_the_clipboard_and_pastes_it(self, keyhac_engine,
+                                                         ui_backend, tmp_path,
+                                                         monkeypatch):
+        from keyhac.actions import ShowClipboardTools
+        from keyhac.core import sources as src
+        from keyhac.core.clipboard_history import ClipboardHistory
+
+        class _Board:
+            text = None
+
+            def get_text(self):
+                return self.text
+
+            def set_text(self, s):
+                self.text = s
+
+        pasted = []
+        monkeypatch.setattr(src._PastingSource, "paste",
+                            lambda self, text, mod: pasted.append(text))
+        keymap = keyhac_engine.keymap
+        keymap._clipboard_history = ClipboardHistory(
+            _Board(), str(tmp_path / "clipboard.json"))
+        keymap.clipboard_history.set_current("one\ntwo")
+        source = ShowClipboardTools(
+            [("🔄", "Quote", ShowClipboardTools.quote)]).sources()[0]
+        source.choose(source.candidates()[0], 0)
+        assert pasted == ["> one\n> two"]
+
 
 class TestPages:
     """Left and Right move between pages, and the query comes with you.

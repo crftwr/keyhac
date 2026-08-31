@@ -14,6 +14,8 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import traceback
+
 from keyhac.core.candidate import Candidate
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
@@ -156,7 +158,10 @@ class ClipboardToolsSource(_PastingSource):
         try:
             converted = candidate.payload(text)
         except Exception:
-            logger.error(f"Clipboard tool {candidate.display!r} failed.")
+            # With the reason omitted, a tool that raises is indistinguishable
+            # from one that does nothing - and the tools are user code.
+            logger.error(f"Clipboard tool {candidate.display!r} failed:\n"
+                         f"{traceback.format_exc()}")
             return
         if converted is None:
             return

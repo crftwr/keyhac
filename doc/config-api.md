@@ -2015,6 +2015,12 @@ ShowClipboardTools([
 
 A preset over `ClipboardToolsSource`. 
 
+
+
+**Attributes:**
+ 
+ - <b>`quote_mark`</b>:  Prefix `quote()` puts on each line (default "> "). 
+
 ### <kbd>method</kbd> `ShowClipboardTools.__init__`
 
 ```python
