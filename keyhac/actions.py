@@ -837,7 +837,12 @@ class ShowClipboardTools(ShowCandidates):
     ```
 
     A preset over `ClipboardToolsSource`.
+
+    Attributes:
+        quote_mark: Prefix `quote()` puts on each line (default "> ").
     """
+
+    quote_mark = "> "
 
     def __init__(self, tools):
         """Build the action.
