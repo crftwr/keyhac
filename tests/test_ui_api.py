@@ -66,6 +66,11 @@ class FakeWindow:
         self.title = title
         self.class_name = None
         self.pid = 1
+        self.activated = 0
+
+    def activate(self):
+        self.activated += 1
+        return True
 
 
 @pytest.fixture(autouse=True)
@@ -552,3 +557,46 @@ class TestVerbs:
         button = element.kids[0]
         api.click(role="AXButton", name="Save")
         assert button.pressed == 1 or button.focused
+
+    def test_reads_states_the_value_expected(self, ui):
+        """The authoring rule as a value: wait for the state you expect, not
+        for the old state to change - a transform can be the identity."""
+        api, element = ui
+        checkbox = element.kids[1]
+        node = api.node(checkbox)
+        assert not api.Reads(node, value="True").check(api, None)
+        checkbox._describe["value"] = True
+        assert api.Reads(node, value="True").check(api, None)
+
+    def test_reads_compares_the_value_as_text(self, ui):
+        """macOS answers AXValue True, Windows a toggle state - the caller
+        should not have to know which it got."""
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox._describe["value"] = True
+        node = api.node(checkbox)
+        assert api.Reads(node, value="True").check(api, None)
+
+    def test_a_click_waits_for_the_state_rather_than_the_difference(self, ui):
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox.perform_action = (
+            lambda name: checkbox._describe.__setitem__("value", True))
+        node = api.node(checkbox)
+        api.click(node=node, until=api.Reads(node, value="True"),
+                  timeout=1.0, retry_every=0.05)
+        assert checkbox._describe["value"] is True
+
+    def test_activate_asks_and_then_waits_for_the_front(self, ui):
+        """Asking a window to activate is not the same as it being in front,
+        and the difference is where the next keystroke goes."""
+        api, _element = ui
+        window = api._keymap.window_provider.list_windows()[0]
+        node = api.activate(app="TestApp", timeout=2.0)
+        assert window.activated == 1
+        assert node is not None
+
+    def test_activate_that_never_comes_forward_is_a_loud_failure(self, ui):
+        api, _element = ui
+        with pytest.raises(WaitTimeout):
+            api.activate(app="Nothing There", timeout=0.3, retry_every=0.05)

@@ -204,12 +204,71 @@ class Gone:
 
 
 @dataclass(frozen=True)
+class Reads:
+    """Satisfied when `target` reads as the values given.
+
+    **The postcondition to reach for.** The rule the authoring skill states -
+    *wait for the state you expect, not for the old state to change* - is this
+    value: "it differs from what I captured" and "the result arrived" coincide
+    only when the new state happens to differ, and a transform can be the
+    identity. A translation whose output equals its input leaves a `Changed`
+    waiting forever with the screen already correct.
+
+    `value` is compared as text against the same patterns `find` takes, so
+    `value="True"` matches a macOS AXValue of `True` and a Windows toggle
+    state of `"True"` without the caller knowing which it got.
+    """
+
+    target: Any = None
+    role: str = None
+    name: str = None
+    value: Any = None
+
+    def baseline(self, ui):
+        """lazydocs: ignore"""
+        return None
+
+    def check(self, ui, baseline):
+        """lazydocs: ignore"""
+        from keyhac.core.uitree import match_pattern, match_role
+
+        if self.target is None:
+            return None
+        try:
+            fresh = self.target.reread(max_depth=0)
+        except Exception:
+            return None
+        if fresh is None:
+            return None
+        if self.role is not None and not match_role(fresh.role, self.role):
+            return None
+        if self.name is not None and not match_pattern(fresh.name, self.name):
+            return None
+        if self.value is not None and not match_pattern(str(fresh.value),
+                                                        str(self.value)):
+            return None
+        return fresh
+
+    def __str__(self):
+        wanted = {k: v for k, v in (("role", self.role), ("name", self.name),
+                                    ("value", self.value)) if v is not None}
+        return f"{self.target!r} to read as {wanted}"
+
+
+@dataclass(frozen=True)
 class Changed:
     """Satisfied when `target`'s own reading is not what it was.
 
+    **The last resort, and it has a trap in it.** "It differs from what I
+    captured" and "the result arrived" coincide only when the new state
+    happens to differ - and a transform can be the identity, so a translation
+    whose output equals its input leaves this waiting forever with the screen
+    already correct. Say what you expect with `Reads` wherever you can name
+    it; this is for the case where you genuinely cannot, and then it is worth
+    a comment saying why.
+
     Its role, name, value and rectangle together, read once before the verb
-    acts and again after: the tab that becomes selected, the field that fills
-    in, the button whose caption flips.
+    acts and again after.
     """
 
     target: Any = None
@@ -374,6 +433,7 @@ class UI:
     Appears = Appears
     Front = Front
     Gone = Gone
+    Reads = Reads
     Changed = Changed
 
     def click(self, node=None, within=None, given=None, until=None,
@@ -455,6 +515,42 @@ class UI:
         return self._until(act, until, timeout, retry_every,
                            what=f"clicking {locator or target!r}",
                            given=given) or target
+
+    def activate(self, app: str = None, title: str = None,
+                 timeout: float = 10.0, retry_every: float = 2.0):
+        """Bring a window to the front, and wait until it really is.
+
+        ```python
+        ui.activate(app="Google Chrome")
+        ```
+
+        An act with a postcondition, which is what makes it a verb rather
+        than a wrapper: asking a window to activate is not the same as it
+        being in front, and the difference is where a keystroke goes. It was
+        also the last thing an action had to reach around this API to do -
+        `keymap.find_window(...).activate()` on the loop thread, by hand.
+
+        Args:
+            app: Application pattern, as `window()` takes it.
+            title: Window title pattern.
+            timeout: Seconds before giving up.
+            retry_every: Seconds to watch before asking again - an
+                application starting up can take more than one ask.
+
+        Returns:
+            The front window's node.
+
+        Raises:
+            WaitTimeout: It never came to the front.
+        """
+        def act():
+            def bring():
+                window = self._keymap.find_window(app=app, title=title)
+                return window.activate() if window is not None else False
+            return self.on_main_thread(bring)
+
+        return self._until(act, Front(app=app, title=title), timeout,
+                           retry_every, what=f"activating {app or title!r}")
 
     def send_key(self, keys: str, given=None, until=None,
                  timeout: float = 10.0, retry_every: float = 2.0):

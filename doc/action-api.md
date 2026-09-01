@@ -41,6 +41,47 @@ The action-facing view of the desktop.  Reached as `keymap.ui`.
 
 ---
 
+### <kbd>method</kbd> `UI.activate`
+
+```python
+activate(
+    app: 'str' = None,
+    title: 'str' = None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0
+)
+```
+
+Bring a window to the front, and wait until it really is. 
+
+```python
+ui.activate(app="Google Chrome")
+``` 
+
+An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()` on the loop thread, by hand. 
+
+
+
+**Args:**
+ 
+ - <b>`app`</b>:  Application pattern, as `window()` takes it. 
+ - <b>`title`</b>:  Window title pattern. 
+ - <b>`timeout`</b>:  Seconds before giving up. 
+ - <b>`retry_every`</b>:  Seconds to watch before asking again - an  application starting up can take more than one ask. 
+
+
+
+**Returns:**
+ The front window's node. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  It never came to the front. 
+
+---
+
 ### <kbd>method</kbd> `UI.at_point`
 
 ```python
@@ -57,6 +98,7 @@ The cheap way into the text layer: the pointer is usually already over the line 
 
 ```python
 click(
+    node=None,
     within=None,
     given=None,
     until=None,
@@ -83,6 +125,7 @@ ui.click(role="Button", name="Save", within=dialog,
 
 **Args:**
  
+ - <b>`node`</b>:  A node already in hand, instead of a locator - the third row  of a list an earlier step enumerated is a thing no locator  says well. 
  - <b>`within`</b>:  Where to look; the focused window by default. 
  - <b>`given`</b>:  What must hold before each attempt - `Front`, `Appears`,  `Gone`, `Changed`, or a callable. The verb waits for it, and 
  - <b>`says so distinctly when it never holds`</b>:  a precondition that failed and an act that did not take are different diagnoses. 
@@ -279,6 +322,8 @@ Block until `condition()` is truthy, and return what it returned.
 
 For a wait that is not "an element appeared" or "an element went away" 
 - those are `node.wait_for()` and `node.wait_until_gone()`. Never `sleep`: a fixed delay passes on the machine it was written on, and on a faster one it fails *silently*, acting on a screen that has not arrived. 
+
+`condition` may also be an `Appears` / `Gone` / `Changed` / `Front` rather than a callable - the same question without the lambda, and without the predicate helper an action grows to hold the lambda. 
 
 
 
