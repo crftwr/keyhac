@@ -432,3 +432,84 @@ def test_nested_blocks_are_counted(ui):
             pass
         assert asked == [True], "the inner exit turned it off"
     assert asked == [True, False]
+
+
+# -- the verb layer (discussion #98) -----------------------------------------
+
+class TestVerbs:
+    """One call that folds find, wait, act and "did it take?".
+
+    The measurement behind it: an accessibility press is accepted by
+    applications that then do nothing with it, so the platform's answer is not
+    evidence and only a postcondition the caller states can be.
+    """
+
+    def test_a_click_with_no_postcondition_presses_once(self, ui):
+        """A blind retry double-acts - double-save, double-submit - so the
+        retry is the caller's to ask for."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save")
+        assert button.pressed == 1
+
+    def test_a_click_returns_what_it_pressed(self, ui):
+        api, element = ui
+        node = api.click(role="AXButton", name="Save")
+        assert node.name == "Save"
+
+    def test_a_click_repeats_until_the_postcondition_holds(self, ui):
+        """The press that is accepted and does nothing is the whole reason
+        this layer exists."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save",
+                  until=lambda: button.pressed >= 3,
+                  timeout=5.0, retry_every=0.05)
+        assert button.pressed == 3
+
+    def test_a_postcondition_that_never_holds_is_a_loud_failure(self, ui):
+        api, element = ui
+        with pytest.raises(WaitTimeout) as error:
+            api.click(role="AXButton", name="Save", until=lambda: False,
+                      timeout=0.3, retry_every=0.05)
+        assert "attempts" in str(error.value)
+
+    def test_appears_hands_back_what_it_found(self, ui):
+        api, element = ui
+        found = api.click(role="AXButton", name="Save",
+                          until=api.Appears(role="AXCheckBox", name="Archived"),
+                          timeout=1.0, retry_every=0.05)
+        assert found.identifier == "arch"
+
+    def test_changed_reads_the_target_before_acting(self, ui):
+        """The baseline has to be taken before the act. Taken after, every
+        Changed compares equal to itself and nothing is ever satisfied."""
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox.perform_action = (
+            lambda name: checkbox._describe.__setitem__("value", 1))
+        node = api.node(checkbox)
+        api.click(role="AXCheckBox", name="Archived", until=api.Changed(node),
+                  timeout=1.0, retry_every=0.05)
+        assert checkbox._describe["value"] == 1
+
+    def test_gone_is_satisfied_when_the_target_has_left(self, ui):
+        """The described form, which is the one that works for a row removed
+        from a list rather than a window that closed."""
+        api, element = ui
+        described = api.Appears(role="AXCheckBox", name="Archived")
+        assert not api.Gone(described).check(api, None)
+        element.kids.remove(element.kids[1])
+        assert api.Gone(described).check(api, None)
+
+    def test_a_verb_that_waits_refuses_the_loop_thread(self, ui):
+        """Waiting there would hold the keyboard hook for the length of it."""
+        api, _element = ui
+        api._keymap.set_main_thread_dispatcher(lambda callback: None)
+        with pytest.raises(RuntimeError, match="event-loop thread"):
+            api.send_key("A", until=lambda: False, timeout=0.2)
+
+    def test_send_key_without_a_postcondition_sends_once(self, ui):
+        api, _element = ui
+        api.send_key("A")
+        assert True   # no exception: the keystroke went through the fake hook

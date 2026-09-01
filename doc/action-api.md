@@ -53,6 +53,53 @@ The cheap way into the text layer: the pointer is usually already over the line 
 
 ---
 
+### <kbd>method</kbd> `UI.click`
+
+```python
+click(
+    within=None,
+    until=None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0,
+    **locator
+)
+```
+
+Find one control and press it, and say what "it worked" means. 
+
+```python
+ui.click(role="Button", name="Save", within=dialog,
+          until=Appears(identifier="save-panel"))
+``` 
+
+**The platform's answer is not evidence.** An accessibility press is accepted by applications that then do nothing with it - measured, an `AXPress` on a control drawn by a Chromium application returns success and moves nothing unless that application has been told an assistive client is present. So `until` is how a caller says what to look for, and the press is repeated every `retry_every` until it holds. 
+
+**Without `until` it presses once.** A blind retry double-acts - double-save, double-submit - so the retry is the caller's to ask for, and code that does not ask is visibly the weaker code rather than silently the unlucky code. 
+
+
+
+**Args:**
+ 
+ - <b>`within`</b>:  Where to look; the focused window by default. 
+ - <b>`until`</b>:  What makes it true - `Appears`, `Gone`, `Changed`, or a  callable. None presses once and returns. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  again. 
+ - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with (an `Appears` hands back the node it found), or the node that was pressed when there is no `until`. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The target never appeared, or the postcondition never  held. 
+ - <b>`StaleElement`</b>:  The target was there and had gone by the time it was  pressed. 
+
+---
+
 ### <kbd>method</kbd> `UI.content_access`
 
 ```python
@@ -166,6 +213,47 @@ preserve_clipboard()
 Put the clipboard back the way it was afterwards. 
 
 `node.set_text()` already does this around its own paste; this is for an action that uses the clipboard for something else. 
+
+---
+
+### <kbd>method</kbd> `UI.send_key`
+
+```python
+send_key(
+    keys: 'str',
+    until=None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0
+)
+```
+
+Send a key expression, and say what "it arrived" means. 
+
+```python
+ui.send_key("Cmd-P", until=Appears(title="Print"))
+``` 
+
+Nothing can confirm a keystroke arrived - the application may be starting, may have a window of its own in front, may be busy - which is why every action that sends one grows a retry loop of its own. This is that loop, once. 
+
+
+
+**Args:**
+ 
+ - <b>`keys`</b>:  A key expression, as `InputContext.send_key` takes it. 
+ - <b>`until`</b>:  What makes it true; None sends it once. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  again. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or None. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The postcondition never held. 
 
 ---
 
