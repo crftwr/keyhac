@@ -41,6 +41,47 @@ The action-facing view of the desktop.  Reached as `keymap.ui`.
 
 ---
 
+### <kbd>method</kbd> `UI.activate`
+
+```python
+activate(
+    app: 'str' = None,
+    title: 'str' = None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0
+)
+```
+
+Bring a window to the front, and wait until it really is. 
+
+```python
+ui.activate(app="Google Chrome")
+``` 
+
+An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()` on the loop thread, by hand. 
+
+
+
+**Args:**
+ 
+ - <b>`app`</b>:  Application pattern, as `window()` takes it. 
+ - <b>`title`</b>:  Window title pattern. 
+ - <b>`timeout`</b>:  Seconds before giving up. 
+ - <b>`retry_every`</b>:  Seconds to watch before asking again - an  application starting up can take more than one ask. 
+
+
+
+**Returns:**
+ The front window's node. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  It never came to the front. 
+
+---
+
 ### <kbd>method</kbd> `UI.at_point`
 
 ```python
@@ -50,6 +91,92 @@ at_point(x: 'float', y: 'float') → UINode | None
 The element under a screen point, in whichever application owns it. 
 
 The cheap way into the text layer: the pointer is usually already over the line the user means (design document §6). 
+
+---
+
+### <kbd>method</kbd> `UI.click`
+
+```python
+click(
+    node=None,
+    within=None,
+    given=None,
+    until=None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0,
+    **locator
+)
+```
+
+Find one control and press it, and say what "it worked" means. 
+
+```python
+ui.click(role="Button", name="Save", within=dialog,
+          until=Appears(identifier="save-panel"))
+``` 
+
+**The platform's answer is not evidence.** An accessibility press is accepted by applications that then do nothing with it - measured, an `AXPress` on a control drawn by a Chromium application returns success and moves nothing unless that application has been told an assistive client is present. So `until` is how a caller says what to look for, and the press is repeated every `retry_every` until it holds. 
+
+**Without `until` it presses once.** A blind retry double-acts - double-save, double-submit - so the retry is the caller's to ask for, and code that does not ask is visibly the weaker code rather than silently the unlucky code. 
+
+**The act is the whole ladder** (`keyhac.core.act`): a click where the screen can prove the control is at the point about to be clicked, the platform's press behind it, the focus last. An action never writes the fallback itself, for the same reason `set_text` owns paste-then-type rather than leaving it to every caller. 
+
+
+
+**Args:**
+ 
+ - <b>`node`</b>:  A node already in hand, instead of a locator - the third row  of a list an earlier step enumerated is a thing no locator  says well. 
+ - <b>`within`</b>:  Where to look; the focused window by default. 
+ - <b>`given`</b>:  What must hold before each attempt - `Front`, `Appears`,  `Gone`, `Changed`, or a callable. The verb waits for it, and 
+ - <b>`says so distinctly when it never holds`</b>:  a precondition that failed and an act that did not take are different diagnoses. 
+ - <b>`until`</b>:  What makes it true - `Appears`, `Gone`, `Changed`, or a  callable. None presses once and returns. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  again. 
+ - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with (an `Appears` hands back the node it found), or the node that was pressed when there is no `until`. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The target never appeared, or the postcondition never  held. 
+ - <b>`StaleElement`</b>:  The target was there and had gone by the time it was  pressed. 
+
+---
+
+### <kbd>method</kbd> `UI.content_access`
+
+```python
+content_access(target: 'UINode | None' = None)
+```
+
+Turn content access on for the block, and hand it back afterwards. 
+
+```python
+with self.ui.content_access():
+     ...
+``` 
+
+`enable_content_access()` on its own is the one call that changes another application and leaves it changed: nothing turns it off, so the flag outlives the action, the key press and the session. That is not tidiness - it decides behaviour. A press into a Chromium application's *content* is live only while the flag is set, so an action that leaves it on makes the next unrelated press work for reasons nobody chose, and one that never set it makes the same press do nothing at all while reporting success. 
+
+**It does not wait for the application to act on it.** Measured on VS Code: the write is accepted at once and the tree is readable at once, but a *press* only starts working about two seconds later. Waiting here would put that stall in front of every action, to buy what a verified retry gets for nothing - act, check the postcondition, act again (discussion #98). Reading, which is what an action does first, needs no wait at all. 
+
+Nested blocks are counted, so an inner one does not hand back what an outer one still needs. Two different applications at once is not something this counts - an action works in one at a time. 
+
+
+
+**Args:**
+ 
+ - <b>`target`</b>:  A node in the application, or None for the focused one. 
+
+
+
+**Yields:**
+ Whether the platform did anything (False on Windows, which needs nothing equivalent). 
 
 ---
 
@@ -137,6 +264,49 @@ Put the clipboard back the way it was afterwards.
 
 ---
 
+### <kbd>method</kbd> `UI.send_key`
+
+```python
+send_key(
+    keys: 'str',
+    given=None,
+    until=None,
+    timeout: 'float' = 10.0,
+    retry_every: 'float' = 2.0
+)
+```
+
+Send a key expression, and say what "it arrived" means. 
+
+```python
+ui.send_key("Cmd-P", until=Appears(title="Print"))
+``` 
+
+Nothing can confirm a keystroke arrived - the application may be starting, may have a window of its own in front, may be busy - which is why every action that sends one grows a retry loop of its own. This is that loop, once. 
+
+
+
+**Args:**
+ 
+ - <b>`keys`</b>:  A key expression, as `InputContext.send_key` takes it. 
+ - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant. 
+ - <b>`until`</b>:  What makes it true; None sends it once. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  again. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or None. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The postcondition never held. 
+
+---
+
 ### <kbd>method</kbd> `UI.wait`
 
 ```python
@@ -152,6 +322,8 @@ Block until `condition()` is truthy, and return what it returned.
 
 For a wait that is not "an element appeared" or "an element went away" 
 - those are `node.wait_for()` and `node.wait_until_gone()`. Never `sleep`: a fixed delay passes on the machine it was written on, and on a faster one it fails *silently*, acting on a screen that has not arrived. 
+
+`condition` may also be an `Appears` / `Gone` / `Changed` / `Front` rather than a callable - the same question without the lambda, and without the predicate helper an action grows to hold the lambda. 
 
 
 

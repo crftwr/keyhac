@@ -14,8 +14,10 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import time
 import traceback
 
+from keyhac.core.act import act_on, press as _press, _identity_of
 from keyhac.core.candidate import Candidate
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
@@ -281,56 +283,39 @@ class MenuItemsSource(CandidateSource):
                          f"be pressed.")
 
 
-#: What "press this" is called, in the order to try it - the AX names and the
-#: UIA ones in one list, since a row can come from either platform.
-#:
-#: macOS says it in one word: AXPress is how a button, a tab, a checkbox and a
-#: disclosure triangle are all activated. UIA gives each its own *pattern*, so
-#: the same idea is four names here, and the order is what a click would do:
-#: run it (Invoke), else select it (a tab, a tree row), else flip it (a toggle
-#: button), else open it (a menu item, an expandable header). Measured in VS
-#: Code, which has all of them: 279 rows offer only Invoke, 19 only Select, 26
-#: only Expand/Collapse and 5 only Toggle - so a list with Invoke alone
-#: refused every tab in the activity bar, which is what
-#: "Extensions (Ctrl+Shift+X)" was.
-_PRESS_ACTIONS = ("AXPress", "Invoke", "Select", "Toggle", "Expand", "AXOpen")
+def _report_unreachable(what: str) -> None:
+    """Say that the row could not be clicked - on screen, not only in the log.
 
-
-def _press(element) -> bool:
-    """Press `element`, whatever this platform calls that.
-
-    It asks the element which actions it *has* before trying any, because a
-    name from the other platform is not a miss to try past - it is a name this
-    platform has never heard of, and Windows logs a warning for each one.
-    Probing blind therefore put "Unknown UI Automation action: 'AXPress'" in
-    the console on every press there. An element that cannot say (a platform
-    without the query) is probed in order, as before.
-
-    **Focus is the last resort**, for a row whose platform offers no press
-    pattern at all - a text field, and Chromium's list items (26 of them in VS
-    Code). Clicking a text field is how the caret gets into it, so focusing
-    one *is* pressing it; for the rest it is the closest honest thing, and it
-    beats telling the user the row they chose does nothing.
+    The console is not up during a keyboard flow, so a `logger.error` alone is
+    what "nothing happened and nothing was reported" looked like before. The
+    balloon is the established way to answer a keystroke (`ReportCaretAnchor`
+    does the same), and it goes over the window rather than at the control:
+    the control not being where it said it was *is* the failure, so there is
+    nothing to point at.
     """
+    logger.error(
+        f"{what}: could not be clicked - it is not at its rectangle (covered "
+        f"by another window, or scrolled out of view). Pressed it instead, "
+        f"which an application that draws its own controls may accept and do "
+        f"nothing with.")
+    keymap = Keymap.get_instance()
+    pop = getattr(keymap, "pop_balloon", None) if keymap is not None else None
+    if pop is None:
+        return
+    where = {}
     try:
-        available = set(element.get_action_names() or ())
+        from keyhac.ui.balloon import _focused_window_rect
+        rect = _focused_window_rect(keymap)
+        if rect is not None:
+            where = {"over": rect}
     except Exception:
-        available = None
-    for action in _PRESS_ACTIONS:
-        if available is not None and action not in available:
-            continue
-        try:
-            if element.perform_action(action):
-                return True
-        except Exception:
-            continue
-    try:
-        if element.set_focus():
-            logger.debug("Nothing pressed it; the focus was put on it instead.")
-            return True
-    except Exception:
+        # Placement is the nicety; the message is the point.
         pass
-    return False
+    try:
+        pop("Chooser", f"{what}: could not click it - it is not where it said "
+                       f"it was (covered, or scrolled away).", 4.0, **where)
+    except Exception:
+        logger.debug("No balloon to report the unreachable control with.")
 
 
 #: What one read of a menu leaf asks for: whether it can be chosen, and the
@@ -796,9 +781,32 @@ class WindowControlsSource(CandidateSource):
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
-        if not _press(candidate.payload):
-            logger.error(f"{candidate.display}: the control refused to be "
-                         f"pressed.")
+        element, what = candidate.payload, candidate.display
+
+        def act():
+            outcome = act_on(element)
+            if outcome.blocked == "covered":
+                # It was pressed anyway, and a press is exactly what some
+                # applications accept and ignore - so this is the one path
+                # where "nothing happened" has to be said out loud.
+                _report_unreachable(what)
+            elif not outcome:
+                logger.error(f"{what}: the control refused to be pressed.")
+
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            act()
+            return
+        # One turn of the loop later, for two reasons that are the same
+        # reason. The window this row was chosen from has been asked to close
+        # but may still be on the screen, and it is the one thing guaranteed
+        # to be over a control the user just pointed at - the hit test would
+        # find it and refuse to click. And choosing happens inside the key
+        # hook's callback, because the chooser reads its keys through the
+        # hook, which is not where a click and a cross-process round trip
+        # belong (ChooserAction.__call__ has the same note, with the
+        # measurements).
+        keymap.call_on_main_thread(act)
 
 
 def _walk_controls(root):
@@ -857,12 +865,3 @@ def _walk_controls(root):
 
     yield from walk(root, 0)
 
-
-def _identity_of(element):
-    key = getattr(element, "identity_key", None)
-    if key is None:
-        return None
-    try:
-        return key()
-    except Exception:
-        return None

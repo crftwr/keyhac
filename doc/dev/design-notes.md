@@ -538,6 +538,96 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   rest it is the closest honest thing, and it beats telling the user the row
   they chose does nothing. Both platforms have `set_focus()`, so the fallback
   is portable rather than a Windows special case.
+- **A chosen control is clicked, not pressed — an accessibility press is
+  accepted by applications that then do nothing with it.** Measured in VS Code
+  on macOS, 8/8 either way: with `AXEnhancedUserInterface` unset, `AXPress` on
+  the panel's Problems tab and on the activity bar's Search returns success
+  and moves nothing; with it set, the same presses switch the panel and the
+  sidebar. The same holds for a plain `<button>` in a page in Chrome: pressed
+  with the flag unset, its click listener never runs.
+- **It is Chromium's rendered content that is conditional, not Electron.**
+  Chrome's own toolbar is Views in the browser process, and `AXPress` on its
+  New Tab button opens a tab with the flag unset — measured. So a chooser row
+  can look like it works in Chrome, where the Control page is mostly browser
+  chrome, and not in VS Code, whose entire UI is the page. That is the trap
+  this fix removes: which rows work depended on which layer drew them.
+- **Unset is the normal state, and the chooser must not change it.** Keyhac
+  asks for that flag only through `keymap.ui.enable_content_access()`, which
+  belongs to the AI integration and is off unless the operator turns the MCP
+  server on — so a control press worked in a session where an Action or an MCP
+  tool had touched the same application, and silently did nothing in one where
+  none had. That is also why the source does not simply call it: the flag puts
+  VS Code into its screen-reader-optimised rendering, which is why enabling it
+  is an explicit call and never something a walk does on its own. The row said
+  "press this", the press said yes, the panel did not move, and there was
+  nothing to report — the silent wrong thing §3.7 exists to refuse. So
+  `WindowControlsSource` clicks: it is what the row meant (the source lists
+  what you could *click*) and it is the one thing no widget can accept and
+  ignore.
+- **What makes the click safe is the hit test**, not the rectangle. The OS is
+  asked what is at the point about to be clicked and the click only goes out
+  when the answer is that element or something inside it — usually something
+  inside it, since the middle of a control is its label (two levels down in VS
+  Code). That is what rules out the stale rectangle, the window that moved,
+  the control scrolled out of sight and the popover on top, each of which
+  would have clicked whatever was there instead. Everything unproven falls
+  through to `_press`, so a menu item (its menu is closed, so nothing of it is
+  at its rectangle) and an off-screen control keep the behaviour they had.
+- **Identity, where the platform has one.** macOS AX references compare by
+  `CFEqual`; Windows answers `None` to `identity_key()` — its control view is
+  a real tree, so nothing pays for a runtime id — and `None == None` would
+  make every element the same one. The description (place, role, name) stands
+  in there.
+- **The tree those rows come from is on because the key hook read the focus.**
+  A freshly started Electron application exposes 13 nodes and no web area at
+  all — walking it changes nothing, and neither does anything the chooser
+  reads. One `MacFocusProvider.get_focus()` turns it on (measured 13 → 443,
+  with `AXEnhancedUserInterface` still False), and `_check_focus_change` calls
+  that on **every key down and key up**. So Keyhac has always paid for its own
+  Control page as a side effect of focus tracking, one keystroke before anyone
+  could open the window — which is why the page is never empty in practice,
+  and why measuring "is the flag needed to *read*?" on a running system always
+  answers no. `AXManualAccessibility` alone turns it on too, and unlike
+  `AXEnhancedUserInterface` it does not put VS Code into screen-reader
+  rendering — worth remembering if a Chromium application that has never been
+  frontmost ever needs reading.
+- **A control out of view is scrolled to, on the way to a click and never
+  before it.** The hit test refuses to click what is not at the point, and
+  "scrolled out of sight" is the one refusal the application itself can fix —
+  `AXScrollToVisible`, which every Chromium node offers. Doing it while the
+  *selection* moves was rejected: a list that scrolls the document you are
+  reading it against changes what it is describing, which is the same reason
+  `ChooserWindow` does not confirm on a row click. It also avoids the question
+  it would raise — the outline is drawn from the walk's rectangle, so a scroll
+  under it would leave the outline pointing at nothing. At click time the
+  window is already closed and there is no rectangle left to invalidate. The
+  wait for the scroll to land is hard-bounded at 150 ms because this runs on
+  the event-loop thread.
+- **What cannot be reached is said out loud, on screen.** A `logger.error`
+  alone is exactly what "nothing happened and nothing was reported" looked
+  like, because the console is not up during a keyboard flow — so the
+  fallback path pops a balloon too, the way `ReportCaretAnchor` answers a
+  keystroke. It goes *over* the window rather than at the control: the control
+  not being where it said it was is the failure, so there is nothing to point
+  at. The hit test therefore has three answers, not two — True, False, and
+  **None for "this platform has no hit test"** — because reporting the third
+  as the second would put a warning in front of every press on Windows.
+- **The chooser cannot use content access, and that is measured, not
+  squeamishness.** Turning the flag on is free and asynchronous
+  (`UI.content_access`), but a *press* only starts working about two seconds
+  later — 1.5 s and 2.0 s pressed nothing, 2.5 s worked. A chooser answers a
+  selection immediately, so it has no two seconds to spend, and a retry loop
+  is not open to it either. An action has both, which is why the verb-first
+  layer is where `until=` belongs (discussion #98) and the chooser's answer is
+  a click that cannot be inert in the first place.
+- **The click waits one turn of the loop**, for two reasons that are the same
+  reason: the chooser window has been asked to close but may still be on the
+  screen, and it is the one thing guaranteed to be over a control the user
+  just pointed at, so the hit test would find it and refuse; and choosing
+  happens inside the key hook's callback, which is not where a click and a
+  cross-process round trip belong. The pointer goes back where the user left
+  it — parked on the control it would raise a tooltip and change what their
+  next click means.
 
 ## There is no Menu page on Windows
 

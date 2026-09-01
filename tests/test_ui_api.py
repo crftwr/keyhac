@@ -9,6 +9,8 @@ loop thread itself, and a node is a snapshot rather than a live view.
 
 import threading
 
+import time
+
 import pytest
 
 from keyhac.core.uitree import UINode
@@ -64,6 +66,11 @@ class FakeWindow:
         self.title = title
         self.class_name = None
         self.pid = 1
+        self.activated = 0
+
+    def activate(self):
+        self.activated += 1
+        return True
 
 
 @pytest.fixture(autouse=True)
@@ -373,3 +380,223 @@ def test_enable_content_access_reaches_the_application(ui):
     application.parent = lambda: None
     assert api.enable_content_access(api.node(element)) is True
     assert asked == [True]
+
+
+def _wired(ui):
+    """The api and the list of enable/disable calls that reach the app."""
+    api, element = ui
+    asked = []
+
+    class AppElement(FakeElement):
+        def set_manual_accessibility(self, enable=True):
+            asked.append(enable)
+
+    application = AppElement("Application", key="app")
+    element.parent = lambda: application
+    application.parent = lambda: None
+    return api, api.node(element), asked
+
+
+def test_content_access_hands_it_back(ui):
+    """The one call that changes another application and leaves it changed -
+    so the block is what turns it off, on every way out."""
+    api, node, asked = _wired(ui)
+    with api.content_access(node) as enabled:
+        assert enabled is True
+        assert asked == [True]
+    assert asked == [True, False]
+
+
+def test_content_access_hands_it_back_when_the_block_raises(ui):
+    """The paths that matter: an action raises PreconditionFailed, a
+    WaitTimeout, or ActionCancelled long before it reaches its last line."""
+    api, node, asked = _wired(ui)
+    with pytest.raises(ValueError):
+        with api.content_access(node):
+            raise ValueError("boom")
+    assert asked == [True, False]
+
+
+def test_content_access_does_not_wait_for_it_to_take_effect(ui):
+    """Asynchronous on purpose: measured on VS Code the write is accepted at
+    once and the tree is readable at once, but a press only works about two
+    seconds later. Waiting here would stall every action to buy what a
+    verified retry gets for nothing."""
+    api, node, _asked = _wired(ui)
+    started = time.monotonic()
+    with api.content_access(node):
+        pass
+    assert time.monotonic() - started < 0.5
+
+
+def test_nested_blocks_are_counted(ui):
+    """An inner block must not hand back what the outer one still needs."""
+    api, node, asked = _wired(ui)
+    with api.content_access(node):
+        with api.content_access(node):
+            pass
+        assert asked == [True], "the inner exit turned it off"
+    assert asked == [True, False]
+
+
+# -- the verb layer (discussion #98) -----------------------------------------
+
+class TestVerbs:
+    """One call that folds find, wait, act and "did it take?".
+
+    The measurement behind it: an accessibility press is accepted by
+    applications that then do nothing with it, so the platform's answer is not
+    evidence and only a postcondition the caller states can be.
+    """
+
+    def test_a_click_with_no_postcondition_presses_once(self, ui):
+        """A blind retry double-acts - double-save, double-submit - so the
+        retry is the caller's to ask for."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save")
+        assert button.pressed == 1
+
+    def test_a_click_returns_what_it_pressed(self, ui):
+        api, element = ui
+        node = api.click(role="AXButton", name="Save")
+        assert node.name == "Save"
+
+    def test_a_click_repeats_until_the_postcondition_holds(self, ui):
+        """The press that is accepted and does nothing is the whole reason
+        this layer exists."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save",
+                  until=lambda: button.pressed >= 3,
+                  timeout=5.0, retry_every=0.05)
+        assert button.pressed == 3
+
+    def test_a_postcondition_that_never_holds_is_a_loud_failure(self, ui):
+        api, element = ui
+        with pytest.raises(WaitTimeout) as error:
+            api.click(role="AXButton", name="Save", until=lambda: False,
+                      timeout=0.3, retry_every=0.05)
+        assert "attempts" in str(error.value)
+
+    def test_appears_hands_back_what_it_found(self, ui):
+        api, element = ui
+        found = api.click(role="AXButton", name="Save",
+                          until=api.Appears(role="AXCheckBox", name="Archived"),
+                          timeout=1.0, retry_every=0.05)
+        assert found.identifier == "arch"
+
+    def test_changed_reads_the_target_before_acting(self, ui):
+        """The baseline has to be taken before the act. Taken after, every
+        Changed compares equal to itself and nothing is ever satisfied."""
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox.perform_action = (
+            lambda name: checkbox._describe.__setitem__("value", 1))
+        node = api.node(checkbox)
+        api.click(role="AXCheckBox", name="Archived", until=api.Changed(node),
+                  timeout=1.0, retry_every=0.05)
+        assert checkbox._describe["value"] == 1
+
+    def test_gone_is_satisfied_when_the_target_has_left(self, ui):
+        """The described form, which is the one that works for a row removed
+        from a list rather than a window that closed."""
+        api, element = ui
+        described = api.Appears(role="AXCheckBox", name="Archived")
+        assert not api.Gone(described).check(api, None)
+        element.kids.remove(element.kids[1])
+        assert api.Gone(described).check(api, None)
+
+    def test_a_verb_that_waits_refuses_the_loop_thread(self, ui):
+        """Waiting there would hold the keyboard hook for the length of it."""
+        api, _element = ui
+        api._keymap.set_main_thread_dispatcher(lambda callback: None)
+        with pytest.raises(RuntimeError, match="event-loop thread"):
+            api.send_key("A", until=lambda: False, timeout=0.2)
+
+    def test_send_key_without_a_postcondition_sends_once(self, ui):
+        api, _element = ui
+        api.send_key("A")
+        assert True   # no exception: the keystroke went through the fake hook
+
+    def test_a_precondition_is_waited_for_before_each_attempt(self, ui):
+        """The gap the prototype found: an action waits for the *browser
+        window* to be front before each Cmd-P, because the download popup
+        takes the front after a save and swallows it."""
+        api, element = ui
+        button = element.kids[0]
+        seen = []
+
+        def front_after_a_while():
+            seen.append(1)
+            return len(seen) >= 3
+
+        api.click(role="AXButton", name="Save", given=front_after_a_while,
+                  timeout=2.0)
+        assert len(seen) >= 3, "it acted before the precondition held"
+        assert button.pressed == 1
+
+    def test_front_matches_the_active_window(self, ui):
+        api, _element = ui
+        assert api.Front(app="TestApp").check(api, None)
+        assert not api.Front(app="Something Else").check(api, None)
+
+    def test_a_precondition_that_never_holds_fails_as_one(self, ui):
+        """"The world was not ready" and "the act did not take" want
+        different repairs, so they read differently."""
+        api, _element = ui
+        with pytest.raises(WaitTimeout) as error:
+            api.send_key("Cmd-P", given=api.Front(app="Nothing"),
+                         until=lambda: True, timeout=0.3)
+        assert "never started" in str(error.value)
+
+    def test_the_act_is_the_whole_ladder(self, ui):
+        """The other gap: an action should never write "Return, else AXPress"
+        itself. The verb's act is click-then-press-then-focus."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save")
+        assert button.pressed == 1 or button.focused
+
+    def test_reads_states_the_value_expected(self, ui):
+        """The authoring rule as a value: wait for the state you expect, not
+        for the old state to change - a transform can be the identity."""
+        api, element = ui
+        checkbox = element.kids[1]
+        node = api.node(checkbox)
+        assert not api.Reads(node, value="True").check(api, None)
+        checkbox._describe["value"] = True
+        assert api.Reads(node, value="True").check(api, None)
+
+    def test_reads_compares_the_value_as_text(self, ui):
+        """macOS answers AXValue True, Windows a toggle state - the caller
+        should not have to know which it got."""
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox._describe["value"] = True
+        node = api.node(checkbox)
+        assert api.Reads(node, value="True").check(api, None)
+
+    def test_a_click_waits_for_the_state_rather_than_the_difference(self, ui):
+        api, element = ui
+        checkbox = element.kids[1]
+        checkbox.perform_action = (
+            lambda name: checkbox._describe.__setitem__("value", True))
+        node = api.node(checkbox)
+        api.click(node=node, until=api.Reads(node, value="True"),
+                  timeout=1.0, retry_every=0.05)
+        assert checkbox._describe["value"] is True
+
+    def test_activate_asks_and_then_waits_for_the_front(self, ui):
+        """Asking a window to activate is not the same as it being in front,
+        and the difference is where the next keystroke goes."""
+        api, _element = ui
+        window = api._keymap.window_provider.list_windows()[0]
+        node = api.activate(app="TestApp", timeout=2.0)
+        assert window.activated == 1
+        assert node is not None
+
+    def test_activate_that_never_comes_forward_is_a_loud_failure(self, ui):
+        api, _element = ui
+        with pytest.raises(WaitTimeout):
+            api.activate(app="Nothing There", timeout=0.3, retry_every=0.05)

@@ -1975,6 +1975,237 @@ class TestPressingAChosenElement:
         assert not _press(element)
 
 
+def _mouse_events(hook):
+    return [event for event, _replay in hook.sent_mouse]
+
+
+class _ScreenControl:
+    """A control that also answers the platform's "what is at this point?".
+
+    `element_at_point` lives on the class on both platforms, so the fake puts
+    it there too - `_is_at` looks it up on `type(element)`.
+    """
+
+    #: What the screen reports at any point, for the test that set it.
+    at_point = None
+
+    def __init__(self, role="AXButton", name="Save", rect=(100, 200, 40, 20),
+                 key=None, parent=None, scrolls_to=None):
+        self._described = {"role": role, "name": name, "name_source": "label",
+                           "rect": rect}
+        self._key = key
+        self._parent = parent
+        #: Where scrolling it into view puts it, and None for a control the
+        #: application cannot bring into view.
+        self.scrolls_to = scrolls_to
+        self.scrolled = 0
+        self.pressed = []
+
+    @staticmethod
+    def element_at_point(x, y):
+        return _ScreenControl.at_point
+
+    def describe(self):
+        return dict(self._described)
+
+    def role(self):
+        return self._described["role"]
+
+    def children(self):
+        return []
+
+    def identity_key(self):
+        return self._key
+
+    def parent(self):
+        return self._parent
+
+    def get_action_names(self):
+        names = ["AXPress"]
+        if self.scrolls_to is not None:
+            names.append("AXScrollToVisible")
+        return names
+
+    def perform_action(self, action):
+        if action == "AXScrollToVisible":
+            self.scrolled += 1
+            self._described["rect"] = self.scrolls_to
+            _ScreenControl.at_point = self      # now the point is on it
+            return True
+        self.pressed.append(action)
+        return True
+
+
+class TestClickingAChosenControl:
+    """A chosen control is clicked where it is, not pressed.
+
+    An accessibility press is *accepted* by applications that then do nothing
+    with it: measured in VS Code, AXPress on the panel's Problems tab returns
+    success and switches nothing unless the application has been told an
+    assistive client is present (AXEnhancedUserInterface), which is a global
+    mode the chooser has no business turning on. There is no error to report
+    and nothing happens, so the click - which no widget can accept and
+    ignore - goes first, guarded by a hit test.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_stale_screen(self):
+        yield
+        _ScreenControl.at_point = None
+
+    def _keymap(self, engine):
+        return engine(lambda keymap: keymap.define_keytable(
+            focus_path_pattern="*"))
+
+    def _choose(self, control):
+        from keyhac.core.candidate import Candidate
+        from keyhac.core.sources import WindowControlsSource
+        described = control.describe()
+        WindowControlsSource().on_chosen(
+            Candidate(display=described["name"], payload=control,
+                      rect=described["rect"]), 0)
+
+    def test_the_control_is_clicked_where_it_is(self, engine):
+        """The centre of the control, reached as a move relative to wherever
+        the pointer was - which is the only kind of move the input context
+        offers, against pointer acceleration."""
+        e = self._keymap(engine)
+        control = _ScreenControl(rect=(100, 200, 40, 20), key="target")
+        _ScreenControl.at_point = control
+        self._choose(control)
+        assert _mouse_events(e.hook) == [
+            ("move", 20, 110),          # (100,100) -> the centre, (120,210)
+            ("left", True), ("left", False),
+            ("move", -20, -110),        # and back where the user left it
+        ]
+        assert control.pressed == [], "the press is the fallback, not the act"
+
+    def test_the_pointer_ends_where_it_started(self, engine):
+        """Parked on the control it would raise a tooltip and change what the
+        user's next click means."""
+        e = self._keymap(engine)
+        origin = e.hook.cursor_pos()
+        control = _ScreenControl(key="target")
+        _ScreenControl.at_point = control
+        self._choose(control)
+        assert e.hook.cursor_pos() == origin
+
+    def test_the_label_inside_the_control_still_counts(self, engine):
+        """What the screen reports at the middle of a control is usually its
+        label - two levels down in VS Code - so the walk goes up from there."""
+        e = self._keymap(engine)
+        control = _ScreenControl(key="target")
+        group = _ScreenControl(role="AXGroup", key="group", parent=control)
+        _ScreenControl.at_point = _ScreenControl(
+            role="AXStaticText", key="text", parent=group)
+        self._choose(control)
+        assert [event for event, _ in e.hook.sent_mouse][1] == ("left", True)
+
+    def test_something_over_the_control_is_pressed_instead(self, engine):
+        """A click would land on whatever is in front, which is worse than
+        not clicking - so an unproven point falls through to the press."""
+        e = self._keymap(engine)
+        control = _ScreenControl(key="target")
+        _ScreenControl.at_point = _ScreenControl(
+            role="AXWindow", name="Something else", key="other")
+        self._choose(control)
+        assert _mouse_events(e.hook) == []
+        assert control.pressed == ["AXPress"]
+
+    def test_a_control_out_of_view_is_scrolled_to_and_then_clicked(self, engine):
+        """The one refusal the application itself can fix. A row picked by
+        name is one the user wants acted on, and scrolling to reveal it is
+        what a person would do before clicking it."""
+        e = self._keymap(engine)
+        control = _ScreenControl(rect=(100, 200, 40, 20), key="target",
+                                 scrolls_to=(300, 400, 40, 20))
+        _ScreenControl.at_point = _ScreenControl(key="other", name="Something")
+        self._choose(control)
+        assert control.scrolled == 1
+        assert _mouse_events(e.hook) == [
+            ("move", 220, 310),         # (100,100) -> the centre it moved to
+            ("left", True), ("left", False),
+            ("move", -220, -310),
+        ]
+        assert control.pressed == []
+
+    def test_the_scroll_happens_on_the_way_to_a_click_only(self, engine):
+        """Never while the selection is merely moving through the list: a
+        list that scrolls the document you are reading it against changes
+        what it is describing."""
+        from keyhac.core.sources import _walk_controls
+        e = self._keymap(engine)
+        control = _ScreenControl(key="target", scrolls_to=(300, 400, 40, 20))
+        list(_walk_controls(_FakeControl("AXWindow", kids=[])))
+        assert control.scrolled == 0
+
+    def test_a_control_that_cannot_be_reached_says_so_on_screen(self, engine):
+        """A logger.error alone is what "nothing happened and nothing was
+        reported" looked like: the console is not up during a keyboard flow."""
+        e = self._keymap(engine)
+        popped = []
+        e.keymap.pop_balloon = lambda *args, **kwargs: popped.append(args)
+        control = _ScreenControl(key="target", name="Problems")
+        _ScreenControl.at_point = _ScreenControl(key="other", name="Something")
+        self._choose(control)
+        assert popped, "the user was told nothing"
+        name, text, timeout = popped[0][:3]
+        assert name == "Chooser"
+        assert "Problems" in text and "could not click" in text
+        assert control.pressed == ["AXPress"], "the press is still tried"
+
+    def test_a_platform_with_no_hit_test_says_nothing(self, engine):
+        """Windows does not verify its ElementFromPoint yet, and a warning in
+        front of every press there would be noise, not news."""
+        e = self._keymap(engine)
+        popped = []
+        e.keymap.pop_balloon = lambda *args, **kwargs: popped.append(args)
+        control = _FakeControl("AXButton", "Save", rect=(100, 200, 40, 20))
+        from keyhac.core.candidate import Candidate
+        from keyhac.core.sources import WindowControlsSource
+        WindowControlsSource().on_chosen(
+            Candidate(display="Save", payload=control), 0)
+        assert popped == []
+        assert control.pressed == ["AXPress"]
+
+    def test_a_control_with_no_rectangle_is_pressed(self, engine):
+        e = self._keymap(engine)
+        control = _ScreenControl(rect=None, key="target")
+        _ScreenControl.at_point = control
+        self._choose(control)
+        assert _mouse_events(e.hook) == []
+        assert control.pressed == ["AXPress"]
+
+    def test_a_platform_that_cannot_say_presses(self, engine):
+        """`_FakeControl` has no element_at_point, which is every platform
+        layer written before the hit test existed."""
+        e = self._keymap(engine)
+        control = _FakeControl("AXButton", "Save", rect=(100, 200, 40, 20))
+        from keyhac.core.candidate import Candidate
+        from keyhac.core.sources import WindowControlsSource
+        WindowControlsSource().on_chosen(
+            Candidate(display="Save", payload=control), 0)
+        assert _mouse_events(e.hook) == []
+        assert control.pressed == ["AXPress"]
+
+    def test_without_an_identity_the_description_stands_in(self, engine):
+        """Windows answers None to identity_key - its control view is a real
+        tree - and None == None would make every element the same one."""
+        e = self._keymap(engine)
+        control = _ScreenControl(key=None)
+        _ScreenControl.at_point = _ScreenControl(key=None)   # same description
+        self._choose(control)
+        assert _mouse_events(e.hook)[1] == ("left", True)
+
+    def test_a_different_description_is_a_different_element(self, engine):
+        e = self._keymap(engine)
+        control = _ScreenControl(key=None)
+        _ScreenControl.at_point = _ScreenControl(key=None, rect=(9, 9, 9, 9))
+        self._choose(control)
+        assert _mouse_events(e.hook) == []
+        assert control.pressed == ["AXPress"]
+
+
 class TestBackgroundSources:
     """A source that touches nothing of Keyhac's says so, and its walk moves
     off the main thread - which is the whole difference between a window that

@@ -545,8 +545,28 @@ class UIElement:
         screen-reader-optimised rendering.  So this is an explicit call and
         never something a walk does on its own.
 
-        Both are reversible: `set_manual_accessibility(False)` put Chrome back
-        to 59 nodes, verified.  Native Cocoa apps ignore both.
+        **Switching it off does not put the tree back.**  Measured again on
+        2026-08-31: six minutes after `set_manual_accessibility(False)` Chrome
+        was still exposing the page, and an earlier note here that it returned
+        to 59 nodes did not reproduce.  What the flag does reverse is whether
+        a *press* into that content is live - on VS Code, eight presses with
+        it unset moved nothing and four with it set all worked - so this is a
+        switch on acting, and close to a one-way door on reading.
+
+        **The tree is not built by this alone.**  A freshly started Electron
+        application exposes 13 nodes and no web area, and stays there however
+        often it is walked; one `MacFocusProvider.get_focus()` takes it to
+        443.  So Keyhac's own key hook has been turning it on as a side effect
+        of focus tracking all along, one keystroke before anything else could
+        ask - which is why "is the flag needed in order to read?" measures as
+        no on a running system and yes on a fresh one.
+
+        The screen-reader rendering above is the author's observation and is
+        left standing; it did not show up in the accessibility tree when
+        looked for on 2026-08-31 (no notification, no element added or
+        removed), which is not the same as not happening.
+
+        Native Cocoa apps ignore both.
         """
         for attribute in ("AXManualAccessibility", "AXEnhancedUserInterface"):
             try:
