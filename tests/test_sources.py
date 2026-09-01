@@ -2139,6 +2139,66 @@ class TestClickingAChosenControl:
         list(_walk_controls(_FakeControl("AXWindow", kids=[])))
         assert control.scrolled == 0
 
+    def _immediate_loop(self, monkeypatch):
+        """A loop that runs call_later straight away, so the look-again is
+        exercised without the test waiting on a clock."""
+        from keyhac.ui import runtime
+
+        class _Loop:
+            def call_later(self, delay, callback):
+                callback()
+
+        monkeypatch.setattr(runtime, "backend", _Loop())
+
+    def _looks_that_clear_after(self, monkeypatch, control, covering, after):
+        looks = []
+
+        def at_point(x, y):
+            looks.append((x, y))
+            return control if len(looks) > after else covering
+
+        monkeypatch.setattr(_ScreenControl, "element_at_point",
+                            staticmethod(at_point))
+        return looks
+
+    def test_a_control_under_the_chooser_is_looked_at_again(self, engine,
+                                                            monkeypatch):
+        """The window this row was chosen from closes on its own clock: asked
+        to close inside the key handler, off the screen a beat later. Until it
+        is, it is over the control the user just pointed at - it is the one
+        window guaranteed to be."""
+        self._immediate_loop(monkeypatch)
+        e = self._keymap(engine)
+        popped = []
+        e.keymap.pop_balloon = lambda *args, **kwargs: popped.append(args)
+        control = _ScreenControl(key="target", name="Problems")
+        covering = _ScreenControl(key="chooser", name="Keyhac")
+        looks = self._looks_that_clear_after(monkeypatch, control, covering, 1)
+
+        self._choose(control)
+        assert len(looks) == 2, "it gave up on the first look"
+        assert control.pressed == [], "it clicked, once the window had gone"
+        assert popped == [], "and said nothing, because nothing went wrong"
+
+    def test_a_control_covered_for_good_is_reported_in_the_end(self, engine,
+                                                               monkeypatch):
+        """The looks are bounded: another application's window is not going to
+        move, and the user is owed the message rather than a longer wait."""
+        from keyhac.core.sources import _COVERED_LOOKS
+
+        self._immediate_loop(monkeypatch)
+        e = self._keymap(engine)
+        popped = []
+        e.keymap.pop_balloon = lambda *args, **kwargs: popped.append(args)
+        control = _ScreenControl(key="target", name="Problems")
+        covering = _ScreenControl(key="other", name="Something")
+        looks = self._looks_that_clear_after(monkeypatch, control, covering, 99)
+
+        self._choose(control)
+        assert len(looks) == _COVERED_LOOKS + 1
+        assert control.pressed == ["AXPress"]
+        assert popped, "the user was told nothing"
+
     def test_a_control_that_cannot_be_reached_says_so_on_screen(self, engine):
         """A logger.error alone is what "nothing happened and nothing was
         reported" looked like: the console is not up during a keyboard flow."""

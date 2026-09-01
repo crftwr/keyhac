@@ -620,6 +620,17 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   is not open to it either. An action has both, which is why the verb-first
   layer is where `until=` belongs (discussion #98) and the chooser's answer is
   a click that cannot be inert in the first place.
+- **One turn of the loop was not enough for our own window.** The reported
+  symptom was a row *under the chooser* failing with "covered by another
+  window": the window closes on its own clock — asked to close inside the key
+  handler, off the screen a beat later — and until it is, it sits over the
+  control the user just pointed at, which is the one window guaranteed to.
+  So a covered point is looked at again three times at 50 ms rather than given
+  up on. This is the chooser's own retry and not the ladder's: nothing else
+  has a window of its own in front of the thing it is about to click, and
+  `act.click` refusing a covered point stays a plain refusal for everybody
+  else. The looks are bounded because another application's window is not
+  going to move, and the user is owed the message rather than a longer wait.
 - **The click waits one turn of the loop**, for two reasons that are the same
   reason: the chooser window has been asked to close but may still be on the
   screen, and it is the one thing guaranteed to be over a control the user

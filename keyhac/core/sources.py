@@ -17,7 +17,7 @@ things with one name in a flat ``from keyhac import *`` namespace is a trap.
 import time
 import traceback
 
-from keyhac.core.act import act_on, press as _press, _identity_of
+from keyhac.core.act import click as _click, press as _press, _identity_of
 from keyhac.core.candidate import Candidate
 from keyhac.core.const import MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
@@ -281,6 +281,35 @@ class MenuItemsSource(CandidateSource):
         if not _press(candidate.payload):
             logger.error(f"{candidate.display}: the menu item refused to "
                          f"be pressed.")
+
+
+#: How many more times to look when the point is covered, and how long to
+#: leave between looks.  The window this row was chosen from closes on its own
+#: clock: asked to close inside the key handler, off the screen a beat later.
+#: Until it is, it sits over the control the user just pointed at - it is the
+#: one window guaranteed to - and the hit test is right to refuse. One turn of
+#: the loop was not enough for it on macOS, which is what the reported
+#: "covered by another window" on a row *under the chooser* was.
+#:
+#: The chooser's, not the ladder's: nothing else has a window of its own in
+#: front of the thing it is about to click, and `act.click` refusing a covered
+#: point stays a plain refusal for everybody else.
+_COVERED_LOOKS = 3
+_COVERED_DELAY = 0.05
+
+
+def _look_again(again) -> bool:
+    """Queue another look a beat from now; False when there is no loop to
+    queue on (`--no-ui`, a test), which is where the press is the answer."""
+    from keyhac.ui import runtime
+
+    if runtime.backend is None:
+        return False
+    try:
+        runtime.backend.call_later(_COVERED_DELAY, again)
+    except Exception:
+        return False
+    return True
 
 
 def _report_unreachable(what: str) -> None:
@@ -783,15 +812,23 @@ class WindowControlsSource(CandidateSource):
         """lazydocs: ignore"""
         element, what = candidate.payload, candidate.display
 
-        def act():
-            outcome = act_on(element)
-            if outcome.blocked == "covered":
-                # It was pressed anyway, and a press is exactly what some
+        def attempt(remaining):
+            outcome = _click(element)
+            if outcome.how:
+                return
+            if outcome.blocked == "covered" and remaining \
+                    and _look_again(lambda: attempt(remaining - 1)):
+                return
+            if not _press(element):
+                logger.error(f"{what}: the control refused to be pressed.")
+            elif outcome.blocked == "covered":
+                # It was pressed, and a press is exactly what some
                 # applications accept and ignore - so this is the one path
                 # where "nothing happened" has to be said out loud.
                 _report_unreachable(what)
-            elif not outcome:
-                logger.error(f"{what}: the control refused to be pressed.")
+
+        def act():
+            attempt(_COVERED_LOOKS)
 
         keymap = Keymap.get_instance()
         if keymap is None:
