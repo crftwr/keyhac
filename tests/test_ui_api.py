@@ -513,3 +513,42 @@ class TestVerbs:
         api, _element = ui
         api.send_key("A")
         assert True   # no exception: the keystroke went through the fake hook
+
+    def test_a_precondition_is_waited_for_before_each_attempt(self, ui):
+        """The gap the prototype found: an action waits for the *browser
+        window* to be front before each Cmd-P, because the download popup
+        takes the front after a save and swallows it."""
+        api, element = ui
+        button = element.kids[0]
+        seen = []
+
+        def front_after_a_while():
+            seen.append(1)
+            return len(seen) >= 3
+
+        api.click(role="AXButton", name="Save", given=front_after_a_while,
+                  timeout=2.0)
+        assert len(seen) >= 3, "it acted before the precondition held"
+        assert button.pressed == 1
+
+    def test_front_matches_the_active_window(self, ui):
+        api, _element = ui
+        assert api.Front(app="TestApp").check(api, None)
+        assert not api.Front(app="Something Else").check(api, None)
+
+    def test_a_precondition_that_never_holds_fails_as_one(self, ui):
+        """"The world was not ready" and "the act did not take" want
+        different repairs, so they read differently."""
+        api, _element = ui
+        with pytest.raises(WaitTimeout) as error:
+            api.send_key("Cmd-P", given=api.Front(app="Nothing"),
+                         until=lambda: True, timeout=0.3)
+        assert "never started" in str(error.value)
+
+    def test_the_act_is_the_whole_ladder(self, ui):
+        """The other gap: an action should never write "Return, else AXPress"
+        itself. The verb's act is click-then-press-then-focus."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save")
+        assert button.pressed == 1 or button.focused

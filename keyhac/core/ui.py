@@ -113,6 +113,40 @@ class Appears:
 
 
 @dataclass(frozen=True)
+class Front:
+    """Satisfied when the front window is this one.
+
+    The precondition that is not about the target, and the one a verb cannot
+    fold without a name for it: an action sends Cmd-P to *the browser*, and
+    after a save the application's own download popup owns the front for a few
+    seconds and swallows it. Waiting for the right window to be in front is
+    the difference between a retry that converges and one that types into
+    whatever is there.
+    """
+
+    app: str = None
+    title: str = None
+
+    def baseline(self, ui):
+        """lazydocs: ignore"""
+        return None
+
+    def check(self, ui, baseline):
+        """lazydocs: ignore"""
+        from keyhac.core.focus import match_window_fields
+        provider = getattr(ui._keymap, "window_provider", None)
+        active = provider.get_active_window() if provider is not None else None
+        if active is None:
+            return None
+        if not match_window_fields(active, app=self.app, title=self.title):
+            return None
+        return ui.node(getattr(active, "element", None))
+
+    def __str__(self):
+        return f"the front window to be {self.app or ''} {self.title or ''}".strip()
+
+
+@dataclass(frozen=True)
 class Gone:
     """Satisfied when `target` is no longer there.
 
@@ -318,10 +352,11 @@ class UI:
     #: layer that needed four import lines to be written correctly would be a
     #: worse thing to generate, not a better one.
     Appears = Appears
+    Front = Front
     Gone = Gone
     Changed = Changed
 
-    def click(self, within=None, until=None, timeout: float = 10.0,
+    def click(self, within=None, given=None, until=None, timeout: float = 10.0,
               retry_every: float = 2.0, **locator):
         """Find one control and press it, and say what "it worked" means.
 
@@ -342,8 +377,18 @@ class UI:
         and code that does not ask is visibly the weaker code rather than
         silently the unlucky code.
 
+        **The act is the whole ladder** (`keyhac.core.act`): a click where the
+        screen can prove the control is at the point about to be clicked, the
+        platform's press behind it, the focus last. An action never writes the
+        fallback itself, for the same reason `set_text` owns paste-then-type
+        rather than leaving it to every caller.
+
         Args:
             within: Where to look; the focused window by default.
+            given: What must hold before each attempt - `Front`, `Appears`,
+                `Gone`, `Changed`, or a callable. The verb waits for it, and
+                says so distinctly when it never holds: a precondition that
+                failed and an act that did not take are different diagnoses.
             until: What makes it true - `Appears`, `Gone`, `Changed`, or a
                 callable. None presses once and returns.
             timeout: Seconds before giving up, in total.
@@ -363,7 +408,7 @@ class UI:
             StaleElement: The target was there and had gone by the time it was
                 pressed.
         """
-        from keyhac.core.fill import press
+        from keyhac.core.act import act_on
 
         target = self.wait(
             lambda: (within if within is not None else self.window()) is not None
@@ -374,11 +419,17 @@ class UI:
         # finding it and acting on it, and a press aimed at what used to be
         # there is the silent wrong thing this API exists to refuse.
         target.reread()
-        return self._until(lambda: press(target), until, timeout, retry_every,
-                           what=f"clicking {locator}") or target
 
-    def send_key(self, keys: str, until=None, timeout: float = 10.0,
-                 retry_every: float = 2.0):
+        def act():
+            # AX from a worker goes through the loop thread; the ladder reads
+            # geometry, hit-tests and injects a click, all of which are its.
+            return self.on_main_thread(lambda: act_on(target.element))
+
+        return self._until(act, until, timeout, retry_every,
+                           what=f"clicking {locator}", given=given) or target
+
+    def send_key(self, keys: str, given=None, until=None,
+                 timeout: float = 10.0, retry_every: float = 2.0):
         """Send a key expression, and say what "it arrived" means.
 
         ```python
@@ -392,6 +443,9 @@ class UI:
 
         Args:
             keys: A key expression, as `InputContext.send_key` takes it.
+            given: What must hold before each attempt - `Front` is the one
+                this verb is usually given, because a keystroke goes to
+                whatever is in front rather than to whatever you meant.
             until: What makes it true; None sends it once.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before sending
@@ -408,24 +462,32 @@ class UI:
                 ctx.send_key(keys)
 
         return self._until(send, until, timeout, retry_every,
-                           what=f"sending {keys!r}")
+                           what=f"sending {keys!r}", given=given)
 
-    def _until(self, act, until, timeout: float, retry_every: float, what: str):
-        """Act, watch, act again - the one loop the verbs share.
+    def _until(self, act, until, timeout: float, retry_every: float, what: str,
+               given=None):
+        """Wait for the precondition, act, watch, act again - the one loop
+        the verbs share, and the one an action no longer writes.
 
         lazydocs: ignore
         """
         from keyhac.core.wait import WaitTimeout, _refuse_to_block_the_loop
 
-        if until is None:
+        if until is None and given is None:
             act()
             return None
-        _refuse_to_block_the_loop("click/send_key with until=")
+        _refuse_to_block_the_loop("a verb with given= or until=")
+        deadline = time.monotonic() + timeout
+        if until is None:
+            self._hold(given, deadline, what)
+            act()
+            return None
         check = until if callable(until) else None
         baseline = None if check else until.baseline(self)
-        deadline = time.monotonic() + timeout
         attempts = 0
         while True:
+            if given is not None:
+                self._hold(given, deadline, what)
             act()
             attempts += 1
             edge = min(time.monotonic() + retry_every, deadline)
@@ -440,6 +502,27 @@ class UI:
                 raise WaitTimeout(
                     f"{what} did not take: waited {timeout:.0f}s for "
                     f"{until} over {attempts} attempts")
+
+    def _hold(self, given, deadline: float, what: str):
+        """Wait for a precondition, and fail as a precondition.
+
+        Named apart from the postcondition on purpose: "the world was not
+        ready" and "the act did not take" want different repairs, and a
+        message that says which is the difference between a fix and a guess.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.wait import WaitTimeout
+
+        check = given if callable(given) else None
+        while True:
+            got = check() if check else given.check(self, None)
+            if got:
+                return got
+            if time.monotonic() >= deadline:
+                raise WaitTimeout(
+                    f"{what} never started: waited for {given}")
+            time.sleep(_POLL)
 
     # -- writing -------------------------------------------------------------
 

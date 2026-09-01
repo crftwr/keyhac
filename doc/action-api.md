@@ -58,6 +58,7 @@ The cheap way into the text layer: the pointer is usually already over the line 
 ```python
 click(
     within=None,
+    given=None,
     until=None,
     timeout: 'float' = 10.0,
     retry_every: 'float' = 2.0,
@@ -76,11 +77,15 @@ ui.click(role="Button", name="Save", within=dialog,
 
 **Without `until` it presses once.** A blind retry double-acts - double-save, double-submit - so the retry is the caller's to ask for, and code that does not ask is visibly the weaker code rather than silently the unlucky code. 
 
+**The act is the whole ladder** (`keyhac.core.act`): a click where the screen can prove the control is at the point about to be clicked, the platform's press behind it, the focus last. An action never writes the fallback itself, for the same reason `set_text` owns paste-then-type rather than leaving it to every caller. 
+
 
 
 **Args:**
  
  - <b>`within`</b>:  Where to look; the focused window by default. 
+ - <b>`given`</b>:  What must hold before each attempt - `Front`, `Appears`,  `Gone`, `Changed`, or a callable. The verb waits for it, and 
+ - <b>`says so distinctly when it never holds`</b>:  a precondition that failed and an act that did not take are different diagnoses. 
  - <b>`until`</b>:  What makes it true - `Appears`, `Gone`, `Changed`, or a  callable. None presses once and returns. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  again. 
@@ -221,6 +226,7 @@ Put the clipboard back the way it was afterwards.
 ```python
 send_key(
     keys: 'str',
+    given=None,
     until=None,
     timeout: 'float' = 10.0,
     retry_every: 'float' = 2.0
@@ -240,6 +246,7 @@ Nothing can confirm a keystroke arrived - the application may be starting, may h
 **Args:**
  
  - <b>`keys`</b>:  A key expression, as `InputContext.send_key` takes it. 
+ - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant. 
  - <b>`until`</b>:  What makes it true; None sends it once. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  again. 
