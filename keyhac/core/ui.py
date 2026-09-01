@@ -176,6 +176,53 @@ class UI:
         with preserve_clipboard():
             yield
 
+    @contextlib.contextmanager
+    def content_access(self, target: UINode | None = None):
+        """Turn content access on for the block, and hand it back afterwards.
+
+        ```python
+        with self.ui.content_access():
+            ...
+        ```
+
+        `enable_content_access()` on its own is the one call that changes
+        another application and leaves it changed: nothing turns it off, so
+        the flag outlives the action, the key press and the session. That is
+        not tidiness - it decides behaviour. A press into a Chromium
+        application's *content* is live only while the flag is set, so an
+        action that leaves it on makes the next unrelated press work for
+        reasons nobody chose, and one that never set it makes the same press
+        do nothing at all while reporting success.
+
+        **It does not wait for the application to act on it.** Measured on VS
+        Code: the write is accepted at once and the tree is readable at once,
+        but a *press* only starts working about two seconds later. Waiting
+        here would put that stall in front of every action, to buy what a
+        verified retry gets for nothing - act, check the postcondition, act
+        again (discussion #98). Reading, which is what an action does first,
+        needs no wait at all.
+
+        Nested blocks are counted, so an inner one does not hand back what an
+        outer one still needs. Two different applications at once is not
+        something this counts - an action works in one at a time.
+
+        Args:
+            target: A node in the application, or None for the focused one.
+
+        Yields:
+            Whether the platform did anything (False on Windows, which needs
+            nothing equivalent).
+        """
+        depth = getattr(self, "_content_access_depth", 0)
+        enabled = self.enable_content_access(target, True) if depth == 0 else False
+        self._content_access_depth = depth + 1
+        try:
+            yield enabled or depth > 0
+        finally:
+            self._content_access_depth -= 1
+            if self._content_access_depth == 0 and enabled:
+                self.enable_content_access(target, False)
+
     # -- platform differences, exposed so they can be ignored ----------------
 
     def enable_content_access(self, target: UINode | None = None,

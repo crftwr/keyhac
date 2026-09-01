@@ -9,6 +9,8 @@ loop thread itself, and a node is a snapshot rather than a live view.
 
 import threading
 
+import time
+
 import pytest
 
 from keyhac.core.uitree import UINode
@@ -373,3 +375,60 @@ def test_enable_content_access_reaches_the_application(ui):
     application.parent = lambda: None
     assert api.enable_content_access(api.node(element)) is True
     assert asked == [True]
+
+
+def _wired(ui):
+    """The api and the list of enable/disable calls that reach the app."""
+    api, element = ui
+    asked = []
+
+    class AppElement(FakeElement):
+        def set_manual_accessibility(self, enable=True):
+            asked.append(enable)
+
+    application = AppElement("Application", key="app")
+    element.parent = lambda: application
+    application.parent = lambda: None
+    return api, api.node(element), asked
+
+
+def test_content_access_hands_it_back(ui):
+    """The one call that changes another application and leaves it changed -
+    so the block is what turns it off, on every way out."""
+    api, node, asked = _wired(ui)
+    with api.content_access(node) as enabled:
+        assert enabled is True
+        assert asked == [True]
+    assert asked == [True, False]
+
+
+def test_content_access_hands_it_back_when_the_block_raises(ui):
+    """The paths that matter: an action raises PreconditionFailed, a
+    WaitTimeout, or ActionCancelled long before it reaches its last line."""
+    api, node, asked = _wired(ui)
+    with pytest.raises(ValueError):
+        with api.content_access(node):
+            raise ValueError("boom")
+    assert asked == [True, False]
+
+
+def test_content_access_does_not_wait_for_it_to_take_effect(ui):
+    """Asynchronous on purpose: measured on VS Code the write is accepted at
+    once and the tree is readable at once, but a press only works about two
+    seconds later. Waiting here would stall every action to buy what a
+    verified retry gets for nothing."""
+    api, node, _asked = _wired(ui)
+    started = time.monotonic()
+    with api.content_access(node):
+        pass
+    assert time.monotonic() - started < 0.5
+
+
+def test_nested_blocks_are_counted(ui):
+    """An inner block must not hand back what the outer one still needs."""
+    api, node, asked = _wired(ui)
+    with api.content_access(node):
+        with api.content_access(node):
+            pass
+        assert asked == [True], "the inner exit turned it off"
+    assert asked == [True, False]
