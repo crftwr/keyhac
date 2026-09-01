@@ -97,13 +97,25 @@ class Appears:
 
     def check(self, ui, baseline):
         """lazydocs: ignore"""
+        locator = self._locator()
+        if self.app is not None and locator:
+            # A control somewhere in this application, when *which* window is
+            # the question the action cannot answer first: the tab strip is in
+            # the browser window, but the application also owns a print dialog
+            # and an untitled download popup, and they come and go.
+            for window in ui.windows(app=self.app):
+                if self.title is not None and window.name != self.title:
+                    continue
+                found = window.find(**locator)
+                if found:
+                    return found
+            return None
         if self.title is not None or self.app is not None:
-            found = ui.window(app=self.app, title=self.title)
-            return found
+            return ui.window(app=self.app, title=self.title)
         root = self.within if self.within is not None else ui.window()
         if root is None:
             return None
-        return root.find(**self._locator())
+        return root.find(**locator)
 
     def __str__(self):
         parts = self._locator()
@@ -337,10 +349,18 @@ class UI:
         a faster one it fails *silently*, acting on a screen that has not
         arrived.
 
+        `condition` may also be an `Appears` / `Gone` / `Changed` / `Front`
+        rather than a callable - the same question without the lambda, and
+        without the predicate helper an action grows to hold the lambda.
+
         Raises:
             WaitTimeout: The condition never became true.
         """
         from keyhac.core.wait import wait_for
+        if not callable(condition):
+            value = condition
+            message = message or str(value)
+            condition = lambda: value.check(self, None)
         return wait_for(condition, timeout=timeout, message=message,
                         interval=interval)
 
@@ -356,8 +376,8 @@ class UI:
     Gone = Gone
     Changed = Changed
 
-    def click(self, within=None, given=None, until=None, timeout: float = 10.0,
-              retry_every: float = 2.0, **locator):
+    def click(self, node=None, within=None, given=None, until=None,
+              timeout: float = 10.0, retry_every: float = 2.0, **locator):
         """Find one control and press it, and say what "it worked" means.
 
         ```python
@@ -384,6 +404,9 @@ class UI:
         rather than leaving it to every caller.
 
         Args:
+            node: A node already in hand, instead of a locator - the third row
+                of a list an earlier step enumerated is a thing no locator
+                says well.
             within: Where to look; the focused window by default.
             given: What must hold before each attempt - `Front`, `Appears`,
                 `Gone`, `Changed`, or a callable. The verb waits for it, and
@@ -410,11 +433,15 @@ class UI:
         """
         from keyhac.core.act import act_on
 
-        target = self.wait(
-            lambda: (within if within is not None else self.window()) is not None
-            and (within if within is not None else self.window()).find(**locator),
-            timeout=timeout,
-            message=f"a control matching {locator} to appear")
+        if node is not None:
+            target = node
+        else:
+            target = self.wait(
+                lambda: (within if within is not None else self.window())
+                is not None
+                and (within if within is not None else self.window()).find(**locator),
+                timeout=timeout,
+                message=f"a control matching {locator} to appear")
         # The precondition #61 asks for: the screen may have moved between
         # finding it and acting on it, and a press aimed at what used to be
         # there is the silent wrong thing this API exists to refuse.
@@ -426,7 +453,8 @@ class UI:
             return self.on_main_thread(lambda: act_on(target.element))
 
         return self._until(act, until, timeout, retry_every,
-                           what=f"clicking {locator}", given=given) or target
+                           what=f"clicking {locator or target!r}",
+                           given=given) or target
 
     def send_key(self, keys: str, given=None, until=None,
                  timeout: float = 10.0, retry_every: float = 2.0):
