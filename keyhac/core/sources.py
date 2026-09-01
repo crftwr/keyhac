@@ -14,6 +14,7 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import time
 import traceback
 
 from keyhac.core.candidate import Candidate
@@ -279,6 +280,259 @@ class MenuItemsSource(CandidateSource):
         if not _press(candidate.payload):
             logger.error(f"{candidate.display}: the menu item refused to "
                          f"be pressed.")
+
+
+#: How far up from the element the screen reports at a point to look for the
+#: one being pressed.  The point tested is the middle of the control, so what
+#: is at it is usually the control's own label rather than the control - two
+#: levels in VS Code, a text node inside a group inside the tab.  Ten leaves
+#: room for a deeper skin without letting a miss walk all the way up to the
+#: window.
+_HIT_TEST_DEPTH = 10
+
+
+def _click_control(element, what: str = "") -> bool:
+    """Click `element` where it is on the screen, if the screen agrees that
+    is where it is.  False means it could not be proven, not that it failed.
+
+    **An accessibility press is accepted by applications that then do
+    nothing.** Measured in VS Code on macOS, 8/8 either way: with
+    `AXEnhancedUserInterface` unset, AXPress on the panel's Problems tab and
+    on the activity bar's Search returns success and moves nothing; with it
+    set, the same presses switch the panel and the sidebar. It is Chromium's
+    *rendered content* that is conditional, not Electron: Chrome's own toolbar
+    is Views in the browser process and answers a press unconditionally, while
+    a button in the page it is showing does not - which is why a chooser row
+    can look like it works in Chrome and not in VS Code, whose entire UI is
+    the page. Unset is the normal state, since Keyhac asks for
+    that flag only through `keymap.ui.enable_content_access()`, which is the
+    AI integration's to call. A chooser must not call it: it also puts VS
+    Code into its screen-reader-optimised rendering, which is why enabling it
+    is an explicit call and never something a walk does on its own
+    (`platform/mac/uielement.py`). The row said "press this", the press said
+    yes, and the panel did not move - a silent wrong thing with no error to
+    report, which is why the press is no longer the first thing tried.
+
+    A real click is what the row meant anyway: this source lists what you
+    could click, and a click is the one thing no widget can accept and
+    ignore.
+
+    **What makes it safe is the hit test.** The OS is asked what is at the
+    point about to be clicked, and the click only goes out when the answer is
+    this element or something inside it. That rules out the stale rectangle,
+    the window that moved, the control scrolled out of sight and the popover
+    on top - each of which would otherwise click whatever is there instead,
+    which is worse than not clicking at all. Anything that cannot be proven
+    falls through to `_press`, which is where an off-screen control, and a
+    platform that cannot answer the question, still belong.
+
+    The pointer goes back where the user left it: parked on the control it
+    would raise a tooltip and change what their next click means.
+    """
+    keymap = Keymap.get_instance()
+    if keymap is None:
+        return False
+    rect = _rect_of(element)
+    if rect is None or rect[2] <= 0 or rect[3] <= 0:
+        return False
+    point = _centre(rect)
+    at = _is_at(element, point)
+    if at is False:
+        # The one refusal the application itself can fix.
+        moved = _scrolled_into_view(element, rect)
+        if moved is not None and moved[2] > 0 and moved[3] > 0:
+            rect, point = moved, _centre(moved)
+            at = _is_at(element, point)
+    if at is not True:
+        if at is False:
+            _report_unreachable(what or "the control")
+        else:
+            # The platform cannot answer "what is at this point?" - Windows
+            # does not verify its ElementFromPoint yet - so there is nothing
+            # to report: this is the press path, as it always was.
+            logger.debug("This platform cannot say what is at a point.")
+        return False
+    origin = keymap.cursor_pos()
+    if origin is None:
+        return False
+    try:
+        with keymap.get_input_context() as ctx:
+            ctx.send_mouse_move(point[0] - origin[0], point[1] - origin[1])
+            ctx.send_mouse_button("left")
+            ctx.send_mouse_move(origin[0] - point[0], origin[1] - point[1])
+    except Exception:
+        logger.debug("The control could not be clicked.", exc_info=True)
+        return False
+    logger.debug(f"Clicked the control at {point}.")
+    return True
+
+
+#: What "bring this into view" is called.  macOS only: the UIA counterpart is
+#: the ScrollItem pattern, which the Windows element does not wire yet - and
+#: the name is filtered against what the element offers, so nothing there logs
+#: an unknown-action warning for it.
+_SCROLL_ACTIONS = ("AXScrollToVisible",)
+
+#: How long to let a scroll land before giving up on it, and how often to look.
+#: Bounded hard because this runs on the event-loop thread: the chooser answers
+#: a selection immediately, which is the whole reason it cannot wait for
+#: content access (~2 s) either.  A scroll that has not moved the rectangle in
+#: 150 ms is one that is not going to.
+_SCROLL_SETTLE = 0.15
+_SCROLL_POLL = 0.03
+
+
+def _scrolled_into_view(element, rect) -> tuple | None:
+    """Ask for the element to be brought into view; its new rectangle, or None.
+
+    The hit test refuses to click what is not at the point, which is right,
+    but "scrolled out of sight" is the one refusal the row's own application
+    can fix. A control the user picked by name is one they want acted on, and
+    scrolling to reveal it is what a person would do before clicking it.
+
+    Only on the way to a click, never while the selection is merely moving
+    through the list: a list that scrolls the document you are reading it
+    against changes what it is describing, which is what `ChooserWindow`
+    already refuses by not confirming on a row click.
+    """
+    try:
+        available = set(element.get_action_names() or ())
+    except Exception:
+        return None
+    scrolled = False
+    for action in _SCROLL_ACTIONS:
+        if action not in available:
+            continue
+        try:
+            scrolled = bool(element.perform_action(action))
+        except Exception:
+            scrolled = False
+        if scrolled:
+            break
+    if not scrolled:
+        return None
+    deadline = time.monotonic() + _SCROLL_SETTLE
+    while True:
+        moved = _rect_of(element)
+        if moved is not None and moved != rect:
+            return moved
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(_SCROLL_POLL)
+
+
+def _report_unreachable(what: str) -> None:
+    """Say that the row could not be clicked - on screen, not only in the log.
+
+    The console is not up during a keyboard flow, so a `logger.error` alone is
+    what "nothing happened and nothing was reported" looked like before. The
+    balloon is the established way to answer a keystroke (`ReportCaretAnchor`
+    does the same), and it goes over the window rather than at the control:
+    the control not being where it said it was *is* the failure, so there is
+    nothing to point at.
+    """
+    logger.error(
+        f"{what}: could not be clicked - it is not at its rectangle (covered "
+        f"by another window, or scrolled out of view). Pressed it instead, "
+        f"which an application that draws its own controls may accept and do "
+        f"nothing with.")
+    keymap = Keymap.get_instance()
+    pop = getattr(keymap, "pop_balloon", None) if keymap is not None else None
+    if pop is None:
+        return
+    where = {}
+    try:
+        from keyhac.ui.balloon import _focused_window_rect
+        rect = _focused_window_rect(keymap)
+        if rect is not None:
+            where = {"over": rect}
+    except Exception:
+        # Placement is the nicety; the message is the point.
+        pass
+    try:
+        pop("Chooser", f"{what}: could not click it - it is not where it said "
+                       f"it was (covered, or scrolled away).", 4.0, **where)
+    except Exception:
+        logger.debug("No balloon to report the unreachable control with.")
+
+
+def _rect_of(element) -> tuple | None:
+    """Where the element is *now* - not where the walk recorded it.
+
+    The rows stream and the window stays up while the user types, so the
+    candidate's rectangle can be seconds old and the view under it can have
+    scrolled since.  The point about to be clicked has to come from the
+    element as it is.
+    """
+    describe = getattr(element, "describe", None)
+    if describe is None:
+        return None
+    try:
+        rect = describe().get("rect")
+    except Exception:
+        return None
+    if not (isinstance(rect, (tuple, list)) and len(rect) == 4):
+        return None
+    return tuple(rect)
+
+
+def _centre(rect) -> tuple:
+    return (int(rect[0] + rect[2] / 2), int(rect[1] + rect[3] / 2))
+
+
+def _is_at(element, point):
+    """Whether `point` lands on `element` rather than on something over it.
+
+    Three answers, because two of them mean different things to the user:
+    True, False (something else is there - worth saying out loud), and **None
+    for "could not ask"**, which is a platform that has no hit test rather
+    than a control that cannot be reached. Reporting the second as the first
+    would put a warning in front of every Windows press.
+
+    The element under the point is usually a descendant - the label inside the
+    button - so the answer is yes for the element itself and for anything it
+    contains, and the walk up stops at `_HIT_TEST_DEPTH`.
+    """
+    at_point = getattr(type(element), "element_at_point", None)
+    if at_point is None:
+        return None
+    try:
+        found = at_point(point[0], point[1])
+    except Exception:
+        return None
+    if found is None:
+        return None
+    for _ in range(_HIT_TEST_DEPTH):
+        if found is None:
+            return False
+        if _same_element(found, element):
+            return True
+        try:
+            found = found.parent()
+        except Exception:
+            return False
+    return False
+
+
+def _same_element(one, other) -> bool:
+    """Whether two references point at the same element.
+
+    By identity where the platform has one - macOS AX refs compare by
+    CFEqual.  Windows answers None there (its control view is a real tree, so
+    nothing pays for a runtime id) and `None == None` would make every
+    element the same one, so the description stands in: same place, same
+    role, same name is the same control for the purpose of aiming a click at
+    it.
+    """
+    key, other_key = _identity_of(one), _identity_of(other)
+    if key is not None and other_key is not None:
+        return bool(key == other_key)
+    try:
+        mine, theirs = one.describe(), other.describe()
+    except Exception:
+        return False
+    return all(mine.get(field) == theirs.get(field)
+               for field in ("role", "name", "rect"))
 
 
 #: What "press this" is called, in the order to try it - the AX names and the
@@ -796,9 +1050,26 @@ class WindowControlsSource(CandidateSource):
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
-        if not _press(candidate.payload):
-            logger.error(f"{candidate.display}: the control refused to be "
-                         f"pressed.")
+        element, what = candidate.payload, candidate.display
+
+        def act():
+            if not (_click_control(element, what) or _press(element)):
+                logger.error(f"{what}: the control refused to be pressed.")
+
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            act()
+            return
+        # One turn of the loop later, for two reasons that are the same
+        # reason. The window this row was chosen from has been asked to close
+        # but may still be on the screen, and it is the one thing guaranteed
+        # to be over a control the user just pointed at - the hit test would
+        # find it and refuse to click. And choosing happens inside the key
+        # hook's callback, because the chooser reads its keys through the
+        # hook, which is not where a click and a cross-process round trip
+        # belong (ChooserAction.__call__ has the same note, with the
+        # measurements).
+        keymap.call_on_main_thread(act)
 
 
 def _walk_controls(root):
