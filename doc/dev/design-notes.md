@@ -682,6 +682,25 @@ answer) and `given=` refuses the value outright, naming what to say instead.
 A condition that always holds is the worst failure available to this layer,
 and this was one.
 
+### One unqualified `interval`, and a word on every other one
+
+`UI.wait(interval=)` is released and means the polling gap, so that settles
+what a bare `interval` means: **how often to look**. Every other rate carries
+a word saying which it is — `retry_interval` on the verbs, how long to watch
+before acting *again*.
+
+The pair was briefly `interval` and `retry_every`, which was unreadable from
+the names alone: two different grammatical shapes, neither saying which layer
+it belonged to. A shared suffix with a discriminating prefix is the fix, and
+it leaves room — if looking ever needs exposing on a verb it arrives as
+`interval` there too, beside the released name rather than against it.
+
+Only `retry_interval` is a parameter today, because only acting again can be
+got expensively wrong: too short, and a print dialog that takes three seconds
+to open is opened three times. Looking is `wait_for`'s, whose default backs
+off — quick to notice a fast answer, cheap when the answer is slow — and one
+waiting policy for the whole codebase rather than a second one in `ui.py`.
+
 ### `given` exists because of the retry, not to save a line
 
 `ui.wait(X); verb()` and `verb(given=X)` are **the same thing when there is no

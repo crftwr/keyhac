@@ -469,21 +469,21 @@ class TestVerbs:
         button = element.kids[0]
         api.click(role="AXButton", name="Save",
                   until=lambda: button.pressed >= 3,
-                  timeout=5.0, retry_every=0.05)
+                  timeout=5.0, retry_interval=0.05)
         assert button.pressed == 3
 
     def test_a_postcondition_that_never_holds_is_a_loud_failure(self, ui):
         api, element = ui
         with pytest.raises(WaitTimeout) as error:
             api.click(role="AXButton", name="Save", until=lambda: False,
-                      timeout=0.3, retry_every=0.05)
+                      timeout=0.3, retry_interval=0.05)
         assert "attempts" in str(error.value)
 
     def test_appears_hands_back_what_it_found(self, ui):
         api, element = ui
         found = api.click(role="AXButton", name="Save",
                           until=api.Appears(role="AXCheckBox", name="Archived"),
-                          timeout=1.0, retry_every=0.05)
+                          timeout=1.0, retry_interval=0.05)
         assert found.identifier == "arch"
 
     def test_changed_reads_the_target_before_acting(self, ui):
@@ -495,7 +495,7 @@ class TestVerbs:
             lambda name: checkbox._describe.__setitem__("value", 1))
         node = api.node(checkbox)
         api.click(role="AXCheckBox", name="Archived", until=api.Changed(node),
-                  timeout=1.0, retry_every=0.05)
+                  timeout=1.0, retry_interval=0.05)
         assert checkbox._describe["value"] == 1
 
     def test_gone_is_satisfied_when_the_target_has_left(self, ui):
@@ -584,7 +584,7 @@ class TestVerbs:
             lambda name: checkbox._describe.__setitem__("value", True))
         node = api.node(checkbox)
         api.click(node=node, until=api.Reads(node, value="True"),
-                  timeout=1.0, retry_every=0.05)
+                  timeout=1.0, retry_interval=0.05)
         assert checkbox._describe["value"] is True
 
     def test_activate_asks_and_then_waits_for_the_front(self, ui):
@@ -599,7 +599,7 @@ class TestVerbs:
     def test_activate_that_never_comes_forward_is_a_loud_failure(self, ui):
         api, _element = ui
         with pytest.raises(WaitTimeout):
-            api.activate(app="Nothing There", timeout=0.3, retry_every=0.05)
+            api.activate(app="Nothing There", timeout=0.3, retry_interval=0.05)
 
     def test_the_three_slots_take_the_same_two_types(self, ui):
         """One vocabulary: a callable or a value, in wait, given and until.
@@ -610,7 +610,7 @@ class TestVerbs:
         api.click(role="AXButton", name="Save",
                   given=api.Appears(role="AXButton", name="Save"),
                   until=lambda: button.pressed >= 1, timeout=1,
-                  retry_every=0.05)
+                  retry_interval=0.05)
 
     def test_a_wait_on_changed_remembers_when_it_started(self, ui):
         """Without a baseline it read as "anything at all" and returned at
@@ -652,5 +652,5 @@ class TestVerbs:
         button = element.kids[0]
         api.click(role="AXButton", name="Save",
                   until=lambda: button.pressed >= 2,
-                  timeout=3.0, retry_every=0.1)
+                  timeout=3.0, retry_interval=0.1)
         assert button.pressed == 2

@@ -48,7 +48,7 @@ activate(
     app: 'str' = None,
     title: 'str' = None,
     timeout: 'float' = 10.0,
-    retry_every: 'float' = 2.0
+    retry_interval: 'float' = 2.0
 )
 ```
 
@@ -67,7 +67,7 @@ An act with a postcondition, which is what makes it a verb rather than a wrapper
  - <b>`app`</b>:  Application pattern, as `window()` takes it. 
  - <b>`title`</b>:  Window title pattern. 
  - <b>`timeout`</b>:  Seconds before giving up. 
- - <b>`retry_every`</b>:  Seconds to watch before asking again - an  application starting up can take more than one ask. 
+ - <b>`retry_interval`</b>:  Seconds to watch before asking again - an  application starting up can take more than one ask. 
 
 
 
@@ -103,7 +103,7 @@ click(
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_every: 'float' = 2.0,
+    retry_interval: 'float' = 2.0,
     **locator
 )
 ```
@@ -115,7 +115,7 @@ ui.click(role="Button", name="Save", within=dialog,
           until=Appears(identifier="save-panel"))
 ``` 
 
-**The platform's answer is not evidence.** An accessibility press is accepted by applications that then do nothing with it - measured, an `AXPress` on a control drawn by a Chromium application returns success and moves nothing unless that application has been told an assistive client is present. So `until` is how a caller says what to look for, and the press is repeated every `retry_every` until it holds. 
+**The platform's answer is not evidence.** An accessibility press is accepted by applications that then do nothing with it - measured, an `AXPress` on a control drawn by a Chromium application returns success and moves nothing unless that application has been told an assistive client is present. So `until` is how a caller says what to look for, and the press is repeated every `retry_interval` until it holds. 
 
 **Without `until` it presses once.** A blind retry double-acts - double-save, double-submit - so the retry is the caller's to ask for, and code that does not ask is visibly the weaker code rather than silently the unlucky code. 
 
@@ -131,7 +131,7 @@ ui.click(role="Button", name="Save", within=dialog,
  - <b>`that is the whole reason it is a parameter`</b>:  with no `until` it is only sugar for `wait()` then the call, but with one, a hoisted `wait()` guards the first attempt and nothing after it. It also fails distinctly - a precondition that never held and an act that did not take are different diagnoses. 
  - <b>`until`</b>:  What makes it true - what *this act* produces, which is  the definition of it having landed, and a separate clause only  because the platform lies about success. Waiting here for  something the act does not cause fires it again and again into  a door that is not open. None presses once and returns. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
- - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  *again* - the only rate here, because how often to *look* is  `wait_for`'s backing-off default and cannot be got expensively 
+ - <b>`retry_interval`</b>:  Seconds to watch the postcondition before pressing  *again* - the only rate here, because how often to *look* is  `wait_for`'s backing-off default and cannot be got expensively 
  - <b>`wrong, while pressing again can`</b>:  too short, and a dialog that takes three seconds to open gets pressed three times. 
  - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
 
@@ -273,7 +273,7 @@ send_key(
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_every: 'float' = 2.0
+    retry_interval: 'float' = 2.0
 )
 ```
 
@@ -293,7 +293,7 @@ Nothing can confirm a keystroke arrived - the application may be starting, may h
  - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant, and  what was in front when the first attempt went out need not  be in front for the second. 
  - <b>`until`</b>:  What makes it true; None sends it once. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
- - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  *again*; how often to look is not a parameter, for the reason  `click` gives. 
+ - <b>`retry_interval`</b>:  Seconds to watch the postcondition before sending  *again*; how often to look is not a parameter, for the reason  `click` gives. 
 
 
 

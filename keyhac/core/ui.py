@@ -473,7 +473,7 @@ class UI:
     def click(self, node=None, within=None,
               given: Condition | Callable[[], Any] = None,
               until: Condition | Callable[[], Any] = None,
-              timeout: float = 10.0, retry_every: float = 2.0, **locator):
+              timeout: float = 10.0, retry_interval: float = 2.0, **locator):
         """Find one control and press it, and say what "it worked" means.
 
         ```python
@@ -486,7 +486,7 @@ class UI:
         `AXPress` on a control drawn by a Chromium application returns success
         and moves nothing unless that application has been told an assistive
         client is present. So `until` is how a caller says what to look for,
-        and the press is repeated every `retry_every` until it holds.
+        and the press is repeated every `retry_interval` until it holds.
 
         **Without `until` it presses once.** A blind retry double-acts -
         double-save, double-submit - so the retry is the caller's to ask for,
@@ -518,7 +518,7 @@ class UI:
                 something the act does not cause fires it again and again into
                 a door that is not open. None presses once and returns.
             timeout: Seconds before giving up, in total.
-            retry_every: Seconds to watch the postcondition before pressing
+            retry_interval: Seconds to watch the postcondition before pressing
                 *again* - the only rate here, because how often to *look* is
                 `wait_for`'s backing-off default and cannot be got expensively
                 wrong, while pressing again can: too short, and a dialog that
@@ -558,12 +558,12 @@ class UI:
             # geometry, hit-tests and injects a click, all of which are its.
             return self.on_main_thread(lambda: act_on(target.element))
 
-        return self._until(act, until, timeout, retry_every,
+        return self._until(act, until, timeout, retry_interval,
                            what=f"clicking {locator or target!r}",
                            given=given) or target
 
     def activate(self, app: str = None, title: str = None,
-                 timeout: float = 10.0, retry_every: float = 2.0):
+                 timeout: float = 10.0, retry_interval: float = 2.0):
         """Bring a window to the front, and wait until it really is.
 
         ```python
@@ -580,7 +580,7 @@ class UI:
             app: Application pattern, as `window()` takes it.
             title: Window title pattern.
             timeout: Seconds before giving up.
-            retry_every: Seconds to watch before asking again - an
+            retry_interval: Seconds to watch before asking again - an
                 application starting up can take more than one ask.
 
         Returns:
@@ -596,12 +596,12 @@ class UI:
             return self.on_main_thread(bring)
 
         return self._until(act, Front(app=app, title=title), timeout,
-                           retry_every, what=f"activating {app or title!r}")
+                           retry_interval, what=f"activating {app or title!r}")
 
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,
                  until: Condition | Callable[[], Any] = None,
-                 timeout: float = 10.0, retry_every: float = 2.0):
+                 timeout: float = 10.0, retry_interval: float = 2.0):
         """Send a key expression, and say what "it arrived" means.
 
         ```python
@@ -622,7 +622,7 @@ class UI:
                 be in front for the second.
             until: What makes it true; None sends it once.
             timeout: Seconds before giving up, in total.
-            retry_every: Seconds to watch the postcondition before sending
+            retry_interval: Seconds to watch the postcondition before sending
                 *again*; how often to look is not a parameter, for the reason
                 `click` gives.
 
@@ -636,10 +636,10 @@ class UI:
             with self._keymap.get_input_context() as ctx:
                 ctx.send_key(keys)
 
-        return self._until(send, until, timeout, retry_every,
+        return self._until(send, until, timeout, retry_interval,
                            what=f"sending {keys!r}", given=given)
 
-    def _until(self, act, until, timeout: float, retry_every: float, what: str,
+    def _until(self, act, until, timeout: float, retry_interval: float, what: str,
                given=None):
         """Wait for the precondition, act, watch, act again - the one loop
         the verbs share, and the one an action no longer writes.
@@ -648,16 +648,25 @@ class UI:
             repeat:
                 wait for given()                    # the gate
                 act()                               # the one costly line
-                watch until() for retry_every       # or until the deadline
+                watch until() for retry_interval       # or until the deadline
                 if it held: return what it held with
             fail
 
         **One rate, deliberately.** Looking is `wait_for`'s business and uses
         its backing-off default, which is right for a watch that wants to
         notice a fast answer at once and cost little when the answer is slow.
-        Only `retry_every` is a parameter, because only acting again can be
+        Only `retry_interval` is a parameter, because only acting again can be
         expensive to get wrong: too small and a print dialog that takes three
         seconds gets three Cmd-Ps and opens three times.
+
+        **The naming rule, for whoever adds the next one.** A bare `interval`
+        is the *polling* one - that is what it means in `UI.wait`, which is
+        released and settles the question - and every other interval carries
+        a word saying which it is. So `retry_interval` here, and if looking
+        ever does need exposing it arrives as `interval` on these verbs too,
+        beside rather than against the released name. Two unqualified names
+        for two different rates is what made this pair unreadable when it was
+        `interval` and `retry_every`.
 
         lazydocs: ignore
         """
@@ -682,7 +691,7 @@ class UI:
                 self._hold(given, deadline, what)
             act()
             attempts += 1
-            window = min(retry_every, deadline - time.monotonic())
+            window = min(retry_interval, deadline - time.monotonic())
             try:
                 return wait_for(holds, timeout=max(window, 0.0),
                                 message=str(until))
