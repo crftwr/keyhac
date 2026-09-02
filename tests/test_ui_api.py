@@ -486,26 +486,14 @@ class TestVerbs:
                           timeout=1.0, retry_interval=0.05)
         assert found.identifier == "arch"
 
-    def test_changed_reads_the_target_before_acting(self, ui):
-        """The baseline has to be taken before the act. Taken after, every
-        Changed compares equal to itself and nothing is ever satisfied."""
-        api, element = ui
-        checkbox = element.kids[1]
-        checkbox.perform_action = (
-            lambda name: checkbox._describe.__setitem__("value", 1))
-        node = api.node(checkbox)
-        api.click(role="AXCheckBox", name="Archived", until=api.Changed(node),
-                  timeout=1.0, retry_interval=0.05)
-        assert checkbox._describe["value"] == 1
-
     def test_gone_is_satisfied_when_the_target_has_left(self, ui):
         """The described form, which is the one that works for a row removed
         from a list rather than a window that closed."""
         api, element = ui
         described = api.Appears(role="AXCheckBox", name="Archived")
-        assert not api.Gone(described).check(api, None)
+        assert not api.Gone(described).check(api)
         element.kids.remove(element.kids[1])
-        assert api.Gone(described).check(api, None)
+        assert api.Gone(described).check(api)
 
     def test_a_verb_that_waits_refuses_the_loop_thread(self, ui):
         """Waiting there would hold the keyboard hook for the length of it."""
@@ -538,8 +526,8 @@ class TestVerbs:
 
     def test_front_matches_the_active_window(self, ui):
         api, _element = ui
-        assert api.Front(app="TestApp").check(api, None)
-        assert not api.Front(app="Something Else").check(api, None)
+        assert api.Front(app="TestApp").check(api)
+        assert not api.Front(app="Something Else").check(api)
 
     def test_a_precondition_that_never_holds_fails_as_one(self, ui):
         """"The world was not ready" and "the act did not take" want
@@ -564,9 +552,9 @@ class TestVerbs:
         api, element = ui
         checkbox = element.kids[1]
         node = api.node(checkbox)
-        assert not api.Reads(node, value="True").check(api, None)
+        assert not api.Reads(node, value="True").check(api)
         checkbox._describe["value"] = True
-        assert api.Reads(node, value="True").check(api, None)
+        assert api.Reads(node, value="True").check(api)
 
     def test_reads_compares_the_value_as_text(self, ui):
         """macOS answers AXValue True, Windows a toggle state - the caller
@@ -575,7 +563,7 @@ class TestVerbs:
         checkbox = element.kids[1]
         checkbox._describe["value"] = True
         node = api.node(checkbox)
-        assert api.Reads(node, value="True").check(api, None)
+        assert api.Reads(node, value="True").check(api)
 
     def test_a_click_waits_for_the_state_rather_than_the_difference(self, ui):
         api, element = ui
@@ -586,6 +574,11 @@ class TestVerbs:
         api.click(node=node, until=api.Reads(node, value="True"),
                   timeout=1.0, retry_interval=0.05)
         assert checkbox._describe["value"] is True
+
+    def test_changed_reads_the_target_before_acting(self, ui):
+        """Kept as a marker: difference-waiting is gone from the surface."""
+        api, _element = ui
+        assert not hasattr(api, "Changed")
 
     def test_activate_asks_and_then_waits_for_the_front(self, ui):
         """Asking a window to activate is not the same as it being in front,
@@ -612,24 +605,34 @@ class TestVerbs:
                   until=lambda: button.pressed >= 1, timeout=1,
                   retry_interval=0.05)
 
-    def test_a_wait_on_changed_remembers_when_it_started(self, ui):
-        """Without a baseline it read as "anything at all" and returned at
-        once - a condition that silently always holds, which is the failure
-        this whole value is prone to."""
-        api, element = ui
-        checkbox = element.kids[1]
-        node = api.node(checkbox)
-        with pytest.raises(WaitTimeout):
-            api.wait(api.Changed(node), timeout=0.3)
+    def test_stable_is_refused_as_a_postcondition(self, ui):
+        """Quiet is the absence of change, so it is satisfied by the calm
+        before the act's effect starts as readily as the calm after - a race
+        built into the meaning."""
+        api, _element = ui
+        with pytest.raises(ValueError, match="calm before"):
+            api.click(role="AXButton", name="Save",
+                      until=api.Stable(quiet=0.01), timeout=1)
 
-    def test_changed_is_refused_as_a_precondition(self, ui):
-        """"Changed since when?" has no answer before the act, and answering
-        it with "always" is worse than saying so."""
+    def test_stable_cannot_be_asked_at_an_instant(self, ui):
+        """A single look cannot answer "has it been quiet"."""
+        api, _element = ui
+        with pytest.raises(TypeError, match="stretch of time"):
+            api.Stable().check(api)
+
+    def test_stable_waits_in_a_wait_of_its_own(self, ui):
+        """"Let it finish, then read" - the case the postcondition cannot
+        serve, and the one the re-render actually needs."""
+        api, _element = ui
+        assert api.wait(api.Stable(quiet=0.05), timeout=3) is not None
+
+    def test_stable_gates_an_act(self, ui):
+        """"Do not act into a screen that is still moving"."""
         api, element = ui
-        node = api.node(element.kids[1])
-        with pytest.raises(ValueError, match="no before"):
-            api.click(role="AXButton", name="Save", given=api.Changed(node),
-                      until=lambda: True, timeout=1)
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save",
+                  given=api.Stable(quiet=0.05), timeout=3)
+        assert button.pressed == 1
 
     def test_every_value_is_a_condition(self, ui):
         """One base class, so the three slots have a name to be annotated
@@ -638,10 +641,12 @@ class TestVerbs:
 
         api, _element = ui
         for value in (api.Appears, api.Front, api.Gone, api.Reads,
-                      api.Changed):
+                      api.Stable):
             assert issubclass(value, Condition)
-        assert api.Changed.needs_baseline
-        assert not api.Reads.needs_baseline
+        assert not api.Stable.postcondition
+        assert api.Reads.postcondition
+        assert not hasattr(api, "Changed"), \
+            "difference-waiting was taken out of the public surface"
 
     def test_only_acting_again_is_a_rate(self, ui):
         """How often to *look* is `wait_for`'s backing-off default and not a

@@ -717,7 +717,7 @@ Two smaller reasons, neither load-bearing: the failure message names the guard
 front window…`), which matters under a premise of mechanical diagnosis; and
 one call per step is one shape for a generator to get right rather than two.
 
-### Settling is a `given`, never an `until`
+### `Stable` is a `given`, never an `until` — and `Changed` is gone
 
 Run `Stable` (the screen has stopped moving) through the same test and it
 falls out. It is not something an act *produces* — it is the absence of change
@@ -732,10 +732,26 @@ business at all — it is the *next* step's precondition, or a bare
 `ui.wait(Stable(...))` before a read.
 
 And the rule that generalises: where a state can be named, name it —
-`Appears(text="page 2")`, `Reads(row, value=…)`. **`Stable` is to timing what
-`Changed` is to state**: the escape for what cannot be named, easy to reach
-for and usually the wrong answer. That is the shape the settle question in #98
-takes: not "add `until=Stable`", but "add `Stable` as a `given`-only value".
+`Appears(text="page 2")`, `Reads(row, value=…)`. `Stable` is the escape for
+what cannot be named, and an escape is easy to reach for, so it says so in its
+own docstring.
+
+`Changed` — the same escape for *state* rather than timing — **was taken out
+of the public surface**, having been the thing that was wrong three times: it
+is a difference-wait, which the authoring rule above exists to warn against;
+it held immediately wherever no baseline was remembered, which was silent; and
+its timing twin turned out to need refusing as a postcondition for a third
+reason again. `Reads` says what `Changed` was reached for, and says it
+correctly. The whole baseline mechanism went with it — nothing else needed a
+remembered moment, and an abstraction kept for a future caller is one nobody
+has specified.
+
+`Stable` is refused as an `until` by the API rather than by documentation
+(`Condition.postcondition`), and it cannot be asked at an instant at all: its
+`check()` raises, because a single look cannot answer "has it been quiet".
+It brings its own `wait()`, which is `wait_for_stable` — the one value whose
+question is about a stretch of time, and the reason `Condition` has a `wait()`
+at all.
 
 ## There is no Menu page on Windows
 

@@ -324,7 +324,7 @@ Block until `condition()` is truthy, and return what it returned.
 For a wait that is not "an element appeared" or "an element went away" 
 - those are `node.wait_for()` and `node.wait_until_gone()`. Never `sleep`: a fixed delay passes on the machine it was written on, and on a faster one it fails *silently*, acting on a screen that has not arrived. 
 
-`condition` may also be an `Appears` / `Gone` / `Changed` / `Front` rather than a callable - the same question without the lambda, and without the predicate helper an action grows to hold the lambda. 
+`condition` may also be an `Appears` / `Front` / `Gone` / `Reads` / `Stable` rather than a callable - the same question without the lambda, and without the predicate helper an action grows to hold the lambda. 
 
 **This is the wait for what something else causes** - a file appearing, a job finishing, a window someone else opens - where waiting is the whole strategy because nothing you could do would help. What your own act causes is a verb's `until=`; what has to be true before your act goes out is its `given=`. 
 

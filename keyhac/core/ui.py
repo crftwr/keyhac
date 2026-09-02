@@ -56,29 +56,31 @@ class Condition:
     *which slot*, which is the question of who causes the thing being waited
     for. See `doc/dev/design-notes.md`.
 
-    A subclass answers `check(ui, baseline)` with something truthy - the node
-    it found, where there is one, so waiting for a thing and receiving it are
-    one motion. `baseline()` is for the few that ask about a change rather
-    than a state, and `needs_baseline` says so, because a slot with no before
-    must refuse them rather than hold immediately.
+    A subclass answers `check(ui)` with something truthy - the node it found,
+    where there is one, so waiting for a thing and receiving it are one
+    motion. `postcondition` is False for a value that must not be used as
+    one, and `wait()` is here for the value whose question is about a stretch
+    of time rather than an instant, which polling a predicate cannot ask.
     """
 
-    #: True for a value that compares against a remembered moment.
-    needs_baseline = False
+    #: False for a value that cannot honestly say "my act produced this".
+    postcondition = True
 
-    def baseline(self, ui):
-        """What to remember before the act, for `check` to compare against.
-
-        lazydocs: ignore
-        """
-        return None
-
-    def check(self, ui, baseline):
+    def check(self, ui):
         """Whether it holds, and what it holds *with*.
 
         lazydocs: ignore
         """
         raise NotImplementedError
+
+    def wait(self, ui, timeout: float, message: str = None):
+        """Block until it holds. Polling `check` unless a value knows better.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.wait import wait_for
+        return wait_for(lambda: self.check(ui), timeout=timeout,
+                        message=message or str(self))
 
 
 @dataclass(frozen=True)
@@ -121,7 +123,7 @@ class Appears(Condition):
                 found[bound] = getattr(self, bound)
         return found
 
-    def check(self, ui, baseline):
+    def check(self, ui):
         """lazydocs: ignore"""
         locator = self._locator()
         if self.app is not None and locator:
@@ -165,7 +167,7 @@ class Front(Condition):
     app: str = None
     title: str = None
 
-    def check(self, ui, baseline):
+    def check(self, ui):
         """lazydocs: ignore"""
         from keyhac.core.focus import match_window_fields
         provider = getattr(ui._keymap, "window_provider", None)
@@ -193,10 +195,10 @@ class Gone(Condition):
 
     target: Any = None
 
-    def check(self, ui, baseline):
+    def check(self, ui):
         """lazydocs: ignore"""
         if isinstance(self.target, Appears):
-            return not self.target.check(ui, None)
+            return not self.target.check(ui)
         node = self.target
         if node is None:
             return True
@@ -242,7 +244,7 @@ class Reads(Condition):
     name: str = None
     value: Any = None
 
-    def check(self, ui, baseline):
+    def check(self, ui):
         """lazydocs: ignore"""
         from keyhac.core.uitree import match_pattern, match_role
 
@@ -270,54 +272,59 @@ class Reads(Condition):
 
 
 @dataclass(frozen=True)
-class Changed(Condition):
-    """Satisfied when `target`'s own reading is not what it was.
+class Stable(Condition):
+    """Satisfied when a subtree has stopped changing.
 
-    **The last resort, and it has a trap in it.** "It differs from what I
-    captured" and "the result arrived" coincide only when the new state
-    happens to differ - and a transform can be the identity, so a translation
-    whose output equals its input leaves this waiting forever with the screen
-    already correct. Say what you expect with `Reads` wherever you can name
-    it; this is for the case where you genuinely cannot, and then it is worth
-    a comment saying why.
+    For the re-render nobody can name: a dependent field repopulating, a table
+    repainting after a sort. **Say the state you expect wherever you can** -
+    `Appears(text="page 2")`, `Reads(row, value=…)` - because this is the
+    escape for what cannot be named, and an escape is easy to reach for.
 
-    Its role, name, value and rectangle together, read once before the verb
-    acts and again after.
+    **It is a precondition, never a postcondition**, and the API refuses it as
+    one. Quiet is the *absence* of change, so it is satisfied by the calm
+    before an act's effect starts as readily as by the calm after: as an
+    `until=` it has a race built into its meaning. As a `given=`, or in a
+    `wait()` of its own before a read, it says something true - "do not act
+    into a screen that is still moving", "let it finish, then read".
 
-    **It is the one value that does not mean the same thing in every slot.**
-    "Changed since when?" needs a moment to have been remembered, and only
-    `until=` has one - the instant before the act. `wait()` supplies its own,
-    the instant the wait began; `given=` has none, and refuses.
+    Its question is about a stretch of time rather than an instant, so unlike
+    the other values it cannot be asked by polling a predicate; it brings its
+    own wait.
     """
 
-    #: There is a before to compare against, so where there is none this is
-    #: an error rather than a condition that quietly holds.
-    needs_baseline = True
+    postcondition = False
 
-    target: Any = None
+    within: Any = None
+    quiet: float = 0.3
+    max_depth: int = None
+    max_nodes: int = None
 
-    def baseline(self, ui):
+    def check(self, ui):
         """lazydocs: ignore"""
-        return _reading(self.target)
+        # A single look cannot answer "has it been quiet"; wait() is the
+        # honest form, and this keeps a stray poll from lying either way.
+        raise TypeError(
+            "Stable cannot be checked at an instant - it asks about a stretch "
+            "of time. Use it in ui.wait() or as given=, which wait for it.")
 
-    def check(self, ui, baseline):
+    def wait(self, ui, timeout: float, message: str = None):
         """lazydocs: ignore"""
-        return _reading(self.target) != baseline
+        from keyhac.core.wait import wait_for_stable
+
+        root = self.within if self.within is not None else ui.window()
+        if root is None:
+            return None
+        bounds = {}
+        if self.max_depth is not None:
+            bounds["max_depth"] = self.max_depth
+        if self.max_nodes is not None:
+            bounds["max_nodes"] = self.max_nodes
+        wait_for_stable(root, quiet=self.quiet, timeout=timeout, **bounds)
+        return root
 
     def __str__(self):
-        return f"{self.target!r} to change"
-
-
-def _reading(node):
-    if node is None:
-        return None
-    try:
-        fresh = node.reread()
-    except Exception:
-        return None
-    if fresh is None:
-        return None
-    return (fresh.role, fresh.name, fresh.value, fresh.rect)
+        where = self.within if self.within is not None else "the front window"
+        return f"{where!r} to stop changing for {self.quiet}s"
 
 
 class UI:
@@ -432,7 +439,7 @@ class UI:
         a faster one it fails *silently*, acting on a screen that has not
         arrived.
 
-        `condition` may also be an `Appears` / `Gone` / `Changed` / `Front`
+        `condition` may also be an `Appears` / `Front` / `Gone` / `Reads` / `Stable`
         rather than a callable - the same question without the lambda, and
         without the predicate helper an action grows to hold the lambda.
 
@@ -447,13 +454,9 @@ class UI:
         """
         from keyhac.core.wait import wait_for
         if not callable(condition):
-            value = condition
-            message = message or str(value)
-            # Remembered here, so `Changed` in a wait means "changed since the
-            # wait began" - a question with an answer, unlike the same value
-            # in a `given=`.
-            baseline = value.baseline(self)
-            condition = lambda: value.check(self, baseline)
+            # The value knows how to wait for itself: polling a predicate,
+            # unless its question is about a stretch of time.
+            return condition.wait(self, timeout, message)
         return wait_for(condition, timeout=timeout, message=message,
                         interval=interval)
 
@@ -468,7 +471,7 @@ class UI:
     Front = Front
     Gone = Gone
     Reads = Reads
-    Changed = Changed
+    Stable = Stable
 
     def click(self, node=None, within=None,
               given: Condition | Callable[[], Any] = None,
@@ -683,8 +686,13 @@ class UI:
             act()
             return None
         check = until if callable(until) else None
-        baseline = None if check else until.baseline(self)
-        holds = check or (lambda: until.check(self, baseline))
+        if check is None and not getattr(until, "postcondition", True):
+            raise ValueError(
+                f"{type(until).__name__} cannot be a postcondition: it is "
+                f"satisfied by the calm before the act as readily as the calm "
+                f"after. Say the state you expect (Reads, Appears), or put it "
+                f"in given= or a wait() of its own.")
+        holds = check or (lambda: until.check(self))
         attempts = 0
         while True:
             if given is not None:
@@ -713,16 +721,11 @@ class UI:
         """
         from keyhac.core.wait import WaitTimeout, wait_for
 
-        check = given if callable(given) else None
-        if check is None and getattr(given, "needs_baseline", False):
-            raise ValueError(
-                f"{type(given).__name__} cannot be a precondition: it asks "
-                f"what changed, and before the act there is no before. Say "
-                f"the state you are waiting for instead (Reads, Appears).")
-        holds = check or (lambda: given.check(self, None))
+        left = max(deadline - time.monotonic(), 0.0)
         try:
-            return wait_for(holds, timeout=max(deadline - time.monotonic(), 0.0),
-                            message=str(given))
+            if callable(given):
+                return wait_for(given, timeout=left, message=str(given))
+            return given.wait(self, left)
         except WaitTimeout:
             raise WaitTimeout(f"{what} never started: waited for {given}") from None
 
