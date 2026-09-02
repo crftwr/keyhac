@@ -716,6 +716,29 @@ which part of a locator is opaque. And `node=` remains, because "the third tab
 from the list the previous step enumerated" is not a locator and will not
 become one: **what to wait for is data, what to act on is sometimes a handle.**
 
+### What may be combined, and what is refused out loud
+
+`locator` and `within` **compose**: the value says which element, the scope
+says where to look for it. That is the pair the design is built on.
+
+`node` **excludes both**, and says so rather than quietly outranking them.
+Passing a node and a locator used to drop the locator in silence, which is
+"the argument I wrote was ignored" — the same failure as a press that reports
+success and does nothing, and it reads on screen as acting on a stale node
+while the code plainly says otherwise. Same for `node` with `within`.
+
+`Appears` had the same hole from the other end: a locator together with
+`title` but no `app` fell through to "return the window", answering a question
+about a button with a window. The rule is now one sentence — **with a locator
+it is an element question, without one a window question** — and `app` /
+`title` scope the search rather than replacing it.
+
+`scroll` had a worse version of it, which was ambiguity rather than silence:
+`within` meant *the view* with no locator and *where to look for the view*
+with one. Documented as such, which does not make it better. It takes `node`
+for the view in hand now, like every other verb, and `within` means one thing
+everywhere.
+
 ### Which verbs exist, and the test they had to pass
 
 `click`, `send_key`, `activate`, `fill`, `scroll`, `choose`. The test for

@@ -720,3 +720,36 @@ class TestVerbs:
         api, _element = ui
         with pytest.raises(ValueError, match="menu path"):
             api.choose()
+
+    def test_node_excludes_the_locator_rather_than_outranking_it(self, ui):
+        """Silently dropping an argument somebody wrote is the failure this
+        layer exists to refuse - and "I passed a locator and it used a stale
+        node instead" is exactly that failure."""
+        api, element = ui
+        node = api.node(element.kids[0])
+        with pytest.raises(ValueError, match="one or the other"):
+            api.click(api.Locator(name="Save"), node=node)
+        with pytest.raises(ValueError, match="one or the other"):
+            api.click(node=node, within=api.node(element))
+
+    def test_a_locator_and_a_scope_compose(self, ui):
+        """The one combination that means something: within says where."""
+        api, element = ui
+        found = api.click(api.Locator(role="AXButton", name="Save"),
+                          within=api.node(element))
+        assert found.name == "Save"
+
+    def test_a_verb_with_neither_says_so(self, ui):
+        api, _element = ui
+        with pytest.raises(ValueError, match="which element"):
+            api.click()
+
+    def test_appears_never_drops_the_locator_for_the_window(self, ui):
+        """`title` without `app` used to fall through to "return the window",
+        quietly ignoring the element asked for."""
+        api, _element = ui
+        asked = api.Appears(api.Locator(role="AXButton", name="Save"),
+                            title="Main")
+        found = asked.check(api)
+        assert found is not None and found.name == "Save", \
+            "it answered with the window instead of the button"

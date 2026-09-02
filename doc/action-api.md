@@ -365,6 +365,7 @@ Put the clipboard back the way it was afterwards.
 scroll(
     locator: 'Locator' = None,
     within=None,
+    node=None,
     by: 'str' = 'down',
     amount: 'float' = 3.0,
     given: 'Condition | Callable[[], Any]' = None,
@@ -377,8 +378,9 @@ scroll(
 Turn the wheel over a view until something shows up in it. 
 
 ```python
-row = ui.scroll(within=table,
-                 until=ui.Appears(ui.Locator(text="REC-042")))
+row = ui.scroll(node=table,
+                 until=ui.Appears(ui.Locator(text="REC-042"),
+                                  within=table))
 ``` 
 
 **For the rows that are not there until you scroll.** A virtualised list has no element for a row it has not drawn, so no amount of looking finds it and no bound on the walk helps - the only way to read the fortieth row is to bring it into view. That is what this is for, and it is why it is a verb of its own rather than something `click` does on the way (which it also does, for a control it is about to press). 
@@ -389,8 +391,9 @@ Scrolling past the target is the hazard, so `retry_interval` is short and `amoun
 
 **Args:**
  
- - <b>`locator`</b>:  Which view, when `within` is not it already. 
- - <b>`within`</b>:  The view to scroll, or where to look for `locator`. 
+ - <b>`locator`</b>:  Which view to scroll. 
+ - <b>`within`</b>:  Where to look for it; the focused window by default. 
+ - <b>`node`</b>:  The view already in hand, instead of a locator. 
  - <b>`by`</b>:  `"down"` or `"up"`. 
  - <b>`amount`</b>:  Wheel notches per turn. 
  - <b>`given`</b>:  What must hold before each turn. 

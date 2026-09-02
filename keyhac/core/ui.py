@@ -139,11 +139,12 @@ class Condition:
 class Appears(Condition):
     """Satisfied when something matching this locator exists.
 
-    Takes a `Locator` and a scope. **`title` (with or without `app`) makes it
-    a window question instead**, because the thing a dialog's button opens is
-    often a window rather than an element in one; that is the one ambiguity in
-    the vocabulary and it is resolved by naming it rather than by guessing.
-    Given both, it looks for the locator inside that application's windows.
+    **With a locator it is an element question, without one a window
+    question**, which is the whole rule: the thing a dialog's button opens is
+    often a window rather than an element in one, and `app` / `title` name it.
+    Given a locator *and* `app` / `title`, it looks for the element in those
+    windows - because *which* window is often what the action cannot answer
+    first. `within` scopes it to one node instead.
 
     Satisfied *with a value*: the node it found, so the verb that waited for
     it can hand it back.
@@ -159,25 +160,24 @@ class Appears(Condition):
 
     def check(self, ui):
         """lazydocs: ignore"""
-        locator = self._locator()
-        if self.app is not None and locator:
+        criteria = self._locator()
+        if not criteria:
+            # No locator: the question is about a window itself.
+            return ui.window(app=self.app, title=self.title)
+        if self.within is not None:
+            return self.within.find(**criteria)
+        if self.app is not None or self.title is not None:
             # A control somewhere in this application, when *which* window is
             # the question the action cannot answer first: the tab strip is in
             # the browser window, but the application also owns a print dialog
             # and an untitled download popup, and they come and go.
-            for window in ui.windows(app=self.app):
-                if self.title is not None and window.name != self.title:
-                    continue
-                found = window.find(**locator)
+            for window in ui.windows(app=self.app, title=self.title):
+                found = window.find(**criteria)
                 if found:
                     return found
             return None
-        if self.title is not None or self.app is not None:
-            return ui.window(app=self.app, title=self.title)
-        root = self.within if self.within is not None else ui.window()
-        if root is None:
-            return None
-        return root.find(**locator)
+        root = ui.window()
+        return root.find(**criteria) if root is not None else None
 
     def __str__(self):
         parts = dict(self._locator())
@@ -580,8 +580,7 @@ class UI:
         """
         from keyhac.core.act import act_on
 
-        target = node if node is not None else self._locate(
-            within, locator, timeout)
+        target = self._target(locator, within, node, timeout)
         # The precondition #61 asks for: the screen may have moved between
         # finding it and acting on it, and a press aimed at what used to be
         # there is the silent wrong thing this API exists to refuse.
@@ -670,23 +669,23 @@ class UI:
             FillFailed: Every mechanism was tried and the value did not stick.
             WaitTimeout: The field never appeared, or `until` never held.
         """
-        target = node if node is not None else self._locate(
-            within, locator, timeout)
+        target = self._target(locator, within, node, timeout)
         target.reread()
         return self._until(lambda: target.set_text(text), until, timeout,
                            retry_interval, what=f"filling {locator or target!r}",
                            given=given) or target
 
-    def scroll(self, locator: Locator = None, within=None, by: str = "down",
-               amount: float = 3.0,
+    def scroll(self, locator: Locator = None, within=None, node=None,
+               by: str = "down", amount: float = 3.0,
                given: Condition | Callable[[], Any] = None,
                until: Condition | Callable[[], Any] = None,
                timeout: float = 10.0, retry_interval: float = 0.4):
         """Turn the wheel over a view until something shows up in it.
 
         ```python
-        row = ui.scroll(within=table,
-                        until=ui.Appears(ui.Locator(text="REC-042")))
+        row = ui.scroll(node=table,
+                        until=ui.Appears(ui.Locator(text="REC-042"),
+                                         within=table))
         ```
 
         **For the rows that are not there until you scroll.** A virtualised
@@ -702,8 +701,9 @@ class UI:
         after a page of them.
 
         Args:
-            locator: Which view, when `within` is not it already.
-            within: The view to scroll, or where to look for `locator`.
+            locator: Which view to scroll.
+            within: Where to look for it; the focused window by default.
+            node: The view already in hand, instead of a locator.
             by: `"down"` or `"up"`.
             amount: Wheel notches per turn.
             given: What must hold before each turn.
@@ -719,10 +719,8 @@ class UI:
         """
         from keyhac.core.act import scroll as turn
 
-        view = within if locator is None else self._locate(
-            within, locator, timeout)
-        if view is None:
-            view = self.window()
+        view = (self._target(locator, within, node, timeout)
+                if (locator is not None or node is not None) else self.window())
         notches = -abs(amount) if by == "down" else abs(amount)
 
         def act():
@@ -796,6 +794,24 @@ class UI:
             return node
 
         return self.on_main_thread(find)
+
+    def _target(self, locator, within, node, timeout):
+        """The element a verb is about: the one in hand, or the one found.
+
+        `node` excludes the other two rather than quietly outranking them.
+        Silently dropping an argument somebody wrote is the failure this whole
+        layer exists to refuse, and "I passed a locator and it used a stale
+        node instead" is exactly that failure.
+
+        lazydocs: ignore
+        """
+        if node is not None:
+            if locator is not None or within is not None:
+                raise ValueError(
+                    "node= says which element, so locator= and within= have "
+                    "nothing left to say - pass one or the other")
+            return node
+        return self._locate(within, locator, timeout)
 
     def _locate(self, within, locator, timeout):
         """Wait for one element matching `locator`, under `within` or the
