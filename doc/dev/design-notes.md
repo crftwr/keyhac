@@ -665,6 +665,23 @@ until=Appears(title="Print"))` fires Cmd-P into the download popup, again and
 again, while the popup owns the front. An `until`-shaped condition written as
 `given` waits for something nothing has yet caused, and times out.
 
+### One vocabulary, three slots — and the one value that is not portable
+
+All three take the same two types: a zero-argument callable, or one of the
+values. That is deliberate — the values compose in every slot, so the only
+thing an author decides is *which slot*, which is the "who causes it" question
+and nothing else.
+
+`Changed` is the exception, and it failed silently until it was looked for.
+"Changed since when?" needs a moment remembered, and only `until=` has one:
+the instant before the act. Given no baseline it compared against `None` and
+therefore held immediately — `ui.wait(Changed(node))` returned at once, and
+`given=Changed(...)` was a gate that never gated. So `wait()` now takes its
+own baseline (meaning "changed since the wait began", a question with an
+answer) and `given=` refuses the value outright, naming what to say instead.
+A condition that always holds is the worst failure available to this layer,
+and this was one.
+
 ### `given` exists because of the retry, not to save a line
 
 `ui.wait(X); verb()` and `verb(given=X)` are **the same thing when there is no

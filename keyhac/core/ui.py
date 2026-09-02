@@ -66,6 +66,10 @@ class Appears:
     it can hand it back.
     """
 
+    #: Meaningful in any of the three slots - it asks about the world, not
+    #: about a change, so it needs nothing remembered from before.
+    needs_baseline = False
+
     within: Any = None
     role: str = None
     name: str = None
@@ -136,6 +140,8 @@ class Front:
     whatever is there.
     """
 
+    needs_baseline = False
+
     app: str = None
     title: str = None
 
@@ -168,6 +174,8 @@ class Gone:
     has died, which a platform answers well for a closed window and badly for
     a row that was merely removed from a list.
     """
+
+    needs_baseline = False
 
     target: Any = None
 
@@ -219,6 +227,8 @@ class Reads:
     state of `"True"` without the caller knowing which it got.
     """
 
+    needs_baseline = False
+
     target: Any = None
     role: str = None
     name: str = None
@@ -269,7 +279,16 @@ class Changed:
 
     Its role, name, value and rectangle together, read once before the verb
     acts and again after.
+
+    **It is the one value that does not mean the same thing in every slot.**
+    "Changed since when?" needs a moment to have been remembered, and only
+    `until=` has one - the instant before the act. `wait()` supplies its own,
+    the instant the wait began; `given=` has none, and refuses.
     """
+
+    #: There is a before to compare against, so where there is none this is
+    #: an error rather than a condition that quietly holds.
+    needs_baseline = True
 
     target: Any = None
 
@@ -425,7 +444,11 @@ class UI:
         if not callable(condition):
             value = condition
             message = message or str(value)
-            condition = lambda: value.check(self, None)
+            # Remembered here, so `Changed` in a wait means "changed since the
+            # wait began" - a question with an answer, unlike the same value
+            # in a `given=`.
+            baseline = value.baseline(self)
+            condition = lambda: value.check(self, baseline)
         return wait_for(condition, timeout=timeout, message=message,
                         interval=interval)
 
@@ -654,6 +677,11 @@ class UI:
         from keyhac.core.wait import WaitTimeout
 
         check = given if callable(given) else None
+        if check is None and getattr(given, "needs_baseline", False):
+            raise ValueError(
+                f"{type(given).__name__} cannot be a precondition: it asks "
+                f"what changed, and before the act there is no before. Say "
+                f"the state you are waiting for instead (Reads, Appears).")
         while True:
             got = check() if check else given.check(self, None)
             if got:

@@ -600,3 +600,33 @@ class TestVerbs:
         api, _element = ui
         with pytest.raises(WaitTimeout):
             api.activate(app="Nothing There", timeout=0.3, retry_every=0.05)
+
+    def test_the_three_slots_take_the_same_two_types(self, ui):
+        """One vocabulary: a callable or a value, in wait, given and until.
+        Which slot it goes in is what says whether you cause it."""
+        api, element = ui
+        button = element.kids[0]
+        assert api.wait(api.Appears(role="AXButton", name="Save"), timeout=1)
+        api.click(role="AXButton", name="Save",
+                  given=api.Appears(role="AXButton", name="Save"),
+                  until=lambda: button.pressed >= 1, timeout=1,
+                  retry_every=0.05)
+
+    def test_a_wait_on_changed_remembers_when_it_started(self, ui):
+        """Without a baseline it read as "anything at all" and returned at
+        once - a condition that silently always holds, which is the failure
+        this whole value is prone to."""
+        api, element = ui
+        checkbox = element.kids[1]
+        node = api.node(checkbox)
+        with pytest.raises(WaitTimeout):
+            api.wait(api.Changed(node), timeout=0.3)
+
+    def test_changed_is_refused_as_a_precondition(self, ui):
+        """"Changed since when?" has no answer before the act, and answering
+        it with "always" is worse than saying so."""
+        api, element = ui
+        node = api.node(element.kids[1])
+        with pytest.raises(ValueError, match="no before"):
+            api.click(role="AXButton", name="Save", given=api.Changed(node),
+                      until=lambda: True, timeout=1)
