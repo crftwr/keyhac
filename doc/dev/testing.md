@@ -17,6 +17,32 @@ live on each OS.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 
+## Clean-room skill testing
+
+A packaged skill is a snapshot with no repository behind it, and this
+repository is full of the answers. So "is the skill self-contained?" cannot be
+asked from a session that has read `doc/`, `examples/actions/` or the source —
+it cannot unsee them. `.claude/skills/keyhac-skill-cleanroom/` is the
+procedure: build the versioned bundle, unpack it outside the checkout, hand a
+**fresh session** the bundle and a task, and forbid everything else.
+
+The distinction that makes it workable: **the MCP endpoint is allowed, the
+checkout is not.** Reading the screen through Keyhac's own tools is what the
+skill tells an author to do — it is the product's public interface. Reading the
+package's source, or another action somebody wrote with the repository open,
+is inside information.
+
+**The output is `QUESTIONS.md`, not the action.** Every point where the clean
+room had to guess is a line the skill should have carried; a run that produces
+a working action and no questions has measured nothing. Two rules follow from
+that and are easy to get wrong: the operator must not answer questions during
+the run (an answered question is a destroyed finding), and the case's "must"
+list stays out of the room, because it is the scoring key.
+
+Scoring is `evals/check.py` for the mechanical rules and the case's "must" list
+for judgement, and `evals/cases.md`'s rule stands: a "must" missed is a skill
+defect, not a model defect.
+
 ## Cross-cutting patterns
 
 - **Fake-Quartz hook tests**: `tests/test_mac_hook.py` unit-tests the macOS
