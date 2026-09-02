@@ -176,6 +176,42 @@ def _scrolled_into_view(element, rect) -> tuple | None:
         time.sleep(_SCROLL_POLL)
 
 
+def scroll(element, notches: float) -> Acted:
+    """Turn the wheel over `element`, where the screen agrees it is.
+
+    The same hit test as `click`, for the same reason: a wheel goes to
+    whatever is under the pointer, so putting the pointer somewhere the
+    element is not scrolls somebody else's view.
+
+    Its own act rather than a keystroke because Page Down needs the focus and
+    a list you are only *reading* has no business taking it - and because a
+    virtualised list materialises its rows on scroll, which is the case this
+    exists for.
+    """
+    keymap = Keymap.get_instance()
+    if keymap is None:
+        return Acted("", "unknown")
+    rect = _rect_of(element)
+    if rect is None or rect[2] <= 0 or rect[3] <= 0:
+        return Acted("", "offscreen")
+    point = _centre(rect)
+    at = _is_at(element, point)
+    if at is not True:
+        return Acted("", "covered" if at is False else "unknown")
+    origin = keymap.cursor_pos()
+    if origin is None:
+        return Acted("", "unknown")
+    try:
+        with keymap.get_input_context() as ctx:
+            ctx.send_mouse_move(point[0] - origin[0], point[1] - origin[1])
+            ctx.send_mouse_wheel(notches)
+            ctx.send_mouse_move(origin[0] - point[0], origin[1] - point[1])
+    except Exception:
+        logger.debug("The view could not be scrolled.", exc_info=True)
+        return Acted("", "unknown")
+    return Acted("scrolled")
+
+
 def _rect_of(element) -> tuple | None:
     """Where the element is *now* - not where the walk recorded it.
 

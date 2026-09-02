@@ -542,15 +542,8 @@ class UI:
         """
         from keyhac.core.act import act_on
 
-        if node is not None:
-            target = node
-        else:
-            target = self.wait(
-                lambda: (within if within is not None else self.window())
-                is not None
-                and (within if within is not None else self.window()).find(**locator),
-                timeout=timeout,
-                message=f"a control matching {locator} to appear")
+        target = node if node is not None else self._locate(
+            within, locator, timeout)
         # The precondition #61 asks for: the screen may have moved between
         # finding it and acting on it, and a press aimed at what used to be
         # there is the silent wrong thing this API exists to refuse.
@@ -600,6 +593,181 @@ class UI:
 
         return self._until(act, Front(app=app, title=title), timeout,
                            retry_interval, what=f"activating {app or title!r}")
+
+    def fill(self, text: str, node=None, within=None,
+             given: Condition | Callable[[], Any] = None,
+             until: Condition | Callable[[], Any] = None,
+             timeout: float = 10.0, retry_interval: float = 2.0, **locator):
+        """Find one field and write `text` into it.
+
+        ```python
+        ui.fill("REC-001", identifier="record-id", within=form)
+        ```
+
+        `set_text` already focuses, verifies the focus landed, writes, and
+        reads the value back, raising `FillFailed` naming what each mechanism
+        did - so this verb rarely needs an `until`. What it adds is the
+        locator, the precondition and the one shape every step has.
+
+        **A `FillFailed` is not retried**, and that is deliberate: it means
+        the write happened and the read-back disagreed, so doing it again is
+        the double-act hazard. A field that is not ready yet is a `given=`.
+
+        Args:
+            text: What to write.
+            node: A field already in hand, instead of a locator.
+            within: Where to look; the focused window by default.
+            given: What must hold before the write.
+            until: What makes it true, when the read-back is not the whole
+                story - a form that only enables Save once the field is
+                valid.
+            timeout: Seconds before giving up, in total.
+            retry_interval: Seconds to watch `until` before writing again.
+            **locator: `find_elements` keywords.
+
+        Returns:
+            Whatever `until` was satisfied with, or the field.
+
+        Raises:
+            FillFailed: Every mechanism was tried and the value did not stick.
+            WaitTimeout: The field never appeared, or `until` never held.
+        """
+        target = node if node is not None else self._locate(
+            within, locator, timeout)
+        target.reread()
+        return self._until(lambda: target.set_text(text), until, timeout,
+                           retry_interval, what=f"filling {locator or target!r}",
+                           given=given) or target
+
+    def scroll(self, within=None, by: str = "down", amount: float = 3.0,
+               given: Condition | Callable[[], Any] = None,
+               until: Condition | Callable[[], Any] = None,
+               timeout: float = 10.0, retry_interval: float = 0.4, **locator):
+        """Turn the wheel over a view until something shows up in it.
+
+        ```python
+        row = ui.scroll(within=table, until=ui.Appears(text="REC-042"))
+        ```
+
+        **For the rows that are not there until you scroll.** A virtualised
+        list has no element for a row it has not drawn, so no amount of
+        looking finds it and no bound on the walk helps - the only way to read
+        the fortieth row is to bring it into view. That is what this is for,
+        and it is why it is a verb of its own rather than something `click`
+        does on the way (which it also does, for a control it is about to
+        press).
+
+        Scrolling past the target is the hazard, so `retry_interval` is short
+        and `amount` modest: the postcondition is looked at between turns, not
+        after a page of them.
+
+        Args:
+            within: The view to scroll, or a locator for it below.
+            by: `"down"` or `"up"`.
+            amount: Wheel notches per turn.
+            given: What must hold before each turn.
+            until: What makes it true. None turns the wheel once.
+            timeout: Seconds before giving up, in total.
+            retry_interval: Seconds to watch before turning again.
+            **locator: `find_elements` keywords, when `within` is not the view
+                itself.
+
+        Returns:
+            Whatever `until` was satisfied with, or the view.
+
+        Raises:
+            WaitTimeout: It never showed up.
+        """
+        from keyhac.core.act import scroll as turn
+
+        view = within if not locator else self._locate(within, locator, timeout)
+        if view is None:
+            view = self.window()
+        notches = -abs(amount) if by == "down" else abs(amount)
+
+        def act():
+            return self.on_main_thread(lambda: turn(view.element, notches))
+
+        return self._until(act, until, timeout, retry_interval,
+                           what=f"scrolling {by}", given=given) or view
+
+    def choose(self, *path: str, given: Condition | Callable[[], Any] = None,
+               until: Condition | Callable[[], Any] = None,
+               timeout: float = 10.0, retry_interval: float = 2.0):
+        """Pick a command out of the menu bar by its path.
+
+        ```python
+        ui.choose("File", "Export", "As PDF…")
+        ```
+
+        **macOS only, and that is a fact about the platform rather than a gap
+        here.** There the menu bar is an OS-level part, one per application,
+        readable in full *while it is closed* - so this finds the leaf in the
+        closed tree and presses that, opening nothing on the way. Windows has
+        no menu bar in this sense (`doc/dev/design-notes.md`), and this says
+        so rather than pretending.
+
+        Args:
+            *path: Menu names from the bar down to the command.
+            given: What must hold before the command is pressed.
+            until: What makes it true - a dialog appearing, usually.
+            timeout: Seconds before giving up, in total.
+            retry_interval: Seconds to watch `until` before pressing again.
+
+        Returns:
+            Whatever `until` was satisfied with, or the menu item.
+
+        Raises:
+            WaitTimeout: The path was not there.
+            ValueError: This platform has no menu bar.
+        """
+        from keyhac.core.act import act_on
+
+        if not path:
+            raise ValueError("choose() needs a menu path")
+        item = self.wait(lambda: self._menu_item(path), timeout=timeout,
+                         message=f"the menu path {' > '.join(path)}")
+        return self._until(lambda: self.on_main_thread(lambda: act_on(item.element)),
+                           until, timeout, retry_interval,
+                           what=f"choosing {' > '.join(path)}",
+                           given=given) or item
+
+    def _menu_item(self, path):
+        """The node at `path` in the closed menu bar, or None.
+
+        lazydocs: ignore
+        """
+        def find():
+            from keyhac.core.uitree import get_ui_tree, match_pattern
+
+            focused = self.focused()
+            element = getattr(focused, "element", None)
+            bar = getattr(element, "menu_bar", lambda: None)() if element else None
+            if bar is None:
+                raise ValueError(
+                    "this platform has no menu bar to choose from - on Windows "
+                    "a command lives in the window, so find and click it")
+            node = get_ui_tree(bar, max_depth=2 * len(path) + 2)
+            for name in path:
+                node = next((child for child in node.walk()
+                             if match_pattern(child.name, name)), None)
+                if node is None:
+                    return None
+            return node
+
+        return self.on_main_thread(find)
+
+    def _locate(self, within, locator, timeout):
+        """Wait for one element matching `locator`, under `within` or the
+        focused window.
+
+        lazydocs: ignore
+        """
+        return self.wait(
+            lambda: (within if within is not None else self.window()) is not None
+            and (within if within is not None else self.window()).find(**locator),
+            timeout=timeout,
+            message=f"a control matching {locator} to appear")
 
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,

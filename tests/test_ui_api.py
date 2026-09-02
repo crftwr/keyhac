@@ -659,3 +659,64 @@ class TestVerbs:
                   until=lambda: button.pressed >= 2,
                   timeout=3.0, retry_interval=0.1)
         assert button.pressed == 2
+
+    def test_fill_finds_the_field_and_writes(self, ui, monkeypatch):
+        """The locator and the one shape every step has; the writing itself
+        is set_text's, which already verifies by reading back."""
+        import keyhac.core.fill as fill
+
+        written = []
+        monkeypatch.setattr(fill, "set_text", lambda node, text, **kwargs:
+                            written.append((node.name, text)) or "keys")
+        api, _element = ui
+        api.fill("REC-001", role="AXTextArea", name="Body")
+        assert written == [("Body", "REC-001")]
+
+    def test_fill_does_not_retry_a_verified_failure(self, ui):
+        """A FillFailed means the write happened and the read-back
+        disagreed, so doing it again is the double-act hazard."""
+        from keyhac.core.fill import FillFailed
+
+        api, element = ui
+        field = element.kids[2]
+        tries = []
+
+        def refuse(text, **kwargs):
+            tries.append(text)
+            raise FillFailed("nope")
+
+        node = api.node(field)
+        node.set_text = refuse
+        with pytest.raises(FillFailed):
+            api.fill("x", node=node, until=lambda: False, timeout=1,
+                     retry_interval=0.05)
+        assert tries == ["x"], "it wrote again after a verified failure"
+
+    def test_scroll_turns_until_the_row_shows_up(self, ui):
+        """The rows that are not there until you scroll: a virtualised list
+        has no element for a row it has not drawn."""
+        api, element = ui
+        turns = []
+        import keyhac.core.act as act
+        original = act.scroll
+        act.scroll = lambda el, notches: turns.append(notches) or act.Acted("scrolled")
+        try:
+            api.scroll(within=api.node(element),
+                       until=lambda: len(turns) >= 3,
+                       timeout=3.0, retry_interval=0.05)
+        finally:
+            act.scroll = original
+        assert len(turns) == 3
+        assert all(n < 0 for n in turns), "down is a negative wheel"
+
+    def test_choose_says_so_where_there_is_no_menu_bar(self, ui):
+        """Windows has no menu bar in this sense, and that is a fact about
+        the platform rather than a gap here."""
+        api, _element = ui
+        with pytest.raises(ValueError, match="no menu bar"):
+            api.choose("File", "Export", timeout=1)
+
+    def test_choose_needs_a_path(self, ui):
+        api, _element = ui
+        with pytest.raises(ValueError, match="menu path"):
+            api.choose()

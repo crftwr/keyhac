@@ -682,6 +682,35 @@ answer) and `given=` refuses the value outright, naming what to say instead.
 A condition that always holds is the worst failure available to this layer,
 and this was one.
 
+### Which verbs exist, and the test they had to pass
+
+`click`, `send_key`, `activate`, `fill`, `scroll`, `choose`. The test for
+admission is not "an action does this often" but **does it have an act, and a
+postcondition a caller would otherwise loop over**. Reading has no act, so
+`find` stays a read. Scrolling *to click something* has an act but the
+postcondition belongs to the click, so it lives inside the ladder rather than
+in the vocabulary.
+
+`scroll` is in the vocabulary anyway, for the case reading cannot serve at
+all: **a virtualised list has no element for a row it has not drawn**, so no
+locator finds it and no walk bound helps — the only way to read the fortieth
+row is to bring it into view. Its hazard is the opposite of `click`'s: not
+double-acting but scrolling *past*, so its `retry_interval` is short and it
+looks between turns rather than after a page of them.
+
+`fill` is the thin one, and knows it: `set_text` already focuses, verifies the
+focus landed, writes and reads back. What the verb adds is the locator, the
+precondition, and the one shape. It deliberately does **not** retry a
+`FillFailed` — that means the write happened and the read-back disagreed, so
+repeating it is the double-act hazard; a field that is not ready yet is a
+`given=`.
+
+`choose` is macOS-shaped and says so. There the menu bar is an OS-level part
+readable in full *while closed*, so it finds the leaf in the closed tree and
+presses that, opening nothing on the way — which is what `MenuItemsSource`
+already relies on. Windows has no menu bar in that sense, and `choose` raises
+naming the fact rather than half-working.
+
 ### One unqualified `interval`, and a word on every other one
 
 `UI.wait(interval=)` is released and means the polling gap, so that settles

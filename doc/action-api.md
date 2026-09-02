@@ -94,6 +94,50 @@ The cheap way into the text layer: the pointer is usually already over the line 
 
 ---
 
+### <kbd>method</kbd> `UI.choose`
+
+```python
+choose(
+    *path: 'str',
+    given: 'Condition | Callable[[], Any]' = None,
+    until: 'Condition | Callable[[], Any]' = None,
+    timeout: 'float' = 10.0,
+    retry_interval: 'float' = 2.0
+)
+```
+
+Pick a command out of the menu bar by its path. 
+
+```python
+ui.choose("File", "Export", "As PDF…")
+``` 
+
+**macOS only, and that is a fact about the platform rather than a gap here.** There the menu bar is an OS-level part, one per application, readable in full *while it is closed* - so this finds the leaf in the closed tree and presses that, opening nothing on the way. Windows has no menu bar in this sense (`doc/dev/design-notes.md`), and this says so rather than pretending. 
+
+
+
+**Args:**
+ 
+ - <b>`*path`</b>:  Menu names from the bar down to the command. 
+ - <b>`given`</b>:  What must hold before the command is pressed. 
+ - <b>`until`</b>:  What makes it true - a dialog appearing, usually. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_interval`</b>:  Seconds to watch `until` before pressing again. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or the menu item. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The path was not there. 
+ - <b>`ValueError`</b>:  This platform has no menu bar. 
+
+---
+
 ### <kbd>method</kbd> `UI.click`
 
 ```python
@@ -208,6 +252,58 @@ Ask a Chromium or Electron application to expose its content.
 
 ---
 
+### <kbd>method</kbd> `UI.fill`
+
+```python
+fill(
+    text: 'str',
+    node=None,
+    within=None,
+    given: 'Condition | Callable[[], Any]' = None,
+    until: 'Condition | Callable[[], Any]' = None,
+    timeout: 'float' = 10.0,
+    retry_interval: 'float' = 2.0,
+    **locator
+)
+```
+
+Find one field and write `text` into it. 
+
+```python
+ui.fill("REC-001", identifier="record-id", within=form)
+``` 
+
+`set_text` already focuses, verifies the focus landed, writes, and reads the value back, raising `FillFailed` naming what each mechanism did - so this verb rarely needs an `until`. What it adds is the locator, the precondition and the one shape every step has. 
+
+**A `FillFailed` is not retried**, and that is deliberate: it means the write happened and the read-back disagreed, so doing it again is the double-act hazard. A field that is not ready yet is a `given=`. 
+
+
+
+**Args:**
+ 
+ - <b>`text`</b>:  What to write. 
+ - <b>`node`</b>:  A field already in hand, instead of a locator. 
+ - <b>`within`</b>:  Where to look; the focused window by default. 
+ - <b>`given`</b>:  What must hold before the write. 
+ - <b>`until`</b>:  What makes it true, when the read-back is not the whole  story - a form that only enables Save once the field is  valid. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_interval`</b>:  Seconds to watch `until` before writing again. 
+ - <b>`**locator`</b>:  `find_elements` keywords. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or the field. 
+
+
+
+**Raises:**
+ 
+ - <b>`FillFailed`</b>:  Every mechanism was tried and the value did not stick. 
+ - <b>`WaitTimeout`</b>:  The field never appeared, or `until` never held. 
+
+---
+
 ### <kbd>method</kbd> `UI.focused`
 
 ```python
@@ -262,6 +358,57 @@ preserve_clipboard()
 Put the clipboard back the way it was afterwards. 
 
 `node.set_text()` already does this around its own paste; this is for an action that uses the clipboard for something else. 
+
+---
+
+### <kbd>method</kbd> `UI.scroll`
+
+```python
+scroll(
+    within=None,
+    by: 'str' = 'down',
+    amount: 'float' = 3.0,
+    given: 'Condition | Callable[[], Any]' = None,
+    until: 'Condition | Callable[[], Any]' = None,
+    timeout: 'float' = 10.0,
+    retry_interval: 'float' = 0.4,
+    **locator
+)
+```
+
+Turn the wheel over a view until something shows up in it. 
+
+```python
+row = ui.scroll(within=table, until=ui.Appears(text="REC-042"))
+``` 
+
+**For the rows that are not there until you scroll.** A virtualised list has no element for a row it has not drawn, so no amount of looking finds it and no bound on the walk helps - the only way to read the fortieth row is to bring it into view. That is what this is for, and it is why it is a verb of its own rather than something `click` does on the way (which it also does, for a control it is about to press). 
+
+Scrolling past the target is the hazard, so `retry_interval` is short and `amount` modest: the postcondition is looked at between turns, not after a page of them. 
+
+
+
+**Args:**
+ 
+ - <b>`within`</b>:  The view to scroll, or a locator for it below. 
+ - <b>`by`</b>:  `"down"` or `"up"`. 
+ - <b>`amount`</b>:  Wheel notches per turn. 
+ - <b>`given`</b>:  What must hold before each turn. 
+ - <b>`until`</b>:  What makes it true. None turns the wheel once. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_interval`</b>:  Seconds to watch before turning again. 
+ - <b>`**locator`</b>:  `find_elements` keywords, when `within` is not the view  itself. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or the view. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  It never showed up. 
 
 ---
 
