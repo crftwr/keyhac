@@ -762,11 +762,19 @@ precondition, and the one shape. It deliberately does **not** retry a
 repeating it is the double-act hazard; a field that is not ready yet is a
 `given=`.
 
-`choose` is macOS-shaped and says so. There the menu bar is an OS-level part
+`menu` is macOS-shaped and says so. There the menu bar is an OS-level part
 readable in full *while closed*, so it finds the leaf in the closed tree and
 presses that, opening nothing on the way — which is what `MenuItemsSource`
-already relies on. Windows has no menu bar in that sense, and `choose` raises
-naming the fact rather than half-working.
+already relies on. Windows has no menu bar in that sense, and it raises naming
+the fact rather than half-working.
+
+It was called `choose` for a day, which was a naming failure worth recording:
+the first reader took it for "pick an option out of a list" — a dropdown, a
+combo box, a picker. That is a different verb, and a plausible one, but it is
+**not in the vocabulary yet on purpose**: no action has asked for it. Every
+verb here arrived because a real action needed it, and the one picker in the
+one real action turned out to be a sidebar row, which is a plain `click`. When
+a picker does ask, `choose` is the name waiting for it.
 
 ### One unqualified `interval`, and a word on every other one
 

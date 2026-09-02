@@ -729,14 +729,19 @@ class UI:
         return self._until(act, until, timeout, retry_interval,
                            what=f"scrolling {by}", given=given) or view
 
-    def choose(self, *path: str, given: Condition | Callable[[], Any] = None,
+    def menu(self, *path: str, given: Condition | Callable[[], Any] = None,
                until: Condition | Callable[[], Any] = None,
                timeout: float = 10.0, retry_interval: float = 2.0):
-        """Pick a command out of the menu bar by its path.
+        """Run a command from the application's menu bar, by its path.
 
         ```python
-        ui.choose("File", "Export", "As PDF…")
+        ui.menu("File", "Export", "As PDF…")
         ```
+
+        **Named for what it is.** An earlier name for this was `choose`, which
+        reads as "pick an option out of a list" - a dropdown, a combo box, a
+        picker - and that is a different verb this does not provide. This one
+        walks the menu bar.
 
         **macOS only, and that is a fact about the platform rather than a gap
         here.** There the menu bar is an OS-level part, one per application,
@@ -762,12 +767,12 @@ class UI:
         from keyhac.core.act import act_on
 
         if not path:
-            raise ValueError("choose() needs a menu path")
+            raise ValueError("menu() needs a menu path")
         item = self.wait(lambda: self._menu_item(path), timeout=timeout,
                          message=f"the menu path {' > '.join(path)}")
         return self._until(lambda: self.on_main_thread(lambda: act_on(item.element)),
                            until, timeout, retry_interval,
-                           what=f"choosing {' > '.join(path)}",
+                           what=f"the menu command {' > '.join(path)}",
                            given=given) or item
 
     def _menu_item(self, path):

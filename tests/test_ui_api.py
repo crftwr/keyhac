@@ -709,17 +709,17 @@ class TestVerbs:
         assert len(turns) == 3
         assert all(n < 0 for n in turns), "down is a negative wheel"
 
-    def test_choose_says_so_where_there_is_no_menu_bar(self, ui):
+    def test_menu_says_so_where_there_is_no_menu_bar(self, ui):
         """Windows has no menu bar in this sense, and that is a fact about
         the platform rather than a gap here."""
         api, _element = ui
         with pytest.raises(ValueError, match="no menu bar"):
-            api.choose("File", "Export", timeout=1)
+            api.menu("File", "Export", timeout=1)
 
-    def test_choose_needs_a_path(self, ui):
+    def test_menu_needs_a_path(self, ui):
         api, _element = ui
         with pytest.raises(ValueError, match="menu path"):
-            api.choose()
+            api.menu()
 
     def test_node_excludes_the_locator_rather_than_outranking_it(self, ui):
         """Silently dropping an argument somebody wrote is the failure this

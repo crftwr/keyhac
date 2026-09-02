@@ -94,50 +94,6 @@ The cheap way into the text layer: the pointer is usually already over the line 
 
 ---
 
-### <kbd>method</kbd> `UI.choose`
-
-```python
-choose(
-    *path: 'str',
-    given: 'Condition | Callable[[], Any]' = None,
-    until: 'Condition | Callable[[], Any]' = None,
-    timeout: 'float' = 10.0,
-    retry_interval: 'float' = 2.0
-)
-```
-
-Pick a command out of the menu bar by its path. 
-
-```python
-ui.choose("File", "Export", "As PDF…")
-``` 
-
-**macOS only, and that is a fact about the platform rather than a gap here.** There the menu bar is an OS-level part, one per application, readable in full *while it is closed* - so this finds the leaf in the closed tree and presses that, opening nothing on the way. Windows has no menu bar in this sense (`doc/dev/design-notes.md`), and this says so rather than pretending. 
-
-
-
-**Args:**
- 
- - <b>`*path`</b>:  Menu names from the bar down to the command. 
- - <b>`given`</b>:  What must hold before the command is pressed. 
- - <b>`until`</b>:  What makes it true - a dialog appearing, usually. 
- - <b>`timeout`</b>:  Seconds before giving up, in total. 
- - <b>`retry_interval`</b>:  Seconds to watch `until` before pressing again. 
-
-
-
-**Returns:**
- Whatever `until` was satisfied with, or the menu item. 
-
-
-
-**Raises:**
- 
- - <b>`WaitTimeout`</b>:  The path was not there. 
- - <b>`ValueError`</b>:  This platform has no menu bar. 
-
----
-
 ### <kbd>method</kbd> `UI.click`
 
 ```python
@@ -320,6 +276,52 @@ The cheapest root there is: a key binding already told you which application and
 
 **Returns:**
   The focused element, or None when nothing has focus or the  platform could not say. None is an answer - a stale element that  fails every attribute read is not. 
+
+---
+
+### <kbd>method</kbd> `UI.menu`
+
+```python
+menu(
+    *path: 'str',
+    given: 'Condition | Callable[[], Any]' = None,
+    until: 'Condition | Callable[[], Any]' = None,
+    timeout: 'float' = 10.0,
+    retry_interval: 'float' = 2.0
+)
+```
+
+Run a command from the application's menu bar, by its path. 
+
+```python
+ui.menu("File", "Export", "As PDF…")
+``` 
+
+**Named for what it is.** An earlier name for this was `choose`, which reads as "pick an option out of a list" - a dropdown, a combo box, a picker - and that is a different verb this does not provide. This one walks the menu bar. 
+
+**macOS only, and that is a fact about the platform rather than a gap here.** There the menu bar is an OS-level part, one per application, readable in full *while it is closed* - so this finds the leaf in the closed tree and presses that, opening nothing on the way. Windows has no menu bar in this sense (`doc/dev/design-notes.md`), and this says so rather than pretending. 
+
+
+
+**Args:**
+ 
+ - <b>`*path`</b>:  Menu names from the bar down to the command. 
+ - <b>`given`</b>:  What must hold before the command is pressed. 
+ - <b>`until`</b>:  What makes it true - a dialog appearing, usually. 
+ - <b>`timeout`</b>:  Seconds before giving up, in total. 
+ - <b>`retry_interval`</b>:  Seconds to watch `until` before pressing again. 
+
+
+
+**Returns:**
+ Whatever `until` was satisfied with, or the menu item. 
+
+
+
+**Raises:**
+ 
+ - <b>`WaitTimeout`</b>:  The path was not there. 
+ - <b>`ValueError`</b>:  This platform has no menu bar. 
 
 ---
 
