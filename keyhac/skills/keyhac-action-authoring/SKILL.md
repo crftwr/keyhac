@@ -138,13 +138,21 @@ that looks correct and is not.
 5. **Preconditions per step, before every press.** Not once at the top. The
    screen changes between item 2 and item 3, and a handler that trusts the
    dialog it saw last time will press the first button of a *different* dialog.
-   Check what is actually on screen, and stop if it is not what you expect.
-6. **Accumulate outside the thing that can fail.** A list built inside the
+   `ui.click()` re-reads its target for you and raises `StaleElement`; what it
+   cannot know is the precondition that is not *about* the target - "the
+   browser window is the front one", which is `given=`.
+6. **Act through the verbs, and say what "it worked" means.** `ui.click(...)`,
+   `ui.send_key(...)`, `ui.fill(...)` with an `until=`. A press is *accepted*
+   by applications that then do nothing with it, so the platform's answer is
+   not evidence and only a postcondition you state can be. Writing your own
+   retry loop is the failure this replaces: it is the part a repair tool
+   cannot read.
+7. **Accumulate outside the thing that can fail.** A list built inside the
    function that raises is discarded with it - losing every page already read,
    which is exactly the failure this class of action exists to avoid.
-7. **Bound every loop that follows a link.** A "Next" that links to itself
+8. **Bound every loop that follows a link.** A "Next" that links to itself
    otherwise runs until the operator gives up.
-8. **Close only what you can identify as yours.** With a pre-existing tab of
+9. **Close only what you can identify as yours.** With a pre-existing tab of
    the same site already open, "close the tab" is ambiguous - and pressing a
    close button on a guess has the operator's work on the other side. The
    same holds for windows, temporary files, records you created. Record an
@@ -305,9 +313,12 @@ Check the generated action against this list, and fix rather than explain:
 
 - [ ] **It has been run**, and you read the result — not "it should work"
 - [ ] No `sleep`, no coordinates, no bare `time` waits
+- [ ] **No hand-written retry loop** — every act is a verb with an `until=`
 - [ ] Every wait names what it is waiting for, in words an operator would read
+- [ ] Selectors used more than once are `ui.Locator` values, written once
 - [ ] Every write is verified; every toggle is read first
-- [ ] Preconditions before each press, not just at the start
+- [ ] Preconditions before each press, not just at the start — `given=` for
+      the ones that are not about the target
 - [ ] Results accumulate outside the failing scope, and are written per item
 - [ ] A second run does not duplicate the first
 - [ ] Loops are bounded

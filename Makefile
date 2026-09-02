@@ -432,7 +432,10 @@ release-whl: $(PYPI_SDIST)
 # developer step as if it were the user's download.
 release-skill: skill-bundle
 	@$(call check_release_exists)
-	gh release upload v$(KEYHAC_VERSION) dist/keyhac-*-skill.zip --clobber
+	@# Version-specific, not dist/keyhac-*-skill.zip: the bundles carry their
+	@# version in the name now, so a glob without it uploads every older one
+	@# still sitting in dist/ alongside this release's.
+	gh release upload v$(KEYHAC_VERSION) dist/keyhac-*-$(KEYHAC_VERSION)-skill.zip --clobber
 	@echo "Attached the skill bundles to release v$(KEYHAC_VERSION)"
 
 # --- release-status: read-only progress check -------------------------------
@@ -465,7 +468,7 @@ release-status:
 	@# without the skill produces actions full of sleep and screen coordinates
 	@# rather than an error anyone would notice.
 	@attached=$$(gh release view v$(KEYHAC_VERSION) --json assets --jq '.assets[].name' 2>/dev/null \
-		| grep -c '^keyhac-.*-skill\.zip$$'); \
+		| grep -c '^keyhac-.*-$(KEYHAC_VERSION)-skill\.zip$$'); \
 	expected=$$(ls -d keyhac/skills/*/ | wc -l | tr -d ' '); \
 	if [ "$$attached" = "$$expected" ]; then \
 		echo "  Skill bundles: $$attached of $$expected attached"; \

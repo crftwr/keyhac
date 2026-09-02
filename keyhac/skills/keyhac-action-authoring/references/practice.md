@@ -65,39 +65,101 @@ node they return does not update. Re-`find` after the screen changes.
 | `node.truncated` | the walk hit a bound here; not a leaf |
 | `node.element` | the platform element, for anything this API does not wrap |
 
-## Waiting
+## Acting: the verbs
+
+**Do not write a retry loop.** Every act goes through a verb that carries one,
+because the platform lies: an accessibility press is *accepted* by
+applications that then do nothing with it, so the return value is not evidence
+and only a postcondition you state can be.
 
 ```python
-node = window.wait_for(identifier="modal", timeout=5,
-                       message="the sheet to open")
-window.wait_until_gone(identifier="modal", message="the sheet to close")
-window.wait_until_stable(quiet=0.3, max_nodes=300)
-value = ui.wait(lambda: something(), timeout=10, message="the job to finish")
+SAVE  = ui.Locator(role="Button", name="Save", max_depth=7)
+SHEET = ui.Locator(identifier="save-panel", max_depth=2)
+
+sheet = ui.click(SAVE, within=dialog, until=ui.Appears(SHEET, within=dialog))
+ui.click(OK, within=sheet, until=ui.Gone(SHEET, within=dialog))
+print_window = ui.send_key("Cmd-P", given=ui.Front(app="Google Chrome"),
+                           until=ui.Appears(app="Google Chrome", title="Print"))
+ui.fill("REC-001", FIELD, within=form)
+row = ui.scroll(node=table, until=ui.Appears(ui.Locator(text="REC-042"),
+                                             within=table))
+ui.activate(app="Google Chrome")
+ui.menu("File", "Export", "As PDF…")            # macOS menu bar
 ```
 
-`ui.wait` returns what the condition returned. A timeout raises `WaitTimeout`
-(a `TimeoutError`) — an error, not a `False`, because an action whose
-precondition never arrived must stop.
+Each returns what its postcondition was satisfied with — an `Appears` hands
+back the node it found — so `sheet` above is the panel, not a boolean.
 
-The three-beat, for every menu, modal and sheet:
+**`given=` and `until=` differ by who causes the thing.** `until` is what
+*your act* produces, and is the only place repeating means anything. `given`
+is the state of the world somebody else has to have arranged: the browser
+being the front window before a Cmd-P, because after a save the application's
+own download popup owns the front and swallows it. `given` is re-checked
+before **every** attempt, which is why it is a parameter and not a `wait()`
+before the call.
+
+Getting them the wrong way round fails in two shapes. A `given` written as
+`until` hammers a door that is not open — Cmd-P into the popup, again and
+again. An `until` written as `given` waits for what nothing has caused yet.
+
+**Retry is opt-in.** No `until` presses once, because a blind retry
+double-acts: double-save, double-submit. Say what "it worked" means and you
+get the retry; say nothing and you get one attempt.
+
+## Waiting for what you do not cause
 
 ```python
-opener.press()
-dialog = window.wait_for(identifier="dialog-title")   # 1: appears
-...                                                   # 2: act
-window.wait_until_gone(identifier="dialog-title")     # 3: gone
+value = ui.wait(lambda: os.path.exists(path), timeout=120)
+ui.wait(ui.Stable(within=table, quiet=0.3, max_nodes=300))
+node = window.wait_for(identifier="modal", timeout=5)      # a node's own
 ```
 
-Beat 3 is the one that breaks iteration when omitted.
+`ui.wait` is for what *something else* causes — a file appearing, a job
+finishing — where waiting is the whole strategy. It takes a condition value as
+readily as a callable, and returns what the condition returned. A timeout
+raises `WaitTimeout` (a `TimeoutError`) — an error, not a `False`, because an
+action whose precondition never arrived must stop.
 
 **Wait for the state you expect, not for the old state to change.** "It
 differs from what I captured" and "the result arrived" coincide only when the
-new value happens to differ: a transform can be the identity - a translation
-whose output equals its input - and a wait on *difference* then never returns,
-with the screen already correct the whole time. This is the read-back rule
-aimed at presses: `set_text` verifies by reading back the value it wrote, not
-by noticing the field changed, and a press whose outcome matters is verified
-the same way - state the expected value in the condition.
+new value happens to differ: a transform can be the identity — a translation
+whose output equals its input — and a wait on *difference* then never returns,
+with the screen already correct the whole time. So the conditions name states:
+
+| | Satisfied when |
+|---|---|
+| `Appears(locator, within=…)` | something matching exists — hands it back |
+| `Appears(app=…, title=…)` | that window exists |
+| `Gone(locator_or_node, within=…)` | it is not there any more |
+| `Reads(node, value="True")` | that node reads as that — the read-back rule |
+| `Front(app=…)` | that window is the front one |
+| `Stable(within=…, quiet=…)` | the subtree stopped changing |
+
+`Stable` is the escape for what cannot be named, and an escape is easy to
+reach for: prefer `Reads` or `Appears` wherever you can say the state. It is a
+**precondition only** — quiet is the *absence* of change, so it is satisfied
+by the calm before your act's effect starts as readily as the calm after, and
+the API refuses it as an `until`. "Click, then let the field re-render" is
+`ui.wait(Stable(...))` before the read, not a postcondition on the click.
+
+## Locators are values
+
+Write the selector once and pass it around:
+
+```python
+SHEET = ui.Locator(identifier="save-panel", max_depth=2)
+```
+
+The same selector appears in the act, its postcondition, the dismissal and a
+read — four places anything repairing your action has to find. As a value it
+is one, and its `repr` is a Python literal. The keywords are `find`'s own, and
+the walk bounds ride along, because a locator that needs a deeper walk needs it
+everywhere it is used.
+
+`within` is **not** in the locator: scope is a live node, and a value holding a
+handle cannot be written down or compared. `node=` is for a target no locator
+describes — "the third tab, from the list the previous step enumerated" — and
+it excludes `locator` and `within` rather than quietly outranking them.
 
 ## Reading text the tree cannot reach
 
@@ -107,7 +169,11 @@ line   = node.line_at_caret()    # no selection, no pointer
 sel    = node.selection()        # "" is a real answer
 ```
 
-## Writing
+## Writing, at the node level
+
+The verbs above are what an action normally uses. These are the same acts
+without the locator, the precondition or the retry — reach for them when you
+already hold the node and there is nothing to verify.
 
 ```python
 used = field.set_text("REC-001")     # paste → keys; returns which worked
@@ -116,6 +182,10 @@ button.press()                       # AXPress / Invoke / Toggle / Select
 ok = field.focus()                   # verified against the system focus
 with ui.preserve_clipboard(): ...
 ```
+
+**`press()` cannot tell an accepted press from an effective one** — that is
+the whole reason `ui.click()` exists and takes an `until`. Use the verb
+wherever the outcome matters.
 
 | mechanism | cost (macOS / Windows) | caveat |
 |---|---|---|
@@ -217,10 +287,26 @@ is not noticed until the next wait.
 ## The one platform-specific call
 
 ```python
-ui.enable_content_access(node)          # ...and False when done
+with ui.content_access():               # handed back on every way out
+    ...
 ```
 
-macOS only, and safe to call anywhere: Chromium and Electron applications
-expose no content until asked (59 nodes of browser chrome → 119). Windows needs
-nothing equivalent and returns `False`, so call it unconditionally rather than
-branching.
+macOS only, and safe to call anywhere: a freshly started Chromium or Electron
+application exposes 13 nodes and no page at all until something asks. Windows
+needs nothing equivalent, so use it unconditionally rather than branching.
+
+**Use the context manager, not the bare `enable_content_access`.** Nothing
+turns the flag off by itself, so a bare call leaves another application changed
+for the rest of its life — and the flag decides whether a press into that
+application's *content* works at all, which means the next unrelated action
+starts working for reasons nobody chose. An action raises far more often than
+it reaches its last line, and the `with` covers every way out.
+
+**It does not wait**, and does not need to: the tree is readable at once, and
+a press only starts working about two seconds later, which a verb's `until=`
+absorbs by retrying. Do not sleep after it.
+
+Most actions need it less than they think. A control drawn by the application
+itself — Chrome's own toolbar and tabs — answers a press unconditionally; it is
+the *page* that is conditional. And `ui.click()` lands a real click where the
+screen can prove the control is there, which works either way.

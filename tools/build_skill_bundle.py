@@ -102,7 +102,12 @@ MOVING_REF = re.compile(
 
 def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
     """Zip one skill folder. Returns (written names, problems, output path)."""
-    output = ROOT / "dist" / f"{skill.name}-skill.zip"
+    # The version is in the name as well as in the stamp inside. A downloaded
+    # bundle is a file in somebody's Downloads folder for months: two of them
+    # are indistinguishable without opening the zip, and the second one
+    # silently overwrites the first. Keeping the `-skill.zip` tail means the
+    # release globs still match on the suffix rather than on the whole shape.
+    output = ROOT / "dist" / f"{skill.name}-{keyhac.__version__}-skill.zip"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     written = []
