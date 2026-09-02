@@ -124,6 +124,16 @@ docstrings, not this file.
 ACTION_API_NAMES = [
     "UI",
     "UINode",
+    # The values the verbs take. They are reached as `ui.Locator(...)` rather
+    # than imported - the config namespace keeps its three names - but a
+    # reader who meets `locator: Locator` in a signature needs somewhere that
+    # says what is in one, which is here.
+    "Locator",
+    "Appears",
+    "Front",
+    "Gone",
+    "Reads",
+    "Stable",
     "WaitTimeout",
     "FillFailed",
     "ActionCancelled",
@@ -135,8 +145,10 @@ ACTION_HEADER = """# Action API reference
 The surface an action uses to drive another application: finding windows,
 searching element trees, waiting for the screen to change, filling fields.
 Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
-methods on the nodes it hands back — the three names below are the only ones a
-config imports.
+methods on the nodes it hands back — the three exception names below are the
+only ones a config imports. The values the verbs take (`Locator`, `Appears`,
+`Front`, `Gone`, `Reads`, `Stable`) are reached through `ui` as well:
+`ui.Locator(...)`, `ui.Appears(...)`.
 
 Generated from the docstrings. For how to *write* an action, the authoring
 skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
@@ -197,15 +209,16 @@ class _Generator(MarkdownGenerator):
 def _resolve(name):
     """The object a name in API_NAMES refers to.
 
-    Everything is exported from the package except Window and UI, which a
-    configuration only ever receives - from keymap.get_active_window() and
-    from keymap.ui respectively - so neither is in `keyhac.__all__`.
+    Everything is exported from the package except Window, UI and the values
+    the verbs take, which a configuration only ever receives or reaches
+    through `ui` - from keymap.get_active_window(), from keymap.ui, and as
+    `ui.Locator(...)` - so none of them is in `keyhac.__all__`.
     """
     if name == "Window":
         return Window
-    if name == "UI":
-        from keyhac.core.ui import UI
-        return UI
+    import keyhac.core.ui as ui_module
+    if hasattr(ui_module, name):
+        return getattr(ui_module, name)
     return getattr(keyhac, name)
 
 

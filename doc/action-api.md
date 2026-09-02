@@ -3,8 +3,10 @@
 The surface an action uses to drive another application: finding windows,
 searching element trees, waiting for the screen to change, filling fields.
 Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
-methods on the nodes it hands back — the three names below are the only ones a
-config imports.
+methods on the nodes it hands back — the three exception names below are the
+only ones a config imports. The values the verbs take (`Locator`, `Appears`,
+`Front`, `Gone`, `Reads`, `Stable`) are reached through `ui` as well:
+`ui.Locator(...)`, `ui.Appears(...)`.
 
 Generated from the docstrings. For how to *write* an action, the authoring
 skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
@@ -30,7 +32,7 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
+**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
 
 
 ## <kbd>class</kbd> `UI`
@@ -800,6 +802,127 @@ walk() → Iterator['UINode']
 This node and every descendant in the snapshot, depth first. 
 
 A walk over what was captured, not what is on screen: it yields the nodes already held, asking the OS nothing.  On a node read with `max_depth=0` - which is what `ui.window()` and `ui.node()` return - that is this node alone.  `find_all()` is the one that searches the live tree; `reread().walk()` traverses a fresh capture. 
+
+---
+
+
+## <kbd>class</kbd> `Locator`
+Which element, as a value. 
+
+```python
+SAVE_PANEL = Locator(identifier="save-panel", max_depth=2)
+ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL, within=dialog))
+``` 
+
+**Lifted out of the call so that a repair is a patch rather than a rewrite.** The same selector is written four times in one real action - the act, its postcondition, the dismissal and a read - and as keyword arguments those are four places anything fixing it has to find and understand. As a value they are one, and its `repr` is a Python literal: storable, diffable, and replaceable without parsing code (discussion #98). 
+
+The keywords are `find_elements`' own, so nothing new has to be learned to write one, and the walk bounds ride along because a locator that needs a deeper walk needs it everywhere it is used. 
+
+**`within` is deliberately not here.** Scope is a live node, and a value holding a handle is not a value any more - it cannot be written down, kept or compared. It stays an argument of the call that uses the locator. 
+
+`predicate` can be here, and is the one field nothing can patch. That is worth showing rather than hiding: a caller reading a locator can see exactly which part of it is opaque. 
+
+
+
+**Attributes:**
+ 
+ - <b>`role`</b>:  Role pattern, with macOS's `AX` prefix optional. 
+ - <b>`name`</b>:  Label pattern. 
+ - <b>`value`</b>:  Content pattern. 
+ - <b>`identifier`</b>:  DOM id / AutomationId - the first thing to reach for,  because it survives relabelling and localisation. 
+ - <b>`text`</b>:  Label and content together, for when you do not know which of  the two the application put the caption in. 
+ - <b>`predicate`</b>:  A callable taking a node - the escape, and the one field  nothing can patch. 
+ - <b>`max_depth`</b>:  How deep to walk (#81). 
+ - <b>`max_nodes`</b>:  How many nodes to read before giving up. 
+
+---
+
+
+## <kbd>class</kbd> `Appears`
+Satisfied when something matching this locator exists. 
+
+**With a locator it is an element question, without one a window question**, which is the whole rule: the thing a dialog's button opens is often a window rather than an element in one, and `app` / `title` name it. Given a locator *and* `app` / `title`, it looks for the element in those windows - because *which* window is often what the action cannot answer first. `within` scopes it to one node instead. 
+
+Satisfied *with a value*: the node it found, so the verb that waited for it can hand it back. 
+
+
+
+**Attributes:**
+ 
+ - <b>`locator`</b>:  Which element. Without one this is a window question. 
+ - <b>`within`</b>:  The node to search under. 
+ - <b>`app`</b>:  Application pattern, to search that application's windows. 
+ - <b>`title`</b>:  Window title pattern. 
+
+---
+
+
+## <kbd>class</kbd> `Front`
+Satisfied when the front window is this one. 
+
+The precondition that is not about the target, and the one a verb cannot fold without a name for it: an action sends Cmd-P to *the browser*, and after a save the application's own download popup owns the front for a few seconds and swallows it. Waiting for the right window to be in front is the difference between a retry that converges and one that types into whatever is there. 
+
+
+
+**Attributes:**
+ 
+ - <b>`app`</b>:  Application pattern. 
+ - <b>`title`</b>:  Window title pattern. 
+
+---
+
+
+## <kbd>class</kbd> `Gone`
+Satisfied when `target` is no longer there. 
+
+`target` is a `Locator` (with `within`, if it is scoped), an `Appears`, or a node - the dialog you just dismissed. **Prefer the described forms**: a held node can only be asked whether its own reference has died, which a platform answers well for a closed window and badly for a row that was merely removed from a list. 
+
+
+
+**Attributes:**
+ 
+ - <b>`target`</b>:  A `Locator`, an `Appears`, or a node. 
+ - <b>`within`</b>:  The scope, when `target` is a bare locator. 
+
+---
+
+
+## <kbd>class</kbd> `Reads`
+Satisfied when `target` reads as the values given. 
+
+**The postcondition to reach for.** The rule the authoring skill states - *wait for the state you expect, not for the old state to change* - is this value: "it differs from what I captured" and "the result arrived" coincide only when the new state happens to differ, and a transform can be the identity. A translation whose output equals its input leaves a `Changed` waiting forever with the screen already correct. 
+
+`value` is compared as text against the same patterns `find` takes, so `value="True"` matches a macOS AXValue of `True` and a Windows toggle state of `"True"` without the caller knowing which it got. 
+
+
+
+**Attributes:**
+ 
+ - <b>`target`</b>:  The node to read. 
+ - <b>`role`</b>:  Role it should report, if that is what changed. 
+ - <b>`name`</b>:  Label it should report. 
+ - <b>`value`</b>:  Content it should report, compared as text. 
+
+---
+
+
+## <kbd>class</kbd> `Stable`
+Satisfied when a subtree has stopped changing. 
+
+For the re-render nobody can name: a dependent field repopulating, a table repainting after a sort. **Say the state you expect wherever you can** - `Appears(text="page 2")`, `Reads(row, value=…)` - because this is the escape for what cannot be named, and an escape is easy to reach for. 
+
+**It is a precondition, never a postcondition**, and the API refuses it as one. Quiet is the *absence* of change, so it is satisfied by the calm before an act's effect starts as readily as by the calm after: as an `until=` it has a race built into its meaning. As a `given=`, or in a `wait()` of its own before a read, it says something true - "do not act into a screen that is still moving", "let it finish, then read". 
+
+Its question is about a stretch of time rather than an instant, so unlike the other values it cannot be asked by polling a predicate; it brings its own wait. 
+
+
+
+**Attributes:**
+ 
+ - <b>`within`</b>:  The subtree that must settle; the front window by default. 
+ - <b>`quiet`</b>:  Seconds of no change required. 
+ - <b>`max_depth`</b>:  Depth bound for each read - bound it, because this costs  one tree read per look. 
+ - <b>`max_nodes`</b>:  Node bound for each read. 
 
 ---
 

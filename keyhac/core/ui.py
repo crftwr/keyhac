@@ -74,6 +74,19 @@ class Locator:
     `predicate` can be here, and is the one field nothing can patch. That is
     worth showing rather than hiding: a caller reading a locator can see
     exactly which part of it is opaque.
+
+    Attributes:
+        role: Role pattern, with macOS's `AX` prefix optional.
+        name: Label pattern.
+        value: Content pattern.
+        identifier: DOM id / AutomationId - the first thing to reach for,
+            because it survives relabelling and localisation.
+        text: Label and content together, for when you do not know which of
+            the two the application put the caption in.
+        predicate: A callable taking a node - the escape, and the one field
+            nothing can patch.
+        max_depth: How deep to walk (#81).
+        max_nodes: How many nodes to read before giving up.
     """
 
     role: str = None
@@ -148,6 +161,12 @@ class Appears(Condition):
 
     Satisfied *with a value*: the node it found, so the verb that waited for
     it can hand it back.
+
+    Attributes:
+        locator: Which element. Without one this is a window question.
+        within: The node to search under.
+        app: Application pattern, to search that application's windows.
+        title: Window title pattern.
     """
 
     locator: Locator = None
@@ -196,6 +215,10 @@ class Front(Condition):
     seconds and swallows it. Waiting for the right window to be in front is
     the difference between a retry that converges and one that types into
     whatever is there.
+
+    Attributes:
+        app: Application pattern.
+        title: Window title pattern.
     """
 
     app: str = None
@@ -225,6 +248,10 @@ class Gone(Condition):
     held node can only be asked whether its own reference has died, which a
     platform answers well for a closed window and badly for a row that was
     merely removed from a list.
+
+    Attributes:
+        target: A `Locator`, an `Appears`, or a node.
+        within: The scope, when `target` is a bare locator.
     """
 
     target: Any = None
@@ -274,6 +301,12 @@ class Reads(Condition):
     `value` is compared as text against the same patterns `find` takes, so
     `value="True"` matches a macOS AXValue of `True` and a Windows toggle
     state of `"True"` without the caller knowing which it got.
+
+    Attributes:
+        target: The node to read.
+        role: Role it should report, if that is what changed.
+        name: Label it should report.
+        value: Content it should report, compared as text.
     """
 
     target: Any = None
@@ -327,6 +360,13 @@ class Stable(Condition):
     Its question is about a stretch of time rather than an instant, so unlike
     the other values it cannot be asked by polling a predicate; it brings its
     own wait.
+
+    Attributes:
+        within: The subtree that must settle; the front window by default.
+        quiet: Seconds of no change required.
+        max_depth: Depth bound for each read - bound it, because this costs
+            one tree read per look.
+        max_nodes: Node bound for each read.
     """
 
     postcondition = False
