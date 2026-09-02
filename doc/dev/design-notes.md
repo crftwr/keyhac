@@ -640,6 +640,67 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   it — parked on the control it would raise a tooltip and change what their
   next click means.
 
+## `given`, `until` and `wait`: who causes it
+
+The verb-first layer (discussion #98) has three ways to say "not yet", and one
+question tells them apart — **who causes the thing being waited for**.
+
+| | Caused by | You are | Repeating |
+|---|---|---|---|
+| `ui.wait(cond)` | someone else | a spectator | there is no act to repeat |
+| `given=` | someone else | a gate | no — it only refuses to proceed |
+| `until=` | **your own act** | the claim | yes, and it is the only place repeating means anything |
+
+The test, in order: **is there an act at all?** No — `ui.wait`, and waiting is
+the whole strategy because nothing you could do would help (a file appearing, a
+job finishing). It returns what the condition returned, because waiting for a
+thing and receiving it are one motion. **Does my act produce this condition?**
+Yes — `until`, which is the definition of the act having landed, and is a
+separate clause from the act only because the platform lies about success. No —
+`given`, the state of the world someone else has to have arranged first.
+
+Misplacing them fails in two shapes. A `given`-shaped condition written as
+`until` **hammers a door that is not open**: `send_key("Cmd-P",
+until=Appears(title="Print"))` fires Cmd-P into the download popup, again and
+again, while the popup owns the front. An `until`-shaped condition written as
+`given` waits for something nothing has yet caused, and times out.
+
+### `given` exists because of the retry, not to save a line
+
+`ui.wait(X); verb()` and `verb(given=X)` are **the same thing when there is no
+`until`** — the implementation's `until is None` branch is literally wait-then-
+act, and `given` there is sugar. With `until`, they are not the same: the
+hoisted `ui.wait` guards only the first attempt, while `given` is re-checked
+before every one. And a retry means time has passed and something moved, so
+the moment a hoisted guard is least trustworthy is exactly the moment it is
+used. Hoisting `given` out means hoisting the loop out with it, which is the
+thing this layer removes.
+
+Two smaller reasons, neither load-bearing: the failure message names the guard
+*and* what it was guarding (`sending 'Cmd-P' never started: waited for the
+front window…`), which matters under a premise of mechanical diagnosis; and
+one call per step is one shape for a generator to get right rather than two.
+
+### Settling is a `given`, never an `until`
+
+Run `Stable` (the screen has stopped moving) through the same test and it
+falls out. It is not something an act *produces* — it is the absence of change
+— and it **is satisfied by the calm before the act's effect starts** as
+readily as by the calm after. `until=Stable(...)` therefore has a race built
+into its meaning. `given=Stable(...)` is coherent: too-early satisfaction just
+means acting on a quiet screen, which was the point, and per-attempt
+re-checking is right because the screen can start moving again between tries.
+
+"Click, then wait for the dependent field to re-render" is then not the verb's
+business at all — it is the *next* step's precondition, or a bare
+`ui.wait(Stable(...))` before a read.
+
+And the rule that generalises: where a state can be named, name it —
+`Appears(text="page 2")`, `Reads(row, value=…)`. **`Stable` is to timing what
+`Changed` is to state**: the escape for what cannot be named, easy to reach
+for and usually the wrong answer. That is the shape the settle question in #98
+takes: not "add `until=Stable`", but "add `Stable` as a `given`-only value".
+
 ## There is no Menu page on Windows
 
 - **A menu bar is a macOS concept.** There it is an OS-level part: one per

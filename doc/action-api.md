@@ -127,9 +127,9 @@ ui.click(role="Button", name="Save", within=dialog,
  
  - <b>`node`</b>:  A node already in hand, instead of a locator - the third row  of a list an earlier step enumerated is a thing no locator  says well. 
  - <b>`within`</b>:  Where to look; the focused window by default. 
- - <b>`given`</b>:  What must hold before each attempt - `Front`, `Appears`,  `Gone`, `Changed`, or a callable. The verb waits for it, and 
- - <b>`says so distinctly when it never holds`</b>:  a precondition that failed and an act that did not take are different diagnoses. 
- - <b>`until`</b>:  What makes it true - `Appears`, `Gone`, `Changed`, or a  callable. None presses once and returns. 
+ - <b>`given`</b>:  What must hold before each attempt - state of the world  somebody else has to have arranged, which this waits for and  never causes. It is re-checked before *every* attempt, and 
+ - <b>`that is the whole reason it is a parameter`</b>:  with no `until` it is only sugar for `wait()` then the call, but with one, a hoisted `wait()` guards the first attempt and nothing after it. It also fails distinctly - a precondition that never held and an act that did not take are different diagnoses. 
+ - <b>`until`</b>:  What makes it true - what *this act* produces, which is  the definition of it having landed, and a separate clause only  because the platform lies about success. Waiting here for  something the act does not cause fires it again and again into  a door that is not open. None presses once and returns. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  again. 
  - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
@@ -289,7 +289,7 @@ Nothing can confirm a keystroke arrived - the application may be starting, may h
 **Args:**
  
  - <b>`keys`</b>:  A key expression, as `InputContext.send_key` takes it. 
- - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant. 
+ - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant, and  what was in front when the first attempt went out need not  be in front for the second. 
  - <b>`until`</b>:  What makes it true; None sends it once. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  again. 
@@ -324,6 +324,8 @@ For a wait that is not "an element appeared" or "an element went away"
 - those are `node.wait_for()` and `node.wait_until_gone()`. Never `sleep`: a fixed delay passes on the machine it was written on, and on a faster one it fails *silently*, acting on a screen that has not arrived. 
 
 `condition` may also be an `Appears` / `Gone` / `Changed` / `Front` rather than a callable - the same question without the lambda, and without the predicate helper an action grows to hold the lambda. 
+
+**This is the wait for what something else causes** - a file appearing, a job finishing, a window someone else opens - where waiting is the whole strategy because nothing you could do would help. What your own act causes is a verb's `until=`; what has to be true before your act goes out is its `given=`. 
 
 
 

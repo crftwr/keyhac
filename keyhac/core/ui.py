@@ -412,6 +412,12 @@ class UI:
         rather than a callable - the same question without the lambda, and
         without the predicate helper an action grows to hold the lambda.
 
+        **This is the wait for what something else causes** - a file
+        appearing, a job finishing, a window someone else opens - where
+        waiting is the whole strategy because nothing you could do would
+        help. What your own act causes is a verb's `until=`; what has to be
+        true before your act goes out is its `given=`.
+
         Raises:
             WaitTimeout: The condition never became true.
         """
@@ -468,12 +474,19 @@ class UI:
                 of a list an earlier step enumerated is a thing no locator
                 says well.
             within: Where to look; the focused window by default.
-            given: What must hold before each attempt - `Front`, `Appears`,
-                `Gone`, `Changed`, or a callable. The verb waits for it, and
-                says so distinctly when it never holds: a precondition that
-                failed and an act that did not take are different diagnoses.
-            until: What makes it true - `Appears`, `Gone`, `Changed`, or a
-                callable. None presses once and returns.
+            given: What must hold before each attempt - state of the world
+                somebody else has to have arranged, which this waits for and
+                never causes. It is re-checked before *every* attempt, and
+                that is the whole reason it is a parameter: with no `until`
+                it is only sugar for `wait()` then the call, but with one, a
+                hoisted `wait()` guards the first attempt and nothing after
+                it. It also fails distinctly - a precondition that never held
+                and an act that did not take are different diagnoses.
+            until: What makes it true - what *this act* produces, which is
+                the definition of it having landed, and a separate clause only
+                because the platform lies about success. Waiting here for
+                something the act does not cause fires it again and again into
+                a door that is not open. None presses once and returns.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before pressing
                 again.
@@ -569,7 +582,9 @@ class UI:
             keys: A key expression, as `InputContext.send_key` takes it.
             given: What must hold before each attempt - `Front` is the one
                 this verb is usually given, because a keystroke goes to
-                whatever is in front rather than to whatever you meant.
+                whatever is in front rather than to whatever you meant, and
+                what was in front when the first attempt went out need not
+                be in front for the second.
             until: What makes it true; None sends it once.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before sending
