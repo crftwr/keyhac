@@ -643,13 +643,14 @@ class TestVerbs:
         assert api.Changed.needs_baseline
         assert not api.Reads.needs_baseline
 
-    def test_looking_and_acting_are_two_rates(self, ui):
-        """`interval` is how often to look and means what it means in wait();
-        `retry_every` is how often to act again. This layer does both, so it
-        has two, and only one of them costs anything to get wrong."""
+    def test_only_acting_again_is_a_rate(self, ui):
+        """How often to *look* is `wait_for`'s backing-off default and not a
+        parameter - it cannot be got expensively wrong. How often to *act
+        again* can be: too short, and a dialog that takes three seconds to
+        open is opened three times."""
         api, element = ui
         button = element.kids[0]
         api.click(role="AXButton", name="Save",
                   until=lambda: button.pressed >= 2,
-                  timeout=3.0, retry_every=0.1, interval=0.01)
+                  timeout=3.0, retry_every=0.1)
         assert button.pressed == 2

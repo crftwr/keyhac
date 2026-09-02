@@ -104,7 +104,6 @@ click(
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
     retry_every: 'float' = 2.0,
-    interval: 'float | None' = None,
     **locator
 )
 ```
@@ -132,9 +131,8 @@ ui.click(role="Button", name="Save", within=dialog,
  - <b>`that is the whole reason it is a parameter`</b>:  with no `until` it is only sugar for `wait()` then the call, but with one, a hoisted `wait()` guards the first attempt and nothing after it. It also fails distinctly - a precondition that never held and an act that did not take are different diagnoses. 
  - <b>`until`</b>:  What makes it true - what *this act* produces, which is  the definition of it having landed, and a separate clause only  because the platform lies about success. Waiting here for  something the act does not cause fires it again and again into  a door that is not open. None presses once and returns. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
- - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  *again*. Distinct from `interval`, which is how often to 
- - <b>`look`</b>:  this layer both looks and acts, so it has two rates, and only one of them costs anything to get wrong. 
- - <b>`interval`</b>:  Seconds between looks, meaning what it means in  `wait()`. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before pressing  *again* - the only rate here, because how often to *look* is  `wait_for`'s backing-off default and cannot be got expensively 
+ - <b>`wrong, while pressing again can`</b>:  too short, and a dialog that takes three seconds to open gets pressed three times. 
  - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
 
 
@@ -275,8 +273,7 @@ send_key(
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_every: 'float' = 2.0,
-    interval: 'float | None' = None
+    retry_every: 'float' = 2.0
 )
 ```
 
@@ -296,8 +293,7 @@ Nothing can confirm a keystroke arrived - the application may be starting, may h
  - <b>`given`</b>:  What must hold before each attempt - `Front` is the one  this verb is usually given, because a keystroke goes to  whatever is in front rather than to whatever you meant, and  what was in front when the first attempt went out need not  be in front for the second. 
  - <b>`until`</b>:  What makes it true; None sends it once. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
- - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  *again* - not `interval`, which is how often to look. 
- - <b>`interval`</b>:  Seconds between looks, meaning what it means in  `wait()`. 
+ - <b>`retry_every`</b>:  Seconds to watch the postcondition before sending  *again*; how often to look is not a parameter, for the reason  `click` gives. 
 
 
 

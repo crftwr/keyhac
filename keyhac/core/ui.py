@@ -47,11 +47,6 @@ from keyhac.core.uitree import UINode, get_ui_tree
 logger = log.getLogger("UI")
 
 
-#: How often to look, when nobody says otherwise.  `interval` overrides it,
-#: and means the same thing here as it does in `UI.wait`.
-_POLL = 0.05
-
-
 class Condition:
     """What a "not yet" slot takes, besides a plain callable.
 
@@ -478,8 +473,7 @@ class UI:
     def click(self, node=None, within=None,
               given: Condition | Callable[[], Any] = None,
               until: Condition | Callable[[], Any] = None,
-              timeout: float = 10.0, retry_every: float = 2.0,
-              interval: float | None = None, **locator):
+              timeout: float = 10.0, retry_every: float = 2.0, **locator):
         """Find one control and press it, and say what "it worked" means.
 
         ```python
@@ -525,11 +519,10 @@ class UI:
                 a door that is not open. None presses once and returns.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before pressing
-                *again*. Distinct from `interval`, which is how often to
-                look: this layer both looks and acts, so it has two rates,
-                and only one of them costs anything to get wrong.
-            interval: Seconds between looks, meaning what it means in
-                `wait()`.
+                *again* - the only rate here, because how often to *look* is
+                `wait_for`'s backing-off default and cannot be got expensively
+                wrong, while pressing again can: too short, and a dialog that
+                takes three seconds to open gets pressed three times.
             **locator: `find_elements` keywords - role, name, value,
                 identifier, text.
 
@@ -567,7 +560,7 @@ class UI:
 
         return self._until(act, until, timeout, retry_every,
                            what=f"clicking {locator or target!r}",
-                           given=given, interval=interval) or target
+                           given=given) or target
 
     def activate(self, app: str = None, title: str = None,
                  timeout: float = 10.0, retry_every: float = 2.0):
@@ -608,8 +601,7 @@ class UI:
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,
                  until: Condition | Callable[[], Any] = None,
-                 timeout: float = 10.0, retry_every: float = 2.0,
-                 interval: float | None = None):
+                 timeout: float = 10.0, retry_every: float = 2.0):
         """Send a key expression, and say what "it arrived" means.
 
         ```python
@@ -631,9 +623,8 @@ class UI:
             until: What makes it true; None sends it once.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before sending
-                *again* - not `interval`, which is how often to look.
-            interval: Seconds between looks, meaning what it means in
-                `wait()`.
+                *again*; how often to look is not a parameter, for the reason
+                `click` gives.
 
         Returns:
             Whatever `until` was satisfied with, or None.
@@ -646,17 +637,32 @@ class UI:
                 ctx.send_key(keys)
 
         return self._until(send, until, timeout, retry_every,
-                           what=f"sending {keys!r}", given=given,
-                           interval=interval)
+                           what=f"sending {keys!r}", given=given)
 
     def _until(self, act, until, timeout: float, retry_every: float, what: str,
-               given=None, interval: float | None = None):
+               given=None):
         """Wait for the precondition, act, watch, act again - the one loop
         the verbs share, and the one an action no longer writes.
 
+            deadline = now + timeout
+            repeat:
+                wait for given()                    # the gate
+                act()                               # the one costly line
+                watch until() for retry_every       # or until the deadline
+                if it held: return what it held with
+            fail
+
+        **One rate, deliberately.** Looking is `wait_for`'s business and uses
+        its backing-off default, which is right for a watch that wants to
+        notice a fast answer at once and cost little when the answer is slow.
+        Only `retry_every` is a parameter, because only acting again can be
+        expensive to get wrong: too small and a print dialog that takes three
+        seconds gets three Cmd-Ps and opens three times.
+
         lazydocs: ignore
         """
-        from keyhac.core.wait import WaitTimeout, _refuse_to_block_the_loop
+        from keyhac.core.wait import (WaitTimeout, wait_for,
+                                      _refuse_to_block_the_loop)
 
         if until is None and given is None:
             act()
@@ -664,32 +670,30 @@ class UI:
         _refuse_to_block_the_loop("a verb with given= or until=")
         deadline = time.monotonic() + timeout
         if until is None:
-            self._hold(given, deadline, what, interval)
+            self._hold(given, deadline, what)
             act()
             return None
         check = until if callable(until) else None
         baseline = None if check else until.baseline(self)
+        holds = check or (lambda: until.check(self, baseline))
         attempts = 0
         while True:
             if given is not None:
-                self._hold(given, deadline, what, interval)
+                self._hold(given, deadline, what)
             act()
             attempts += 1
-            edge = min(time.monotonic() + retry_every, deadline)
-            while True:
-                got = check() if check else until.check(self, baseline)
-                if got:
-                    return got
-                if time.monotonic() >= edge:
-                    break
-                time.sleep(interval or _POLL)
+            window = min(retry_every, deadline - time.monotonic())
+            try:
+                return wait_for(holds, timeout=max(window, 0.0),
+                                message=str(until))
+            except WaitTimeout:
+                pass
             if time.monotonic() >= deadline:
                 raise WaitTimeout(
                     f"{what} did not take: waited {timeout:.0f}s for "
                     f"{until} over {attempts} attempts")
 
-    def _hold(self, given, deadline: float, what: str,
-              interval: float | None = None):
+    def _hold(self, given, deadline: float, what: str):
         """Wait for a precondition, and fail as a precondition.
 
         Named apart from the postcondition on purpose: "the world was not
@@ -698,7 +702,7 @@ class UI:
 
         lazydocs: ignore
         """
-        from keyhac.core.wait import WaitTimeout
+        from keyhac.core.wait import WaitTimeout, wait_for
 
         check = given if callable(given) else None
         if check is None and getattr(given, "needs_baseline", False):
@@ -706,14 +710,12 @@ class UI:
                 f"{type(given).__name__} cannot be a precondition: it asks "
                 f"what changed, and before the act there is no before. Say "
                 f"the state you are waiting for instead (Reads, Appears).")
-        while True:
-            got = check() if check else given.check(self, None)
-            if got:
-                return got
-            if time.monotonic() >= deadline:
-                raise WaitTimeout(
-                    f"{what} never started: waited for {given}")
-            time.sleep(interval or _POLL)
+        holds = check or (lambda: given.check(self, None))
+        try:
+            return wait_for(holds, timeout=max(deadline - time.monotonic(), 0.0),
+                            message=str(given))
+        except WaitTimeout:
+            raise WaitTimeout(f"{what} never started: waited for {given}") from None
 
     # -- writing -------------------------------------------------------------
 
