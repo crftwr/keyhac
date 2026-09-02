@@ -32,17 +32,33 @@ python .claude/skills/keyhac-skill-cleanroom/scripts/open_room.py \
 It unpacks *this version's* bundle - and refuses if it is not built, rather
 than falling back to an older one, since an older bundle reports an older
 skill's gaps as though they were this one's. It copies `room/RULES.md` in,
-writes `TASK.md`, opens an empty `QUESTIONS.md`, and prints the room's path and
-the sentence to hand over.
+writes `TASK.md`, opens an empty `QUESTIONS.md`, and prints the `cd … && claude`
+that opens the room.
+
+**Rooms live in `~/keyhac-cleanroom/<version>-<timestamp>/`, and never under
+the checkout.** Two failures shaped that. A room in a temp directory was
+unfindable - the session sent to look for it reported that it did not exist,
+which is a fair conclusion from `/var/folders/9k/kmx0…/T/`. And a room *under*
+the checkout is contaminated before it begins, because Claude Code reads
+`CLAUDE.md` from every parent of the working directory: the source layout, the
+design notes and the `UINode` contract arrive in context uninvited. That is the
+worse of the two, because the operator did start the session in the room and
+has every reason to believe the run was clean. The script refuses such a path
+rather than documenting the hazard.
 
 The task is the prompt from one case in
 `keyhac/skills/keyhac-action-authoring/evals/cases.md`, or a real job the user
 wants. **Only the prompt.** The "must" list under each case is the scoring key
 and must not enter the room.
 
-Then start a fresh session whose working directory is the room and say only
-*"Read RULES.md, then do TASK.md."* **Answer nothing it asks.** The operator
-knows the answers, which is exactly why answering destroys the measurement.
+Then run the printed `cd <room> && claude` and say only *"Read RULES.md, then
+do TASK.md."* **Answer nothing it asks.** The operator knows the answers, which
+is exactly why answering destroys the measurement.
+
+Two preconditions the room cannot supply for itself: Keyhac's **MCP server
+switch must be on** (AI Integration > MCP Server) or the room can write an
+action and never run it, which fails the skill's own first checklist line; and
+whatever screen the task is about has to be **on screen already**.
 
 ## In the repository: score
 

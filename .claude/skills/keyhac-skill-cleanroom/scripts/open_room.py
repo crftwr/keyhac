@@ -9,14 +9,21 @@ rules in verbatim" - is the only step a transcription error can quietly ruin.
 """
 
 import argparse
+import datetime
 import pathlib
 import shutil
 import sys
-import tempfile
 import zipfile
 
 SKILL = pathlib.Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
+
+#: Rooms live here: outside every checkout, and somewhere a person can find
+#: them. Not a temp directory - the first room built was in
+#: /var/folders/9k/kmx0.../T/ and the session that went looking for it reported
+#: that it did not exist. QUESTIONS.md is the product of the exercise and has
+#: no business in a folder the OS may sweep.
+ROOMS = pathlib.Path.home() / "keyhac-cleanroom"
 
 
 def bundle_for(version: str) -> pathlib.Path:
@@ -34,6 +41,24 @@ def bundle_for(version: str) -> pathlib.Path:
     return wanted
 
 
+def _refuse_a_room_inside_the_checkout(room: pathlib.Path) -> None:
+    """A room under the checkout is a contaminated room, silently.
+
+    Claude Code loads CLAUDE.md from every parent of the working directory, so
+    a room at <checkout>/cleanroom/ starts its session with the source layout,
+    the design notes and the UINode contract already in context - the exact
+    material RULES.md forbids. That failure is worse than the obvious one,
+    because the operator did start the session *in the room* and has every
+    reason to believe the test was clean.
+    """
+    if room == ROOT or ROOT in room.parents:
+        raise SystemExit(
+            f"{room} is inside the checkout. Claude Code reads CLAUDE.md from "
+            f"every parent directory, so a room there is contaminated before "
+            f"the session begins - and it looks clean. Put it anywhere else; "
+            f"the default is {ROOMS}/.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True,
@@ -47,8 +72,10 @@ def main() -> int:
     import keyhac
 
     bundle = bundle_for(keyhac.__version__)
-    room = pathlib.Path(args.room) if args.room else pathlib.Path(
-        tempfile.mkdtemp(prefix="keyhac-cleanroom."))
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    room = (pathlib.Path(args.room).expanduser().resolve() if args.room
+            else ROOMS / f"{keyhac.__version__}-{stamp}")
+    _refuse_a_room_inside_the_checkout(room)
     room.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(bundle) as archive:
@@ -64,12 +91,17 @@ def main() -> int:
     print(f"bundle:  {bundle.name}")
     print(f"skill:   {len(list((room / 'skill').rglob('*')))} files unpacked")
     print()
-    print("Start a session whose working directory is the room, and say only:")
+    print("Open the room, in a session of its own:")
+    print()
+    print(f"    cd {room} && claude")
+    print()
+    print("and say only:")
     print()
     print("    Read RULES.md, then do TASK.md.")
     print()
-    print("Answer nothing it asks. A question you answer is a finding you have")
-    print("destroyed.")
+    print("Starting it anywhere else - the checkout especially - loads that")
+    print("directory's CLAUDE.md and disqualifies the run. Answer nothing it")
+    print("asks: a question you answer is a finding you have destroyed.")
     return 0
 
 
