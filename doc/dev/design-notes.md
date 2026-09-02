@@ -773,8 +773,9 @@ the first reader took it for "pick an option out of a list" — a dropdown, a
 combo box, a picker. That is a different verb, and a plausible one, but it is
 **not in the vocabulary yet on purpose**: no action has asked for it. Every
 verb here arrived because a real action needed it, and the one picker in the
-one real action turned out to be a sidebar row, which is a plain `click`. When
-a picker does ask, `choose` is the name waiting for it.
+one real action turned out to be a sidebar row, which is a plain `click`. **Deferred, not
+forgotten**: when a picker does ask, the discussion reopens, and `choose` or
+`pick` is the name waiting for it.
 
 ### One unqualified `interval`, and a word on every other one
 
