@@ -142,21 +142,21 @@ ui.choose("File", "Export", "As PDF…")
 
 ```python
 click(
-    node=None,
+    locator: 'Locator' = None,
     within=None,
+    node=None,
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_interval: 'float' = 2.0,
-    **locator
+    retry_interval: 'float' = 2.0
 )
 ```
 
 Find one control and press it, and say what "it worked" means. 
 
 ```python
-ui.click(role="Button", name="Save", within=dialog,
-          until=Appears(identifier="save-panel"))
+SAVE = ui.Locator(role="Button", name="Save")
+ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL))
 ``` 
 
 **The platform's answer is not evidence.** An accessibility press is accepted by applications that then do nothing with it - measured, an `AXPress` on a control drawn by a Chromium application returns success and moves nothing unless that application has been told an assistive client is present. So `until` is how a caller says what to look for, and the press is repeated every `retry_interval` until it holds. 
@@ -169,17 +169,15 @@ ui.click(role="Button", name="Save", within=dialog,
 
 **Args:**
  
+ - <b>`locator`</b>:  Which control, as a value (`ui.Locator`). 
+ - <b>`within`</b>:  Where to look; the focused window by default. Not part of  the locator, because scope is a live node and a value holding  a handle stops being one. 
  - <b>`node`</b>:  A node already in hand, instead of a locator - the third row  of a list an earlier step enumerated is a thing no locator  says well. 
- - <b>`within`</b>:  Where to look; the focused window by default. 
  - <b>`given`</b>:  What must hold before each attempt - state of the world  somebody else has to have arranged, which this waits for and  never causes. It is re-checked before *every* attempt, and 
  - <b>`that is the whole reason it is a parameter`</b>:  with no `until` it is only sugar for `wait()` then the call, but with one, a hoisted `wait()` guards the first attempt and nothing after it. It also fails distinctly - a precondition that never held and an act that did not take are different diagnoses. 
  - <b>`until`</b>:  What makes it true - what *this act* produces, which is  the definition of it having landed, and a separate clause only  because the platform lies about success. Waiting here for  something the act does not cause fires it again and again into  a door that is not open. None presses once and returns. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_interval`</b>:  Seconds to watch the postcondition before pressing  *again* - the only rate here, because how often to *look* is  `wait_for`'s backing-off default and cannot be got expensively 
  - <b>`wrong, while pressing again can`</b>:  too short, and a dialog that takes three seconds to open gets pressed three times. 
- - <b>`**locator`</b>:  `find_elements` keywords - role, name, value,  identifier, text. 
-
-
 
 **Returns:**
  Whatever `until` was satisfied with (an `Appears` hands back the node it found), or the node that was pressed when there is no `until`. 
@@ -257,20 +255,20 @@ Ask a Chromium or Electron application to expose its content.
 ```python
 fill(
     text: 'str',
-    node=None,
+    locator: 'Locator' = None,
     within=None,
+    node=None,
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_interval: 'float' = 2.0,
-    **locator
+    retry_interval: 'float' = 2.0
 )
 ```
 
 Find one field and write `text` into it. 
 
 ```python
-ui.fill("REC-001", identifier="record-id", within=form)
+ui.fill("REC-001", ui.Locator(identifier="record-id"), within=form)
 ``` 
 
 `set_text` already focuses, verifies the focus landed, writes, and reads the value back, raising `FillFailed` naming what each mechanism did - so this verb rarely needs an `until`. What it adds is the locator, the precondition and the one shape every step has. 
@@ -282,13 +280,13 @@ ui.fill("REC-001", identifier="record-id", within=form)
 **Args:**
  
  - <b>`text`</b>:  What to write. 
- - <b>`node`</b>:  A field already in hand, instead of a locator. 
+ - <b>`locator`</b>:  Which field, as a value. 
  - <b>`within`</b>:  Where to look; the focused window by default. 
+ - <b>`node`</b>:  A field already in hand, instead of a locator. 
  - <b>`given`</b>:  What must hold before the write. 
  - <b>`until`</b>:  What makes it true, when the read-back is not the whole  story - a form that only enables Save once the field is  valid. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_interval`</b>:  Seconds to watch `until` before writing again. 
- - <b>`**locator`</b>:  `find_elements` keywords. 
 
 
 
@@ -365,21 +363,22 @@ Put the clipboard back the way it was afterwards.
 
 ```python
 scroll(
+    locator: 'Locator' = None,
     within=None,
     by: 'str' = 'down',
     amount: 'float' = 3.0,
     given: 'Condition | Callable[[], Any]' = None,
     until: 'Condition | Callable[[], Any]' = None,
     timeout: 'float' = 10.0,
-    retry_interval: 'float' = 0.4,
-    **locator
+    retry_interval: 'float' = 0.4
 )
 ```
 
 Turn the wheel over a view until something shows up in it. 
 
 ```python
-row = ui.scroll(within=table, until=ui.Appears(text="REC-042"))
+row = ui.scroll(within=table,
+                 until=ui.Appears(ui.Locator(text="REC-042")))
 ``` 
 
 **For the rows that are not there until you scroll.** A virtualised list has no element for a row it has not drawn, so no amount of looking finds it and no bound on the walk helps - the only way to read the fortieth row is to bring it into view. That is what this is for, and it is why it is a verb of its own rather than something `click` does on the way (which it also does, for a control it is about to press). 
@@ -390,14 +389,14 @@ Scrolling past the target is the hazard, so `retry_interval` is short and `amoun
 
 **Args:**
  
- - <b>`within`</b>:  The view to scroll, or a locator for it below. 
+ - <b>`locator`</b>:  Which view, when `within` is not it already. 
+ - <b>`within`</b>:  The view to scroll, or where to look for `locator`. 
  - <b>`by`</b>:  `"down"` or `"up"`. 
  - <b>`amount`</b>:  Wheel notches per turn. 
  - <b>`given`</b>:  What must hold before each turn. 
  - <b>`until`</b>:  What makes it true. None turns the wheel once. 
  - <b>`timeout`</b>:  Seconds before giving up, in total. 
  - <b>`retry_interval`</b>:  Seconds to watch before turning again. 
- - <b>`**locator`</b>:  `find_elements` keywords, when `within` is not the view  itself. 
 
 
 

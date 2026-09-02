@@ -47,6 +47,58 @@ from keyhac.core.uitree import UINode, get_ui_tree
 logger = log.getLogger("UI")
 
 
+@dataclass(frozen=True)
+class Locator:
+    """Which element, as a value.
+
+    ```python
+    SAVE_PANEL = Locator(identifier="save-panel", max_depth=2)
+    ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL, within=dialog))
+    ```
+
+    **Lifted out of the call so that a repair is a patch rather than a
+    rewrite.** The same selector is written four times in one real action -
+    the act, its postcondition, the dismissal and a read - and as keyword
+    arguments those are four places anything fixing it has to find and
+    understand. As a value they are one, and its `repr` is a Python literal:
+    storable, diffable, and replaceable without parsing code (discussion #98).
+
+    The keywords are `find_elements`' own, so nothing new has to be learned to
+    write one, and the walk bounds ride along because a locator that needs a
+    deeper walk needs it everywhere it is used.
+
+    **`within` is deliberately not here.** Scope is a live node, and a value
+    holding a handle is not a value any more - it cannot be written down, kept
+    or compared. It stays an argument of the call that uses the locator.
+
+    `predicate` can be here, and is the one field nothing can patch. That is
+    worth showing rather than hiding: a caller reading a locator can see
+    exactly which part of it is opaque.
+    """
+
+    role: str = None
+    name: str = None
+    value: str = None
+    identifier: str = None
+    text: str = None
+    predicate: Any = None
+    max_depth: int = None
+    max_nodes: int = None
+
+    def criteria(self) -> dict:
+        """The `find_elements` keywords this stands for.
+
+        lazydocs: ignore
+        """
+        return {field: getattr(self, field)
+                for field in ("role", "name", "value", "identifier", "text",
+                              "predicate", "max_depth", "max_nodes")
+                if getattr(self, field) is not None}
+
+    def __str__(self):
+        return f"something matching {self.criteria()}"
+
+
 class Condition:
     """What a "not yet" slot takes, besides a plain callable.
 
@@ -87,41 +139,23 @@ class Condition:
 class Appears(Condition):
     """Satisfied when something matching this locator exists.
 
-    The keywords are `find_elements`' - `role`, `name`, `value`,
-    `identifier`, `text` - scoped by `within`. **`title` (with or without
-    `app`) makes it a window locator instead**, because the thing a dialog's
-    button opens is often a window rather than an element in one; that is the
-    one ambiguity in the vocabulary and it is resolved by naming it here
-    rather than by guessing.
+    Takes a `Locator` and a scope. **`title` (with or without `app`) makes it
+    a window question instead**, because the thing a dialog's button opens is
+    often a window rather than an element in one; that is the one ambiguity in
+    the vocabulary and it is resolved by naming it rather than by guessing.
+    Given both, it looks for the locator inside that application's windows.
 
     Satisfied *with a value*: the node it found, so the verb that waited for
     it can hand it back.
     """
 
+    locator: Locator = None
     within: Any = None
-    role: str = None
-    name: str = None
-    value: str = None
-    identifier: str = None
-    text: str = None
     app: str = None
     title: str = None
-    #: Walk bounds (#81), on the same value rather than in a separate
-    #: argument: a locator that needs a deeper walk to be found needs it
-    #: everywhere it is used, and splitting the two apart is how a postcondition
-    #: comes to look for something the finder could never have reached.
-    max_depth: int = None
-    max_nodes: int = None
 
     def _locator(self) -> dict:
-        found = {k: v for k, v in (("role", self.role), ("name", self.name),
-                                   ("value", self.value),
-                                   ("identifier", self.identifier),
-                                   ("text", self.text)) if v is not None}
-        for bound in ("max_depth", "max_nodes"):
-            if getattr(self, bound) is not None:
-                found[bound] = getattr(self, bound)
-        return found
+        return self.locator.criteria() if self.locator is not None else {}
 
     def check(self, ui):
         """lazydocs: ignore"""
@@ -146,7 +180,7 @@ class Appears(Condition):
         return root.find(**locator)
 
     def __str__(self):
-        parts = self._locator()
+        parts = dict(self._locator())
         if self.title is not None:
             parts["title"] = self.title
         return f"something matching {parts} to appear"
@@ -186,17 +220,20 @@ class Front(Condition):
 class Gone(Condition):
     """Satisfied when `target` is no longer there.
 
-    `target` is a node - the dialog you just dismissed - or an `Appears`,
-    when what has to go is described rather than held. **Prefer the
-    described form**: a held node can only be asked whether its own reference
-    has died, which a platform answers well for a closed window and badly for
-    a row that was merely removed from a list.
+    `target` is a `Locator` (with `within`, if it is scoped), an `Appears`, or
+    a node - the dialog you just dismissed. **Prefer the described forms**: a
+    held node can only be asked whether its own reference has died, which a
+    platform answers well for a closed window and badly for a row that was
+    merely removed from a list.
     """
 
     target: Any = None
+    within: Any = None
 
     def check(self, ui):
         """lazydocs: ignore"""
+        if isinstance(self.target, Locator):
+            return not Appears(self.target, within=self.within).check(ui)
         if isinstance(self.target, Appears):
             return not self.target.check(ui)
         node = self.target
@@ -467,21 +504,22 @@ class UI:
     #: tests pin (`test_only_three_action_names_are_importable`), and a verb
     #: layer that needed four import lines to be written correctly would be a
     #: worse thing to generate, not a better one.
+    Locator = Locator
     Appears = Appears
     Front = Front
     Gone = Gone
     Reads = Reads
     Stable = Stable
 
-    def click(self, node=None, within=None,
+    def click(self, locator: Locator = None, within=None, node=None,
               given: Condition | Callable[[], Any] = None,
               until: Condition | Callable[[], Any] = None,
-              timeout: float = 10.0, retry_interval: float = 2.0, **locator):
+              timeout: float = 10.0, retry_interval: float = 2.0):
         """Find one control and press it, and say what "it worked" means.
 
         ```python
-        ui.click(role="Button", name="Save", within=dialog,
-                 until=Appears(identifier="save-panel"))
+        SAVE = ui.Locator(role="Button", name="Save")
+        ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL))
         ```
 
         **The platform's answer is not evidence.** An accessibility press is
@@ -503,10 +541,13 @@ class UI:
         rather than leaving it to every caller.
 
         Args:
+            locator: Which control, as a value (`ui.Locator`).
+            within: Where to look; the focused window by default. Not part of
+                the locator, because scope is a live node and a value holding
+                a handle stops being one.
             node: A node already in hand, instead of a locator - the third row
                 of a list an earlier step enumerated is a thing no locator
                 says well.
-            within: Where to look; the focused window by default.
             given: What must hold before each attempt - state of the world
                 somebody else has to have arranged, which this waits for and
                 never causes. It is re-checked before *every* attempt, and
@@ -526,9 +567,6 @@ class UI:
                 `wait_for`'s backing-off default and cannot be got expensively
                 wrong, while pressing again can: too short, and a dialog that
                 takes three seconds to open gets pressed three times.
-            **locator: `find_elements` keywords - role, name, value,
-                identifier, text.
-
         Returns:
             Whatever `until` was satisfied with (an `Appears` hands back the
             node it found), or the node that was pressed when there is no
@@ -594,14 +632,14 @@ class UI:
         return self._until(act, Front(app=app, title=title), timeout,
                            retry_interval, what=f"activating {app or title!r}")
 
-    def fill(self, text: str, node=None, within=None,
+    def fill(self, text: str, locator: Locator = None, within=None, node=None,
              given: Condition | Callable[[], Any] = None,
              until: Condition | Callable[[], Any] = None,
-             timeout: float = 10.0, retry_interval: float = 2.0, **locator):
+             timeout: float = 10.0, retry_interval: float = 2.0):
         """Find one field and write `text` into it.
 
         ```python
-        ui.fill("REC-001", identifier="record-id", within=form)
+        ui.fill("REC-001", ui.Locator(identifier="record-id"), within=form)
         ```
 
         `set_text` already focuses, verifies the focus landed, writes, and
@@ -615,15 +653,15 @@ class UI:
 
         Args:
             text: What to write.
-            node: A field already in hand, instead of a locator.
+            locator: Which field, as a value.
             within: Where to look; the focused window by default.
+            node: A field already in hand, instead of a locator.
             given: What must hold before the write.
             until: What makes it true, when the read-back is not the whole
                 story - a form that only enables Save once the field is
                 valid.
             timeout: Seconds before giving up, in total.
             retry_interval: Seconds to watch `until` before writing again.
-            **locator: `find_elements` keywords.
 
         Returns:
             Whatever `until` was satisfied with, or the field.
@@ -639,14 +677,16 @@ class UI:
                            retry_interval, what=f"filling {locator or target!r}",
                            given=given) or target
 
-    def scroll(self, within=None, by: str = "down", amount: float = 3.0,
+    def scroll(self, locator: Locator = None, within=None, by: str = "down",
+               amount: float = 3.0,
                given: Condition | Callable[[], Any] = None,
                until: Condition | Callable[[], Any] = None,
-               timeout: float = 10.0, retry_interval: float = 0.4, **locator):
+               timeout: float = 10.0, retry_interval: float = 0.4):
         """Turn the wheel over a view until something shows up in it.
 
         ```python
-        row = ui.scroll(within=table, until=ui.Appears(text="REC-042"))
+        row = ui.scroll(within=table,
+                        until=ui.Appears(ui.Locator(text="REC-042")))
         ```
 
         **For the rows that are not there until you scroll.** A virtualised
@@ -662,15 +702,14 @@ class UI:
         after a page of them.
 
         Args:
-            within: The view to scroll, or a locator for it below.
+            locator: Which view, when `within` is not it already.
+            within: The view to scroll, or where to look for `locator`.
             by: `"down"` or `"up"`.
             amount: Wheel notches per turn.
             given: What must hold before each turn.
             until: What makes it true. None turns the wheel once.
             timeout: Seconds before giving up, in total.
             retry_interval: Seconds to watch before turning again.
-            **locator: `find_elements` keywords, when `within` is not the view
-                itself.
 
         Returns:
             Whatever `until` was satisfied with, or the view.
@@ -680,7 +719,8 @@ class UI:
         """
         from keyhac.core.act import scroll as turn
 
-        view = within if not locator else self._locate(within, locator, timeout)
+        view = within if locator is None else self._locate(
+            within, locator, timeout)
         if view is None:
             view = self.window()
         notches = -abs(amount) if by == "down" else abs(amount)
@@ -763,11 +803,13 @@ class UI:
 
         lazydocs: ignore
         """
+        if locator is None:
+            raise ValueError("no locator and no node: say which element")
+        criteria = locator.criteria()
         return self.wait(
             lambda: (within if within is not None else self.window()) is not None
-            and (within if within is not None else self.window()).find(**locator),
-            timeout=timeout,
-            message=f"a control matching {locator} to appear")
+            and (within if within is not None else self.window()).find(**criteria),
+            timeout=timeout, message=f"{locator} to appear")
 
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,

@@ -682,6 +682,40 @@ answer) and `given=` refuses the value outright, naming what to say instead.
 A condition that always holds is the worst failure available to this layer,
 and this was one.
 
+### A locator is a value, and the verbs take only that
+
+Discussion #98's open question — "value-like enough to patch, Python enough to
+stay honest" — settled by counting. In one real action the same selector was
+written **four times**: the act, its postcondition, the dismissal and a read.
+As keyword arguments spread through four calls, those are four places anything
+repairing the action has to find and understand; as a value they are one, and
+its `repr` is a Python literal — storable, diffable, replaceable without
+parsing code. That is the line the first post drew, and a frozen dataclass
+lands exactly on it: no grammar, no parser, no config format.
+
+Three forms were on the table. Keyword arguments, which cannot be lifted out.
+A value class. And a string expression, with `focus_path_pattern` as the
+in-house precedent — rejected, for two reasons that outrank its compactness:
+a path is *structural*, and resilience to a changed structure is the whole
+point of the layer, so a notation that encourages structure-dependence works
+against it; and #98's own anti-goal says keyword arguments are harder for a
+generator to get wrong, while a string is the least checkable form there is —
+a wrong keyword raises, a wrong string silently matches nothing. If a string
+is ever wanted it arrives as `Locator.parse(...)`, an entrance rather than a
+replacement.
+
+**The verbs take the value and nothing else.** They are a high-level layer and
+need not match `UINode.find`'s keyword style, which stays as it is: one
+addresses an element for acting-with-retries, the other is a plain read.
+
+**`within` is deliberately not in the value.** Scope is a live node, and a
+value holding a handle cannot be written down, kept or compared. It stays an
+argument of the call. `predicate` *is* in the value, and is the one field
+nothing can patch — worth showing rather than hiding, so a reader can see
+which part of a locator is opaque. And `node=` remains, because "the third tab
+from the list the previous step enumerated" is not a locator and will not
+become one: **what to wait for is data, what to act on is sometimes a handle.**
+
 ### Which verbs exist, and the test they had to pass
 
 `click`, `send_key`, `activate`, `fill`, `scroll`, `choose`. The test for

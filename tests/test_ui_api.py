@@ -454,12 +454,12 @@ class TestVerbs:
         retry is the caller's to ask for."""
         api, element = ui
         button = element.kids[0]
-        api.click(role="AXButton", name="Save")
+        api.click(api.Locator(role="AXButton", name="Save"))
         assert button.pressed == 1
 
     def test_a_click_returns_what_it_pressed(self, ui):
         api, element = ui
-        node = api.click(role="AXButton", name="Save")
+        node = api.click(api.Locator(role="AXButton", name="Save"))
         assert node.name == "Save"
 
     def test_a_click_repeats_until_the_postcondition_holds(self, ui):
@@ -467,7 +467,7 @@ class TestVerbs:
         this layer exists."""
         api, element = ui
         button = element.kids[0]
-        api.click(role="AXButton", name="Save",
+        api.click(api.Locator(role="AXButton", name="Save"),
                   until=lambda: button.pressed >= 3,
                   timeout=5.0, retry_interval=0.05)
         assert button.pressed == 3
@@ -475,14 +475,14 @@ class TestVerbs:
     def test_a_postcondition_that_never_holds_is_a_loud_failure(self, ui):
         api, element = ui
         with pytest.raises(WaitTimeout) as error:
-            api.click(role="AXButton", name="Save", until=lambda: False,
+            api.click(api.Locator(role="AXButton", name="Save"), until=lambda: False,
                       timeout=0.3, retry_interval=0.05)
         assert "attempts" in str(error.value)
 
     def test_appears_hands_back_what_it_found(self, ui):
         api, element = ui
-        found = api.click(role="AXButton", name="Save",
-                          until=api.Appears(role="AXCheckBox", name="Archived"),
+        found = api.click(api.Locator(role="AXButton", name="Save"),
+                          until=api.Appears(api.Locator(role="AXCheckBox", name="Archived")),
                           timeout=1.0, retry_interval=0.05)
         assert found.identifier == "arch"
 
@@ -490,7 +490,7 @@ class TestVerbs:
         """The described form, which is the one that works for a row removed
         from a list rather than a window that closed."""
         api, element = ui
-        described = api.Appears(role="AXCheckBox", name="Archived")
+        described = api.Appears(api.Locator(role="AXCheckBox", name="Archived"))
         assert not api.Gone(described).check(api)
         element.kids.remove(element.kids[1])
         assert api.Gone(described).check(api)
@@ -519,7 +519,7 @@ class TestVerbs:
             seen.append(1)
             return len(seen) >= 3
 
-        api.click(role="AXButton", name="Save", given=front_after_a_while,
+        api.click(api.Locator(role="AXButton", name="Save"), given=front_after_a_while,
                   timeout=2.0)
         assert len(seen) >= 3, "it acted before the precondition held"
         assert button.pressed == 1
@@ -543,7 +543,7 @@ class TestVerbs:
         itself. The verb's act is click-then-press-then-focus."""
         api, element = ui
         button = element.kids[0]
-        api.click(role="AXButton", name="Save")
+        api.click(api.Locator(role="AXButton", name="Save"))
         assert button.pressed == 1 or button.focused
 
     def test_reads_states_the_value_expected(self, ui):
@@ -599,9 +599,9 @@ class TestVerbs:
         Which slot it goes in is what says whether you cause it."""
         api, element = ui
         button = element.kids[0]
-        assert api.wait(api.Appears(role="AXButton", name="Save"), timeout=1)
-        api.click(role="AXButton", name="Save",
-                  given=api.Appears(role="AXButton", name="Save"),
+        assert api.wait(api.Appears(api.Locator(role="AXButton", name="Save")), timeout=1)
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  given=api.Appears(api.Locator(role="AXButton", name="Save")),
                   until=lambda: button.pressed >= 1, timeout=1,
                   retry_interval=0.05)
 
@@ -611,7 +611,7 @@ class TestVerbs:
         built into the meaning."""
         api, _element = ui
         with pytest.raises(ValueError, match="calm before"):
-            api.click(role="AXButton", name="Save",
+            api.click(api.Locator(role="AXButton", name="Save"),
                       until=api.Stable(quiet=0.01), timeout=1)
 
     def test_stable_cannot_be_asked_at_an_instant(self, ui):
@@ -630,7 +630,7 @@ class TestVerbs:
         """"Do not act into a screen that is still moving"."""
         api, element = ui
         button = element.kids[0]
-        api.click(role="AXButton", name="Save",
+        api.click(api.Locator(role="AXButton", name="Save"),
                   given=api.Stable(quiet=0.05), timeout=3)
         assert button.pressed == 1
 
@@ -655,7 +655,7 @@ class TestVerbs:
         open is opened three times."""
         api, element = ui
         button = element.kids[0]
-        api.click(role="AXButton", name="Save",
+        api.click(api.Locator(role="AXButton", name="Save"),
                   until=lambda: button.pressed >= 2,
                   timeout=3.0, retry_interval=0.1)
         assert button.pressed == 2
@@ -669,7 +669,7 @@ class TestVerbs:
         monkeypatch.setattr(fill, "set_text", lambda node, text, **kwargs:
                             written.append((node.name, text)) or "keys")
         api, _element = ui
-        api.fill("REC-001", role="AXTextArea", name="Body")
+        api.fill("REC-001", api.Locator(role="AXTextArea", name="Body"))
         assert written == [("Body", "REC-001")]
 
     def test_fill_does_not_retry_a_verified_failure(self, ui):
