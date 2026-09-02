@@ -630,3 +630,26 @@ class TestVerbs:
         with pytest.raises(ValueError, match="no before"):
             api.click(role="AXButton", name="Save", given=api.Changed(node),
                       until=lambda: True, timeout=1)
+
+    def test_every_value_is_a_condition(self, ui):
+        """One base class, so the three slots have a name to be annotated
+        with and `needs_baseline` is stated once."""
+        from keyhac.core.ui import Condition
+
+        api, _element = ui
+        for value in (api.Appears, api.Front, api.Gone, api.Reads,
+                      api.Changed):
+            assert issubclass(value, Condition)
+        assert api.Changed.needs_baseline
+        assert not api.Reads.needs_baseline
+
+    def test_looking_and_acting_are_two_rates(self, ui):
+        """`interval` is how often to look and means what it means in wait();
+        `retry_every` is how often to act again. This layer does both, so it
+        has two, and only one of them costs anything to get wrong."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(role="AXButton", name="Save",
+                  until=lambda: button.pressed >= 2,
+                  timeout=3.0, retry_every=0.1, interval=0.01)
+        assert button.pressed == 2

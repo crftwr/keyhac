@@ -47,12 +47,47 @@ from keyhac.core.uitree import UINode, get_ui_tree
 logger = log.getLogger("UI")
 
 
-#: How often to look at a postcondition while waiting for it.
+#: How often to look, when nobody says otherwise.  `interval` overrides it,
+#: and means the same thing here as it does in `UI.wait`.
 _POLL = 0.05
 
 
+class Condition:
+    """What a "not yet" slot takes, besides a plain callable.
+
+    `ui.wait()`, `given=` and `until=` all accept the same two types - a
+    zero-argument callable, or one of these - and that is the point: the
+    values compose in every slot, so the only thing an author decides is
+    *which slot*, which is the question of who causes the thing being waited
+    for. See `doc/dev/design-notes.md`.
+
+    A subclass answers `check(ui, baseline)` with something truthy - the node
+    it found, where there is one, so waiting for a thing and receiving it are
+    one motion. `baseline()` is for the few that ask about a change rather
+    than a state, and `needs_baseline` says so, because a slot with no before
+    must refuse them rather than hold immediately.
+    """
+
+    #: True for a value that compares against a remembered moment.
+    needs_baseline = False
+
+    def baseline(self, ui):
+        """What to remember before the act, for `check` to compare against.
+
+        lazydocs: ignore
+        """
+        return None
+
+    def check(self, ui, baseline):
+        """Whether it holds, and what it holds *with*.
+
+        lazydocs: ignore
+        """
+        raise NotImplementedError
+
+
 @dataclass(frozen=True)
-class Appears:
+class Appears(Condition):
     """Satisfied when something matching this locator exists.
 
     The keywords are `find_elements`' - `role`, `name`, `value`,
@@ -65,10 +100,6 @@ class Appears:
     Satisfied *with a value*: the node it found, so the verb that waited for
     it can hand it back.
     """
-
-    #: Meaningful in any of the three slots - it asks about the world, not
-    #: about a change, so it needs nothing remembered from before.
-    needs_baseline = False
 
     within: Any = None
     role: str = None
@@ -94,10 +125,6 @@ class Appears:
             if getattr(self, bound) is not None:
                 found[bound] = getattr(self, bound)
         return found
-
-    def baseline(self, ui):
-        """lazydocs: ignore"""
-        return None
 
     def check(self, ui, baseline):
         """lazydocs: ignore"""
@@ -129,7 +156,7 @@ class Appears:
 
 
 @dataclass(frozen=True)
-class Front:
+class Front(Condition):
     """Satisfied when the front window is this one.
 
     The precondition that is not about the target, and the one a verb cannot
@@ -140,14 +167,8 @@ class Front:
     whatever is there.
     """
 
-    needs_baseline = False
-
     app: str = None
     title: str = None
-
-    def baseline(self, ui):
-        """lazydocs: ignore"""
-        return None
 
     def check(self, ui, baseline):
         """lazydocs: ignore"""
@@ -165,7 +186,7 @@ class Front:
 
 
 @dataclass(frozen=True)
-class Gone:
+class Gone(Condition):
     """Satisfied when `target` is no longer there.
 
     `target` is a node - the dialog you just dismissed - or an `Appears`,
@@ -175,13 +196,7 @@ class Gone:
     a row that was merely removed from a list.
     """
 
-    needs_baseline = False
-
     target: Any = None
-
-    def baseline(self, ui):
-        """lazydocs: ignore"""
-        return None
 
     def check(self, ui, baseline):
         """lazydocs: ignore"""
@@ -212,7 +227,7 @@ class Gone:
 
 
 @dataclass(frozen=True)
-class Reads:
+class Reads(Condition):
     """Satisfied when `target` reads as the values given.
 
     **The postcondition to reach for.** The rule the authoring skill states -
@@ -227,16 +242,10 @@ class Reads:
     state of `"True"` without the caller knowing which it got.
     """
 
-    needs_baseline = False
-
     target: Any = None
     role: str = None
     name: str = None
     value: Any = None
-
-    def baseline(self, ui):
-        """lazydocs: ignore"""
-        return None
 
     def check(self, ui, baseline):
         """lazydocs: ignore"""
@@ -266,7 +275,7 @@ class Reads:
 
 
 @dataclass(frozen=True)
-class Changed:
+class Changed(Condition):
     """Satisfied when `target`'s own reading is not what it was.
 
     **The last resort, and it has a trap in it.** "It differs from what I
@@ -417,8 +426,9 @@ class UI:
 
     # -- waiting -------------------------------------------------------------
 
-    def wait(self, condition: Callable[[], Any], timeout: float = 10.0,
-             message: str | None = None, interval: float | None = None) -> Any:
+    def wait(self, condition: Condition | Callable[[], Any],
+             timeout: float = 10.0, message: str | None = None,
+             interval: float | None = None) -> Any:
         """Block until `condition()` is truthy, and return what it returned.
 
         For a wait that is not "an element appeared" or "an element went away"
@@ -465,8 +475,11 @@ class UI:
     Reads = Reads
     Changed = Changed
 
-    def click(self, node=None, within=None, given=None, until=None,
-              timeout: float = 10.0, retry_every: float = 2.0, **locator):
+    def click(self, node=None, within=None,
+              given: Condition | Callable[[], Any] = None,
+              until: Condition | Callable[[], Any] = None,
+              timeout: float = 10.0, retry_every: float = 2.0,
+              interval: float | None = None, **locator):
         """Find one control and press it, and say what "it worked" means.
 
         ```python
@@ -512,7 +525,11 @@ class UI:
                 a door that is not open. None presses once and returns.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before pressing
-                again.
+                *again*. Distinct from `interval`, which is how often to
+                look: this layer both looks and acts, so it has two rates,
+                and only one of them costs anything to get wrong.
+            interval: Seconds between looks, meaning what it means in
+                `wait()`.
             **locator: `find_elements` keywords - role, name, value,
                 identifier, text.
 
@@ -550,7 +567,7 @@ class UI:
 
         return self._until(act, until, timeout, retry_every,
                            what=f"clicking {locator or target!r}",
-                           given=given) or target
+                           given=given, interval=interval) or target
 
     def activate(self, app: str = None, title: str = None,
                  timeout: float = 10.0, retry_every: float = 2.0):
@@ -588,8 +605,11 @@ class UI:
         return self._until(act, Front(app=app, title=title), timeout,
                            retry_every, what=f"activating {app or title!r}")
 
-    def send_key(self, keys: str, given=None, until=None,
-                 timeout: float = 10.0, retry_every: float = 2.0):
+    def send_key(self, keys: str,
+                 given: Condition | Callable[[], Any] = None,
+                 until: Condition | Callable[[], Any] = None,
+                 timeout: float = 10.0, retry_every: float = 2.0,
+                 interval: float | None = None):
         """Send a key expression, and say what "it arrived" means.
 
         ```python
@@ -611,7 +631,9 @@ class UI:
             until: What makes it true; None sends it once.
             timeout: Seconds before giving up, in total.
             retry_every: Seconds to watch the postcondition before sending
-                again.
+                *again* - not `interval`, which is how often to look.
+            interval: Seconds between looks, meaning what it means in
+                `wait()`.
 
         Returns:
             Whatever `until` was satisfied with, or None.
@@ -624,10 +646,11 @@ class UI:
                 ctx.send_key(keys)
 
         return self._until(send, until, timeout, retry_every,
-                           what=f"sending {keys!r}", given=given)
+                           what=f"sending {keys!r}", given=given,
+                           interval=interval)
 
     def _until(self, act, until, timeout: float, retry_every: float, what: str,
-               given=None):
+               given=None, interval: float | None = None):
         """Wait for the precondition, act, watch, act again - the one loop
         the verbs share, and the one an action no longer writes.
 
@@ -641,7 +664,7 @@ class UI:
         _refuse_to_block_the_loop("a verb with given= or until=")
         deadline = time.monotonic() + timeout
         if until is None:
-            self._hold(given, deadline, what)
+            self._hold(given, deadline, what, interval)
             act()
             return None
         check = until if callable(until) else None
@@ -649,7 +672,7 @@ class UI:
         attempts = 0
         while True:
             if given is not None:
-                self._hold(given, deadline, what)
+                self._hold(given, deadline, what, interval)
             act()
             attempts += 1
             edge = min(time.monotonic() + retry_every, deadline)
@@ -659,13 +682,14 @@ class UI:
                     return got
                 if time.monotonic() >= edge:
                     break
-                time.sleep(_POLL)
+                time.sleep(interval or _POLL)
             if time.monotonic() >= deadline:
                 raise WaitTimeout(
                     f"{what} did not take: waited {timeout:.0f}s for "
                     f"{until} over {attempts} attempts")
 
-    def _hold(self, given, deadline: float, what: str):
+    def _hold(self, given, deadline: float, what: str,
+              interval: float | None = None):
         """Wait for a precondition, and fail as a precondition.
 
         Named apart from the postcondition on purpose: "the world was not
@@ -689,7 +713,7 @@ class UI:
             if time.monotonic() >= deadline:
                 raise WaitTimeout(
                     f"{what} never started: waited for {given}")
-            time.sleep(_POLL)
+            time.sleep(interval or _POLL)
 
     # -- writing -------------------------------------------------------------
 
