@@ -44,7 +44,7 @@ PROMPT = "Read RULES.md, then do TASK.md."
 #: those the operator puts the screen up and this script does not pretend to.
 FIXTURES = {
     1: ["systema_1.html"],
-    2: ["systema_1.html"],
+    2: ["systema_1.html", "systemb_1.html"],
     4: ["dialog.html"],
     5: ["submit.html"],
 }
@@ -149,7 +149,18 @@ def open_fixture(case: int | None) -> None:
         if not (served / name).exists():
             print(f"  ! fixture {name} is missing; put the screen up yourself")
             continue
-        subprocess.run(["open", "-a", "Safari", str(served / name)], check=False)
+        # A window each, not tabs. Case 2 needs two systems addressable at
+        # once, and a background Safari tab is not on screen in any sense the
+        # action API can reach: with SystemB tabbed behind SystemA, a search
+        # for "Reference|SystemB" across the whole application returned
+        # nothing. Tabbed, the room would spend its run discovering that
+        # instead of the case's actual subject. `open -a Safari` tabs them;
+        # `make new document` is what makes a window. macOS only, like the
+        # rest of this runner.
+        subprocess.run(["osascript", "-e",
+                        f'tell application "Safari" to make new document '
+                        f'with properties {{URL:"{(served / name).as_uri()}"}}'],
+                       check=False)
         print(f"  screen:  {name} (Safari, served from {served})")
     time.sleep(1.5)  # Safari needs a moment before the tree is readable.
 
