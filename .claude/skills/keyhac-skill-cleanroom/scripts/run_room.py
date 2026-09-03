@@ -528,6 +528,27 @@ def _events(transcript: pathlib.Path):
             continue
 
 
+def sweep_desktop(room: pathlib.Path, before: set[pathlib.Path]) -> list[str]:
+    """Take what this run left on the Desktop into the room.
+
+    The Desktop is a granted directory, so every room can read what every
+    previous room wrote there: case 5 opened `records.csv` and `out.csv`, which
+    are cases 2 and 1's finished output, on its way to its own task. Rooms
+    leaking to each other is the one contamination this whole arrangement is
+    built to prevent, and it arrived through the back door of the output
+    folder.
+
+    Moved rather than deleted, and named in the log: what a run produced is its
+    evidence, and a file this misjudges is recoverable from the room.
+    """
+    moved = []
+    for produced in sorted(set(DESKTOP.iterdir()) - before):
+        if produced.is_file() and not produced.name.startswith("."):
+            shutil.move(produced, room / produced.name)
+            moved.append(produced.name)
+    return moved
+
+
 def collect(room: pathlib.Path, before: set[pathlib.Path],
             keep: bool, case: int | None = None) -> list[pathlib.Path]:
     """Take the action out of ~/.keyhac/extensions and leave it in the room.
@@ -590,6 +611,7 @@ def main() -> int:
         print("  CLAUDE.md is there to tell such a session to stop.")
         return 0
 
+    desktop_before = set(DESKTOP.iterdir()) if DESKTOP.exists() else set()
     open_fixture(args.case)
     before = set(EXTENSIONS.glob("*.py")) if EXTENSIONS.exists() else set()
     exit_code = run_session(room, bridge, args.model, args.max_turns)
@@ -600,6 +622,8 @@ def main() -> int:
     print()
     for action in written:
         print(f"  action:  {action.name} -> {room / action.name}")
+    for produced in sweep_desktop(room, desktop_before):
+        print(f"  output:  ~/Desktop/{produced} -> {room / produced}")
 
     print()
     print("== rules ==")
