@@ -22,7 +22,11 @@ are the whole of what you know.
 - Other actions already in `~/.keyhac/extensions/`. They were written by
   somebody who had the repository.
 - Asking the operator. They know the answer, which is exactly why asking
-  destroys the measurement.
+  destroys the measurement. The skill will tell you to ask - for a screen that
+  is not up yet, for a value only they know - and you cannot. Do what the rest
+  of this file says: write down what you would have asked, choose the reading
+  that makes the task doable, and carry on. A run that stops to ask has
+  measured nothing.
 
 **When the skill does not tell you something, write it down and guess.**
 Append to `./QUESTIONS.md`:

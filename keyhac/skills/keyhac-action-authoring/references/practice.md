@@ -170,6 +170,11 @@ ROW  = ui.Locator(role="Row")
 rows = table.find_all(**ROW.criteria())
 ```
 
+**Do not pass `max_depth` or `max_nodes` beside it.** They ride *inside* the
+locator, so `find_all(max_depth=12, **LOC.criteria())` is the same keyword
+twice and raises `TypeError`. Put the bound in the locator, where every use of
+it gets the same one.
+
 Build them where `self.ui` exists — the top of `run()`, not the class body.
 `Locator` is reached through `ui`, so there is no name for it at class scope;
 they are cheap values and rebuilding them per run costs nothing.

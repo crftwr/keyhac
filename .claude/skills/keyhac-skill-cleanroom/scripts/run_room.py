@@ -158,10 +158,18 @@ def open_fixture(case: int | None) -> None:
         # instead of the case's actual subject. `open -a Safari` tabs them;
         # `make new document` is what makes a window. macOS only, like the
         # rest of this runner.
+        # Two steps, and not `with properties {URL:...}` - that form returns a
+        # document and quietly does not load it. The first case-2 run got two
+        # windows called "Untitled" sitting on a file-open panel, and spent
+        # five of its runs and most of $7.32 trying to drive that panel into
+        # opening the page this was supposed to have opened for it.
         subprocess.run(["osascript", "-e",
-                        f'tell application "Safari" to make new document '
-                        f'with properties {{URL:"{(served / name).as_uri()}"}}'],
-                       check=False)
+                        f'tell application "Safari"\n'
+                        f'  activate\n'
+                        f'  set fixture to make new document\n'
+                        f'  set URL of fixture to "{(served / name).as_uri()}"\n'
+                        f'end tell'], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"  screen:  {name} (Safari, served from {served})")
     time.sleep(1.5)  # Safari needs a moment before the tree is readable.
 
@@ -373,7 +381,7 @@ def _isolation_held(transcript: pathlib.Path):
                f"the endpoint being off, not about the skill")
 
 
-def audit(room: pathlib.Path, foreign: set[str]) -> list[str]:
+def audit(room: pathlib.Path, foreign: set[str]) -> tuple[list[str], list[str]]:
     """Read the transcript for the rules the room was asked to keep.
 
     RULES.md forbids the checkout, the installed package and other people's
@@ -396,38 +404,58 @@ def audit(room: pathlib.Path, foreign: set[str]) -> list[str]:
     The room now lives *in* the checkout, so "mentions the checkout path" no
     longer means anything on its own: every legitimate read of the bundle says
     it too. What is checked is a path under the checkout and outside the room.
+
+    **A refusal is not a breach.** The first case-2 run was disqualified for a
+    `Glob` of a sibling room that the confinement turned down flat, so nothing
+    was read and nothing was learned - the measurement was intact and the
+    verdict said otherwise. Reaching and being refused is reported, because it
+    is the confinement doing its job in public, but only a call that came back
+    with something disqualifies a run.
+
+    Returns:
+        What disqualifies the run, and what was refused.
     """
+    room = room.resolve()  # every comparison below is against an absolute path
     transcript = room / "transcript.jsonl"
     if not transcript.exists():
-        return ["no transcript - the room was never driven from here"]
+        return ["no transcript - the room was never driven from here"], []
 
+    refused_ids = {part["tool_use_id"]
+                   for event in _events(transcript) if event.get("type") == "user"
+                   for part in event.get("message", {}).get("content", [])
+                   if part.get("type") == "tool_result" and part.get("is_error")}
     breaches = list(_isolation_held(transcript))
+    refused = []
     forbidden = {
         "site-packages/keyhac": "the installed package",
         "/Applications/Keyhac.app": "the installed app",
     }
-    for line in transcript.read_text().splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
+    for event in _events(transcript):
         if event.get("type") != "assistant":
             continue
         for part in event.get("message", {}).get("content", []):
             if part.get("type") != "tool_use":
                 continue
+            landed = breaches if part.get("id") not in refused_ids else refused
             for aimed in _paths_in(part.get("input", {})):
                 for path, what in forbidden.items():
                     if path in aimed:
-                        breaches.append(
-                            f"{part['name']} reached into {what}: {aimed}")
+                        landed.append(f"{part['name']} reached into {what}: {aimed}")
                 if aimed.startswith(str(ROOT)) and not aimed.startswith(str(room)):
-                    breaches.append(
-                        f"{part['name']} reached into the checkout: {aimed}")
+                    landed.append(f"{part['name']} reached into the checkout: {aimed}")
                 if pathlib.Path(aimed).name in foreign:
-                    breaches.append(
+                    landed.append(
                         f"{part['name']} read another author's action: {aimed}")
-    return sorted(set(breaches))
+    return sorted(set(breaches)), sorted(set(refused))
+
+
+def _events(transcript: pathlib.Path):
+    """Every event in the transcript that parses."""
+    for line in transcript.read_text().splitlines():
+        try:
+            yield json.loads(line)
+        except ValueError:
+            continue
 
 
 def collect(room: pathlib.Path, before: set[pathlib.Path],
@@ -493,12 +521,15 @@ def main() -> int:
 
     print()
     print("== rules ==")
-    if breaches := audit(room, {p.name for p in before}):
+    breaches, refused = audit(room, {p.name for p in before})
+    for turned_down in refused:
+        print(f"  refused (the confinement held): {turned_down}")
+    if breaches:
         for breach in breaches:
             print(f"  DISQUALIFIED: {breach}")
         print("  What came out measured a session that had the answers.")
     else:
-        print("  clean: nothing in the transcript reached outside the room")
+        print("  clean: nothing outside the room was read")
     print()
     return score(room)
 

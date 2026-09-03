@@ -70,6 +70,17 @@ Chrome ignores the targeted `AXManualAccessibility` and only answers to
 signal - VS Code reacts to it by switching to screen-reader rendering. So this
 is always an explicit call, never something a walk does implicitly.
 
+## A file panel's OK button reads disabled while it works
+
+Measured on Safari's open panel: `AXEnabled` on the confirming button is
+`False` both before and after a row is selected, so the obvious postcondition
+for "the file is picked" never holds. What does move is `AXSelectedRows` on the
+outline, reached through `node.element.get_attribute_value(...)` - the same
+escape the `ToggleState` entry above uses. And one panel is not one shape: the
+sheet an application raises inside its window and the panel Cmd-O opens are an
+`AXSheet` and a top-level `AXWindow` respectively, so a wait scoped `within=`
+the window can never see the second.
+
 ## Focus is a precondition for writing
 
 An unfocused `AXValue` write is silently ignored - which is how an earlier

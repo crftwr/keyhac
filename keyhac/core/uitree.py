@@ -476,6 +476,14 @@ def find_elements(root, role: str | None = None, name: str | None = None,
         max_depth: Depth bound for the underlying walk.
         max_nodes: Node budget for the underlying walk.
 
+    A match is a node of the walk this call made, not a bare handle, so its
+    `children`, `walk()` and `all_text` are already filled in - reading a cell
+    found by `find_all` needs no second call.  What bounds that subtree is the
+    same `max_depth`, counted from `root`: a cell matched near the bottom of a
+    default walk has little or nothing below it, and web content keeps its
+    string one level down.  When a table reads as blank columns, that is the
+    reason, and `table.reread()` is the fix rather than a deeper cell search.
+
     Returns:
         Matching nodes in tree order.  Empty when nothing matched - callers
         that need an element should say so themselves, since "the UI changed"
