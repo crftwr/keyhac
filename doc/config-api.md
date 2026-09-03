@@ -30,6 +30,8 @@ The OS clipboard - get_text() / set_text(), or None if unwired.
 
 The history's provider, exposed directly because actions that paste need to read and restore the clipboard around what they do, which is not a history operation. 
 
+Safe from `ThreadedAction.run()`: the provider puts each call on the event-loop thread itself.  It has to - NSPasteboard segfaults when it is touched from a worker, and this is the one API that is handed to actions precisely so they can call it from one.  A call raises `WaitTimeout` if the loop is blocked, where it used to take the process down. 
+
 ---
 
 #### <kbd>property</kbd> Keymap.clipboard_history

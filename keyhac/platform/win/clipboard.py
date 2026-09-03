@@ -8,7 +8,7 @@ clipboard. The non-BMP case caught a real bug (see set_text).
 import ctypes
 import sys
 
-from keyhac.platform.base import ClipboardProvider
+from keyhac.platform.base import ClipboardProvider, main_thread_only
 
 if sys.platform == "win32":
     user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -48,6 +48,7 @@ class WinClipboardProvider(ClipboardProvider):
             raise RuntimeError("WinClipboardProvider requires Windows")
         self._last_sequence = user32.GetClipboardSequenceNumber()
 
+    @main_thread_only
     def get_text(self) -> str | None:
         if not user32.OpenClipboard(None):
             return None
@@ -65,6 +66,7 @@ class WinClipboardProvider(ClipboardProvider):
         finally:
             user32.CloseClipboard()
 
+    @main_thread_only
     def set_text(self, s: str) -> None:
         if not user32.OpenClipboard(None):
             return
@@ -87,6 +89,7 @@ class WinClipboardProvider(ClipboardProvider):
         finally:
             user32.CloseClipboard()
 
+    @main_thread_only
     def poll(self) -> bool:
         sequence = user32.GetClipboardSequenceNumber()
         if sequence != self._last_sequence:

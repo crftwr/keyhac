@@ -4,6 +4,7 @@ keyhac.core depends only on this module; the OS implementations live in
 keyhac.platform.mac (PyObjC) and keyhac.platform.win (ctypes).
 """
 
+import functools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
@@ -245,9 +246,47 @@ class EventLoop(ABC):
         provides the vehicle."""
 
 
+def main_thread_only(method):
+    """Run this platform call on the event-loop thread, wherever it is called.
+
+    For an OS API that segfaults rather than complains when touched from a
+    worker.  NSPasteboard is one: an action calling
+    `keymap.clipboard.get_text()` from `run()` killed the whole process -
+    `EXC_BAD_ACCESS` in `-[NSPasteboard stringForType:]`, on the action's own
+    worker thread, taking the keyboard hook down with it.  Nothing warned, and
+    nothing could: AppKit's answer to being used off the main thread is a
+    corrupt read, not an exception.
+
+    It is a decorator rather than a rule in the documentation because the rule
+    was already documented and the crash happened anyway.  `run()` is where the
+    skill tells an action to put its slow work, and `keymap.clipboard` is
+    handed out precisely so that actions can read and restore the clipboard
+    around a paste - so the one API that had to survive a worker thread was the
+    one that did not.
+
+    Free where it is already right: `evaluate_on_main_thread` runs inline when
+    the caller is on the loop thread, which is where the history's own polling
+    calls these from.
+    """
+    @functools.wraps(method)
+    def dispatched(self, *args, **kwargs):
+        # Imported here: platform modules load before the core is wired, and
+        # this is the one call that needs the running Keymap.
+        from keyhac.core.wait import evaluate_on_main_thread
+
+        return evaluate_on_main_thread(lambda: method(self, *args, **kwargs))
+
+    return dispatched
+
+
 class ClipboardProvider(ABC):
     """OS clipboard access + change detection (poll() driven by the app's
-    periodic tick; event-driven listeners can layer on later)."""
+    periodic tick; event-driven listeners can layer on later).
+
+    **Implementations decorate every method with `main_thread_only`.** Both
+    OSes have thread affinity here - NSPasteboard crashes, and the Win32
+    clipboard associates an open with the thread that opened it - and an action
+    reaches these from a worker by design."""
 
     @abstractmethod
     def get_text(self) -> str | None: ...
