@@ -18,6 +18,7 @@ task of your own, put the screen up before you start.
 """
 
 import argparse
+import functools
 import json
 import os
 import pathlib
@@ -30,6 +31,7 @@ import sys
 import tempfile
 import threading
 import time
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -66,6 +68,15 @@ FIXTURES = {
 #: be able to write to - `audit()` catches afterwards.
 ALLOW = ["Read", "Glob", "Grep", "Write", "Edit", "TodoWrite", "mcp__keyhac"]
 
+#: Fixture files a task refers to but a screen cannot show. Case 5 opens
+#: "Submit each row of this CSV", and the CSV lives with the fixtures - which
+#: are served from a temp directory the room cannot read, so "this CSV" points
+#: at nothing, the way case 2's "same as above" did. Staged on the Desktop
+#: instead, which the room can reach and which is where an operator's input
+#: file would actually be.
+STAGED = {5: ["to_submit.csv"]}
+
+DESKTOP = pathlib.Path.home() / "Desktop"
 EXTENSIONS = pathlib.Path.home() / ".keyhac" / "extensions"
 
 MCP_IS_OFF = """\
@@ -139,6 +150,10 @@ def open_fixture(case: int | None) -> None:
     hand over its own source, and a room that can read the fixture's HTML can
     skip the accessibility tree the skill is about.
     """
+    for name in STAGED.get(case or 0, []):
+        shutil.copy2(ROOT / "examples" / "actions" / "fixtures" / name, DESKTOP / name)
+        print(f"  staged:  ~/Desktop/{name}")
+
     names = FIXTURES.get(case or 0, [])
     if not names:
         return
@@ -146,32 +161,87 @@ def open_fixture(case: int | None) -> None:
     served = pathlib.Path(tempfile.mkdtemp(prefix="keyhac-cleanroom-screen-"))
     shutil.copytree(ROOT / "examples" / "actions" / "fixtures", served,
                     dirs_exist_ok=True)
+    origin = _serve(served)
     for name in names:
         if not (served / name).exists():
-            print(f"  ! fixture {name} is missing; put the screen up yourself")
-            continue
-        # A window each, not tabs. Case 2 needs two systems addressable at
-        # once, and a background Safari tab is not on screen in any sense the
-        # action API can reach: with SystemB tabbed behind SystemA, a search
-        # for "Reference|SystemB" across the whole application returned
-        # nothing. Tabbed, the room would spend its run discovering that
-        # instead of the case's actual subject. `open -a Safari` tabs them;
-        # `make new document` is what makes a window. macOS only, like the
-        # rest of this runner.
-        # Two steps, and not `with properties {URL:...}` - that form returns a
-        # document and quietly does not load it. The first case-2 run got two
-        # windows called "Untitled" sitting on a file-open panel, and spent
-        # five of its runs and most of $7.32 trying to drive that panel into
-        # opening the page this was supposed to have opened for it.
-        subprocess.run(["osascript", "-e",
-                        f'tell application "Safari"\n'
-                        f'  activate\n'
-                        f'  set fixture to make new document\n'
-                        f'  set URL of fixture to "{(served / name).as_uri()}"\n'
-                        f'end tell'], check=False,
+            raise SystemExit(f"fixture {name} is missing from {served}")
+        _load(f"{origin}/{name}", _title_of(served / name), name)
+        print(f"  screen:  {name} (Safari, {origin}/{name})")
+    time.sleep(1.0)  # Safari needs a moment before the tree is readable.
+
+
+def _title_of(page: pathlib.Path) -> str:
+    """The window name the fixture will take once it has loaded."""
+    found = re.search(r"<title>([^<]*)", page.read_text())
+    return found.group(1).strip() if found else page.name
+
+
+def _safari_windows() -> str:
+    """Safari's window names, as one string to look for a title in."""
+    asked = subprocess.run(
+        ["osascript", "-e",
+         'tell application "Safari" to get name of every window'],
+        capture_output=True, text=True, check=False)
+    return asked.stdout
+
+
+def _load(url: str, title: str, name: str,
+          attempts: int = 3, patience: float = 8.0) -> None:
+    """Put `url` in a Safari window of its own, and prove that it is there.
+
+    Every part of this was paid for by a run. `make new document with
+    properties {URL:...}` returns a document and does not load it. A plain
+    two-step sets the URL before the new document is ready. And a `file:///`
+    under the temp directory is refused outright - "outside the sandbox" -
+    which is why the fixtures are served over a local HTTP origin instead,
+    the shape a real target application has anyway.
+
+    Case 4 ran without any of this: Safari sat on its Start Page, the room
+    hunted for its task across every application the operator had open -
+    reading Gmail and Claude on the way - and wrote an action it could never
+    exercise. So the load is waited for by the title the page will take, and a
+    screen that never arrives refuses the run instead of buying it.
+    """
+    for _ in range(attempts):
+        subprocess.run(["osascript", "-e", f'''tell application "Safari"
+            activate
+            set fixture to make new document
+            delay 0.5
+            set URL of fixture to "{url}"
+        end tell'''], check=False,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"  screen:  {name} (Safari, served from {served})")
-    time.sleep(1.5)  # Safari needs a moment before the tree is readable.
+        deadline = time.monotonic() + patience
+        while time.monotonic() < deadline:
+            if title in _safari_windows():
+                return
+            time.sleep(0.5)
+        print(f"  ! {name} did not load as \"{title}\" - retrying")
+    raise SystemExit(
+        f"{name} never appeared in Safari as \"{title}\".\n\n"
+        f"Safari has: {_safari_windows().strip() or '(no windows)'}\n\n"
+        f"A modal sheet left over a window blocks this and shows up nowhere "
+        f"else. Clear Safari and run again - refusing rather than opening a "
+        f"room that would spend its run looking for a screen that is not "
+        f"there, which is what case 4 did.")
+
+
+def _serve(directory: pathlib.Path) -> str:
+    """Serve the fixtures over HTTP, and hand back their origin.
+
+    Not `file://`: Safari refuses one under the temp directory outright, and
+    the copy is in the temp directory precisely so that the address bar does
+    not read out the checkout's path to the room. An HTTP origin says nothing
+    but a port number, and it is what the applications these actions really
+    drive look like.
+
+    The server is a daemon thread, so it lives exactly as long as the run.
+    """
+    quiet = type("Quiet", (SimpleHTTPRequestHandler,),
+                 {"log_message": lambda *args, **kwargs: None})
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(quiet, directory=str(directory)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{server.server_port}"
 
 
 def session_command(bridge: str, interactive: bool = False) -> list[str]:
@@ -459,7 +529,7 @@ def _events(transcript: pathlib.Path):
 
 
 def collect(room: pathlib.Path, before: set[pathlib.Path],
-            keep: bool) -> list[pathlib.Path]:
+            keep: bool, case: int | None = None) -> list[pathlib.Path]:
     """Take the action out of ~/.keyhac/extensions and leave it in the room.
 
     `ActionsSource` imports every module in that folder, so a test action left
@@ -471,10 +541,22 @@ def collect(room: pathlib.Path, before: set[pathlib.Path],
         shutil.copy2(action, room / action.name)
         if not keep:
             action.unlink()
+    for name in STAGED.get(case or 0, []):
+        if (staged := DESKTOP / name).exists():
+            # What the room wrote into it is the run's output, so it comes back
+            # as evidence rather than being left on the operator's Desktop.
+            shutil.move(staged, room / name)
     return written
 
 
 def main() -> int:
+    # Line buffering, because the progress display is the point of it. Piped to
+    # a file - a log, a CI job, anything not a terminal - Python block-buffers
+    # stdout, and the first thing that disappears is the heartbeat that exists
+    # to say the run is alive. A watched run showed nothing for four minutes
+    # while its transcript grew to 224KB.
+    sys.stdout.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--case", type=int,
@@ -514,7 +596,7 @@ def main() -> int:
     if exit_code != 0:
         print(f"  ! the room session exited {exit_code}")
 
-    written = collect(room, before, args.keep)
+    written = collect(room, before, args.keep, args.case)
     print()
     for action in written:
         print(f"  action:  {action.name} -> {room / action.name}")
