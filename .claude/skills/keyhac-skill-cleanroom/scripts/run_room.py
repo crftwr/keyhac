@@ -27,6 +27,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -123,14 +124,33 @@ def mcp_endpoint() -> dict:
 
 
 def open_fixture(case: int | None) -> None:
-    """Put the screen the task talks about in front of the room."""
-    for name in FIXTURES.get(case or 0, []):
-        fixture = ROOT / "examples" / "actions" / "fixtures" / name
-        if not fixture.exists():
+    """Put the screen the task talks about in front of the room.
+
+    Served from a copy outside the checkout, because the address bar is part of
+    the screen: opened from `examples/actions/fixtures/` the room is shown a
+    `file:///…/projects/keyhac/…` URL, which tells it exactly where the
+    repository it may not read is, and it never had to go looking. It also made
+    the first real run look like a rule breach - the room quoted that URL into
+    its notes as the screen it wrote against, honestly, and the audit called it
+    reaching into the checkout.
+
+    The copy is not put in the room either. A real target application does not
+    hand over its own source, and a room that can read the fixture's HTML can
+    skip the accessibility tree the skill is about.
+    """
+    names = FIXTURES.get(case or 0, [])
+    if not names:
+        return
+    # The whole set: the pages link to each other, and pagination is the task.
+    served = pathlib.Path(tempfile.mkdtemp(prefix="keyhac-cleanroom-screen-"))
+    shutil.copytree(ROOT / "examples" / "actions" / "fixtures", served,
+                    dirs_exist_ok=True)
+    for name in names:
+        if not (served / name).exists():
             print(f"  ! fixture {name} is missing; put the screen up yourself")
             continue
-        subprocess.run(["open", "-a", "Safari", str(fixture)], check=False)
-        print(f"  screen:  {name} (Safari)")
+        subprocess.run(["open", "-a", "Safari", str(served / name)], check=False)
+        print(f"  screen:  {name} (Safari, served from {served})")
     time.sleep(1.5)  # Safari needs a moment before the tree is readable.
 
 
@@ -231,6 +251,21 @@ def _report(line: str) -> None:
               f"${event.get('total_cost_usd', 0):.2f}")
 
 
+#: Input fields that say where a tool was aimed. Everything else a tool carries
+#: - a file's contents, a note, a message - is what it said, not where it went.
+AIMED_AT = ("file_path", "path", "notebook_path", "pattern", "command", "glob")
+
+
+def _paths_in(tool_input: dict) -> list[str]:
+    """The paths a tool call was pointed at, absolute ones only."""
+    aimed = []
+    for key in AIMED_AT:
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            aimed += re.findall(r"/[^\s\"']+", value)
+    return aimed
+
+
 def _isolation_held(transcript: pathlib.Path):
     """Check from the session's own first line that the flags did their job.
 
@@ -272,9 +307,16 @@ def audit(room: pathlib.Path, foreign: set[str]) -> list[str]:
     assuming, and this run's whole output is a claim about what a reader of the
     bundle alone would do.
 
-    Only tool *inputs* are scanned. Results are full of paths the room never
-    asked for - a window title, a screenshot of somebody's editor - and reading
-    those as reaching for the checkout cries wolf.
+    What is scanned is where a tool was *pointed* - the path-bearing fields of
+    its input - and not the rest of what it typed. Scanning the whole input
+    disqualified the first real run: the room had read the screen, Safari's
+    address bar showed the fixture's `file:///…` URL because the runner opened
+    it out of the checkout, and the room quoted that URL into its own notes as
+    the screen it wrote against. Reading a path off the screen and repeating it
+    is not reaching for the checkout; it is doing the task.
+
+    Results are not scanned at all, for the same reason one step earlier: a
+    window title or an editor's tab is full of paths the room never asked for.
 
     The room now lives *in* the checkout, so "mentions the checkout path" no
     longer means anything on its own: every legitimate read of the bundle says
@@ -299,18 +341,17 @@ def audit(room: pathlib.Path, foreign: set[str]) -> list[str]:
         for part in event.get("message", {}).get("content", []):
             if part.get("type") != "tool_use":
                 continue
-            written = json.dumps(part.get("input", {}))
-            for path, what in forbidden.items():
-                if path in written:
-                    breaches.append(f"{part['name']} reached into {what}: {path}")
-            for reached in re.findall(rf"{re.escape(str(ROOT))}[^\"\\\s]*", written):
-                if not reached.startswith(str(room)):
+            for aimed in _paths_in(part.get("input", {})):
+                for path, what in forbidden.items():
+                    if path in aimed:
+                        breaches.append(
+                            f"{part['name']} reached into {what}: {aimed}")
+                if aimed.startswith(str(ROOT)) and not aimed.startswith(str(room)):
                     breaches.append(
-                        f"{part['name']} reached into the checkout: {reached}")
-            for other in foreign:
-                if other in written:
+                        f"{part['name']} reached into the checkout: {aimed}")
+                if pathlib.Path(aimed).name in foreign:
                     breaches.append(
-                        f"{part['name']} read another author's action: {other}")
+                        f"{part['name']} read another author's action: {aimed}")
     return sorted(set(breaches))
 
 
