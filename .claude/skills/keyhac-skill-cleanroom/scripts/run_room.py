@@ -28,6 +28,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -226,19 +227,74 @@ def run_session(room: pathlib.Path, bridge: str, model: str | None,
     if model:
         command += ["--model", model]
 
-    transcript = room / "transcript.jsonl"
-    print(f"  running:  {room.name} (transcript -> {transcript.name})")
+    # Written outside the room and moved in at the end. Left in the room it is
+    # a file the room can read, and the first case-2 run did exactly that -
+    # grepping its own log for `"type":"text"` to reconstruct the task its
+    # prompt referred to. The harness's own record is not part of the room.
+    transcript = pathlib.Path(tempfile.gettempdir()) / f"cleanroom-{room.name}.jsonl"
+    print(f"  running:  {room.name} (transcript -> {transcript})")
     print()
+    global _started, _last_event
+    _started = _last_event = time.monotonic()
     with subprocess.Popen(command, cwd=room, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, text=True,
                           bufsize=1) as session, transcript.open("w") as log:
+        heartbeat = threading.Thread(target=_heartbeat, args=(session,), daemon=True)
+        heartbeat.start()
         for line in session.stdout:
             log.write(line)
-            _report(line)
-        return session.wait()
+            _last_event = time.monotonic()
+            _report(line, room)
+        code = session.wait()
+    shutil.move(transcript, room / "transcript.jsonl")
+    return code
 
 
-def _report(line: str) -> None:
+#: When the run started, and when it last said anything - the two numbers the
+#: heartbeat needs and the digest prints.
+_started = _last_event = 0.0
+
+
+def _clock() -> str:
+    seconds = int(time.monotonic() - _started)
+    return f"{seconds // 60:>2}:{seconds % 60:02d}"
+
+
+def _heartbeat(session, every: float = 20.0) -> None:
+    """Say the run is alive while it is thinking.
+
+    A model between tool calls writes nothing at all, so a long turn and a hung
+    process look identical - which is the question an operator watching this
+    actually has. A line every 20 quiet seconds answers it, and says how quiet
+    it has been so a real hang is still visible as a number that keeps growing.
+    """
+    while session.poll() is None:
+        time.sleep(every / 4)
+        quiet = time.monotonic() - _last_event
+        if quiet >= every:
+            print(f"  [{_clock()}] … thinking ({int(quiet)}s since the last step)")
+            globals()["_last_event"] = time.monotonic()
+
+
+def _hint(tool: str, given: dict, room: pathlib.Path) -> str:
+    """The part of a tool call worth one line.
+
+    Paths get their tail, not their head. Six consecutive reads inside the room
+    printed as an identical 60-character prefix of the room's own path, which
+    is six lines saying nothing - the operator watching could not tell them
+    apart or tell whether anything was moving.
+    """
+    for key in ("file_path", "path", "notebook_path"):
+        if value := given.get(key):
+            shown = str(value)
+            return shown[len(str(room)) + 1:] if shown.startswith(str(room)) else shown
+    for key in ("pattern", "command", "app", "action", "title", "role", "text"):
+        if value := given.get(key):
+            return str(value)[:70]
+    return ""
+
+
+def _report(line: str, room: pathlib.Path = pathlib.Path()) -> None:
     """One line per thing the room did, so a long run is watchable."""
     try:
         event = json.loads(line)
@@ -247,14 +303,22 @@ def _report(line: str) -> None:
     if event.get("type") == "assistant":
         for part in event.get("message", {}).get("content", []):
             if part.get("type") == "tool_use":
-                target = part.get("input", {})
-                hint = (target.get("file_path") or target.get("pattern")
-                        or target.get("app") or target.get("action")
-                        or target.get("command") or "")
-                print(f"    · {part['name']} {str(hint)[:60]}".rstrip())
+                print(f"  [{_clock()}] · {part['name']} "
+                      f"{_hint(part['name'], part.get('input', {}), room)}".rstrip())
             elif part.get("type") == "text" and part.get("text", "").strip():
                 first = part["text"].strip().splitlines()[0]
-                print(f"    {first[:100]}")
+                print(f"  [{_clock()}]   {first[:110]}")
+    elif event.get("type") == "user":
+        # A refusal is the one tool *result* worth a line: it is what a wrong
+        # permission list or a reach outside the room looks like from here, and
+        # three went past unseen in the first case-2 run. Keyed on `is_error`
+        # rather than on the wording - the real one reads "… is outside …;
+        # --restricted confines the file tools to the working directories",
+        # which matches none of the words you would think to grep for.
+        for part in event.get("message", {}).get("content", []):
+            if part.get("type") == "tool_result" and part.get("is_error"):
+                said = str(part.get("content", "")).replace("\n", " ")
+                print(f"  [{_clock()}] ! refused - {said[:120]}")
     elif event.get("type") == "result":
         print()
         print(f"  turns:   {event.get('num_turns', '?')}, "

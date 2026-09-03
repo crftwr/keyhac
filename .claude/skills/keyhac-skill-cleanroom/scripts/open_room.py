@@ -74,18 +74,21 @@ def bundles_for(version: str) -> list[pathlib.Path]:
 #: the whole problem: the operator did start the session in the room and has
 #: every reason to believe the run was clean.
 CANARY = """\
-# STOP - this session is contaminated
+# If this arrived on its own, stop
 
-You are in a clean room, and you can read this file. That means the session was
-started without `--restricted`, so Claude Code has also loaded the CLAUDE.md of
-the repository above this directory: the source layout, the design notes, the
-whole API contract. The measurement this room exists to take is already spoilt.
+**Did you open this file yourself?** Then nothing is wrong - it is a check
+addressed to a different reader, and you should carry on with TASK.md.
 
-**Do not do the task.** Say that the room was opened without `--restricted` and
-stop. Nothing you write from here is evidence about the skill bundle.
+This text is only a problem if it reached you *without* being asked for, as
+part of the context you started with. That would mean the session was started
+without `--restricted`, and Claude Code will have loaded the CLAUDE.md of the
+repository above this directory too - the source layout, the design notes, the
+whole API contract. The measurement this room exists to take would already be
+spoilt.
 
-The command that opens this room correctly is printed by `open_room.py`, and
-`make cleanroom` never gets this wrong.
+In that case, and only that case: **do not do the task.** Say that the room was
+opened without `--restricted` and stop, because nothing written from there is
+evidence about the skill bundle. `make cleanroom` never gets this wrong.
 """
 
 
@@ -106,6 +109,17 @@ def _refuse_a_room_that_is_neither(room: pathlib.Path) -> None:
             f"{ROOMS}/ or somewhere outside the checkout.")
 
 
+#: Cases written as a continuation of another, as data rather than inferred
+#: from the wording. Case 2 opens "Same as above" and case 9 "Do the same
+#: against Slack": read alone in a room, both point at a task that is not in
+#: it. The first real case-2 room said so in its second sentence - "TASK.md
+#: references 'same as above' - I need to find the prior task" - and went
+#: looking for the previous room, which the confinement refused. It would have
+#: measured what the room could guess about the missing half rather than what
+#: the case is about.
+CONTINUES = {2: 1, 9: 8}
+
+
 def case_prompt(number: int) -> str:
     """Case `number`'s prompt from cases.md - the quote, and nothing after it.
 
@@ -120,7 +134,12 @@ def case_prompt(number: int) -> str:
         raise SystemExit(f"no case {number} in {CASES}")
     quoted = " ".join(line.lstrip("> ").strip()
                       for line in section.group(1).splitlines())
-    return quoted.strip().strip('"')
+    quoted = quoted.strip().strip('"')
+    if previous := CONTINUES.get(number):
+        # Put the task it continues in front of it, which is where "above"
+        # was pointing all along.
+        return f"{case_prompt(previous)} {quoted}"
+    return quoted
 
 
 def build_room(task: str, room: str | None = None) -> pathlib.Path:
