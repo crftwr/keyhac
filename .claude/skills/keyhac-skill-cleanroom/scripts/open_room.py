@@ -136,9 +136,13 @@ def case_prompt(number: int) -> str:
                       for line in section.group(1).splitlines())
     quoted = quoted.strip().strip('"')
     if previous := CONTINUES.get(number):
-        # Put the task it continues in front of it, which is where "above"
-        # was pointing all along.
-        return f"{case_prompt(previous)} {quoted}"
+        # Put the task it continues in front of it, which is where "above" was
+        # pointing all along - as its own paragraph, so that "above" is
+        # literally true. Joined into one paragraph it still read as a quote
+        # from somewhere else, and case 2's room said so: "as if quoting an
+        # earlier instruction that is not in the room". It cost nothing and it
+        # is one line to stop costing anything.
+        return f"{case_prompt(previous)}\n\n{quoted}"
     return quoted
 
 
