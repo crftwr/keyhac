@@ -117,7 +117,7 @@ def _refuse_a_room_that_is_neither(room: pathlib.Path) -> None:
 #: looking for the previous room, which the confinement refused. It would have
 #: measured what the room could guess about the missing half rather than what
 #: the case is about.
-CONTINUES = {2: 1, 9: 8}
+CONTINUES = {2: 1, 3: 5, 9: 8}
 
 
 def case_prompt(number: int) -> str:

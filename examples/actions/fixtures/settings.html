@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Preferences</title></head>
+<body>
+  <h1>Preferences</h1>
+  <!-- Case 8's screen. Only the open tab's fields are in the tree, which is
+       the whole point: one read of the window cannot contain a tab nobody has
+       opened yet. The panel is also emptied before it is refilled, so an
+       action that reads without waiting reads the gap. -->
+  <div id="tabs" role="tablist">
+    <button type="button" id="tab-general">General</button>
+    <button type="button" id="tab-network">Network</button>
+    <button type="button" id="tab-advanced">Advanced</button>
+  </div>
+
+  <section id="panel"></section>
+
+  <script>
+    const PANELS = {
+      general: `<label for="name">Display name</label>
+                <input id="name" type="text" value="Acme workstation">
+                <label for="theme">Theme</label>
+                <input id="theme" type="text" value="dark">
+                <label for="startup">Open at login</label>
+                <input id="startup" type="checkbox" checked>`,
+      network: `<label for="proxy">Proxy</label>
+                <input id="proxy" type="text" value="proxy.acme.test:8080">
+                <label for="timeout">Timeout (s)</label>
+                <input id="timeout" type="text" value="30">
+                <label for="offline">Work offline</label>
+                <input id="offline" type="checkbox">`,
+      advanced: `<label for="cache">Cache size (MB)</label>
+                 <input id="cache" type="text" value="512">
+                 <label for="logs">Log level</label>
+                 <input id="logs" type="text" value="warning">
+                 <label for="beta">Beta features</label>
+                 <input id="beta" type="checkbox">`,
+    };
+    const show = which => {
+      document.getElementById('panel').innerHTML = "";
+      setTimeout(() => {
+        document.getElementById('panel').innerHTML = PANELS[which];
+        document.title = "Preferences - " + which;
+      }, 400);
+    };
+    for (const which of Object.keys(PANELS)) {
+      document.getElementById('tab-' + which).onclick = () => show(which);
+    }
+    show('general');
+  </script>
+</body></html>

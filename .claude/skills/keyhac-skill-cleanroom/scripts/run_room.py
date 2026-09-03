@@ -48,8 +48,19 @@ PROMPT = "Read RULES.md, then do TASK.md."
 FIXTURES = {
     1: ["systema_1.html"],
     2: ["systema_1.html", "systemb_1.html"],
+    3: ["submit.html"],
     4: ["dialog.html"],
     5: ["submit.html"],
+    8: ["settings.html"],
+}
+
+#: Screens that are a terminal rather than a page, by case: the script to run
+#: and the window title it sets. Case 6 wants a build that has already failed,
+#: case 7 one that is still going and will fail in about a minute - neither is
+#: a thing a browser can be. Case 9 wants Slack, which is not a fixture at all.
+TERMINALS = {
+    6: ("build_failure.sh", "build - acme"),
+    7: ("deploy.sh", "deploy - acme"),
 }
 
 #: What the room may do. A non-interactive session is granted its permissions
@@ -74,7 +85,14 @@ ALLOW = ["Read", "Glob", "Grep", "Write", "Edit", "TodoWrite", "mcp__keyhac"]
 #: at nothing, the way case 2's "same as above" did. Staged on the Desktop
 #: instead, which the room can reach and which is where an operator's input
 #: file would actually be.
-STAGED = {5: ["to_submit.csv"]}
+#: `(fixture, name it takes on the Desktop)`. Case 3 - "it died halfway last
+#: night and I do not want the first half submitted twice" - needs a world
+#: where half of it *did* happen, so it is staged the same CSV with the first
+#: two rows already marked done. Under the same name, because the task says
+#: "this CSV" and one unambiguous file on the Desktop is what makes that
+#: resolvable.
+STAGED = {5: [("to_submit.csv", "to_submit.csv")],
+          3: [("to_submit_partial.csv", "to_submit.csv")]}
 
 DESKTOP = pathlib.Path.home() / "Desktop"
 EXTENSIONS = pathlib.Path.home() / ".keyhac" / "extensions"
@@ -150,9 +168,14 @@ def open_fixture(case: int | None) -> None:
     hand over its own source, and a room that can read the fixture's HTML can
     skip the accessibility tree the skill is about.
     """
-    for name in STAGED.get(case or 0, []):
-        shutil.copy2(ROOT / "examples" / "actions" / "fixtures" / name, DESKTOP / name)
+    for fixture, name in STAGED.get(case or 0, []):
+        shutil.copy2(ROOT / "examples" / "actions" / "fixtures" / fixture,
+                     DESKTOP / name)
         print(f"  staged:  ~/Desktop/{name}")
+
+    if terminal := TERMINALS.get(case or 0):
+        _open_terminal(*terminal)
+        return
 
     names = FIXTURES.get(case or 0, [])
     if not names:
@@ -223,6 +246,38 @@ def _load(url: str, title: str, name: str,
         f"else. Clear Safari and run again - refusing rather than opening a "
         f"room that would spend its run looking for a screen that is not "
         f"there, which is what case 4 did.")
+
+
+def _open_terminal(script: str, title: str, patience: float = 15.0) -> None:
+    """Run a fixture script in a Terminal window, and wait for its title.
+
+    Copied out of the checkout first, for the same reason the pages are served
+    over HTTP: a terminal shows its command line, and a path under the
+    repository tells the room where the source it may not read is.
+    """
+    served = pathlib.Path(tempfile.mkdtemp(prefix="keyhac-cleanroom-screen-"))
+    shutil.copy2(ROOT / "examples" / "actions" / "fixtures" / script, served / script)
+    (served / script).chmod(0o755)
+
+    subprocess.run(["osascript", "-e", f'''tell application "Terminal"
+        activate
+        do script "bash {served / script}"
+    end tell'''], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    deadline = time.monotonic() + patience
+    while time.monotonic() < deadline:
+        named = subprocess.run(
+            ["osascript", "-e",
+             'tell application "Terminal" to get name of every window'],
+            capture_output=True, text=True, check=False).stdout
+        if title in named:
+            print(f"  screen:  {script} (Terminal, \"{title}\")")
+            return
+        time.sleep(0.5)
+    raise SystemExit(
+        f"{script} never appeared as a Terminal window called \"{title}\". "
+        f"Terminal may need Automation permission for this shell.")
 
 
 def _serve(directory: pathlib.Path) -> str:
@@ -590,7 +645,7 @@ def collect(room: pathlib.Path, before: set[pathlib.Path],
         shutil.copy2(action, room / action.name)
         if not keep:
             action.unlink()
-    for name in STAGED.get(case or 0, []):
+    for _, name in STAGED.get(case or 0, []):
         if (staged := DESKTOP / name).exists():
             # What the room wrote into it is the run's output, so it comes back
             # as evidence rather than being left on the operator's Desktop.
