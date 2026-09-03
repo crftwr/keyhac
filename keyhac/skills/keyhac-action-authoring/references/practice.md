@@ -106,6 +106,30 @@ again. An `until` written as `given` waits for what nothing has caused yet.
 double-acts: double-save, double-submit. Say what "it worked" means and you
 get the retry; say nothing and you get one attempt.
 
+**A press without `until` returns when it has pressed, not when the screen has
+answered** — and reading right after it reads the screen from before. Measured
+against Safari: the page's result line took **121 ms** to say what had just
+happened, which is forever to the next line of your action and invisible to
+you. So a submit that must not be retried still needs a wait before the read:
+
+```python
+ui.click(SUBMIT, within=form)                       # once, no retry
+answered = ui.wait(lambda: (ui.window(...).find(identifier="result")
+                            or ...), timeout=15)     # then look
+```
+
+Skip it and the action reads the *previous* row's answer and files it against
+this one — a wrong result that looks like a working action. A run that read
+without waiting concluded the page was silent, and it was not.
+
+**Name what the application produces, never what you typed.** A postcondition
+of `Appears(Locator(text="REF-777"))` after filling a form with `REF-777` is
+satisfied by the field you just filled: it returned `AXTextField id='ref'`,
+instantly, and the act was never actually confirmed. Say the thing only the
+application can put there — its result line, its new row, the dialog closing.
+Anything that was already on screen before you acted is not evidence that you
+acted.
+
 ## Waiting for what you do not cause
 
 ```python
