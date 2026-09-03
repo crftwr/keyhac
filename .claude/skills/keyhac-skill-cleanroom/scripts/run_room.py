@@ -332,26 +332,54 @@ def run_session(room: pathlib.Path, bridge: str, model: str | None,
 #: heartbeat needs and the digest prints.
 _started = _last_event = 0.0
 
+#: Set when the heartbeat finds Keyhac gone. A run that loses the endpoint is
+#: inconclusive rather than clean: it measured an outage.
+_endpoint_died = False
+
 
 def _clock() -> str:
     seconds = int(time.monotonic() - _started)
     return f"{seconds // 60:>2}:{seconds % 60:02d}"
 
 
+def _endpoint_alive() -> bool:
+    """Whether Keyhac is still answering, without raising about it."""
+    try:
+        mcp_endpoint()
+        return True
+    except SystemExit:
+        return False
+
+
 def _heartbeat(session, every: float = 20.0) -> None:
-    """Say the run is alive while it is thinking.
+    """Say the run is alive while it is thinking, and stop it when Keyhac is not.
 
     A model between tool calls writes nothing at all, so a long turn and a hung
     process look identical - which is the question an operator watching this
     actually has. A line every 20 quiet seconds answers it, and says how quiet
     it has been so a real hang is still visible as a number that keeps growing.
+
+    The endpoint is checked on the same beat because case 5 spent twenty-three
+    minutes and three dollars after Keyhac had already died - it segfaulted
+    three minutes in, and the room went on writing an action it could no longer
+    run, reporting the outage as its finding. Two failed checks in a row rather
+    than one, so a blip does not end a good run; a room that cannot reach
+    Keyhac cannot measure the skill, and stopping is cheaper than finishing.
     """
+    missed = 0
     while session.poll() is None:
         time.sleep(every / 4)
         quiet = time.monotonic() - _last_event
         if quiet >= every:
             print(f"  [{_clock()}] … thinking ({int(quiet)}s since the last step)")
             globals()["_last_event"] = time.monotonic()
+            missed = 0 if _endpoint_alive() else missed + 1
+            if missed >= 2:
+                print(f"  [{_clock()}] !! Keyhac stopped answering - ending the "
+                      f"run, which cannot measure anything from here")
+                globals()["_endpoint_died"] = True
+                session.terminate()
+                return
 
 
 def _hint(tool: str, given: dict, room: pathlib.Path) -> str:
@@ -626,6 +654,13 @@ def main() -> int:
         print(f"  output:  ~/Desktop/{produced} -> {room / produced}")
 
     print()
+    if _endpoint_died or _lost_the_endpoint(room):
+        print("== INCONCLUSIVE ==")
+        print("  Keyhac stopped answering during the run, so what the room")
+        print("  reported past that point is about the outage. Restart Keyhac,")
+        print("  tick AI Integration > MCP Server, and run this case again.")
+        print()
+
     print("== rules ==")
     breaches, refused = audit(room, {p.name for p in before})
     for turned_down in refused:
@@ -637,7 +672,18 @@ def main() -> int:
     else:
         print("  clean: nothing outside the room was read")
     print()
-    return score(room)
+    return score(room) or (2 if _endpoint_died or _lost_the_endpoint(room) else 0)
+
+
+def _lost_the_endpoint(room: pathlib.Path) -> bool:
+    """Whether the transcript shows Keyhac going away mid-run."""
+    transcript = room / "transcript.jsonl"
+    if not transcript.exists():
+        return False
+    return any("could not reach Keyhac" in str(part.get("content", ""))
+               for event in _events(transcript) if event.get("type") == "user"
+               for part in event.get("message", {}).get("content", [])
+               if part.get("type") == "tool_result" and part.get("is_error"))
 
 
 if __name__ == "__main__":
