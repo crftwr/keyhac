@@ -81,6 +81,16 @@ sheet an application raises inside its window and the panel Cmd-O opens are an
 `AXSheet` and a top-level `AXWindow` respectively, so a wait scoped `within=`
 the window can never see the second.
 
+## A checkbox does not read the same on both platforms
+
+macOS reports `AXValue` as 0/1; Windows reports a `ToggleState` of 0/1/2, where
+2 is indeterminate and counts as *not* checked. So `box.value == "1"` is a
+macOS-only test written in portable-looking code.
+
+Do not read it to decide. `set_checked(True)` reads it first, presses only if
+it has to, verifies the read-back and returns whether it pressed — which is
+also the only form safe to run twice, since a bare press *toggles*.
+
 ## Focus is a precondition for writing
 
 An unfocused `AXValue` write is silently ignored - which is how an earlier

@@ -142,6 +142,33 @@ by the calm before your act's effect starts as readily as the calm after, and
 the API refuses it as an `until`. "Click, then let the field re-render" is
 `ui.wait(Stable(...))` before the read, not a postcondition on the click.
 
+**Either of two outcomes is a plain callable.** There is no `Or`, and a submit
+that either succeeds or comes back with a validation message is one wait for
+"the page answered" — written as the function it is, since every slot that
+takes a condition takes a zero-argument callable too:
+
+```python
+ui.wait(lambda: accepted.reread().all_text or errors.reread().all_text,
+        timeout=15, message="the form to answer")
+```
+
+Then *read* which of the two it was. Waiting on only the happy outcome turns a
+rejection into a timeout, and reading without waiting at all turns it into a
+blank.
+
+## Activate what you are about to drive
+
+`ui.activate(app=...)` once at the top, and `given=ui.Front(app=...)` on each
+press after it. They are not the same thing: the first takes the front, the
+second refuses to press when something else has taken it back — a notification,
+or the operator's own click, mid-run.
+
+This is not "navigating to a start state you did not create". That rule is
+about *where in the application* you are — the page, the record, the tab — and
+it says leave that where you found it. Which window is front is not that: a
+keystroke goes to whatever is in front, so an action that does not take the
+front is typing into somebody else's window.
+
 ## Locators are values
 
 Write the selector once and pass it around:

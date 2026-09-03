@@ -52,6 +52,12 @@ a page) and look again before concluding anything about the application.
 
 If the state you need does not exist yet - a modal, a later wizard step - ask
 the user to open it and look again. That costs one message and records nothing.
+
+**Some states only exist after you act**: the dialog that a press raises, the
+page a Next produces. Nobody can put those up for you, so drive one step and
+look - write a throwaway action that performs the single press and dumps what
+appeared, run it, read the tree. That is one cheap run against the real screen,
+and it beats guessing at selectors for a dialog you have never seen.
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
 
@@ -145,6 +151,10 @@ that looks correct and is not.
 5. **Preconditions per step, before every press.** Not once at the top. The
    screen changes between item 2 and item 3, and a handler that trusts the
    dialog it saw last time will press the first button of a *different* dialog.
+   A dialog is three beats and each is a wait: it **appears**, you read what it
+   says and **act**, and it is **gone**. That last one is the postcondition for
+   the press - `until=ui.Gone(DIALOG)` - because a button that was accepted and
+   did nothing leaves the dialog exactly where it was.
    `ui.click()` re-reads its target for you and raises `StaleElement`; what it
    cannot know is the precondition that is not *about* the target - "the
    browser window is the front one", which is `given=`.
@@ -284,13 +294,18 @@ class ExtractThings(ThreadedAction):
             try:
                 self._read_one(window, rows)      # appends as it goes
             except PreconditionFailed as error:   # the UI moved: stop
-                self.stopped = str(error)
+                self.stopped = str(error)         # your own attribute
                 break
         return rows
 
     def finished(self, result):    # loop thread: report, apply, notify
         logger.info(f"{len(result)} rows")
 ```
+
+`self.stopped` above is the action's own attribute, not something the base
+class keeps - `ThreadedAction` holds no per-instance state at all, and there is
+no `super().__init__()` to call. Name it what you like; what matters is that
+`finished()` can tell a run that stopped early from one that reached the end.
 
 `self.ui` and every node method dispatch to the loop thread themselves, so an
 action's body has no thread ceremony in it. Calling a *wait* on the loop
@@ -348,7 +363,15 @@ Check the generated action against this list, and fix rather than explain:
 
 Domain knowledge is theirs and irreducible: which system, output paths and
 naming, column correspondences, which error formats their tools emit, what
-should happen on failure. **API names are not.** If you find yourself needing
+should happen on failure. **API names are not.**
+
+**When the prompt does not name an output, pick one and say so.** Write to
+`~/Desktop`, under a name taken from what you are reading, as a constructor
+argument with that default - so the operator overrides it on the line that
+binds the key, and the file is somewhere they will find it. Do not stop to ask:
+this is the question every one of these tasks leaves open, and a default they
+can see and change costs them less than a round trip. Say which file you wrote
+in the sentence you hand back. If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 

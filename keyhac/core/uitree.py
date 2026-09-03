@@ -198,6 +198,15 @@ class UINode:
 
         Reads the live UI at call time - this node's captured `children`
         play no part, so an old window node finds what is on screen *now*.
+
+        What comes back is a node of *that* walk, not a bare handle, so its
+        `children`, `walk()` and `all_text` are already filled in - reading a
+        cell you just found needs no second call.  The subtree it carries is
+        bounded by the same `max_depth`, counted from this node: something
+        matched near the bottom of a default walk has little or nothing below
+        it, and web content keeps its string one level down.  A table that
+        reads as blank columns is that, and `table.reread()` is the fix rather
+        than a deeper search for cells.
         None rather than an exception, because only the caller knows whether
         a missing element is a failed precondition or an expected absence -
         `wait_for` is the one that insists.
@@ -220,7 +229,14 @@ class UINode:
                  **criteria) -> list["UINode"]:
         """Every element below this one matching `criteria`, in tree order.
 
-        The same live read as `find` - the snapshot is not consulted.
+        The same live read as `find`, and the same snapshot rule for what it
+        hands back - each match carries its own subtree, bounded by this call's
+        `max_depth`.
+
+        A table's rows come back once each.  The tree is a DAG - a cell is a
+        child of its row and of its column both - but the walk dedupes on
+        element identity, so this is already handled; it only bites code that
+        walks `children` by hand.
 
         Args:
             max_depth: Depth bound for the underlying walk.
@@ -476,13 +492,8 @@ def find_elements(root, role: str | None = None, name: str | None = None,
         max_depth: Depth bound for the underlying walk.
         max_nodes: Node budget for the underlying walk.
 
-    A match is a node of the walk this call made, not a bare handle, so its
-    `children`, `walk()` and `all_text` are already filled in - reading a cell
-    found by `find_all` needs no second call.  What bounds that subtree is the
-    same `max_depth`, counted from `root`: a cell matched near the bottom of a
-    default walk has little or nothing below it, and web content keeps its
-    string one level down.  When a table reads as blank columns, that is the
-    reason, and `table.reread()` is the fix rather than a deeper cell search.
+    A match is a node of the walk this call made, not a bare handle: see
+    `UINode.find` for what that means for reading it.
 
     Returns:
         Matching nodes in tree order.  Empty when nothing matched - callers
