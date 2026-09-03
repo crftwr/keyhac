@@ -99,9 +99,21 @@ class Locator:
     max_nodes: int = None
 
     def criteria(self) -> dict:
-        """The `find_elements` keywords this stands for.
+        """The `find_elements` keywords this locator stands for.
 
-        lazydocs: ignore
+        `find` and `find_all` take criteria rather than a locator, so this is
+        what lets one written-once selector serve a verb and a plain search
+        both:
+
+        ```python
+        ROW = ui.Locator(role="Row")
+        rows = table.find_all(**ROW.criteria())
+        ```
+
+        Returns:
+            The fields that were set, as keyword arguments.  The unset ones
+            are left out rather than passed as None, so the search's own
+            defaults still apply.
         """
         return {field: getattr(self, field)
                 for field in ("role", "name", "value", "identifier", "text",
@@ -657,7 +669,10 @@ class UI:
                 application starting up can take more than one ask.
 
         Returns:
-            The front window's node.
+            The front window's node.  The wait is what makes that the window
+            you asked for, since it returns only once the match *is* the front
+            one.  Where one application has several windows open,
+            `window(app=, title=)` is the call that names which you meant.
 
         Raises:
             WaitTimeout: It never came to the front.

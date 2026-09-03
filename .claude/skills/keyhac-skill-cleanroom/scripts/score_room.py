@@ -14,7 +14,7 @@ CHECK = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "chec
 
 def score(room: pathlib.Path) -> int:
     """The mechanical half, printed; the judgement half, pointed at."""
-    actions = sorted(p for p in room.rglob("*.py") if "skill" not in p.parts)
+    actions = sorted(p for p in room.rglob("*.py") if "skills" not in p.parts)
     if not actions:
         print(f"no action left in {room} - the room was meant to leave one")
 

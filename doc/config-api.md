@@ -947,6 +947,8 @@ Three threads, and which one you are on decides what you may touch. starting() a
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
+There is no `__init__` here to extend.  The base keeps no per-instance state - a running action is tracked in a class-level set - so a subclass's constructor does not need `super().__init__()`, and one that omits it loses nothing. 
+
 **The user can stop a running action with Esc**, and an action needs to write nothing for that: `wait_for` raises `ActionCancelled`, and a long action spends nearly all its time waiting.  Use `check_cancelled()` in a stretch of work that has no wait in it. 
 
 ```python

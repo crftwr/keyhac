@@ -30,6 +30,15 @@ A `<pre>`'s or a cell's own `AXValue` is empty; the string lives in a child
 Use `element.get_text()` for the whole content of a container - it descends to
 leaves for exactly this reason.
 
+## A web table's header row is not marked as one
+
+Measured against Safari: a `<thead>`'s `<th>` cells project as plain `AXCell`,
+the same role as the `<td>`s below them, and a search for `ColumnHeader|Header`
+across the whole table returns nothing. There is no structural test, so take
+the first row as the header - and expect it again on every page, because a
+paginated table re-emits its `<thead>` and a loop that does not skip it writes
+the column names into the data once per page.
+
 ## A heading's value is its level
 
 WebKit reports `AXValue` `"2"` for an `<h2>`. Reading a dialog title with

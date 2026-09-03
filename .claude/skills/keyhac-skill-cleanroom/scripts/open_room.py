@@ -41,18 +41,27 @@ CASES = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "case
 ROOMS = ROOT / "cleanroom"
 
 
-def bundle_for(version: str) -> pathlib.Path:
-    """This version's action-authoring bundle, or a refusal.
+#: Both shipped skills go into the room, because that is the machine a user
+#: actually has - both installed, and the model picking between them. It also
+#: makes the last step of an action task answerable: every one of them ends by
+#: handing the operator a `configure()` block to bind a key, and what a key
+#: expression may say is the *other* skill's subject. A room holding one skill
+#: measures a setup nobody runs.
+BUNDLES = ("keyhac-action-authoring", "keyhac-key-table-configuration")
+
+
+def bundles_for(version: str) -> list[pathlib.Path]:
+    """This version's skill bundles, or a refusal.
 
     Refusing on a missing bundle rather than falling back to the newest one on
     disk: an older bundle tests an older skill and reports its gaps as though
     they were this one's, which is a wrong answer that looks like a right one.
     """
-    wanted = ROOT / "dist" / f"keyhac-action-authoring-{version}-skill.zip"
-    if not wanted.exists():
+    wanted = [ROOT / "dist" / f"{name}-{version}-skill.zip" for name in BUNDLES]
+    if missing := [p.name for p in wanted if not p.exists()]:
         found = sorted(p.name for p in (ROOT / "dist").glob("*skill.zip"))
-        raise SystemExit(f"no bundle for {version} - run `make skill-bundle` "
-                         f"first (dist/ has: {found})")
+        raise SystemExit(f"no bundle for {version} ({missing}) - run "
+                         f"`make skill-bundle` first (dist/ has: {found})")
     return wanted
 
 
@@ -119,15 +128,16 @@ def build_room(task: str, room: str | None = None) -> pathlib.Path:
     sys.path.insert(0, str(ROOT))
     import keyhac
 
-    bundle = bundle_for(keyhac.__version__)
+    bundles = bundles_for(keyhac.__version__)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     built = (pathlib.Path(room).expanduser().resolve() if room
              else ROOMS / f"{keyhac.__version__}-{stamp}")
     _refuse_a_room_that_is_neither(built)
     built.mkdir(parents=True, exist_ok=True)
 
-    with zipfile.ZipFile(bundle) as archive:
-        archive.extractall(built / "skill")
+    for bundle, name in zip(bundles, BUNDLES):
+        with zipfile.ZipFile(bundle) as archive:
+            archive.extractall(built / "skills" / name)
     (built / "CLAUDE.md").write_text(CANARY)
     shutil.copy2(SKILL / "room" / "RULES.md", built / "RULES.md")
     (built / "TASK.md").write_text(f"# The task\n\n{task.strip()}\n")
@@ -157,7 +167,8 @@ def main() -> int:
 
     print(f"room:    {room}")
     print(f"task:    {task}")
-    print(f"skill:   {len(list((room / 'skill').rglob('*')))} files unpacked")
+    print(f"skills:  {', '.join(BUNDLES)} "
+          f"({len(list((room / 'skills').rglob('*')))} files)")
     print()
     # Imported here rather than at the top: run_room imports this module, and
     # the flags belong with the code that runs them.

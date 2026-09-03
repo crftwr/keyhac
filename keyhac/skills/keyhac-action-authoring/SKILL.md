@@ -43,6 +43,13 @@ page probably contains:
 print(keymap.ui.focused().reread().dump())        # or ui.window(app="Safari")
 ```
 
+**A container with no children has often been cut off, not found empty.** Web
+content sits under the browser's own chrome, and the default node budget can be
+spent on the toolbar before the walk reaches the document - which reads exactly
+like an application that exposes nothing, and sends you to the content-access
+quirk for a problem you do not have. Raise the budget (`max_nodes=2000` covers
+a page) and look again before concluding anything about the application.
+
 If the state you need does not exist yet - a modal, a later wizard step - ask
 the user to open it and look again. That costs one message and records nothing.
 Ask in conversation for what a screen cannot show: how many items, which steps
@@ -198,7 +205,8 @@ Two consequences worth writing for:
   with none, so `def __init__(self, target)` cannot be run at all -
   `list_actions` says so instead of offering it. Defaults keep it testable and
   lose you nothing; the operator can still pass other values on the line that
-  binds the key.
+  binds the key. There is no `super().__init__()` to call: the base keeps no
+  instance state, and a running action is tracked in a class-level set.
 - **The class must subclass `ThreadedAction`** to be found at all. Any
   distance does: subclassing another action, or a shared base you split into a
   `_helpers.py` beside it, is found the same way. Never name `ThreadedAction` a
@@ -302,6 +310,17 @@ remote system has already accepted - so rollback is usually not available and
   repeated.
 - Report **what to redo**, not that something failed: name the systems, rows or
   items that need another run.
+- **What `run()` returns is a report, not the output.** The rows come back so
+  `finished()` can say how many there were; the file they belong in was written
+  as they were read. An action whose only copy of the work is its return value
+  loses all of it to the exception that ends the run - which is rule 7 seen
+  from the other end.
+- **Start from the screen you are given.** An action does not navigate back to
+  a start state it did not create - the same instinct as rule 9, since it did
+  not open that page either. That is what makes resuming cheap, and it means a
+  rerun after a *complete* run reads only the last page rather than starting
+  over. Say which page or item you stopped on, so "leave it where it is and
+  press again" is an instruction the operator can act on.
 - Use distinct exception types for "the UI moved on me" (regenerate the action)
   and "my step failed" (retry it). They call for opposite responses.
 - Capture the application's own validation message after a submit. Without it,

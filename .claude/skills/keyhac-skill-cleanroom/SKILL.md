@@ -24,10 +24,18 @@ make cleanroom CASE=1                       # a case from evals/cases.md
 make cleanroom TASK="Save every tab ..."    # a job of your own, intent only
 ```
 
-That is the whole procedure. It rebuilds the bundle, unpacks *that* zip into a
-fresh room under `cleanroom/` (gitignored), opens the case's fixture, drives the
-room to completion, audits the transcript, scores what came out, takes the test
-action back out of `~/.keyhac/extensions/` and prints `QUESTIONS.md`.
+That is the whole procedure. It rebuilds the bundles, unpacks *this version's*
+into a fresh room under `cleanroom/` (gitignored), opens the case's fixture,
+drives the room to completion, audits the transcript, scores what came out,
+takes the test action back out of `~/.keyhac/extensions/` and prints
+`QUESTIONS.md`.
+
+**Both shipped skills go in**, under `skills/`, because that is the machine a
+user actually has - both installed, and the model picking between them. It also
+makes the last step answerable: an action task ends by handing the operator a
+`configure()` block to bind a key, and what a key expression may say is the
+key-table skill's subject. It is the same room to test that skill in when the
+task calls for it.
 
 **One precondition it cannot supply for itself:** Keyhac's MCP server switch
 (**AI Integration > MCP Server**) must be on, or the room can write an action

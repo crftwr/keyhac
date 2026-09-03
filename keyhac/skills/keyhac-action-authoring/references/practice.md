@@ -161,6 +161,19 @@ handle cannot be written down or compared. `node=` is for a target no locator
 describes — "the third tab, from the list the previous step enumerated" — and
 it excludes `locator` and `within` rather than quietly outranking them.
 
+**`find` and `find_all` take the keywords, not the value.** A locator reaches
+them through `criteria()`, which is what keeps one selector serving a verb and
+a plain search both:
+
+```python
+ROW  = ui.Locator(role="Row")
+rows = table.find_all(**ROW.criteria())
+```
+
+Build them where `self.ui` exists — the top of `run()`, not the class body.
+`Locator` is reached through `ui`, so there is no name for it at class scope;
+they are cheap values and rebuilding them per run costs nothing.
+
 ## Reading text the tree cannot reach
 
 ```python
@@ -252,6 +265,14 @@ next_page.press()
 row.press()                        # WRONG - that row belonged to page 2
 ```
 
+**The root you search *from* is not what goes stale.** `find` and `find_all`
+read the live UI at call time and ignore the node's captured `children`, so a
+window node held across three page loads keeps finding what is on screen now —
+which is what makes a pagination loop possible at all, since the title you
+would re-find that window by is itself what changes. What must not be kept is
+what they hand *back*: the row, cell or button belonging to the page you have
+just left.
+
 `node.reread()` refreshes a subtree when you genuinely want the same place
 again. Acting on a node whose element has gone raises `StaleElement`, and the
 distinction is the one that decides what to do next:
@@ -293,7 +314,10 @@ with ui.content_access():               # handed back on every way out
 
 macOS only, and safe to call anywhere: a freshly started Chromium or Electron
 application exposes 13 nodes and no page at all until something asks. Windows
-needs nothing equivalent, so use it unconditionally rather than branching.
+needs nothing equivalent, and neither does Safari — WebKit hands over its
+document unasked. That is still not a reason to branch: the call costs a no-op
+where it is not needed, and "which engine is this application" is the question
+that gets answered wrong. Use it unconditionally.
 
 **Use the context manager, not the bare `enable_content_access`.** Nothing
 turns the flag off by itself, so a bare call leaves another application changed

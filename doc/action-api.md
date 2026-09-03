@@ -74,7 +74,7 @@ An act with a postcondition, which is what makes it a verb rather than a wrapper
 
 
 **Returns:**
- The front window's node. 
+ The front window's node.  The wait is what makes that the window you asked for, since it returns only once the match *is* the front one.  Where one application has several windows open, `window(app=, title=)` is the call that names which you meant. 
 
 
 
@@ -834,6 +834,31 @@ The keywords are `find_elements`' own, so nothing new has to be learned to write
  - <b>`predicate`</b>:  A callable taking a node - the escape, and the one field  nothing can patch. 
  - <b>`max_depth`</b>:  How deep to walk (#81). 
  - <b>`max_nodes`</b>:  How many nodes to read before giving up. 
+
+
+
+
+---
+
+### <kbd>method</kbd> `Locator.criteria`
+
+```python
+criteria() → dict
+```
+
+The `find_elements` keywords this locator stands for. 
+
+`find` and `find_all` take criteria rather than a locator, so this is what lets one written-once selector serve a verb and a plain search both: 
+
+```python
+ROW = ui.Locator(role="Row")
+rows = table.find_all(**ROW.criteria())
+``` 
+
+
+
+**Returns:**
+  The fields that were set, as keyword arguments.  The unset ones  are left out rather than passed as None, so the search's own  defaults still apply. 
 
 ---
 

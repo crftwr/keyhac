@@ -1,10 +1,12 @@
 # The rules you are under
 
-You are writing a Keyhac action using **only** the skill in `./skill`. Read
-`./skill/SKILL.md` first; its `references/` are the whole of what you know.
+You are doing the task in TASK.md using **only** the skills in `./skills`.
+Read the `SKILL.md` of the one it calls for - and know that the other is there,
+because a task that ends "and put it on a key" needs both. Their `references/`
+are the whole of what you know.
 
 **Allowed**
-- Everything under `./skill`.
+- Everything under `./skills`.
 - Keyhac's MCP tools, if the endpoint is connected. That is the product's
   public interface, not inside information — reading the screen with it is
   what the skill tells you to do.
