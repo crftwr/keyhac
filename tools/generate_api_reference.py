@@ -122,6 +122,13 @@ docstrings, not this file.
 #: key", an action asks "how do I read that table". Mixing them is what grew a
 #: `press` and a `focus` into the config namespace in the first place.
 ACTION_API_NAMES = [
+    # The class every action *is*. It lived only in config-api.md, on the
+    # grounds that a config author binds one to a key - but the action's own
+    # body is `run()`, and SKILL.md sends the author here for "every signature
+    # an action's body uses". A clean room looked here for `check_cancelled`,
+    # found the whole class missing, and recorded that it could not tell
+    # whether the method exists.
+    "ThreadedAction",
     "UI",
     "UINode",
     # The values the verbs take. They are reached as `ui.Locator(...)` rather

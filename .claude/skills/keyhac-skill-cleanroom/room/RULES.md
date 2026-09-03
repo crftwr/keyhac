@@ -42,5 +42,6 @@ This file is the point of the exercise. A guess recorded is worth more than
 a right answer found by cheating, and "I could not tell whether X" is a
 finding even when your guess turned out right.
 
-Finish by leaving three things in `$ROOM`: the action's source, a short note
+Finish by leaving three things in **this directory** - the one you started
+in: the action's source, a short note
 on whether it ran and what it produced, and `QUESTIONS.md`.

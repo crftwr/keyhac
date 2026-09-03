@@ -32,7 +32,119 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
+**Contents:** [ThreadedAction](#class-threadedaction) · [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
+
+
+## <kbd>class</kbd> `ThreadedAction`
+Base class for time-consuming key actions. 
+
+Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
+
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
+
+Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
+
+There is no `__init__` here to extend.  The base keeps no per-instance state - a running action is tracked in a class-level set - so a subclass's constructor does not need `super().__init__()`, and one that omits it loses nothing. 
+
+**The user can stop a running action with Esc**, and an action needs to write nothing for that: `wait_for` raises `ActionCancelled`, and a long action spends nearly all its time waiting.  Use `check_cancelled()` in a stretch of work that has no wait in it. 
+
+```python
+class Fetch(ThreadedAction):
+     def starting(self):          # main thread, before run
+         logger.info("fetching...")
+     def run(self):               # worker thread - the slow part
+         return do_network_call()
+     def finished(self, result):  # main thread, after run
+         logger.info(f"got {result}")
+``` 
+
+
+---
+
+#### <kbd>property</kbd> ThreadedAction.keymap
+
+The running Keymap, so an action need not import and look it up. 
+
+---
+
+#### <kbd>property</kbd> ThreadedAction.ui
+
+The action-facing UI API (`keymap.ui`) - see doc/action-api.md. 
+
+An action's most-used object, so it is one attribute away rather than two lines of lookup at the top of every run(). 
+
+
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.cancelled`
+
+```python
+cancelled() → bool
+```
+
+True once the user has asked this action to stop. 
+
+Check it in a loop that does not wait - `wait_for` already raises `ActionCancelled` on its own, and a loop built out of waits needs nothing else. 
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.check_cancelled`
+
+```python
+check_cancelled() → None
+```
+
+Raise `ActionCancelled` if the user has asked this action to stop. 
+
+For a stretch of work with no wait in it - a long parse, a big write - where cancellation would otherwise not be noticed until the next wait. 
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.finished`
+
+```python
+finished(result: Any) → None
+```
+
+Called on the event-loop thread once run() has returned. 
+
+Main-thread-only APIs are allowed here too. 
+
+
+
+**Args:**
+ 
+ - <b>`result`</b>:  Whatever run() returned. 
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.run`
+
+```python
+run() → Any
+```
+
+Called in the thread pool; may block. 
+
+
+
+**Returns:**
+  Anything; it is handed to finished(). 
+
+---
+
+### <kbd>method</kbd> `ThreadedAction.starting`
+
+```python
+starting() → None
+```
+
+Called on the event-loop thread the moment the action triggers. 
+
+Main-thread-only APIs (UI, windows, AX) are allowed here; it runs under the engine lock, so keep it light. 
+
+---
 
 
 ## <kbd>class</kbd> `UI`
