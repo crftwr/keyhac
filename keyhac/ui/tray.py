@@ -57,6 +57,13 @@ def install_tray(console, keymap, hook) -> None:
         console._mcp_checkbox.checked = keymap.mcp_server_running
         console.panel.render()
 
+    def toggle_mcp_timeout():
+        # Through the console for the same reason toggle_mcp goes through it:
+        # one place owns the setting and the running endpoint together.
+        console.set_mcp_timeout_disabled(not console.mcp_timeout_disabled())
+        console._mcp_checkbox.checked = keymap.mcp_server_running
+        console.panel.render()
+
     menu = Menu(
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
@@ -73,6 +80,13 @@ def install_tray(console, keymap, hook) -> None:
             # has since timed out reads as off without anything pushing it.
             MenuItem("MCP Server", on_select=toggle_mcp,
                      checked=lambda: keymap.mcp_server_running),
+            # Under the switch it modifies, rather than beside it in the
+            # console's toolbar: that row already spells its own hierarchy in
+            # a label ("AI Integration: MCP Server") because a flat row cannot
+            # show it, and a third peer there would read as a third unrelated
+            # switch. A menu nests for free.
+            MenuItem("No timeout", on_select=toggle_mcp_timeout,
+                     checked=console.mcp_timeout_disabled),
             SEPARATOR,
             # The setup instructions are the thing you hand to an agent, so
             # what this really provides is the URL - the page's first line

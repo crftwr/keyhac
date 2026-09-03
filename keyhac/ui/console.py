@@ -308,16 +308,45 @@ class ConsoleWindow:
         else:
             self._hook.uninstall()
 
+    def mcp_timeout_disabled(self) -> bool:
+        """Whether the operator asked for the endpoint to stay on.
+
+        The *preference* persists; the switch it modifies still does not, so a
+        restart is still a closed endpoint. That split is the whole design: what
+        is remembered is "do not surprise me by closing this", not "leave this
+        open".
+        """
+        return bool(self._settings.get("mcp_no_timeout", False)
+                    if self._settings else False)
+
+    def set_mcp_timeout_disabled(self, disabled: bool) -> None:
+        """Remember the preference, and apply it to a session already running.
+
+        Applied live rather than at the next tick, because the reason to reach
+        for this is usually that a run is going and the hour is nearly up.
+        """
+        if self._settings:
+            self._settings.set("mcp_no_timeout", bool(disabled))
+        if self._keymap.mcp_server_running:
+            self._keymap.stop_mcp_server()
+            self._on_mcp_toggle(True)
+
     def _on_mcp_toggle(self, checked: bool) -> None:
-        # Deliberately not persisted, unlike the console's visibility. The
-        # endpoint closes itself after an hour, so remembering it across a
-        # restart would be the one way back to a switch nobody turned off -
-        # which is what the timeout exists to prevent.
+        # The switch is deliberately not persisted, unlike the console's
+        # visibility: remembering it across a restart would be the one way back
+        # to an endpoint nobody turned on. The *timeout preference* is
+        # remembered, which is a different thing - it decides what happens to a
+        # switch the operator has just thrown, not whether it is thrown.
         try:
             if checked:
-                self._keymap.start_mcp_server()
-                logger.info(f"MCP server enabled for "
-                            f"{_AUTHORING_WINDOW // 60} minutes.")
+                no_timeout = self.mcp_timeout_disabled()
+                self._keymap.start_mcp_server(
+                    timeout=None if no_timeout else _AUTHORING_WINDOW)
+                logger.info(
+                    "MCP server enabled with no timeout - it stays on until "
+                    "you turn it off or quit Keyhac."
+                    if no_timeout else
+                    f"MCP server enabled for {_AUTHORING_WINDOW // 60} minutes.")
             else:
                 self._keymap.stop_mcp_server()
                 logger.info("MCP server disabled.")

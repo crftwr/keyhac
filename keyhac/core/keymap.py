@@ -69,6 +69,12 @@ def _modifier_name(mod: int) -> str:
 #: re-arming should be rare enough not to become reflexive.
 _AUTHORING_WINDOW = 60 * 60
 
+#: "however long the default is" - resolved when the endpoint is started, not
+#: when this module is imported. As a default argument value it would freeze
+#: `_AUTHORING_WINDOW` at import time, which silently un-monkeypatches the
+#: tests that shorten the window to a tenth of a second.
+_DEFAULT_WINDOW = object()
+
 
 #: ``{module name: (real path, source mtime)}`` for every module loaded out of
 #: ``extensions/``.  Process-wide rather than per-Keymap because ``sys.modules``
@@ -1366,7 +1372,7 @@ class Keymap:
         """
         return self._mcp_server is not None
 
-    def start_mcp_server(self, port: int = 0) -> None:
+    def start_mcp_server(self, port: int = 0, timeout=_DEFAULT_WINDOW) -> None:
         """Start the AI-integration endpoint on localhost, for a while.
 
         The switch is the console's **AI Integration: MCP Server** checkbox, or
@@ -1389,6 +1395,14 @@ class Keymap:
         that whatever is driving the endpoint cannot hold its own permission
         open by working periodically.
 
+        `timeout=None` turns the expiry off, for the session that outlives it:
+        a clean-room run or a long authoring session where the endpoint dying
+        mid-task costs more than it protects. It is the tray's *AI Integration
+        > No timeout*, and what it removes is the timer, not the switch - the
+        endpoint still goes when Keyhac quits, and it is still off on the next
+        start, because the preference persists and the state deliberately does
+        not.
+
         Off until something asks. The endpoint binds to 127.0.0.1 only and
         every request carries a token published - readable by this user alone -
         beside the configuration. `keyhac-mcp-bridge` reads that file on every
@@ -1399,6 +1413,9 @@ class Keymap:
             port: TCP port, or 0 to let the OS choose (the default - clients
                 read whichever port was chosen, so a fixed one buys nothing
                 but a collision).
+            timeout: Seconds before it closes itself, or None to leave it open
+                until the endpoint is turned off or Keyhac quits.  Omitted
+                means the standard authoring window.
 
         lazydocs: ignore
         """
@@ -1416,7 +1433,11 @@ class Keymap:
         # has to do here is *stop listening*, and nothing arrives to trigger a
         # lazy check once the conversation has moved on - which is exactly the
         # state this exists to end. One timer, cancelled by stop_mcp_server.
-        self._mcp_timer = threading.Timer(_AUTHORING_WINDOW, self._mcp_expired)
+        if timeout is _DEFAULT_WINDOW:
+            timeout = _AUTHORING_WINDOW
+        if timeout is None:
+            return
+        self._mcp_timer = threading.Timer(timeout, self._mcp_expired)
         self._mcp_timer.daemon = True
         self._mcp_timer.start()
 

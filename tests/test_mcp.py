@@ -2163,3 +2163,38 @@ def test_start_action_files_the_run_before_it_returns(writable, monkeypatch):
     finally:
         # Nothing else will: this run has no worker to close it.
         run.finish("cancelled", "the test never let the worker start")
+
+
+def test_no_timeout_leaves_it_open(engine, monkeypatch):
+    """`timeout=None` removes the expiry, and nothing else about the switch.
+
+    The endpoint dying mid-task is what this is for - a clean-room run lost an
+    hour of work and three dollars to it, finishing an action it could no
+    longer execute. What it removes is the timer; quitting still closes the
+    endpoint, and the next start still has it off, because the *preference*
+    persists and the state does not.
+    """
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
+    keymap = engine(lambda keymap: None).keymap
+    keymap.start_mcp_server(timeout=None)
+    try:
+        time.sleep(0.5)                   # the standard window would have gone
+        assert keymap.mcp_server_running is True
+    finally:
+        keymap.stop_mcp_server()
+
+
+def test_the_default_window_is_still_read_at_start_time(engine, monkeypatch):
+    """The guard on making the default an argument default.
+
+    Frozen at import, `_AUTHORING_WINDOW` would stop being patchable and every
+    test that shortens the window would quietly wait the full hour instead.
+    """
+    monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
+    keymap = engine(lambda keymap: None).keymap
+    keymap.start_mcp_server()
+
+    deadline = time.monotonic() + 5
+    while keymap.mcp_server_running and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert keymap.mcp_server_running is False

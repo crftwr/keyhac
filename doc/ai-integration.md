@@ -77,6 +77,14 @@ AXWindow 'my-projects (Workspace)'
 restarts. Tick it again when you need it — that is the intended rhythm, not an
 inconvenience to work around.
 
+For the session where it is not — an action that drives a slow system for an
+afternoon, a long authoring run — **AI Integration > No timeout** removes the
+expiry. It removes the timer and nothing else: the endpoint still closes when
+Keyhac quits, and the next start still has it off, because that preference is
+remembered and the switch deliberately is not. Reach for it when the endpoint
+dying mid-task would cost more than it protects, and turn it off when that
+session ends.
+
 The reason is what the feature is: an agent helps you *write* an action, and
 the action then runs with no model involved. An endpoint still listening the
 next morning is serving nothing — while still able to read every window you
@@ -601,6 +609,9 @@ don't type passwords or show private material while recording.
   another process on the machine cannot use the endpoint without it.
 - **It closes itself after 60 minutes**, and is never restored at startup, so
   the exposure lasts as long as the work rather than as long as you forget.
+  *No timeout* trades the first half of that away for a session that outlives
+  the hour; the second half is what still bounds it, and quitting is what ends
+  it.
 - **Every call is on the console**, one line each, whether or not it changed
   anything: reading a window leaves a trace the same way writing a file does.
   The chat window shows you what the agent chose to tell you about; this shows
