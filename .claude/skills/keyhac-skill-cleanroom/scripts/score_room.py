@@ -12,10 +12,8 @@ ROOT = SKILL.parents[2]
 CHECK = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "check.py"
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        raise SystemExit(__doc__)
-    room = pathlib.Path(argv[0])
+def score(room: pathlib.Path) -> int:
+    """The mechanical half, printed; the judgement half, pointed at."""
     actions = sorted(p for p in room.rglob("*.py") if "skill" not in p.parts)
     if not actions:
         print(f"no action left in {room} - the room was meant to leave one")
@@ -43,9 +41,16 @@ def main(argv: list[str]) -> int:
     print("  a skill defect, not a model defect: fix the skill, rebuild the")
     print("  bundle, and re-run every case if the change was to a rule.")
     print()
-    print(f"  Then: rm -rf {room}, and remove the test action from")
-    print("  ~/.keyhac/extensions/ - ActionsSource imports every module there.")
+    print(f"  Then: rm -rf {room}. A room driven by hand also leaves its")
+    print("  action in ~/.keyhac/extensions/ - remove it, since ActionsSource")
+    print("  imports every module there. `make cleanroom` takes it back out.")
     return failures
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        raise SystemExit(__doc__)
+    return score(pathlib.Path(argv[0]))
 
 
 if __name__ == "__main__":

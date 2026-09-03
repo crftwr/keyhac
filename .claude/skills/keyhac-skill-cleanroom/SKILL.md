@@ -13,72 +13,134 @@ records nothing has told you nothing.
 
 The uploaded skill is a snapshot with no repository behind it. This repository
 is full of the answers — `doc/`, `examples/actions/`, the source itself — and a
-session that has read any of it cannot unsee it. So the test runs in a **fresh
-session started outside the checkout**, and this file's second half is written
-into the scratch directory for that session to read, because it cannot read
-this one.
+session that has read any of it cannot unsee it. So the room is a directory
+holding the bundle and nothing else, driven by a session that has never seen
+this file.
 
-## In the repository: set up
-
-**One command, because the step that used to be prose is the one a
-transcription error ruins quietly.**
+## Run one
 
 ```
-make skill-bundle
-python .claude/skills/keyhac-skill-cleanroom/scripts/open_room.py \
-    --task "<the prompt, intent only>"
+make cleanroom CASE=1                       # a case from evals/cases.md
+make cleanroom TASK="Save every tab ..."    # a job of your own, intent only
 ```
 
-It unpacks *this version's* bundle - and refuses if it is not built, rather
-than falling back to an older one, since an older bundle reports an older
-skill's gaps as though they were this one's. It copies `room/RULES.md` in,
-writes `TASK.md`, opens an empty `QUESTIONS.md`, and prints the `cd … && claude`
-that opens the room.
+That is the whole procedure. It rebuilds the bundle, unpacks *that* zip into a
+fresh room under `cleanroom/` (gitignored), opens the case's fixture, drives the
+room to completion, audits the transcript, scores what came out, takes the test
+action back out of `~/.keyhac/extensions/` and prints `QUESTIONS.md`.
 
-**Rooms live in `~/keyhac-cleanroom/<version>-<timestamp>/`, and never under
-the checkout.** Two failures shaped that. A room in a temp directory was
-unfindable - the session sent to look for it reported that it did not exist,
-which is a fair conclusion from `/var/folders/9k/kmx0…/T/`. And a room *under*
-the checkout is contaminated before it begins, because Claude Code reads
-`CLAUDE.md` from every parent of the working directory: the source layout, the
-design notes and the `UINode` contract arrive in context uninvited. That is the
-worse of the two, because the operator did start the session in the room and
-has every reason to believe the run was clean. The script refuses such a path
-rather than documenting the hazard.
+**One precondition it cannot supply for itself:** Keyhac's MCP server switch
+(**AI Integration > MCP Server**) must be on, or the room can write an action
+and never run it — which fails the skill's own first checklist line and looks
+like a skill defect. The run checks the endpoint before it opens a room and
+refuses by name if it is off. It is off by default and turns itself off 60
+minutes after being ticked, so this is usually the switch.
 
-The task is the prompt from one case in
-`keyhac/skills/keyhac-action-authoring/evals/cases.md`, or a real job the user
-wants. **Only the prompt.** The "must" list under each case is the scoring key
-and must not enter the room.
+For a `TASK` of your own, put the screen it talks about up first. `CASE=1`–`5`
+have fixtures and open them; 6–10 are about somebody's real build output,
+deploy or Slack, and the run does not pretend otherwise.
 
-Then run the printed `cd <room> && claude` and say only *"Read RULES.md, then
-do TASK.md."* **Answer nothing it asks.** The operator knows the answers, which
-is exactly why answering destroys the measurement.
+### Why the room is driven non-interactively
 
-Two preconditions the room cannot supply for itself: Keyhac's **MCP server
-switch must be on** (AI Integration > MCP Server) or the room can write an
-action and never run it, which fails the skill's own first checklist line; and
-whatever screen the task is about has to be **on screen already**.
+The rule that kept breaking was the operator's. "Answer nothing it asks" is a
+discipline, and a discipline fails at the first plausible-sounding question —
+at which point the finding it would have produced is gone, and nobody can tell
+from the output that it ever existed. A `-p` session has nobody to ask. The
+only questions it can raise are the ones it writes into `QUESTIONS.md`, which
+is the artefact the exercise exists to produce.
 
-## In the repository: score
+Three things follow, all of them in `scripts/run_room.py`:
+
+- It is granted a **scoped permission list**, not `bypassPermissions`. A
+  non-interactive session with no grant has every tool call denied, and the
+  first run of this reported, accurately and uselessly, that it could not write
+  a file.
+- It runs `--restricted` with one explicit `--mcp-config`, so the settings
+  files are ignored wholesale. That matters beyond this repository: a released
+  copy of the authoring skill installed in `~/.claude/skills` has the same name
+  as the bundle under test, and a room that loads it reports last version's
+  gaps as this version's — the failure the stale-bundle check exists to
+  prevent, arriving by another door.
+- The transcript is kept, and `audit()` reads it for the rules RULES.md sets
+  and no flag can enforce — chiefly reading another author's action in the
+  extensions folder the room must be able to write to. A breach
+  **disqualifies the run** rather than being assumed away.
+
+### Driving it by hand
 
 ```
-python .claude/skills/keyhac-skill-cleanroom/scripts/score_room.py <room>
+make cleanroom CASE=1 ARGS=--dry-run
 ```
 
-Mechanical rules come out of `evals/check.py`; `QUESTIONS.md` is printed
-because it is the actual result. Zero questions is not a pass - a run with
-nothing to guess at either measured nothing or broke a rule.
+builds the room and prints the command that opens it. **Paste that command.**
+Every flag in it is load-bearing, and a plain `cd <room> && claude` is not a
+smaller version of it — see below. Then say only *"Read RULES.md, then do
+TASK.md."* and **answer nothing it asks**; this is the variant where that is
+back on you. Afterwards,
+`python .claude/skills/keyhac-skill-cleanroom/scripts/score_room.py <room>`,
+and remove the action from `~/.keyhac/extensions/` yourself.
 
-What the script cannot do is the judgement half: read the case's "must" list
-against what came out. **A "must" missed is a skill defect, not a model
-defect** (`evals/cases.md`). Fix the skill, rebuild the bundle, and re-run - all
-ten cases if the change was to a rule, because one new rule is how another gets
-broken.
+### The room is inside the checkout, and that is a bargain
 
-Clean up: remove the room, and remove the test action from
-`~/.keyhac/extensions/` - `ActionsSource` imports every module in that folder,
-so one left behind shows up in the chooser and can break its listing.
+It was refused there until 2026-09-02, for a reason that has now been paid for
+rather than avoided: Claude Code reads `CLAUDE.md` from every parent of the
+working directory, so a room here arrives with the source layout, the design
+notes and the `UINode` contract already in context. Measured rather than
+argued — a session in a room under `cleanroom/`, asked what project it is in
+and allowed to read nothing:
+
+| how it was started | answer |
+|---|---|
+| plain `claude` | "Keyhac2 — the unified Windows/macOS Python keyboard tool" |
+| `--restricted` | `UNKNOWN` |
+
+`--restricted` also hides the checkout's own skills — `keyhac-skill-cleanroom`
+itself is one, and it names the scoring key — and removes Bash, which is what
+makes the file tools' confinement to the working directories true rather than
+nominal: a shell can `cat` its way out of any confinement. So the room writes
+its action through `--add-dir ~/.keyhac/extensions` and reads its output
+through `--add-dir ~/Desktop`, and has no other way out.
+
+Three things guard the bargain, because a guarantee that rests on a flag is
+worth exactly what checking it costs:
+
+- **The room's own `CLAUDE.md` is a canary.** Under `--restricted` nothing
+  loads it. A session that *can* read it was started without the flag, and the
+  file tells it to stop and say so. The contamination is otherwise silent, and
+  silent is the whole problem — the operator did start the session in the room.
+- **`_isolation_held()` reads the session's init event back.** Bash present
+  means restricted mode did not take effect; a `keyhac` slash command means the
+  checkout's skills leaked; a server that is not `connected` means the room
+  never drove Keyhac and its report is about the endpoint, not the skill.
+- **`audit()` no longer trusts "mentions the checkout".** Every honest read of
+  the bundle names that path now, so what disqualifies a run is a path under
+  the checkout and *outside* the room.
+
+One thing the arrangement cannot hide: the room knows its own working
+directory, so it can see it sits under a `keyhac` project. It cannot read a
+byte of it, and RULES.md forbids trying, but that hint did not exist when rooms
+lived in `~/`.
+
+A room elsewhere in the checkout is refused rather than documented — under
+`cleanroom/` or outside the checkout entirely, both of which something actually
+protects.
+
+## Score it
+
+The mechanical half prints itself. `QUESTIONS.md` is the actual result, and
+**zero questions is not a pass** — a run with nothing to guess at either
+measured nothing or broke a rule.
+
+What no script can do is the judgement half: read the case's "must" list in
+`keyhac/skills/keyhac-action-authoring/evals/cases.md` against what came out.
+**A "must" missed is a skill defect, not a model defect.** Fix the skill,
+rebuild the bundle, and re-run — all ten cases if the change was to a rule,
+because one new rule is how another gets broken.
+
+`CASE=n` lifts only the case's block quote. The "must" list underneath it is
+the scoring key, and typing the task by hand is exactly where it leaks: a
+copy-paste one line too long hands the room the answers and produces a run that
+looks excellent.
 
 ## The room's rules
 
@@ -87,7 +149,7 @@ rules the room is under have to be *in* the room, and a second copy in this
 file is a second thing to drift.
 
 Their shape, so a reader of this file knows what is being measured: only the
-bundle may be read; **the MCP endpoint is allowed and the checkout is not** -
+bundle may be read; **the MCP endpoint is allowed and the checkout is not** —
 reading the screen through Keyhac's own tools is what the skill tells an author
 to do, while the package source, or another action written by somebody who had
 the repository, is inside information; and anything the skill fails to answer

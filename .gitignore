@@ -13,3 +13,9 @@ README.pypi.md
 .pytest_cache/
 .DS_Store
 *.code-workspace
+
+# Clean-room test rooms (make cleanroom). They live in the checkout so
+# they are findable, and are kept out of git because a room is scratch:
+# a bundle copy, a transcript and one action. `git add -f` a room whose
+# QUESTIONS.md is worth keeping.
+cleanroom/

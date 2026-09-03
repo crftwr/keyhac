@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe icons icons-check \
-        api-reference api-reference-check skill-bundle \
+        api-reference api-reference-check skill-bundle cleanroom \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -81,6 +81,8 @@ help:
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
+	@echo "  make cleanroom CASE=n    - clean-room test that bundle: build a room, drive it,"
+	@echo "                             audit the transcript and score it (TASK=\"...\" for your own)"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -209,6 +211,28 @@ icons-check: $(VENV_STAMP)
 # (Settings -> Skills -> Add -> Upload skill).
 skill-bundle: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/build_skill_bundle.py
+
+# Clean-room test: does the *bundle* teach an action, with no repository behind
+# it? Rebuilds the bundle first, because a room built from a stale one reports
+# an older skill's gaps as though they were this one's.
+#
+#   make cleanroom CASE=1                      one of evals/cases.md
+#   make cleanroom TASK="Save every tab ..."   a job of your own
+#   make cleanroom CASE=1 ARGS=--dry-run       build it, drive it yourself
+#
+# Rooms are built in cleanroom/ (gitignored) and driven with --restricted, which
+# is what keeps this repository's CLAUDE.md and skills out of a session running
+# inside it. The room screen has to be up for a TASK of your own; CASE opens its
+# fixture.
+CLEANROOM := .claude/skills/keyhac-skill-cleanroom/scripts/run_room.py
+cleanroom: skill-bundle
+ifdef CASE
+	$(VENV_PYTHON) $(CLEANROOM) --case $(CASE) $(ARGS)
+else ifdef TASK
+	$(VENV_PYTHON) $(CLEANROOM) --task "$(TASK)" $(ARGS)
+else
+	@echo "make cleanroom CASE=<1-10>  or  make cleanroom TASK=\"...\""; exit 2
+endif
 
 api-reference: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
