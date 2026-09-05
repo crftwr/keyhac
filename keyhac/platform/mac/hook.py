@@ -164,7 +164,7 @@ class MacInputHook(InputHook):
     def __init__(self):
         self._on_key: Callable[[KeyEvent], bool] | None = None
         self._on_restored: Callable[[], None] | None = None
-        self._on_mouse: Callable[[], None] | None = None
+        self._on_mouse: Callable[[str], None] | None = None
 
         # Mouse output state: buttons we injected down (motion between a
         # down and its up must be posted as dragged events), and the

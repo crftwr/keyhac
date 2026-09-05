@@ -323,7 +323,7 @@ class WinInputHook(InputHook):
 
         self._on_key: Callable[[KeyEvent], bool] | None = None
         self._on_restored: Callable[[], None] | None = None
-        self._on_mouse: Callable[[], None] | None = None
+        self._on_mouse: Callable[[str], None] | None = None
         self._hook_handle = None
         self._hook_proc_ref = None      # must outlive the hook
         self._mouse_hook_handle = None

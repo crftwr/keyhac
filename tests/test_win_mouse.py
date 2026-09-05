@@ -208,9 +208,17 @@ def test_wheel_reaches_focused_probe(hook, probe, restore_cursor):
 
 def test_mouse_hook_classifies_own_vs_real(hook, probe):
     """WH_MOUSE_LL: an untagged wheel counts as physical (one-shot cancel
-    fires); our own tagged output is ignored."""
+    fires); our own tagged output is ignored.
+
+    The callback takes the kind, and this records it rather than a tally:
+    `on_mouse` has carried "button" or "wheel" since 497f844, and a callback
+    of the wrong arity does not fail loudly - the hook logs "Mouse handler
+    raised" and passes the event through, which reads exactly like the hook
+    never firing. That is how this test spent a while asserting the classifier
+    was broken when what was broken was the test.
+    """
     seen = []
-    hook.install(lambda e: False, lambda: None, lambda: seen.append(1))
+    hook.install(lambda e: False, lambda: None, seen.append)
     try:
         # Untagged = physical. Raw SendInput, not hook.send_mouse.
         class MOUSEINPUT(ctypes.Structure):
@@ -253,17 +261,17 @@ def test_mouse_hook_classifies_own_vs_real(hook, probe):
             probe.pump(0.3)
             if seen:
                 break
-        assert seen == [1]
+        assert seen == ["wheel"]
 
         # Same again before the second half: any event arriving during a quiet
         # window here is the environment's, and one arriving after the tagged
         # send would otherwise be blamed on the classifier.
         probe.pump(0.3)
-        if seen != [1]:
+        if seen != ["wheel"]:
             pytest.skip("a physical mouse event arrived mid-test")
 
         hook.send_mouse([("wheel", -1.0)])  # own output: must NOT count
         probe.pump(0.3)
-        assert seen == [1]
+        assert seen == ["wheel"]
     finally:
         hook.uninstall()
