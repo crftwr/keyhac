@@ -30,10 +30,15 @@ Two halves, and the second is the one that matters:
 
 Windows has no POSIX mode bits.  ``os.chmod`` there only toggles the
 read-only attribute, so a sweep would clear nothing it was asked to clear and
-could mark files read-only; access is governed instead by the ACL inherited
-from ``%USERPROFILE%``, which already excludes other users.  Every function
-here is therefore a plain create with no mode work on Windows, so callers
-need no platform branch of their own.
+could mark files read-only; access is governed instead by the ACL, which for
+the usual ``~/.keyhac`` is inherited from ``%USERPROFILE%`` and already
+excludes other users.  Portable mode is the exception - a bundle unzipped to
+``C:\\keyhac`` inherits the drive root's read access for every local account -
+and closing it would mean writing ACLs by hand, which is out of proportion to
+a directory the operator deliberately put on a shared drive or a stick.
+PRIVACY.md says as much rather than the code pretending otherwise.  Every
+function here is therefore a plain create with no mode work on Windows, so
+callers need no platform branch of their own.
 """
 
 import glob
@@ -86,10 +91,30 @@ def ensure_private_dir(path: str) -> None:
     Nothing is done to a directory that already exists; the start-up sweep is
     what fixes those.  An empty ``path`` (``dirname`` of a bare filename) is a
     no-op rather than an error.
+
+    Not ``os.makedirs(path, mode=_DIR_MODE)``: since Python 3.7 that applies
+    the mode to the leaf only, recursing into the parents without one, so they
+    are born 0755 under the stock umask.  On a first run that mattered -
+    ``extensions/`` is created before anything creates ``~/.keyhac`` itself,
+    so the data directory, the half that is the actual guarantee, came out
+    open to the machine's other accounts until the *next* run's sweep closed
+    it.  Every parent this function creates is Keyhac's own, including one
+    named by ``--config``, so all of them get ``_DIR_MODE``.
     """
-    if not path:
+    if not path or os.path.isdir(path):
         return
-    os.makedirs(path, mode=_DIR_MODE, exist_ok=True)
+
+    parent = os.path.dirname(path)
+    if parent and parent != path:
+        ensure_private_dir(parent)
+
+    try:
+        os.mkdir(path, _DIR_MODE)
+    except FileExistsError:
+        # Raced with another process, or a *file* sits at the path - the
+        # second is a real error and makedirs(exist_ok=True) reported it too.
+        if not os.path.isdir(path):
+            raise
 
 
 def open_private(path: str, mode: str = "w", encoding: str | None = "utf-8"):
