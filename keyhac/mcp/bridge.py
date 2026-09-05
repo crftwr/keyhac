@@ -12,7 +12,18 @@ model sees is served by the daemon, so the two cannot drift apart into a bridge
 that advertises a tool the daemon no longer has. If you find yourself adding a
 branch here for a specific method, it belongs on the other side.
 
-`--tools` is the one exception, and it holds to the same rule: it prints what
+**When the daemon is not answering, the bridge answers for it.** A client
+that meets a JSON-RPC error at `initialize` writes the server off as broken and
+stops calling it - so the state a user meets most often, Keyhac running with its
+MCP switch off, arrives as "keyhac failed to connect" with the reason on a line
+nobody reads, and the way out is a client restart rather than a tick in Keyhac.
+Instead the handshake succeeds, `tools/list` serves one tool whose name and
+description say the switch is off and how to turn it on, and calling that tool
+re-checks. It cannot drift from the daemon either: what it serves exists only
+while the daemon serves nothing, and `notifications/tools/list_changed` hands
+the list back the moment one answers.
+
+`--tools` is the other exception, and it holds to the same rule: it prints what
 the daemon answers to `tools/list`, verbatim. It knows no tool names, no
 argument shapes, and formats nothing the daemon did not serve, so it cannot
 drift from it either. It exists for a client that has a shell but no MCP
@@ -38,12 +49,21 @@ import urllib.error
 import urllib.request
 
 from keyhac.core import paths
-from keyhac.mcp.server import ENDPOINT_FILE
+from keyhac.mcp.server import ENDPOINT_FILE, PROTOCOL_VERSION
 
 #: How long to wait on the daemon before answering the client ourselves. Long
 #: enough for a deep tree walk on a slow application; short enough that a wedged
 #: daemon does not hang the conversation with no explanation.
 TIMEOUT = 60.0
+
+#: How long the placeholder tool waits for the daemon before reporting it
+#: still off. A `ping` answered from the daemon's own thread pool, so this is
+#: a localhost round trip and not a tree walk.
+PROBE_TIMEOUT = 5.0
+
+#: The tool served while the daemon is silent. Named as a sentence because the
+#: name is the half of a tool listing every client shows.
+OFF_TOOL = "keyhac_mcp_server_is_off"
 
 
 def endpoint_path(config: str | None = None) -> str:
@@ -70,13 +90,21 @@ def _error(request_id, message: str) -> dict:
 
 
 def _no_daemon(path: str) -> str:
-    """The likeliest failure by far, so it names the cause rather than leaving
-    the reader with 'connection refused'. Shared by the pump and by --tools:
-    the two reach the same daemon and fail to find it the same way."""
-    return (f"Keyhac's MCP endpoint is not available ({path}). Is Keyhac "
-            f"running, and is its MCP server switch on - the 'AI Integration: "
-            f"MCP Server' checkbox in the console window, or 'AI Integration > "
-            f"MCP Server' in the tray menu?")
+    """Why nothing answered, in the terms whoever reads it can act on.
+
+    The switch being off is far and away the likeliest, and its expiry is the
+    one that surprises people: it is on until it is not, and nothing is said at
+    the time. Both are named here rather than left as 'connection refused'.
+    Shared by the offline answers, the pump's errors and --tools, which all
+    reach the same daemon and fail to find it the same way.
+    """
+    return (f"Keyhac's MCP server is not answering, so none of its tools can "
+            f"run. Either Keyhac is not running, or its MCP server switch is "
+            f"off: it starts off every time, and it also closes itself an hour "
+            f"after being switched on. Ask the operator to tick 'AI "
+            f"Integration: MCP Server' in Keyhac's console window, or 'AI "
+            f"Integration > MCP Server' in its tray menu, then try again. "
+            f"(endpoint: {path})")
 
 
 def _post(endpoint: dict, body: bytes) -> urllib.request.Request:
@@ -86,6 +114,69 @@ def _post(endpoint: dict, body: bytes) -> urllib.request.Request:
         headers={"Content-Type": "application/json",
                  "Authorization": f"Bearer {endpoint['token']}"},
         method="POST")
+
+
+def _result(request_id, result: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def _notify(method: str) -> None:
+    """A JSON-RPC notification: no id, and no reply is coming."""
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": method}) + "\n")
+    sys.stdout.flush()
+
+
+def _handshake() -> dict:
+    """The `initialize` result, for the daemon that is not there to give one.
+
+    `listChanged` is declared because the whole point of answering is that what
+    is served next is provisional: the client has to accept being told to ask
+    again once the switch goes on. The version is this bridge's own, which is
+    the only one it can know - the daemon reports its own when it is up.
+    """
+    from keyhac import __version__
+    return {"protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": True}},
+            "serverInfo": {"name": "keyhac", "version": __version__}}
+
+
+def _off_tool(path: str) -> dict:
+    """The one tool served while the daemon is silent.
+
+    A tool rather than an empty list: a server that connects and offers nothing
+    reads as a broken Keyhac and says nothing about the switch, while a listed
+    tool carries the reason in the two places a model and a person both look -
+    the name and the description. Calling it is also the cheapest way to find
+    out whether the switch has since been ticked.
+    """
+    return {"name": OFF_TOOL,
+            "description": (f"{_no_daemon(path)} Calling this tool checks "
+                            f"again: once Keyhac answers, its own tools "
+                            f"replace this one."),
+            "inputSchema": {"type": "object", "properties": {}}}
+
+
+def _tool_called(message: dict) -> str | None:
+    params = message.get("params")
+    return params.get("name") if isinstance(params, dict) else None
+
+
+def _answering(endpoint: dict) -> bool:
+    """Whether the daemon behind a published endpoint is really there.
+
+    The file outliving the daemon is an ordinary state - a Keyhac killed rather
+    than quit leaves one - so its presence is not the answer. `ping` is, and it
+    is the cheapest question the protocol has. A rejected token counts as no:
+    a stale credential and a stale port are the same stale file.
+    """
+    body = json.dumps({"jsonrpc": "2.0", "id": 0,
+                       "method": "ping"}).encode("utf-8")
+    try:
+        with urllib.request.urlopen(_post(endpoint, body),
+                                    timeout=PROBE_TIMEOUT):
+            return True
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
 
 
 def print_tools(path: str) -> int:
@@ -152,6 +243,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.tools:
         return print_tools(path)
 
+    # Whether the tool list the client is holding is ours. Only then is there
+    # anything to announce when the daemon starts answering: the notification
+    # means "what I gave you is stale", and a client that never saw the
+    # placeholder is already holding the daemon's own list.
+    placeholder_served = False
+
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -161,7 +258,9 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             continue                      # not addressable: no id to reply to
 
-        request_id = message.get("id") if isinstance(message, dict) else None
+        addressable = isinstance(message, dict)
+        request_id = message.get("id") if addressable else None
+        method = message.get("method") if addressable else None
 
         # Read the endpoint per request rather than once at startup: Keyhac may
         # be restarted - or started for the first time - while the client holds
@@ -169,30 +268,66 @@ def main(argv: list[str] | None = None) -> int:
         try:
             endpoint = read_endpoint(path)
         except (OSError, ValueError):
-            if request_id is None:
-                continue
-            _respond(message, _error(request_id, _no_daemon(path)))
+            endpoint = None
+
+        # Ours to answer whichever way the daemon is: it has never heard of
+        # this tool and would refuse the call.
+        if method == "tools/call" and _tool_called(message) == OFF_TOOL:
+            back = endpoint is not None and _answering(endpoint)
+            if request_id is not None:
+                text = ("Keyhac's MCP server is answering again - its own "
+                        "tools are available now." if back else _no_daemon(path))
+                _respond(message, _result(request_id, {
+                    "content": [{"type": "text", "text": text}],
+                    "isError": not back}))
+            if back and placeholder_served:
+                placeholder_served = False
+                _notify("notifications/tools/list_changed")
             continue
 
-        request = _post(endpoint, line.encode("utf-8"))
-        try:
-            with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
-                body = reply.read()
-        except urllib.error.HTTPError as error:
-            if request_id is not None:
-                _respond(message, _error(
-                    request_id, f"Keyhac returned HTTP {error.code}"))
-            continue
-        except (urllib.error.URLError, OSError) as error:
-            if request_id is not None:
-                _respond(message, _error(
-                    request_id, f"could not reach Keyhac: {error}"))
+        body = None
+        if endpoint is not None:
+            request = _post(endpoint, line.encode("utf-8"))
+            try:
+                with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
+                    body = reply.read()
+            except urllib.error.HTTPError as error:
+                # An answer, and from the daemon: a rejected token is not a
+                # switch that is off, and saying so would send the operator to
+                # tick one that is already ticked.
+                if request_id is not None:
+                    _respond(message, _error(
+                        request_id, f"Keyhac returned HTTP {error.code}"))
+                continue
+            except (urllib.error.URLError, OSError):
+                # Published but not listening - a Keyhac killed rather than
+                # quit leaves the file behind. The same state as never
+                # published, and it takes the same answer.
+                endpoint = None
+
+        if endpoint is None:
+            if request_id is None:
+                continue                  # a notification: nothing to answer
+            if method == "initialize":
+                _respond(message, _result(request_id, _handshake()))
+            elif method == "ping":
+                _respond(message, _result(request_id, {}))
+            elif method == "tools/list":
+                placeholder_served = True
+                _respond(message, _result(request_id,
+                                          {"tools": [_off_tool(path)]}))
+            else:
+                _respond(message, _error(request_id, _no_daemon(path)))
             continue
 
         # A notification gets 202 and an empty body; there is nothing to write.
         if body:
             sys.stdout.write(body.decode("utf-8") + "\n")
             sys.stdout.flush()
+
+        if placeholder_served:
+            placeholder_served = False
+            _notify("notifications/tools/list_changed")
     return 0
 
 
