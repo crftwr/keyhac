@@ -287,6 +287,17 @@ conversation would be a second hook and a second accessibility prompt. So
 already running. It holds no tool definitions and no logic, so the two cannot
 drift apart.
 
+**With the switch off, the client stays connected.** An MCP client that meets an
+error while starting a server writes it off as broken and stops calling it — so
+the commonest state there is, Keyhac running with the MCP switch off, used to
+arrive as "keyhac failed to connect", with the explanation on a line nobody
+reads and a client restart needed after you ticked the box. Now the handshake
+succeeds and the bridge lists one tool, `keyhac_mcp_server_is_off`, whose
+description says which box to tick. Tick it and tell the agent to try that tool
+again: Keyhac's own tools replace it on the spot, with no restart. The same
+answer covers the hour having lapsed and a Keyhac that was killed rather than
+quit, both of which look identical from the client's side.
+
 Register it — Settings → Developer → Edit Config, or
 `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
