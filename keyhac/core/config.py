@@ -1,7 +1,8 @@
 """Configuration file loading (ported from keyhac-mac keyhac_config.py)."""
 
 import os
-import shutil
+
+from keyhac.core import permissions
 
 
 class Config:
@@ -12,8 +13,8 @@ class Config:
         self.config_path = config_path
 
         if not os.path.exists(config_path):
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-            shutil.copyfile(template_path, config_path)
+            permissions.ensure_private_dir(os.path.dirname(config_path))
+            permissions.copy_private(template_path, config_path)
 
         with open(config_path, "r", encoding="utf-8") as f:
             source = f.read()

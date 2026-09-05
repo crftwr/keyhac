@@ -38,7 +38,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from keyhac.core import log
+from keyhac.core import log, permissions
 
 logger = log.getLogger("MCP")
 
@@ -474,11 +474,11 @@ class MCPServer:
         """Write port + token where the bridge can find them, and nobody else.
 
         Created 0600 *before* the token is written - a chmod afterwards leaves
-        a window in which the credential is world-readable.
+        a window in which the credential is world-readable.  That is what
+        ``permissions.open_private`` does for every file Keyhac writes; this
+        one had it first.
         """
-        directory = os.path.dirname(self.endpoint_path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
+        permissions.ensure_private_dir(os.path.dirname(self.endpoint_path))
         published = {"port": self.port, "token": self.token, "pid": os.getpid()}
         # Omitted rather than null when this install generated no console
         # script: a reader can then treat the key's presence as "a stdio client
@@ -486,7 +486,5 @@ class MCPServer:
         if self.bridge:
             published["bridge"] = self.bridge
 
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        descriptor = os.open(self.endpoint_path, flags, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with permissions.open_private(self.endpoint_path) as handle:
             json.dump(published, handle)

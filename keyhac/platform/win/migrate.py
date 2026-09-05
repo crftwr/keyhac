@@ -22,10 +22,9 @@ notice (``instance.py``).
 
 import ctypes
 import os
-import shutil
 import sys
 
-from keyhac.core import log, paths
+from keyhac.core import log, paths, permissions
 
 logger = log.getLogger("Migrate")
 
@@ -90,8 +89,8 @@ def offer_config_migration(target_config_path: str) -> bool:
         return False
 
     try:
-        os.makedirs(os.path.dirname(target_config_path), exist_ok=True)
-        shutil.copyfile(source, target_config_path)
+        permissions.ensure_private_dir(os.path.dirname(target_config_path))
+        permissions.copy_private(source, target_config_path)
     except OSError as e:
         logger.error(f"Could not copy {source} to {target_config_path}: {e}")
         return False

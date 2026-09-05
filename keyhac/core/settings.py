@@ -16,7 +16,7 @@ itself remembers between runs.
 import json
 import os
 
-from keyhac.core import log
+from keyhac.core import log, permissions
 
 logger = log.getLogger("Settings")
 
@@ -59,8 +59,8 @@ class Settings:
 
     def _save(self) -> None:
         try:
-            os.makedirs(os.path.dirname(self.filename), exist_ok=True)
-            with open(self.filename, "w", encoding="utf-8") as f:
+            permissions.ensure_private_dir(os.path.dirname(self.filename))
+            with permissions.open_private(self.filename) as f:
                 json.dump(self._data, f, indent=2)
         except OSError as e:
             logger.warning(f"Could not write {self.filename}: {e}")

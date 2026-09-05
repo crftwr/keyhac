@@ -14,7 +14,7 @@ import signal
 import sys
 
 from keyhac import __version__
-from keyhac.core import log, paths
+from keyhac.core import log, paths, permissions
 from keyhac.core.keymap import Keymap
 
 logger = log.getLogger("Main")
@@ -86,6 +86,14 @@ def main() -> int:
     # Where config.py and the state files beside it live: --config, else
     # Windows portable mode (a config.py next to Keyhac.exe), else ~/.keyhac.
     app_paths = paths.resolve(args.config)
+
+    # Every run, not just the first: a directory that predates this check is
+    # still 0755 with 0644 files inside, and a mode does not stay put anyway -
+    # anything that saves by rename leaves a fresh 0644 file behind.  Before
+    # the config load, so nothing is read out of a directory still open to
+    # the machine's other accounts.
+    permissions.harden_data_dir(app_paths.data_dir)
+
     if app_paths.portable:
         logger.info(f"Portable mode: using {app_paths.data_dir}")
     elif platform_name == "windows" and not args.no_ui and not args.config:

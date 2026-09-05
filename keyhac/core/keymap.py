@@ -20,7 +20,7 @@ from keyhac.core.vk import init_key_names, get_key_names
 from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
-from keyhac.core import log
+from keyhac.core import log, permissions
 from keyhac.core.action import ThreadedAction
 from keyhac.core.config import Config
 from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
@@ -286,7 +286,7 @@ class Keymap:
 
             extensions_dir = self.extensions_dir
             try:
-                os.makedirs(extensions_dir, exist_ok=True)
+                permissions.ensure_private_dir(extensions_dir)
             except OSError as e:
                 # A read-only data directory - a portable install on a
                 # write-protected stick, or one whose config.py an admin put
@@ -426,8 +426,8 @@ class Keymap:
         if not os.path.exists(self._config_path):
             # Deleted while running; recreate it like Config's first run does
             # ("open -a" refuses a nonexistent file on macOS).
-            os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
-            shutil.copyfile(self._template_path, self._config_path)
+            permissions.ensure_private_dir(os.path.dirname(self._config_path))
+            permissions.copy_private(self._template_path, self._config_path)
         if callable(self.editor):
             try:
                 self.editor(self._config_path)
