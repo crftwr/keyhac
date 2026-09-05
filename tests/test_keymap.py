@@ -128,6 +128,11 @@ class TestOneShot:
         kt = keymap.define_keytable(focus_path_pattern="*")
         kt["O-RCmd"] = "Escape"
 
+    def _configure_with_modifier(self, keymap):
+        kt = keymap.define_keytable(focus_path_pattern="*")
+        kt["O-RCmd"] = "Escape"
+        kt["O-Shift-RCmd"] = "F1"
+
     def test_oneshot_fires_on_lone_press(self, engine):
         e = engine(self._configure)
         e.down("RCmd")
@@ -141,6 +146,36 @@ class TestOneShot:
         e.up("A")
         e.up("RCmd")
         assert "D-Escape" not in e.sent_names()
+
+    def test_oneshot_with_modifier_held_before_the_tap(self, engine):
+        """A modifier already down when the one-shot key is pressed is part
+        of the condition, not an interruption (doc/configuration.md)."""
+        e = engine(self._configure_with_modifier)
+        e.down("LShift")
+        e.down("RCmd")
+        e.up("RCmd")
+        assert "D-F1" in e.sent_names()
+
+    def test_modifier_moved_during_the_tap_cancels_it(self, engine):
+        """The key's own press has to be the last input event before its
+        release - a modifier pressed or released in between cancels."""
+        e = engine(self._configure_with_modifier)
+        e.down("RCmd")
+        e.down("LShift")                       # pressed during the tap
+        e.up("RCmd")
+        e.up("LShift")
+        e.down("LShift")
+        e.down("RCmd")
+        e.up("LShift")                         # released during the tap
+        e.up("RCmd")
+        assert e.sent_names() == []
+
+    def test_bare_oneshot_does_not_fire_under_a_modifier(self, engine):
+        e = engine(self._configure)            # only "O-RCmd" is bound
+        e.down("LShift")
+        e.down("RCmd")
+        e.up("RCmd")
+        assert e.sent_names() == []
 
 
 class TestLoneWinAltCancel:
