@@ -701,9 +701,12 @@ class UI:
         did - so this verb rarely needs an `until`. What it adds is the
         locator, the precondition and the one shape every step has.
 
-        **A `FillFailed` is not retried**, and that is deliberate: it means
-        the write happened and the read-back disagreed, so doing it again is
-        the double-act hazard. A field that is not ready yet is a `given=`.
+        **A `FillFailed` is not retried**, and that is deliberate wherever it
+        names the mechanisms it `attempted`: the write happened and the
+        read-back disagreed, so doing it again is the double-act hazard. The
+        one that names none is the focus never landing - nothing was written,
+        and `focus()` has already spent its own wait on it, so a retry here
+        would only repeat a wait. A field that is not ready yet is a `given=`.
 
         Args:
             text: What to write.

@@ -50,7 +50,8 @@ from typing import Any, Iterable
 
 from keyhac.core import log
 from keyhac.core.uitree import StaleElement, UINode
-from keyhac.core.wait import WaitTimeout, evaluate_on_main_thread, wait_for
+from keyhac.core.wait import (WaitTimeout, evaluate_on_main_thread,
+                              on_loop_thread, wait_for)
 
 logger = log.getLogger("Fill")
 
@@ -62,6 +63,20 @@ DEFAULT_METHODS = ("paste", "keys")
 #: zero: a paste is delivered as a keystroke and the application processes it
 #: on its own schedule.
 VERIFY_TIMEOUT = 2.0
+
+#: How long to keep asking for the focus before giving up on it.
+#:
+#: Not zero, for the same reason VERIFY_TIMEOUT is not: landing is not
+#: instant.  macOS answers "did it land" against the system-wide focused
+#: element read back immediately after the write, and a document that has just
+#: come to the front accepts the focus a beat later than that - measured at
+#: 121 ms for an accessibility answer to catch up in Safari, so an instant
+#: check reports a false "could not focus" for a focus that is on its way.
+#: The ask is repeated rather than only re-read: an application that was not
+#: ready to take the focus needs asking again, not watching.  Safe to repeat -
+#: focusing is idempotent, which is what separates it from the acts that must
+#: not be retried.  Too generous only makes a genuine failure slower.
+FOCUS_TIMEOUT = 1.0
 
 #: How long an unverified paste holds the clipboard before restoring it.
 #:
@@ -80,6 +95,12 @@ class FillFailed(RuntimeError):
 
     Carries what was attempted, because "the field is still empty" and "the
     field has the wrong text" want different responses from the caller.
+
+    **An empty `attempted` means nothing was written at all** - the focus
+    never landed, so the write was refused rather than attempted.  That one is
+    a precondition failure wearing this exception's name: the world was not
+    ready, as against the act not having taken, and only the second carries
+    the double-act hazard that makes retrying dangerous.
     """
 
     def __init__(self, message: str, attempted: Iterable[str] = ()):
@@ -149,21 +170,48 @@ def preserve_clipboard():
 
 # -- focus -------------------------------------------------------------------
 
-def focus(target) -> bool:
+def focus(target, timeout: float = None) -> bool:
     """Give an element keyboard focus, and report whether it landed.
 
     Checked rather than assumed: both platforms accept the request without
     always honouring it, and a keystroke aimed at an element that never got
     focus goes wherever focus actually is - which is how a form fill ends up
     typing its data into the page behind it.
+
+    **Asked until it lands, not asked once.** The check used to happen in the
+    same breath as the write, which is the layer's own "asking is not the same
+    as it being so" in the one place that had kept it: a field in a document
+    that had just been brought to the front reported a focus failure for a
+    focus that arrived milliseconds later.  See FOCUS_TIMEOUT.
+
+    Args:
+        target: A UINode or platform element.
+        timeout: Seconds to keep asking, FOCUS_TIMEOUT by default.  Zero asks
+            once, which is also what happens on the event-loop thread, where
+            waiting is refused.
+
+    Returns:
+        True when the focus landed, False when it never did.
     """
     element = _element(target)
+    timeout = FOCUS_TIMEOUT if timeout is None else timeout
 
-    def do_focus():
+    def ask():
         setter = getattr(element, "set_focus", None)
         return bool(setter()) if setter is not None else False
 
-    return bool(evaluate_on_main_thread(do_focus))
+    if bool(evaluate_on_main_thread(ask)):
+        return True
+    # Never RuntimeError where this used to answer: reading and asking are
+    # both fine on the loop thread, and only the waiting is not.
+    if timeout <= 0 or on_loop_thread():
+        return False
+    try:
+        return bool(wait_for(lambda: evaluate_on_main_thread(ask),
+                             timeout=timeout,
+                             message="the focus to land on the element"))
+    except WaitTimeout:
+        return False
 
 
 def read_value(target) -> Any:
@@ -209,8 +257,8 @@ def set_text(target, text: str, methods: Iterable[str] = DEFAULT_METHODS,
     element = _element(target)
     if not focus(target):
         raise FillFailed(
-            "could not focus the field; a write now would go to whatever has "
-            "focus instead", attempted=())
+            f"could not focus the field, after {FOCUS_TIMEOUT:g}s of asking; a "
+            f"write now would go to whatever has focus instead", attempted=())
 
     def confirm() -> bool:
         if not verify:

@@ -343,7 +343,7 @@ ui.fill("REC-001", ui.Locator(identifier="record-id"), within=form)
 
 `set_text` already focuses, verifies the focus landed, writes, and reads the value back, raising `FillFailed` naming what each mechanism did - so this verb rarely needs an `until`. What it adds is the locator, the precondition and the one shape every step has. 
 
-**A `FillFailed` is not retried**, and that is deliberate: it means the write happened and the read-back disagreed, so doing it again is the double-act hazard. A field that is not ready yet is a `given=`. 
+**A `FillFailed` is not retried**, and that is deliberate wherever it names the mechanisms it `attempted`: the write happened and the read-back disagreed, so doing it again is the double-act hazard. The one that names none is the focus never landing - nothing was written, and `focus()` has already spent its own wait on it, so a retry here would only repeat a wait. A field that is not ready yet is a `given=`. 
 
 
 
@@ -753,10 +753,12 @@ A table's rows come back once each.  The tree is a DAG - a cell is a child of it
 ### <kbd>method</kbd> `UINode.focus`
 
 ```python
-focus() → bool
+focus(timeout: 'float' = None) → bool
 ```
 
 Give this element keyboard focus; True when it actually landed. 
+
+Landing is not instant, so the ask is repeated for `timeout` seconds (`keyhac.core.fill.FOCUS_TIMEOUT` by default) before the answer is False.  Pass 0 to ask exactly once. 
 
 ---
 
@@ -1080,6 +1082,8 @@ Deliberately its own type, and deliberately an error rather than a False return:
 A write did not take. 
 
 Carries what was attempted, because "the field is still empty" and "the field has the wrong text" want different responses from the caller. 
+
+**An empty `attempted` means nothing was written at all** - the focus never landed, so the write was refused rather than attempted.  That one is a precondition failure wearing this exception's name: the world was not ready, as against the act not having taken, and only the second carries the double-act hazard that makes retrying dangerous. 
 
 ---
 

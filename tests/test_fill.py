@@ -32,13 +32,17 @@ class FakeField:
     """A field whose mechanisms can be made to fail independently."""
 
     def __init__(self, value="", focusable=True, accepts_set_value=True,
-                 role="AXTextField", actions=("AXPress",)):
+                 role="AXTextField", actions=("AXPress",), focusable_after=0):
         self.value = value
         self.focusable = focusable
         self.accepts_set_value = accepts_set_value
         self.role = role
         self.focused = False
         self.presses = 0
+        self.focus_asks = 0
+        #: Asks to refuse before the focus lands, standing in for a document
+        #: that has only just come to the front.
+        self.focusable_after = focusable_after
         self._actions = list(actions)
 
     def describe(self):
@@ -52,7 +56,8 @@ class FakeField:
         return id(self)
 
     def set_focus(self):
-        self.focused = self.focusable
+        self.focus_asks += 1
+        self.focused = self.focusable and self.focus_asks > self.focusable_after
         return self.focused
 
     def set_value(self, text):
@@ -99,13 +104,66 @@ def test_preserve_clipboard_restores_after_an_exception(wired):
     assert clipboard.get_text() == "what the user had copied"
 
 
+# -- focus -------------------------------------------------------------------
+
+@pytest.fixture
+def brief_focus_timeout(monkeypatch):
+    """Keep the focus wait real but short, so the suite does not pay for it."""
+    monkeypatch.setattr(fill, "FOCUS_TIMEOUT", 0.2)
+
+
+def test_focus_that_lands_late_is_not_a_failure(wired, brief_focus_timeout):
+    """The bug: the check used to happen in the same breath as the write.
+
+    A document that has just been brought to the front takes the focus a beat
+    later than it is asked, and one instant check reported that as a failure.
+    """
+    field = FakeField(focusable_after=3)
+    assert fill.focus(field) is True
+    assert field.focus_asks > 3
+
+
+def test_focus_that_never_lands_still_answers_false(wired, brief_focus_timeout):
+    field = FakeField(focusable=False)
+    assert fill.focus(field) is False
+
+
+def test_a_zero_timeout_asks_exactly_once(wired):
+    field = FakeField(focusable_after=3)
+    assert fill.focus(field, timeout=0) is False
+    assert field.focus_asks == 1
+
+
+def test_the_loop_thread_asks_once_rather_than_raising(wired, monkeypatch):
+    """Waiting is refused there; answering is not.
+
+    `wait_for` raises on the event-loop thread, and this used to answer
+    without waiting at all - so the guard has to be here, not a RuntimeError
+    where callers previously got a bool.
+    """
+    monkeypatch.setattr(fill, "on_loop_thread", lambda: True)
+    field = FakeField(focusable_after=3)
+    assert fill.focus(field) is False
+    assert field.focus_asks == 1
+
+
 # -- set_text ----------------------------------------------------------------
 
-def test_refuses_to_write_when_focus_does_not_land(wired):
+def test_refuses_to_write_when_focus_does_not_land(wired, brief_focus_timeout):
     field = FakeField(focusable=False)
-    with pytest.raises(FillFailed, match="could not focus"):
+    with pytest.raises(FillFailed, match="could not focus") as raised:
         set_text(field, "REC-001")
     assert field.value == ""
+    # The empty tuple is what tells a caller nothing was written, which is why
+    # this refusal is a precondition failure rather than a half-done write.
+    assert raised.value.attempted == ()
+
+
+def test_a_field_that_takes_the_focus_late_is_still_written(
+        wired, brief_focus_timeout):
+    field = FakeField(focusable_after=3)
+    assert set_text(field, "REC-001", methods=("set_value",)) == "set_value"
+    assert field.value == "REC-001"
 
 
 def test_set_value_method_writes_and_verifies(wired):

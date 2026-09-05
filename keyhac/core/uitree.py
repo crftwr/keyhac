@@ -293,10 +293,15 @@ class UINode:
         from keyhac.core.fill import press
         press(self)
 
-    def focus(self) -> bool:
-        """Give this element keyboard focus; True when it actually landed."""
+    def focus(self, timeout: float = None) -> bool:
+        """Give this element keyboard focus; True when it actually landed.
+
+        Landing is not instant, so the ask is repeated for `timeout` seconds
+        (`keyhac.core.fill.FOCUS_TIMEOUT` by default) before the answer is
+        False.  Pass 0 to ask exactly once.
+        """
         from keyhac.core.fill import focus
-        return focus(self)
+        return focus(self, timeout)
 
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.
