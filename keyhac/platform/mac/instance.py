@@ -14,7 +14,7 @@ STATUS: written to spec; needs a live macOS pass.
 
 import os
 
-from keyhac.core import log
+from keyhac.core import log, permissions
 
 logger = log.getLogger("MacInstance")
 
@@ -40,10 +40,10 @@ def acquire_instance_lock(path: str = _LOCK_PATH):
     holds the lock."""
     import fcntl
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        permissions.ensure_private_dir(os.path.dirname(path))
         # "a", not "w": mode "w" truncates on open, i.e. before the flock
         # attempt - a losing second instance would blank the holder's pid note.
-        f = open(path, "a")
+        f = permissions.open_private(path, "a")
     except OSError as e:
         # Not being able to create ~/.keyhac is not evidence of another
         # instance; fail open rather than refuse to start.

@@ -54,12 +54,11 @@ import keyword
 import logging
 import os
 import re
-import shutil
 import sys
 import threading
 import time
 
-from keyhac.core import capture, log, uitree
+from keyhac.core import capture, log, permissions, uitree
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.mcp import extensions
 
@@ -894,14 +893,15 @@ class ToolRegistry:
                     f"{error.msg}, line {error.lineno}. The file on disk is "
                     f"untouched; send the whole file again.")
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            permissions.ensure_private_dir(os.path.dirname(path))
             previous = None
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as handle:
                     previous = handle.read()
-                shutil.copyfile(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
+                permissions.copy_private(
+                    path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
                 _prune_backups(path)
-            with open(path, "w", encoding="utf-8") as handle:
+            with permissions.open_private(path) as handle:
                 handle.write(source)
         except OSError as error:
             return f"nothing written: {error}"

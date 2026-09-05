@@ -39,6 +39,12 @@ directory. These files never leave your computer.
 | `~/.keyhac/instance.lock` | An empty lock file (macOS only) that prevents two Keyhac instances from running at once. |
 | `~/.keyhac/keyhac-error.log` | A crash report written only if Keyhac fails to start. |
 
+On macOS, Keyhac keeps this folder and the files in it readable and writable by
+your account alone, and re-checks that every time it starts — so a second account
+on the same Mac cannot read your clipboard history or your configuration. On
+Windows the same protection comes from the permissions your user profile folder
+already carries.
+
 The console window's position is remembered in your per-user OS preferences (the
 `HKEY_CURRENT_USER\Software\PuiKit\FrameAutosave` registry key on Windows; the user
 defaults database on macOS).
