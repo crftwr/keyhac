@@ -26,6 +26,62 @@ _TEXT_MAX_DEPTH = 12
 FOCUS_ANCESTOR_LIMIT = 4
 
 
+def _ax_get(element, attribute):
+    """One attribute, or None for any reason at all - error, absence or throw.
+
+    MacFocusProvider's twin, kept here because focus.py imports this module and
+    not the other way round.
+    """
+    try:
+        err, value = AS.AXUIElementCopyAttributeValue(element, attribute, None)
+    except Exception:
+        return None
+    return None if err != 0 else value
+
+
+def focused_element(system_wide=None) -> "UIElement | None":
+    """The element that holds the keyboard focus now, or None.
+
+    **Two steps, because the system-wide element cannot be relied on.**
+    `AXUIElementCreateSystemWide()` lists AXFocusedUIElement and
+    AXFocusedApplication among its attributes and then answers
+    kAXErrorCannotComplete for both - measured on macOS 26.6.2, every read,
+    with the messaging timeout raised to two seconds, while the frontmost
+    application answered the same attribute instantly.  So the front
+    application is asked directly when the system-wide element will not say.
+
+    MacFocusProvider has had this fallback since it was ported.  The focus
+    predicates below were written on a machine with no Mac, re-derived the
+    system-wide read without it, and fell back to the element's own AXFocused
+    instead - which answers `has_focus()`'s question and not
+    `contains_focus()`'s, so every container that really did contain the focus
+    reported False.  One resolution for both callers is what stops that from
+    being re-derived a third time.
+
+    Args:
+        system_wide: The system-wide element to ask first.  MacFocusProvider
+            passes its own, which carries a messaging timeout so a hung
+            application cannot stall key dispatch; a fresh one is made here
+            when there is nothing to reuse.
+
+    Returns:
+        The focused element, or None when nothing has the focus and when the
+        answer cannot be got.  Not knowing is None rather than a guess - the
+        choice `MacFocusProvider.get_focused_element` documents, and issue
+        #44's lesson about handing back something that merely resembles it.
+    """
+    ref = (system_wide if system_wide is not None
+           else AS.AXUIElementCreateSystemWide())
+    app = _ax_get(ref, "AXFocusedApplication")
+    if app is None:
+        running = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if running is None:
+            return None
+        app = AS.AXUIElementCreateApplication(int(running.processIdentifier()))
+    element = _ax_get(app, "AXFocusedUIElement")
+    return UIElement(element) if element is not None else None
+
+
 def _from_ax(value):
     if value is None:
         return None
@@ -155,12 +211,15 @@ class UIElement:
         whatever the user was actually looking at.  (Measured on Windows,
         where the same is true of a page element in a browser that is behind
         another window.)
+
+        Answered through `focused_element()`, which is also why there is no
+        AXFocused fallback here any more: when the focus cannot be read at
+        all, False is the safe answer, and the element's own flag was the one
+        this docstring exists to warn against.
         """
-        err, focused = AS.AXUIElementCopyAttributeValue(
-            AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
-        if err == 0 and focused is not None:
-            return bool(AS.CFEqual(focused, self._ref))
-        return bool(self.get_attribute_value("AXFocused"))
+        focused = focused_element()
+        return (focused is not None
+                and bool(AS.CFEqual(focused._ref, self._ref)))
 
     def contains_focus(self) -> bool:
         """Whether the keyboard focus is on this element *or inside it*.
@@ -172,24 +231,18 @@ class UIElement:
         only for the control roles measured to hand their focus to a part of
         themselves.
 
-        STATUS: unverified on hardware.  Written from the Windows measurement
-        (tools/win_focus_pass.py) and this file's own AX vocabulary, on a
-        machine with no Mac - the same way the Windows text layer was written
-        before tools/uia_pass.py settled it.  What wants measuring here is
-        whether an AXComboBox delegates its focus to an inner AXTextField the
-        way a Win32 ComboBox does; if it does not, macOS simply never uses
-        this path.
+        Still unmeasured: whether an AXComboBox delegates its focus to an
+        inner AXTextField the way a Win32 ComboBox does.  If it does not,
+        macOS simply never has a use for the delegating case - the containers
+        answer here regardless, and that half is measured (TextEdit, macOS
+        26.6.2: the AXScrollArea and AXWindow above a focused AXTextArea).
 
         The focused element is read once and walked up from, rather than
         calling has_focus() first: every accessibility read is a round trip
         into the other application, answered on *its* main thread, so the
         count of them is what this costs.
         """
-        err, focused = AS.AXUIElementCopyAttributeValue(
-            AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
-        if err != 0 or focused is None:
-            return bool(self.get_attribute_value("AXFocused"))
-        element = _from_ax(focused)
+        element = focused_element()
         for _ in range(FOCUS_ANCESTOR_LIMIT + 1):
             if not isinstance(element, UIElement):
                 return False

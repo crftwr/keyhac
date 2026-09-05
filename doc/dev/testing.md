@@ -446,12 +446,41 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   containment answered True in 7 ms and put the keystroke into a field the
   action never named. The asymmetry is the whole argument.
 
-  **The macOS half is written but unverified on hardware.** `has_focus()` is
-  the read-back that was already there; `contains_focus()` walks `AXParent`
-  and has never executed, like the Windows text layer before
-  `tools/uia_pass.py` settled it. What wants measuring on a Mac is whether an
-  AXComboBox delegates to an inner AXTextField the way the Win32 one does —
-  if it does not, macOS simply never takes that path.
+  **The macOS half was written unverified, and the measurement found a
+  defect** (2026-09-05, macOS 26.6.2, TextEdit). `contains_focus()` answered
+  **False for every container** — the exact opposite of the contract above.
+
+  The cause was one shared fallback. `AXUIElementCreateSystemWide()` lists
+  `AXFocusedUIElement` and `AXFocusedApplication` among its attributes and
+  then answers `kAXErrorCannotComplete` (−25204) for both — every read, with
+  the messaging timeout raised to two seconds — while the frontmost
+  application answers the same attribute instantly. Both predicates used that
+  read as their primary path and fell back to the element's own `AXFocused`,
+  which answers `has_focus()`'s question and not `contains_focus()`'s. So
+  `has_focus()` stayed right by luck and `contains_focus()` never walked at
+  all: measured above a focused `AXTextArea`, the `AXScrollArea` and
+  `AXWindow` holding it both reported False.
+
+  `MacFocusProvider.get_focused_element()` has had the correct two-step
+  resolution since it was ported — system-wide first, then
+  `NSWorkspace.frontmostApplication()` — because this failure was already
+  known here. The predicates, written on a machine with no Mac, re-derived
+  the system-wide read without it. The fix is one resolution
+  (`uielement.focused_element()`) shared by both callers, and no `AXFocused`
+  fallback anywhere: when the focus cannot be read, False is the safe answer.
+  After it, the same probe reports `contains_focus()` true on the
+  `AXScrollArea`, `AXWindow` and `AXApplication` above the focused element,
+  with `has_focus()` true on the element alone.
+
+  The lesson is the one the Windows text layer taught: a second
+  implementation of a question the codebase has already answered is where the
+  known workaround gets left out. Pinned hermetically in
+  `tests/test_mac_uielement.py` — the front-application fallback, the
+  unreadable-focus case, and that neither predicate consults `AXFocused`.
+
+  Still unmeasured on a Mac: whether an AXComboBox delegates to an inner
+  AXTextField the way the Win32 one does — if it does not, macOS simply never
+  takes that path.
 
   The payoff, measured after the fix: `fill.focus()` on a real field answers
   True in 50 ms, and on a `<div>` spends the whole of `FOCUS_TIMEOUT` asking

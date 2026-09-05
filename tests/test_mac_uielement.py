@@ -118,3 +118,77 @@ class TestACaretPastTheLastCharacter:
             ("AXBoundsForRange", (5, 0)): (150.0, 286.0, 0.0, 14.0),
         })
         assert element.get_caret_rect() == (150.0, 300.0, 8.0, 14.0)
+
+
+# -- where the keyboard focus is ---------------------------------------------
+
+class _FakeApp:
+    def processIdentifier(self):
+        return 4242
+
+
+class _FakeWorkspace:
+    @classmethod
+    def sharedWorkspace(cls):
+        return cls()
+
+    def frontmostApplication(self):
+        return _FakeApp()
+
+
+def test_the_focus_resolution_asks_the_front_app_when_system_wide_will_not_say(
+        monkeypatch):
+    """Measured on macOS 26.6.2: the system-wide element lists
+    AXFocusedApplication and AXFocusedUIElement among its attributes and then
+    answers kAXErrorCannotComplete for both, every time, while the frontmost
+    application answers the same attribute instantly.
+    """
+    from keyhac.platform.mac import uielement as ue
+
+    asked = []
+
+    def fake_ax_get(element, attribute):
+        asked.append((element, attribute))
+        if element == "app-ref" and attribute == "AXFocusedUIElement":
+            return "focused-ref"
+        return None                      # the system-wide element says nothing
+
+    monkeypatch.setattr(ue, "_ax_get", fake_ax_get)
+    monkeypatch.setattr(ue, "NSWorkspace", _FakeWorkspace)
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateSystemWide", lambda: "sysw")
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateApplication", lambda pid: "app-ref")
+
+    node = ue.focused_element()
+    assert isinstance(node, ue.UIElement) and node._ref == "focused-ref"
+    assert ("sysw", "AXFocusedApplication") in asked
+
+
+def test_no_readable_focus_is_none_rather_than_a_guess(monkeypatch):
+    from keyhac.platform.mac import uielement as ue
+
+    monkeypatch.setattr(ue, "_ax_get", lambda element, attribute: None)
+    monkeypatch.setattr(ue, "NSWorkspace", _FakeWorkspace)
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateSystemWide", lambda: "sysw")
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateApplication", lambda pid: "app-ref")
+
+    assert ue.focused_element() is None
+
+
+def test_the_predicates_never_fall_back_to_the_elements_own_flag(monkeypatch):
+    """The bug this replaced.
+
+    Both predicates used to fall back to this element's AXFocused when the
+    focus could not be read.  That flag answers has_focus()'s question and not
+    contains_focus()'s, so every container that really did hold the focus
+    reported False - measured against a focused TextEdit AXTextArea, where the
+    AXScrollArea and AXWindow above it both said False.
+    """
+    from keyhac.platform.mac import uielement as ue
+
+    monkeypatch.setattr(ue, "focused_element", lambda *args: None)
+    monkeypatch.setattr(ue.UIElement, "get_attribute_value",
+                        lambda self, name: True)      # would have claimed focus
+
+    element = ue.UIElement("ref")
+    assert element.has_focus() is False
+    assert element.contains_focus() is False

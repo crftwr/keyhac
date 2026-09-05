@@ -8,7 +8,7 @@ from AppKit import NSWorkspace
 import ApplicationServices as AS
 
 from keyhac.platform.base import FocusProvider, Focus
-from keyhac.platform.mac.uielement import UIElement
+from keyhac.platform.mac.uielement import UIElement, _ax_get, focused_element
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
@@ -16,16 +16,6 @@ logger = log.getLogger("MacFocus")
 
 # A hung app must not stall key dispatch: cap AX IPC waiting time (seconds).
 AX_MESSAGING_TIMEOUT = 0.1
-
-
-def _ax_get(element, attribute):
-    try:
-        err, value = AS.AXUIElementCopyAttributeValue(element, attribute, None)
-    except Exception:
-        return None
-    if err != 0:
-        return None
-    return value
 
 
 class MacFocusProvider(FocusProvider):
@@ -48,16 +38,14 @@ class MacFocusProvider(FocusProvider):
         focused control cannot be read, and handing an action the application
         element as if it were the focus is how issue #44 read on screen. Here,
         not knowing is an answer worth giving.
+
+        The resolution itself lives in `uielement.focused_element()`, shared
+        with the focus predicates on UIElement: they were written separately
+        and one of them was written without the fallback below, which is the
+        whole reason it is one function now. The timed system-wide element is
+        passed in so that sharing does not cost this path its timeout.
         """
-        focused_app = _ax_get(self._system_wide, "AXFocusedApplication")
-        if focused_app is None:
-            app = NSWorkspace.sharedWorkspace().frontmostApplication()
-            if app is None:
-                return None
-            focused_app = AS.AXUIElementCreateApplication(
-                int(app.processIdentifier()))
-        element = _ax_get(focused_app, "AXFocusedUIElement")
-        return UIElement(element) if element is not None else None
+        return focused_element(self._system_wide)
 
     def get_focus(self) -> Focus | None:
 
