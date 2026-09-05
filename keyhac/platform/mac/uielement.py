@@ -21,6 +21,10 @@ _DESCRIBE_ATTRS = ["AXRole", "AXTitle", "AXValue", "AXDescription", "AXHelp",
 #: Descent bound for UIElement.get_text()'s leaf collection.
 _TEXT_MAX_DEPTH = 12
 
+#: How far up from the focused element contains_focus() looks - the twin of
+#: the Windows constant of the same name, and bounded for the same reason.
+FOCUS_ANCESTOR_LIMIT = 4
+
 
 def _from_ax(value):
     if value is None:
@@ -127,26 +131,72 @@ class UIElement:
     def set_attribute_value(self, name: str, type_name: str, value) -> None:
         AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
 
-    def set_focus(self) -> bool:
-        """Give this element keyboard focus (the macOS half of the Windows
-        UIElement.set_focus()).
+    def set_focus(self) -> None:
+        """Ask for the keyboard focus (the macOS half of the Windows
+        UIElement.set_focus()).  Whether it landed is `has_focus()` /
+        `contains_focus()`.
 
-        Returns whether focus actually landed, rather than whether the write
-        was accepted - AX takes AXFocused writes that do nothing.
+        Returns nothing on purpose: AX takes AXFocused writes that do nothing,
+        so the write is not the verdict, and there are two honest verdicts
+        this layer cannot choose between for the caller.  A caller that
+        forgets to check gets None, which is falsy - the failure lands in the
+        safe direction.
+        """
+        self.set_attribute_value("AXFocused", "bool", True)
 
-        Checked against the *system-wide* focused element, not this element's
+    def has_focus(self) -> bool:
+        """Whether the system-wide keyboard focus is on *this* element.
+
+        Checked against the system-wide AXFocusedUIElement, not this element's
         own AXFocused: an element in a background application can hold its
         application's focus while the keyboard goes somewhere else entirely.
         Anything about to send keystrokes needs to know which of those it has,
         because the failure is not "nothing happens", it is text typed into
-        whatever the user was actually looking at.
+        whatever the user was actually looking at.  (Measured on Windows,
+        where the same is true of a page element in a browser that is behind
+        another window.)
         """
-        self.set_attribute_value("AXFocused", "bool", True)
         err, focused = AS.AXUIElementCopyAttributeValue(
             AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
         if err == 0 and focused is not None:
             return bool(AS.CFEqual(focused, self._ref))
         return bool(self.get_attribute_value("AXFocused"))
+
+    def contains_focus(self) -> bool:
+        """Whether the keyboard focus is on this element *or inside it*.
+
+        The other honest reading of "did it get focus", and the one a caller
+        must justify before acting on: everything that contains the focused
+        control also contains the focus, up to the application itself, and
+        none of those can take a keystroke.  `keyhac.core.fill` accepts it
+        only for the control roles measured to hand their focus to a part of
+        themselves.
+
+        STATUS: unverified on hardware.  Written from the Windows measurement
+        (tools/win_focus_pass.py) and this file's own AX vocabulary, on a
+        machine with no Mac - the same way the Windows text layer was written
+        before tools/uia_pass.py settled it.  What wants measuring here is
+        whether an AXComboBox delegates its focus to an inner AXTextField the
+        way a Win32 ComboBox does; if it does not, macOS simply never uses
+        this path.
+
+        The focused element is read once and walked up from, rather than
+        calling has_focus() first: every accessibility read is a round trip
+        into the other application, answered on *its* main thread, so the
+        count of them is what this costs.
+        """
+        err, focused = AS.AXUIElementCopyAttributeValue(
+            AS.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
+        if err != 0 or focused is None:
+            return bool(self.get_attribute_value("AXFocused"))
+        element = _from_ax(focused)
+        for _ in range(FOCUS_ANCESTOR_LIMIT + 1):
+            if not isinstance(element, UIElement):
+                return False
+            if bool(AS.CFEqual(element._ref, self._ref)):
+                return True
+            element = element.parent()
+        return False
 
     def set_value(self, value: str) -> bool:
         """Write AXValue (the macOS counterpart of the Windows Value pattern).

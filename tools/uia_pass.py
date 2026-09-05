@@ -518,7 +518,9 @@ def main():
         check("BoundingRectangle available for the hit test", False)
 
     section("focus")
-    check("set_focus() reports success", bool(element.set_focus()))
+    # set_focus() is the act and answers nothing; has_focus() is the question.
+    element.set_focus()
+    check("has_focus() after set_focus()", bool(element.has_focus()))
     check("...and HasKeyboardFocus agrees",
           bool(element.get_attribute_value("HasKeyboardFocus")))
 

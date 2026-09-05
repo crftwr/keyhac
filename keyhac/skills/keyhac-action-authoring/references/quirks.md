@@ -99,6 +99,29 @@ worse: they go to whatever does have focus, i.e. the window behind. `set_text`
 verifies focus against the system-wide focused element and refuses to write
 when it did not land.
 
+## "Could not focus the field" means you named the wrong element
+
+Focus lands on *one* element, and `focus()` answers about that one. Two shapes
+of target look right and are not, and both report `FillFailed` with an empty
+`attempted` - nothing was typed anywhere, which is the good outcome:
+
+- **A container.** Everything that holds the focused control also holds the
+  focus: the `<div>` around a field, the document, the window, the desktop.
+  Measured in a page - six levels of them, none able to take a keystroke.
+- **A control that delegates to a part of itself.** A Windows combo box
+  focuses its `Edit` child; the ComboBox itself never holds the focus. Aim at
+  the part: it is in the tree with an `AutomationId` of its own, and writing
+  to it reads back on both it and the combo box (measured: `set_text` on the
+  child, `'typed-inner'` on the child *and* on the parent).
+
+`node.contains_focus()` tells you it is one of these, and `keymap.ui.focused()`
+names the element that actually took the focus - which is usually the element
+you meant to write to.
+
+Do not read `contains_focus()` as permission to type. It is true of every
+ancestor of the focused control, so acting on it is how data ends up in a
+field the action never named.
+
 ## The clipboard cannot go back until the target has read it
 
 Restoring right after posting the paste keystroke races the application, and

@@ -36,6 +36,12 @@ logger = log.getLogger("WinUIElement")
 #: Sibling bound on UIElement.children() - see its docstring.
 MAX_CHILDREN = 2000
 
+#: How far up from the focused element contains_focus() looks.  Bounded so
+#: that a miss costs a handful of cross-process reads rather than a walk to
+#: the desktop; deep enough for a composite control, whose parts are one level
+#: down (a ComboBox focuses its Edit child).
+FOCUS_ANCESTOR_LIMIT = 4
+
 if sys.platform == "win32":
     from ctypes import wintypes
 
@@ -118,6 +124,7 @@ if sys.platform == "win32":
 # vtable slot indices (UIAutomationClient.h).  0-2 are IUnknown.
 
 class _IUIAutomation:
+    CompareElements = 3
     ElementFromHandle = 6
     ElementFromPoint = 7
     GetFocusedElement = 8
@@ -273,6 +280,24 @@ def _com_call(ptr, index, restype, argtypes, *args):
 def _release(ptr) -> None:
     if ptr:
         _com_call(ptr, 2, ctypes.c_ulong, [])  # IUnknown::Release
+
+
+def _same_element(first, second):
+    """Whether two element pointers name the same element.
+
+    None when UI Automation could not say, which callers must distinguish
+    from False: two pointers to the same element are not pointer-equal, so a
+    failed comparison looks exactly like a difference.
+    """
+    automation = get_automation()
+    if automation is None or not first or not second:
+        return None
+    same = ctypes.c_int()
+    hr = _com_call(automation, _IUIAutomation.CompareElements, ctypes.c_long,
+                   [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)],
+                   ctypes.c_void_p(first.value), ctypes.c_void_p(second.value),
+                   ctypes.byref(same))
+    return bool(same.value) if hr == S_OK else None
 
 
 def _bstr_out(ptr, index) -> str | None:
@@ -1130,11 +1155,82 @@ class UIElement:
         finally:
             _release(pattern)
 
-    def set_focus(self) -> bool:
+    def set_focus(self) -> None:
+        """Ask for the keyboard focus.  Whether it landed is a separate
+        question - `has_focus()` and `contains_focus()` answer it.
+
+        Returns nothing on purpose.  This used to return `SetFocus() == S_OK`,
+        which is whether the request was *accepted*, and callers read it as
+        whether the focus had landed.  The two differ: measured with
+        tools/win_focus_pass.py against a page in Edge, a `<div>` and a `<p>`
+        both accepted the call with S_OK while the focus stayed on the text
+        field that already had it, and Notepad's WinUI status bar does the
+        same.  A `set_text()` on the strength of that answer types the
+        caller's data into whatever field the user was last in.
+
+        Returning a verdict at all was the deeper mistake, because there are
+        two honest verdicts and this layer cannot choose between them for the
+        caller - see the two methods below.  A caller that forgets to check
+        now gets None, which is falsy, so the failure is in the safe
+        direction.
+
+        The HRESULT is logged, not returned: it answers the other question,
+        and providers were measured answering S_OK to both.
+        """
         if not self._ptr:
-            return False
-        return _com_call(self._ptr, _IUIAutomationElement.SetFocus,
-                         ctypes.c_long, []) == S_OK
+            return
+        hr = _com_call(self._ptr, _IUIAutomationElement.SetFocus, ctypes.c_long, [])
+        if hr != S_OK:
+            logger.debug(f"SetFocus was refused: 0x{hr & 0xFFFFFFFF:08x}")
+
+    def has_focus(self) -> bool:
+        """Whether the system-wide keyboard focus is on *this* element.
+
+        Compared against `GetFocusedElement`, not this element's own
+        `HasKeyboardFocus`, for the reason macOS gives and Windows confirms: a
+        page element in a background browser reports HasKeyboardFocus True
+        while the keyboard is somewhere else entirely (measured - Edge behind
+        another window, its field still True).  The flag is only the fallback
+        for when UIA cannot name a focused element or cannot compare it.
+        """
+        focused = UIElement.from_focus()
+        if focused is None:
+            return bool(self.get_attribute_value("HasKeyboardFocus"))
+        same = _same_element(self._ptr, focused._ptr)
+        if same is None:
+            # CompareElements could not answer; the element's own flag is the
+            # only thing left, and it is better than the HRESULT was.
+            return bool(self.get_attribute_value("HasKeyboardFocus"))
+        return same
+
+    def contains_focus(self) -> bool:
+        """Whether the keyboard focus is on this element *or inside it*.
+
+        The other honest reading, and the dangerous one to assume: with a
+        page's text field focused, the `<div>` around it, the document and the
+        panes above it all contain the focus, and none of them can take a
+        keystroke.  A caller that acts on this answer must know why it is
+        entitled to - `keyhac.core.fill` accepts it only for the control types
+        measured to hand their focus to a part of themselves.
+
+        Bounded by FOCUS_ANCESTOR_LIMIT.  The focused element is read once
+        and walked up from, rather than calling has_focus() first: each read
+        is a cross-process round trip, and this runs on the main thread.
+        """
+        focused = UIElement.from_focus()
+        if focused is None:
+            return bool(self.get_attribute_value("HasKeyboardFocus"))
+        element = focused
+        for _ in range(FOCUS_ANCESTOR_LIMIT + 1):
+            if element is None:
+                return False
+            same = _same_element(self._ptr, element._ptr)
+            if same is None:
+                return bool(self.get_attribute_value("HasKeyboardFocus"))
+            if same:
+                return True
+            element = element.parent()
+        return False
 
     # -- construction -------------------------------------------------------
 

@@ -32,7 +32,8 @@ class FakeField:
     """A field whose mechanisms can be made to fail independently."""
 
     def __init__(self, value="", focusable=True, accepts_set_value=True,
-                 role="AXTextField", actions=("AXPress",), focusable_after=0):
+                 role="AXTextField", actions=("AXPress",), focusable_after=0,
+                 focus_inside=False):
         self.value = value
         self.focusable = focusable
         self.accepts_set_value = accepts_set_value
@@ -43,6 +44,9 @@ class FakeField:
         #: Asks to refuse before the focus lands, standing in for a document
         #: that has only just come to the front.
         self.focusable_after = focusable_after
+        #: Stands in for a control whose focus lands on a part of itself: it
+        #: never has the focus strictly, only inside.
+        self.focus_inside = focus_inside
         self._actions = list(actions)
 
     def describe(self):
@@ -56,9 +60,23 @@ class FakeField:
         return id(self)
 
     def set_focus(self):
+        """Ask, and answer nothing - the post-split platform shape.
+
+        The two doubles in test_sources.py and test_ui_api.py deliberately
+        keep the old shape, where set_focus() returned the verdict itself, so
+        that fill's compatibility path is exercised too.
+        """
         self.focus_asks += 1
         self.focused = self.focusable and self.focus_asks > self.focusable_after
+
+    def has_focus(self):
         return self.focused
+
+    def contains_focus(self):
+        #: A control that hands its focus to a part of itself never has it
+        #: strictly - only inside. `focus_inside` stands in for a combo box.
+        return self.focused or (self.focus_inside
+                                and self.focus_asks > self.focusable_after)
 
     def set_value(self, text):
         if self.accepts_set_value:
@@ -145,6 +163,80 @@ def test_the_loop_thread_asks_once_rather_than_raising(wired, monkeypatch):
     field = FakeField(focusable_after=3)
     assert fill.focus(field) is False
     assert field.focus_asks == 1
+
+
+def test_a_control_that_focuses_a_part_of_itself_is_not_the_target(
+        wired, brief_focus_timeout):
+    """A Windows combo box focuses its Edit child, so it never holds the focus
+    itself. That is a False here on purpose: core does not keep a list of the
+    roles that behave this way, because the list is platform data and this
+    layer has never invented a portable vocabulary for platform data. The
+    action names the part instead - measured, the part is in the tree with an
+    identifier, takes the focus strictly, and its value reads back on the
+    combo box too.
+    """
+    combo = FakeField(role="ComboBox", focusable=False, focus_inside=True)
+    assert fill.focus(combo) is False
+
+
+def test_a_container_that_merely_holds_the_focus_is_not_the_target_either(
+        wired, brief_focus_timeout):
+    """The same answer for the shape that must never be allowed: everything
+    that contains the focused field also contains the focus - the `<div>`
+    around it, the document, the panes above. One rule covers both."""
+    group = FakeField(role="AXGroup", focusable=False, focus_inside=True)
+    assert fill.focus(group) is False
+
+
+def test_the_write_is_refused_before_anything_is_typed(wired,
+                                                       brief_focus_timeout):
+    group = FakeField(role="AXGroup", focusable=False, focus_inside=True)
+    with pytest.raises(fill.FillFailed) as caught:
+        fill.set_text(group, "hello")
+    # Empty `attempted` is the precondition failure: nothing was written, so
+    # no keystroke went anywhere else either.
+    assert caught.value.attempted == ()
+
+
+def test_the_refusal_says_the_focus_went_inside(wired, brief_focus_timeout):
+    """contains_focus() earns its keep as diagnosis, not as permission.
+
+    "Could not focus the field" is true and useless on its own; the author
+    needs to know their selector named the wrapper of the thing they meant.
+    """
+    combo = FakeField(role="ComboBox", focusable=False, focus_inside=True)
+    with pytest.raises(fill.FillFailed) as caught:
+        fill.set_text(combo, "hello")
+    assert "landed inside it" in str(caught.value)
+    assert caught.value.attempted == ()
+
+
+def test_a_refusal_with_the_focus_elsewhere_does_not_claim_it_went_inside(
+        wired, brief_focus_timeout):
+    field = FakeField(focusable=False)
+    with pytest.raises(fill.FillFailed) as caught:
+        fill.set_text(field, "hello")
+    assert "landed inside it" not in str(caught.value)
+
+
+def test_an_element_of_the_old_shape_still_answers(wired, brief_focus_timeout):
+    """set_focus() returning the verdict itself - what the platform layer did
+    before it was split, and what a duck-typed element may still do."""
+
+    class OldShape:
+        role = "AXTextField"
+
+        def __init__(self, lands):
+            self.lands = lands
+
+        def describe(self):
+            return {"role": self.role, "value": ""}
+
+        def set_focus(self):
+            return self.lands
+
+    assert fill.focus(OldShape(lands=True)) is True
+    assert fill.focus(OldShape(lands=False)) is False
 
 
 # -- set_text ----------------------------------------------------------------

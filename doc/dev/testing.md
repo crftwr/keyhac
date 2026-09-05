@@ -345,14 +345,126 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `get_DocumentRange` 7, `ExpandToEnclosingUnit` 6 with `TextUnit_Line` = 3
   (the caret's line, and *not* the whole document, which is what a wrong unit
   produces), and `ElementFromPoint` 7. `set_focus()` agrees with
-  `HasKeyboardFocus`, `get_selection()` returns the selection, and the modal
-  three-beat plus an idempotent `set_checked` run end to end against Notepad's
-  Find UI.
+  `HasKeyboardFocus` — which was too weak a question, as the focus pass below
+  found: both were the element's own opinion of itself. `get_selection()`
+  returns the selection, and the modal three-beat plus an idempotent
+  `set_checked` run end to end against Notepad's Find UI.
 - **The `set_value` measurement `ai-integration.md` §10 asks for**, timed
   against a real control: `set_value` 15–33 ms, `paste` 48–95 ms, `keys`
   114–272 ms. All three work; the ordering matches macOS with a wider spread,
   and none of it changes the **paste, then keys** default — speed is not the
   axis that matters when the fastest is the one that fails invisibly.
+- **Does Windows `set_focus()` report a focus that never landed?**
+  (2026-09-04, `tools/win_focus_pass.py`, 22/22, plus a browser probe, on
+  Windows 11 Home 10.0.26200.) It did, and not for the reason the question
+  assumed. Every HWND-backed scenario *lands*: a control in the foreground
+  window, in a background one, asked from a process holding no foreground
+  rights, disabled, clipped offscreen, in a minimized window, a label, a tab
+  item with no HWND of its own — all of them, and Windows even lets the focus
+  onto a disabled control and into a `WS_EX_NOACTIVATE` window. What lags is
+  the *observer*: `GetGUIThreadInfo` trailed a landed focus by 23–86 ms. That
+  gap is not the macOS bug in Windows clothing, though, because a keystroke
+  injected the moment `set_focus()` returned still arrived at the target —
+  the focus change and the key queue on the same thread, in that order.
+
+  The lie needs a provider that is not the HWND proxy. In an Edge page, a
+  `<div>` and a `<p>` both answered `SetFocus` with `S_OK` while the focus
+  stayed in the text field that already had it; Notepad's WinUI status bar
+  does the same, which is what `tests/test_win_focus.py` now pins against a
+  real application. That is the shape a wrong action target has, and
+  `set_text()` on that answer types the caller's data into whatever field the
+  user was last in.
+
+  The cheap fix — reading the already-declared `HasKeyboardFocus` — was
+  measured and rejected: an Edge field reports it `True` while the browser is
+  behind another window and the keyboard is elsewhere, which is exactly the
+  failure macOS's docstring describes. So the answer comes from
+  `GetFocusedElement` compared with `CompareElements` (slot 3, newly pinned
+  against handles Win32 already knows apart).
+
+  **`set_focus()` no longer answers at all.** Returning a verdict was the
+  deeper mistake — the released code returned the HRESULT, and the first fix
+  here returned the landing, and both are one bool too few: there are two
+  honest verdicts —
+  the focus is *on* this element, or it is *inside* it — and the platform
+  layer cannot choose between them for the caller. Both are now named and
+  separately testable, on both platforms: `has_focus()` and
+  `contains_focus()`. `set_focus()` performs the act and returns `None`, so a
+  caller who forgets to check fails closed rather than open, which is the
+  shape of the bug this whole entry is about.
+
+  Choosing between them is the caller's job, and the caller of record is the
+  action author. `focus()` and `set_text()` require `has_focus()` — there is
+  no list of roles allowed to write on an inside-answer, because such a list
+  is platform *data* (`ComboBox`, `AXComboBox`, and whatever the next
+  framework calls it), and inventing a portable vocabulary for platform data
+  is the thing this layer has refused to do since the element API existed.
+  The Action API exposes both questions instead: `UINode.has_focus()` and
+  `UINode.contains_focus()`, with the combo box written up in the authoring
+  skill's `quirks.md`.
+
+  Refusing everything strictly is only reasonable because the delegating case
+  has a target that works. Measured: a Win32 ComboBox shows its `Edit` part in
+  the public tree with `AutomationId '1001'`, `fill.focus()` on the part
+  answers True in 43 ms, and `set_text()` on it reads back as `'typed-inner'`
+  on the part *and* on the combo box. So the advice “name the part” is advice
+  that works, not a shrug. The cost is real and worth stating: `set_text()`
+  aimed at a combo box worked in 2.3.0 (everything did — `set_focus()`
+  returned True unconditionally) and now fails after the full `FOCUS_TIMEOUT`.
+
+  What makes that failure survivable is that it says what happened.
+  `contains_focus()` is read for *diagnosis* and nowhere for permission: when
+  the strict check fails and the focus turned out to be inside the target, the
+  `FillFailed` names the element that actually took it — “the focus landed
+  inside it, on Edit (identifier '1001') - write to that element if it is the
+  one you meant”, measured against a real combo box and a real page. It does
+  not say *why* the focus is inside: a control delegating to its part and a
+  container merely holding the focused control look the same from there, and
+  naming what took it serves both. Permission and diagnosis are
+  different uses of the same fact, and only one of them can put text in the
+  wrong field.
+
+  Containers stay refused by the same one rule, with no special case: with a
+  page field focused, the `<div role=group>` around it, the Document and
+  *three* Panes above it all answer `contains_focus()` true, as do the probe
+  window and the desktop root in the Win32 case — six levels of elements that
+  cannot take a keystroke.
+
+  The principled alternatives that were tried and failed measurement, since
+  they will occur to the next person too. `IsKeyboardFocusable` (slot 27) does
+  not discriminate: a top-level Window and the desktop Pane both report True,
+  and correctly so, since a window with no focusable child really does hold
+  the focus itself. “The value can be read back from the target” does not
+  either: a Chromium Document reports its URL as a value. And the delegating
+  family is smaller than it looks — a Win32 Spinner does **not** delegate (the
+  focus lands on the Spinner itself), and neither does a page's `<select>`.
+
+  What this costs when the selector is simply wrong, measured through the
+  public path (`find(name=...)` on a page, then `focus()` / `set_text()`): a
+  named container is refused after the full `FOCUS_TIMEOUT` with
+  `FillFailed(attempted=())` and nothing typed anywhere, where allowing
+  containment answered True in 7 ms and put the keystroke into a field the
+  action never named. The asymmetry is the whole argument.
+
+  **The macOS half is written but unverified on hardware.** `has_focus()` is
+  the read-back that was already there; `contains_focus()` walks `AXParent`
+  and has never executed, like the Windows text layer before
+  `tools/uia_pass.py` settled it. What wants measuring on a Mac is whether an
+  AXComboBox delegates to an inner AXTextField the way the Win32 one does —
+  if it does not, macOS simply never takes that path.
+
+  The payoff, measured after the fix: `fill.focus()` on a real field answers
+  True in 50 ms, and on a `<div>` spends the whole of `FOCUS_TIMEOUT` asking
+  again before answering False (1053 ms) — the retry loop `7f9edfa` added
+  could not engage on Windows before, because the first ask always said yes.
+  `set_text()` on that element then raises `FillFailed` with an empty
+  `attempted`, and nothing is typed anywhere. No change to `keyhac/core/`.
+
+  One thing the pass cannot measure and now says so: every UIA call into a
+  window whose thread has stopped pumping blocks indefinitely — over 20 s for
+  `from_hwnd` alone, before `set_focus` is even reached. A hung application is
+  a hang, not a lie, and section I of the pass runs behind a watchdog because
+  a first run took the whole pass down with it.
 - **The bug the pass caught is in `fill.py`, not in the Windows layer.**
   `_paste` holds the clipboard swapped until `confirm()` answers, precisely
   because restoring as the keystroke goes out races the target's read of the

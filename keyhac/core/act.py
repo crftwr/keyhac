@@ -335,7 +335,12 @@ def press(element) -> bool:
         except Exception:
             continue
     try:
-        if element.set_focus():
+        # set_focus() is the act; whether it landed is a separate question,
+        # and the strict one here - an element that merely *contains* the
+        # focus was not pressed. Imported inside the function, as fill's own
+        # Keymap import is, to keep the module-level graph acyclic.
+        from keyhac.core.fill import _ask_for_focus
+        if _ask_for_focus(element):
             logger.debug("Nothing pressed it; the focus was put on it instead.")
             return True
     except Exception:

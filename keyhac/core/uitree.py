@@ -299,9 +299,52 @@ class UINode:
         Landing is not instant, so the ask is repeated for `timeout` seconds
         (`keyhac.core.fill.FOCUS_TIMEOUT` by default) before the answer is
         False.  Pass 0 to ask exactly once.
+
+        Landed means on *this* element.  A container that merely holds the
+        focused control - a group, a document, a window - answers False, since
+        a keystroke sent on its word would go to whichever control inside it
+        actually has the focus.  So does a control that hands its focus to a
+        part of itself: a Windows combo box focuses its edit child, and that
+        child is the thing to name.  `contains_focus()` tells the two apart.
         """
         from keyhac.core.fill import focus
         return focus(self, timeout)
+
+    def has_focus(self) -> bool:
+        """Whether the keyboard focus is on this element right now.
+
+        A live read, not a fact about the snapshot: it asks the screen each
+        time.  This is what `focus()` checks, and the two are worth separating
+        when an action wants to know where the focus *is* without moving it.
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        probe = getattr(self.element, "has_focus", None)
+        if probe is None:
+            return False
+        return bool(evaluate_on_main_thread(probe))
+
+    def contains_focus(self) -> bool:
+        """Whether the keyboard focus is on this element *or inside it*.
+
+        The question to ask when `focus()` said False and the reason is not
+        obvious.  Two cases answer True here and want opposite responses:
+
+        - A control that hands its focus to a part of itself - a Windows combo
+          box focuses its edit child, which is in the tree with an identifier
+          of its own.  Write to the part, not to the control.
+        - A container that merely holds the focused control - a group, a
+          document, a window, up to the desktop.  Everything above the focused
+          element answers True, so this alone never means "safe to type": the
+          keystrokes would go to whichever control inside actually has it.
+
+        Which of the two it is, the tree says; `UI.focused()` names the
+        element that actually has the focus.
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        probe = getattr(self.element, "contains_focus", None)
+        if probe is None:
+            return False
+        return bool(evaluate_on_main_thread(probe))
 
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.

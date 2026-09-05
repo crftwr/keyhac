@@ -184,6 +184,15 @@ def focus(target, timeout: float = None) -> bool:
     that had just been brought to the front reported a focus failure for a
     focus that arrived milliseconds later.  See FOCUS_TIMEOUT.
 
+    **Landed means on this element**, not merely inside it.  Everything that
+    contains the focused control also contains the focus - the group around a
+    field, the document, the window - and a keystroke sent on that answer goes
+    to whichever control inside actually has it.  A control that hands its
+    focus to a part of itself (a Windows combo box focuses its edit part) is
+    therefore False here: aim at the part, which is in the tree with an
+    identifier of its own.  `contains_focus()` answers the other question for
+    a caller that wants it.
+
     Args:
         target: A UINode or platform element.
         timeout: Seconds to keep asking, FOCUS_TIMEOUT by default.  Zero asks
@@ -197,8 +206,7 @@ def focus(target, timeout: float = None) -> bool:
     timeout = FOCUS_TIMEOUT if timeout is None else timeout
 
     def ask():
-        setter = getattr(element, "set_focus", None)
-        return bool(setter()) if setter is not None else False
+        return _ask_for_focus(element)
 
     if bool(evaluate_on_main_thread(ask)):
         return True
@@ -212,6 +220,83 @@ def focus(target, timeout: float = None) -> bool:
                              message="the focus to land on the element"))
     except WaitTimeout:
         return False
+
+
+def _ask_for_focus(element) -> bool:
+    """Ask for the focus, then find out whether it landed on this element.
+
+    One function because the two halves are not independent: an element of the
+    pre-split shape answers the question *with* the act, and only the caller
+    that made the act can read that answer.
+    """
+    setter = getattr(element, "set_focus", None)
+    if setter is None:
+        return False
+    answer = setter()
+    # The pre-split shape: set_focus() returned the verdict itself.  Kept for
+    # duck-typed elements that predate the two predicates, the way
+    # _raise_if_stale keeps a path for elements that predate is_stale.
+    if answer is not None:
+        return bool(answer)
+    strict = getattr(element, "has_focus", None)
+    return bool(strict()) if strict is not None else False
+
+
+def _where_the_focus_went(element) -> str:
+    """A sentence for the caller who named the wrong element, or "".
+
+    `contains_focus()` is read here for diagnosis and nowhere for permission.
+    Deciding *which* controls may write on an inside-answer would mean core
+    holding a list of platform role names - the combo boxes, the spin boxes,
+    and whatever the next framework calls them - and inventing a portable
+    vocabulary for platform data is the thing this layer has always refused to
+    do.  Naming what actually took the focus costs one read and tells the
+    author what to aim at instead, which is the part of the list that was
+    worth having.
+
+    The element is named only when a keymap is wired, since that is where the
+    focus provider lives; a bare library call still gets the sentence, without
+    the name.  Runs on the main thread, like every other element read here.
+    """
+
+    def look() -> str:
+        inside = getattr(element, "contains_focus", None)
+        if inside is None or not inside():
+            return ""
+        describe = getattr(_focused_element(), "describe", None)
+        described = describe() if describe is not None else {}
+        role, identifier = described.get("role"), described.get("identifier")
+        where = str(role) if role else "something"
+        if identifier:
+            where += f" (identifier {identifier!r})"
+        # Deliberately not saying *why* the focus is inside: a control that
+        # delegates to a part of itself and a container that merely holds the
+        # focused control look the same from here, and telling them apart is
+        # the caller's business. Naming what took the focus serves both.
+        return (f"; the focus landed inside it, on {where} - write to that "
+                f"element if it is the one you meant")
+
+    try:
+        return str(evaluate_on_main_thread(look))
+    except Exception:      # a diagnosis must never replace the real failure
+        return ""
+
+
+def _focused_element():
+    """Whatever holds the keyboard focus now, or None.
+
+    The same door `UI.focused` uses - get_focused_element(), not get_focus(),
+    since the frozen hook-time answer is not what an action is asking.
+    """
+    keymap = _keymap()
+    provider = getattr(keymap, "_focus_provider", None) if keymap else None
+    getter = getattr(provider, "get_focused_element", None)
+    if getter is None:
+        return None
+    try:
+        return getter()
+    except Exception:
+        return None
 
 
 def read_value(target) -> Any:
@@ -258,7 +343,8 @@ def set_text(target, text: str, methods: Iterable[str] = DEFAULT_METHODS,
     if not focus(target):
         raise FillFailed(
             f"could not focus the field, after {FOCUS_TIMEOUT:g}s of asking; a "
-            f"write now would go to whatever has focus instead", attempted=())
+            f"write now would go to whatever has focus instead"
+            + _where_the_focus_went(element), attempted=())
 
     def confirm() -> bool:
         if not verify:
