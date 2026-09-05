@@ -42,19 +42,23 @@ directory. These files never leave your computer.
 On macOS, Keyhac keeps this folder and the files in it readable and writable by
 your account alone, and re-checks that every time it starts — so a second account
 on the same Mac cannot read your clipboard history or your configuration. On
-Windows the same protection comes from the permissions your user profile folder
-already carries.
+Windows, Keyhac does not set any protection itself; it relies on your user
+profile folder, which Windows already keeps private to your account. That covers
+the usual `~/.keyhac`. In portable mode — where a `config.py` placed next to
+`Keyhac.exe` makes Keyhac's own folder the data folder — these files are only as
+private as the place you put them, so a portable Keyhac on a shared drive or a
+USB stick can be read by anyone who can reach it.
 
 The console window's position is remembered in your per-user OS preferences (the
 `HKEY_CURRENT_USER\Software\PuiKit\FrameAutosave` registry key on Windows; the user
 defaults database on macOS).
 
 Clipboard history in particular can contain personal information, because it holds
-text you copied. It is stored locally, in a file you own, readable only by you. In
-your configuration you can limit how many entries are kept (down to zero), or set
-`keymap.clipboard_history.persist = False` to keep the history in memory only, so
-nothing is written to disk. You can also delete `~/.keyhac/clipboard.json` — or the
-entire `~/.keyhac` folder — at any time.
+text you copied. It is stored locally, in a file you own, with the protection
+described above. In your configuration you can limit how many entries are kept
+(down to zero), or set `keymap.clipboard_history.persist = False` to keep the
+history in memory only, so nothing is written to disk. You can also delete
+`~/.keyhac/clipboard.json` — or the entire `~/.keyhac` folder — at any time.
 
 ## Network connections
 

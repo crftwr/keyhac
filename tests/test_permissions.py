@@ -1,6 +1,9 @@
 """keyhac.core.permissions - the data directory stays owner-only.
 
-Mode bits are POSIX; the whole module is a no-op on Windows, so is this file.
+Mode bits are POSIX, so the classes that assert them are marked posix_only and
+skip on Windows.  What does not skip is TestPortableBytes: the helpers replace
+open() with an os.open() of their own everywhere, Windows included, and the
+bytes that reaches the file has to be the same either way.
 Every test forces umask 022 - the stock desktop value, and the one that makes
 a plain open() produce 0644 - so what is asserted is the module's doing and
 not the runner's environment.
@@ -13,7 +16,7 @@ import pytest
 
 from keyhac.core import paths, permissions
 
-pytestmark = pytest.mark.skipif(os.name == "nt",
+posix_only = pytest.mark.skipif(os.name == "nt",
                                 reason="POSIX mode bits; Windows uses ACLs")
 
 
@@ -44,6 +47,7 @@ def make_data_dir(tmp_path, monkeypatch, *, is_default=True):
     return data_dir
 
 
+@posix_only
 class TestCreation:
 
     def test_open_private_creates_owner_only(self, tmp_path):
@@ -92,6 +96,25 @@ class TestCreation:
         permissions.ensure_private_dir(str(path))
         assert mode(path) == 0o700
 
+    def test_ensure_private_dir_creates_its_parents_owner_only(self,
+                                                               tmp_path):
+        # os.makedirs(mode=...) gives the mode to the leaf alone and recurses
+        # into the parents without one.  On a first run that showed: nothing
+        # had created ~/.keyhac yet when extensions/ under it was created, so
+        # the data directory - the half that is the guarantee - was born 0755
+        # and stayed there until the next run's sweep closed it.
+        data_dir = tmp_path / ".keyhac"
+        permissions.ensure_private_dir(str(data_dir / "extensions"))
+        assert mode(data_dir) == 0o700
+        assert mode(data_dir / "extensions") == 0o700
+
+    def test_ensure_private_dir_leaves_an_existing_parent(self, tmp_path):
+        data_dir = tmp_path / ".keyhac"
+        data_dir.mkdir(mode=0o755)
+        permissions.ensure_private_dir(str(data_dir / "extensions"))
+        assert mode(data_dir) == 0o755  # the sweep's job, not this one's
+        assert mode(data_dir / "extensions") == 0o700
+
     def test_ensure_private_dir_leaves_an_existing_one(self, tmp_path):
         path = tmp_path / "a"
         path.mkdir(mode=0o755)
@@ -101,7 +124,14 @@ class TestCreation:
     def test_ensure_private_dir_accepts_an_empty_path(self):
         permissions.ensure_private_dir("")  # dirname of a bare filename
 
+    def test_ensure_private_dir_reports_a_file_in_the_way(self, tmp_path):
+        path = tmp_path / "keyhac"
+        path.write_text("not a directory")
+        with pytest.raises(FileExistsError):
+            permissions.ensure_private_dir(str(path))
 
+
+@posix_only
 class TestSweep:
 
     def test_tightens_the_directory_and_its_files(self, tmp_path, monkeypatch):
@@ -182,6 +212,7 @@ class TestSweep:
         assert mode(data_dir / "clipboard.json") == 0o644
 
 
+@posix_only
 class TestCallers:
     """The state files as their own writers produce them."""
 
@@ -207,3 +238,54 @@ class TestCallers:
         Config(str(config_path), str(template))
         assert mode(config_path) == 0o600
         assert mode(config_path.parent) == 0o700
+
+
+class TestPortableBytes:
+    """The helpers write the same bytes a plain open() would, everywhere.
+
+    Not skipped on Windows, where the rest of this file is: the mode work is
+    all that Windows opts out of, the os.open() the helpers go through instead
+    of open() is taken on every platform.  Newline translation is the thing to
+    watch - a hand-opened text descriptor is exactly where a "\\n" turns into
+    "\\r\\r\\n" - and settings.json is written with indent=2, so it has some.
+    """
+
+    def test_open_private_writes_what_plain_open_writes(self, tmp_path):
+        text = '{\n  "console_visible": false\n}\n'
+        private = tmp_path / "settings.json"
+        with permissions.open_private(str(private)) as f:
+            f.write(text)
+        plain = tmp_path / "plain.json"
+        with open(plain, "w", encoding="utf-8") as f:
+            f.write(text)
+        assert private.read_bytes() == plain.read_bytes()
+
+    def test_open_private_appends_what_plain_append_appends(self, tmp_path):
+        private = tmp_path / "log"
+        plain = tmp_path / "plain.log"
+        for text in ("first\n", "second\n"):
+            with permissions.open_private(str(private), "a") as f:
+                f.write(text)
+            with open(plain, "a", encoding="utf-8") as f:
+                f.write(text)
+        assert private.read_bytes() == plain.read_bytes()
+
+    def test_open_private_binary_passes_bytes_through(self, tmp_path):
+        path = tmp_path / "raw"
+        with permissions.open_private(str(path), "wb") as f:
+            f.write(b"a\r\nb\n")
+        assert path.read_bytes() == b"a\r\nb\n"
+
+    def test_copy_private_copies_the_bytes_exactly(self, tmp_path):
+        src = tmp_path / "config.py"
+        src.write_bytes(b"# keyhac\r\ndef configure(keymap):\n    pass\n")
+        dst = tmp_path / "config.py.bak-20260905-120000"
+        permissions.copy_private(str(src), str(dst))
+        assert dst.read_bytes() == src.read_bytes()
+
+    def test_ensure_private_dir_creates_the_tree(self, tmp_path):
+        path = tmp_path / ".keyhac" / "extensions"
+        permissions.ensure_private_dir(str(path))
+        assert path.is_dir()
+        permissions.ensure_private_dir(str(path))  # idempotent
+        assert path.is_dir()
