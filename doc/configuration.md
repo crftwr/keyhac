@@ -210,8 +210,24 @@ another key it modifies as usual; tapped *alone*, it fires the one-shot binding.
 kt["O-LCmd"] = "Eisu"        # tap left Cmd alone -> IME off; held -> still Cmd
 ```
 
-A one-shot is canceled by any intervening key or mouse click, so half-finished
-shortcuts do not trigger it.
+A one-shot can carry modifiers of its own — the grammar is
+`O-{Modifier-}...{Key}` — and they are matched exactly, like in any other
+binding. One key can therefore drive two directions:
+
+```python
+kt["O-RCmd"] = next_terminal_window        # tap right Cmd
+kt["O-Shift-RCmd"] = prev_terminal_window  # tap it with Shift held: other way
+```
+
+Those modifiers have to be held *before* the one-shot key goes down, and stay
+held until it comes back up — "tapped alone" means precisely that the key's own
+press was the last input event before its release. Anything in between cancels
+the tap: another key pressed *or released*, a modifier included, and any mouse
+click or wheel turn. Half-finished shortcuts therefore do not trigger it.
+
+Because the modifiers are part of the condition, a bare `O-RCmd` does not fire
+while Shift is held — `O-Shift-RCmd` is what runs then, and nothing does if it
+is unbound.
 
 ## Sending input from functions
 
