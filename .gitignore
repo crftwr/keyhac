@@ -14,6 +14,12 @@ README.pypi.md
 .DS_Store
 *.code-workspace
 
+# gh's telemetry device id, written here rather than under LOCALAPPDATA when
+# gh runs with a stripped environment (some sandboxed shells drop it). Stray,
+# but it has to be ignored: release_preflight refuses to tag on any untracked
+# file, so this would block a release rather than merely add noise.
+.local/
+
 # Clean-room test rooms (make cleanroom). They live in the checkout so
 # they are findable, and are kept out of git because a room is scratch:
 # a bundle copy, a transcript and one action. `git add -f` a room whose
