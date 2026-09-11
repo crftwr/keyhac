@@ -420,6 +420,85 @@ prune_unused_stdlib() {
     done
 }
 
+# Make the embedded interpreter runnable as a program of its own. Two separate
+# things stand in its way, and neither shows up in a build-machine test:
+#
+#  1. bin/pythonX.Y in a framework build is not the interpreter - it is the GUI
+#     stub that re-execs Resources/Python.app/Contents/MacOS/Python so the
+#     process can reach the window server. Nothing in this bundle wants that
+#     (tkinter is pruned above, and the app has its own launcher), and
+#     Python.app goes with the rest of Resources/, so the real interpreter
+#     takes the stub's place in bin/.
+#  2. Every Mach-O in bin/ still records the absolute path of the runtime it
+#     was linked against - /opt/homebrew/Cellar/python@X.Y/... - so dyld fails
+#     before Python starts on any Mac without that exact Homebrew formula.
+#
+# Both are why `Resources/bin/keyhac-mcp-bridge`, which execs this interpreter,
+# could not run anywhere but here (#140); the app's own launcher links the
+# runtime itself and was never affected, which is how it went unnoticed. The
+# stdlib pre-compile below runs the interpreter too - it had been quietly
+# falling through to the build machine's own Python via that absolute path.
+#
+# Called from both embedding paths, before anything runs the interpreter.
+relocate_embedded_interpreter() {
+    interpreter="${PYTHON_DEST}/Resources/Python.app/Contents/MacOS/Python"
+    if [ -f "${interpreter}" ] && [ -f "${PYTHON_DEST}/bin/python${PYTHON_VERSION}" ]; then
+        cp "${interpreter}" "${PYTHON_DEST}/bin/python${PYTHON_VERSION}"
+        chmod u+rwx "${PYTHON_DEST}/bin/python${PYTHON_VERSION}"
+        log_info "  bin/python${PYTHON_VERSION}: replaced the GUI stub with the interpreter"
+    fi
+
+    # Rewrite by *reading* each load command rather than by matching
+    # ${PYTHON_BASE_PREFIX}: Homebrew reaches its framework through
+    # /opt/homebrew/opt/python@X.Y while the recorded dependency names the
+    # versioned Cellar path underneath it, so the two strings differ and a
+    # -change on the prefix would silently match nothing.
+    while IFS= read -r -d '' exe; do
+        file "${exe}" | grep -q "Mach-O" || continue
+        exe_deps=$(otool -L "${exe}" | tail -n +2 | awk '{print $1}')
+        rewritten=''
+        # A here-string, not a pipe: the body of a piped `while` runs in a
+        # subshell, where the failure branch below could not stop the build.
+        while read -r dep; do
+            case "${dep}" in
+                @*) continue ;;
+                # Framework build: the runtime sits one level above bin/.
+                */Python.framework/Versions/*/Python)
+                    relocated="@executable_path/../Python" ;;
+                # Standard-Python build: libpythonX.Y.dylib, in bin/'s sibling.
+                */libpython*.dylib)
+                    relocated="@executable_path/../lib/$(basename "${dep}")" ;;
+                *) continue ;;
+            esac
+            install_name_tool -change "${dep}" "${relocated}" "${exe}" \
+                || { log_error "Failed to rewrite ${dep} in ${exe}"; exit 1; }
+            rewritten=1
+            log_info "  $(basename "${exe}"): ${dep} -> ${relocated}"
+        done <<< "${exe_deps}"
+
+        # An edited Mach-O no longer matches the signature it inherited from
+        # the Python it was copied from, and dyld kills a binary whose
+        # signature does not verify - including when the pre-compile step below
+        # runs this very interpreter. Ad-hoc sign it back into a runnable
+        # state; Step 6 replaces this with the real identity.
+        if [ -n "${rewritten}" ]; then
+            codesign --force --sign - "${exe}" \
+                || { log_error "Failed to ad-hoc sign ${exe}"; exit 1; }
+        fi
+    done < <(find "${PYTHON_DEST}/bin" -type f -print0)
+
+    # Guard: an interpreter still reaching outside the bundle is an MCP bridge
+    # that runs on this machine only, and nothing else in the build says so.
+    escaped_deps=$(find "${PYTHON_DEST}/bin" -type f -exec otool -L {} \; 2>/dev/null \
+        | grep -E "^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local|/Library/Frameworks|/Users/)" \
+        | sort -u || true)
+    if [ -n "${escaped_deps}" ]; then
+        log_error "Embedded interpreter still depends on libraries outside the bundle:"
+        echo "${escaped_deps}"
+        exit 1
+    fi
+}
+
 log_info "Step 4: Embedding Python..."
 
 # Clean up old Python versions from previous builds
@@ -493,12 +572,10 @@ if [ "$USE_FRAMEWORK" = true ]; then
     # Remove unnecessary files from embedded Python
     log_info "Removing unnecessary files from embedded Python..."
     
-    # Remove Python.app (GUI launcher)
-    if [ -d "${PYTHON_DEST}/Resources/Python.app" ]; then
-        rm -rf "${PYTHON_DEST}/Resources/Python.app"
-        log_info "  Removed Python.app"
-    fi
-    
+    # Must run before Resources/ goes: the interpreter it installs into bin/ is
+    # the one inside Resources/Python.app.
+    relocate_embedded_interpreter
+
     # Remove Resources directory entirely (Info.plist not needed for embedded use)
     if [ -d "${PYTHON_DEST}/Resources" ]; then
         rm -rf "${PYTHON_DEST}/Resources"
@@ -681,7 +758,10 @@ else
     done
 
     log_success "Unnecessary files removed"
-    
+
+    # Before the pre-compile below, which runs the interpreter.
+    relocate_embedded_interpreter
+
     # Pre-compile Python standard library
     log_info "Pre-compiling Python standard library..."
     STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"

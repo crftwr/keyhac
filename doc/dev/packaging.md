@@ -73,6 +73,13 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
 - `resources/{Info.plist.template,entitlements.plist,sitecustomize.py}`;
   `LSUIElement=YES` (agent app), hardened runtime, no sandbox,
   disable-library-validation.
+- The embedded interpreter has to work as a *program*, not only as the
+  launcher's library: `Resources/bin/keyhac-mcp-bridge` execs it. `build.sh`'s
+  `relocate_embedded_interpreter` is what makes that true, and it fails the
+  build if anything under the framework's `bin/` still loads a library from
+  outside the bundle — a framework's `bin/pythonX.Y` is only the GUI stub for
+  the `Python.app` this build drops, and every binary copied in still names the
+  Homebrew path it was linked against. 2.4.1 shipped exactly that (#140).
 - Bundle id is `crftwr.Keyhac2`, settled: it is the identity TCC keys the
   Accessibility grant on (and NSUserDefaults the saved window frames), so changing
   it after 2.0.0 shipped would revoke both for everyone installed. Reusing 1.x's
