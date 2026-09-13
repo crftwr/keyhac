@@ -497,6 +497,54 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `from_hwnd` alone, before `set_focus` is even reached. A hung application is
   a hang, not a lie, and section I of the pass runs behind a watchdog because
   a first run took the whole pass down with it.
+- **Can Windows afford the focused element in the per-keystroke probe?**
+  (2026-09-13, `tools/win_probe_cost_pass.py`, 4/4, Windows 11 Home
+  10.0.26200; issue #145.) No, and the decisive number is not the median.
+  macOS puts the focused element in its probe for one 0.107 ms
+  `AXFocusedUIElement` read, which is what makes #144's design affordable
+  there; `IUIAutomation::GetFocusedElement()` had never been timed on its own.
+  Warm medians, 200 samples each, against the cheap tier measured in the same
+  loop on the same machine:
+
+  | in front | cheap tier today | `GetFocusedElement` | read + compare | vs today |
+  |---|---|---|---|---|
+  | classic Win32 (an `EDIT`) | 0.012 ms | 3.455 ms | 3.098 ms | 256x |
+  | Chromium (Edge, page input) | 0.013 ms | 2.652 ms | 3.106 ms | 238x |
+  | WinUI/XAML (Notepad) | 0.012 ms | 1.583 ms | 1.559 ms | 133x |
+  | a window pumping at 50 ms/message | 0.012 ms | 210.6 ms | 209.7 ms | 18,206x |
+  | a foreground window that never pumps | 0.012 ms | **never returned** (blocked past the 6 s watchdog) | — | — |
+
+  The last two rows are the finding. **The cost belongs to the other
+  application, not to us**: a window that merely pumps slowly puts 210 ms on
+  every key event, and a hung foreground window blocks the read for as long as
+  it stays hung — the same failure #144 is about on macOS, imported into the
+  platform that does not have it. Today it cannot happen: the cheap tier is
+  pure-local, `GetWindowTextW` deliberately does not message a window it does
+  not own, and it held at 0.012 ms with the hung window in front.
+
+  **Two things the issue expected turned out backwards, which is why it was
+  asked as a question.** The comparison was supposed to be the second
+  cross-process call, Windows having no `CFEqual`: measured, `CompareElements`
+  on two already-fetched elements is 0.008–0.019 ms and `GetRuntimeId` (slot 4,
+  newly pinned) 0.017–0.040 ms — both client-local, because a UIA element
+  carries its runtime id from the fetch. It stops being local when one side is
+  stale: against an element whose process had exited, the compare took 2.35 ms
+  and answered "cannot say" (`None`, not a wrong `False` — which is the reason
+  `_same_element` returns a tristate). And the expensive provider was not the
+  Chromium one — the classic Win32 `EDIT` was the slowest of the three, so
+  there is no "only exotic frameworks are dear" reading available.
+
+  Verdict: the limitation is accepted and written down rather than fixed.
+  `focus_path_pattern=` is best-effort on Windows — re-read when the window,
+  the focused child HWND or the title changes, and blind to focus moving
+  inside one window (list items, tab items, and every in-page move in
+  Chromium / Electron / WPF / WinUI, where there is one HWND and no focusable
+  children at all). `app=`, `title=` and `class_name=` are exact: the same
+  HWND is the same process, and the focused HWND determines the class name.
+  Documented in [configuration.md](../configuration.md#key-tables),
+  `define_keytable()`'s docstring and `platform/win/focus.py`'s. An action
+  that needs the element as it is *now* still calls `get_focused_element()`,
+  which pays the 1.6–3.5 ms once, deliberately.
 - **Which application is in front, measured both ways** (2026-09-13, macOS
   26.6.2, `tools/mac_focus_pass.py`, three runs / ~900 samples / 12 driven
   switches and several real ones). Issue #45 reported

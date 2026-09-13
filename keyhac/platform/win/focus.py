@@ -19,6 +19,46 @@ Known follow-up: UIA cache requests (``IUIAutomationCacheRequest`` +
 instead of one per property per level, which is the standard fix for that
 33 ms and would make the walk cheap enough to stop worrying about.
 
+WHAT THE CHEAP TIER CANNOT SEE, and why that is accepted (issue #145).  Two
+HWNDs and a title cover ``app=``, ``title=`` and ``class_name=`` *exactly* -
+the same HWND is the same process, and the focused HWND determines the class
+name.  They do not cover ``focus_path_pattern=``: focus moving *within* a
+window is invisible to them, which includes ListView items and tab items in
+classic applications and **every** in-page focus move in Chromium, Electron,
+WPF and WinUI, where there is one HWND and no focusable children at all.
+
+macOS can afford the focused element in its probe - one
+``AXFocusedUIElement`` read at 0.107 ms plus a local ``CFEqual``.  Windows
+cannot (measured 2026-09-13, ``tools/win_probe_cost_pass.py``, Windows 11
+Home 10.0.26200, warm medians over 200 samples each):
+
+===============================  ==========================================
+the cheap tier, same loop        0.012 ms
+``GetFocusedElement``            1.6 ms WinUI / 2.7 ms Chromium / 3.5 ms
+                                 classic Win32
+a foreground app pumping slowly  210 ms per read (50 ms per message)
+a foreground app not pumping     never returns - still blocked at 6 s
+===============================  ==========================================
+
+A read per key event is 133-256x the entire cheap tier and 15-32x the macOS
+read it would be copying, and the tail is the real objection rather than the
+median: the cost is set by the *other* application's message loop, and a
+hung foreground window would stop the hook for as long as it stays hung.
+``GetWindowTextW`` deliberately does not message a window it does not own;
+``GetFocusedElement`` does nothing but.
+
+The comparison is the cheap half, which is the opposite of what was expected:
+``CompareElements`` on two already-fetched elements is 0.008-0.019 ms and
+``GetRuntimeId`` 0.017-0.040 ms, both client-local - a UIA element carries
+its runtime id from the fetch.  It stops being local when one side is stale:
+compared against an element whose process had exited it took 2.35 ms and
+answered "cannot say".
+
+So ``focus_path_pattern=`` is **best-effort on Windows** - re-read when the
+window, the focused child window or the title changes, and not when focus
+moves inside one window.  An action that needs the element as it is *now*
+calls ``get_focused_element()``, which pays that cost once, deliberately.
+
 STATUS: run on Windows - app/title/class_name and the UIA path are verified
 against Win32 ground truth for the same window.
 """
@@ -142,7 +182,9 @@ class WinFocusProvider(FocusProvider):
         the focused child and the title are unchanged, which is right for key
         dispatch and wrong for an action: focus moves *within* a window all the
         time, and the probe cannot see it (issue #44). This is the ~33 ms walk's
-        first level and nothing else.
+        first level and nothing else - one cross-process read, measured at
+        1.6-3.5 ms warm, which is why the key path does not make it (the
+        numbers, and the case for leaving it out, are in this file's docstring).
         """
         from keyhac.platform.win.uielement import UIElement
 
