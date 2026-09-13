@@ -61,6 +61,7 @@ import time
 from keyhac.core import capture, log, permissions, uitree
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.mcp import extensions
+from keyhac.mcp.server import MAX_TOOL_WAIT, REQUEST_TIMEOUT
 
 logger = log.getLogger("MCP")
 
@@ -362,8 +363,14 @@ class ToolRegistry:
                      "name": {**string, "description":
                               "module.Class, from list_actions."},
                      "wait": {**integer, "description":
-                              "Seconds to wait for it to finish (default 30, "
-                              "0 to look without waiting)."},
+                              f"Seconds to wait for it to finish (default 30, "
+                              f"0 to look without waiting - which is how to "
+                              f"poll a long action cheaply). Capped at "
+                              f"{MAX_TOOL_WAIT:.0f}s however large you ask: "
+                              f"past that the connection, not the action, is "
+                              f"what answers. An action still running at the "
+                              f"cap is reported as such, with what it has "
+                              f"logged so far."},
                      "level": {**string, "description":
                                "Lowest log severity to return: DEBUG, INFO, "
                                "WARNING or ERROR (default INFO, which hides "
@@ -765,11 +772,20 @@ class ToolRegistry:
 
     def get_action_result(self, name: str, wait: int = 30,
                           level: str = "INFO", tail=None) -> str:
+        # Never longer than the client will wait (issue #70). An action that
+        # legitimately blocks for minutes - a `code --wait`, a form behind a
+        # slow network - is exactly when a caller reaches for wait=120, and
+        # that is the ask that cannot be answered: the transport gives up
+        # first, and its timeout carries nothing about the run. Waiting less
+        # than asked costs one more round trip; waiting longer costs the
+        # answer.
+        asked = float(wait)
+        waited = min(asked, MAX_TOOL_WAIT)
         # No name resolution first: the run record is the whole answer, and a
         # class that has been listed but never started should read as "not run"
         # rather than as an unknown name. It also keeps a result readable after
         # the authoring window has closed under a run that already happened.
-        run = capture.wait_for_run(name, float(wait))
+        run = capture.wait_for_run(name, waited)
         if run is None:
             return (f"{name} has not been run since Keyhac started. "
                     f"start_action runs it.")
@@ -777,8 +793,18 @@ class ToolRegistry:
         # leaves thousands of keymap DEBUG lines around the two INFO lines
         # that carry the result, and the model reading this pays for all of
         # them. The cut announces itself, so the DEBUG stream is one call away.
-        return run.report(level=level,
+        text = run.report(level=level,
                           tail=int(tail) if tail is not None else None)
+        if run.running and waited < asked:
+            # Said out loud, because otherwise the cut is invisible: a caller
+            # that asked for 120s and was answered in 45 would read the run as
+            # having been watched twice as long as it was.
+            text += (f"\n\n[waited {waited:.0f}s, not the {asked:.0f}s asked "
+                     f"for: a call that blocks past {REQUEST_TIMEOUT:.0f}s is "
+                     f"answered by the client's own timeout instead, which "
+                     f"says nothing about the run. Ask again - nothing was "
+                     f"lost, and the log resumes where this one ends.]")
+        return text
 
     def cancel_action(self, name: str) -> str:
         action = self._action(name)

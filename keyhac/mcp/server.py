@@ -52,6 +52,23 @@ PROTOCOL_VERSION = "2025-06-18"
 #: state together with everything else.
 ENDPOINT_FILE = "mcp.json"
 
+#: How long a client waits on one call before it answers the question itself.
+#: Long enough for a deep tree walk on a slow application; short enough that a
+#: wedged daemon does not hang the conversation with no explanation.  Here
+#: rather than in the bridge because it is half of a contract and both halves
+#: have to agree: see MAX_TOOL_WAIT.
+REQUEST_TIMEOUT = 60.0
+
+#: The longest a tool may *deliberately* block, which is the other half.  A
+#: tool that waits longer than the client will is answered by the client's own
+#: timeout, and a timeout says nothing about the action it was waiting for -
+#: which is how `get_action_result(wait=120)` on a legitimately long action
+#: came back as a lost connection (issue #70).  The margin below
+#: REQUEST_TIMEOUT is for the round trip and for a loaded daemon, and it is
+#: generous because nothing is lost by answering early: "still running" is a
+#: normal answer here and the caller simply asks again.
+MAX_TOOL_WAIT = 45.0
+
 #: Largest request body accepted.  Tool arguments are small; a body this size
 #: is a mistake or an attack, and reading it would be the damage.
 MAX_BODY = 1 << 20
