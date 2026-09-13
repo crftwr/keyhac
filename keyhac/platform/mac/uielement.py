@@ -3,7 +3,7 @@ keyhac-mac's KeyhacCore_UIElement, in PyObjC). Exposed as Focus.native."""
 
 import ApplicationServices as AS
 import Quartz
-from AppKit import NSWorkspace
+from AppKit import NSRunningApplication, NSWorkspace
 from Foundation import NSArray, NSDictionary
 
 from keyhac.core.uitree import _first_name
@@ -39,30 +39,125 @@ def _ax_get(element, attribute):
     return None if err != 0 else value
 
 
-def focused_element(system_wide=None) -> "UIElement | None":
-    """The element that holds the keyboard focus now, or None.
+def _pid_of(element):
+    """The process an AX element belongs to, or None.
 
-    **Two steps, because the system-wide element cannot be relied on.**
-    `AXUIElementCreateSystemWide()` lists AXFocusedUIElement and
-    AXFocusedApplication among its attributes and then answers
-    kAXErrorCannotComplete for both - measured on macOS 26.6.2, every read,
-    with the messaging timeout raised to two seconds, while the frontmost
-    application answered the same attribute instantly.  So the front
-    application is asked directly when the system-wide element will not say.
+    A local call, not a round trip: it reads the port the element already
+    carries, so asking costs nothing even on the key dispatch path.
+    """
+    try:
+        err, pid = AS.AXUIElementGetPid(element, None)
+    except Exception:
+        return None
+    return int(pid) if err == 0 else None
 
-    MacFocusProvider has had this fallback since it was ported.  The focus
-    predicates below were written on a machine with no Mac, re-derived the
-    system-wide read without it, and fell back to the element's own AXFocused
-    instead - which answers `has_focus()`'s question and not
-    `contains_focus()`'s, so every container that really did contain the focus
-    reported False.  One resolution for both callers is what stops that from
-    being re-derived a third time.
+
+def app_name_of(pid) -> str | None:
+    """The application name for a pid - what `define_keytable(app=...)` and
+    `Window.app_name` are written against.
+
+    `localizedName()` of the same `NSRunningApplication` class
+    `NSWorkspace.frontmostApplication()` returns, so the string an existing
+    configuration matches on is unchanged wherever the two sources agree on
+    the process.
+
+    None where the pid names no running application: a focused process that is
+    not one (a helper, or one already gone) has no name a configuration could
+    have been written against, and an unnamed focus matches no `app=` table,
+    which is the safe outcome.  Borrowing the frontmost application's name for
+    it would put back exactly the divergence issue #45 is about.
+    """
+    if pid is None:
+        return None
+    app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+    return str(app.localizedName()) if app else None
+
+
+def focused_application(system_wide=None, timeout=None) -> tuple:
+    """The application that holds the keyboard focus now, as `(element, pid)`.
+
+    **Two steps, because the system-wide element answers only some callers.**
+    `AXUIElementCreateSystemWide()` lists AXFocusedApplication and
+    AXFocusedUIElement among its attributes and then answers
+    kAXErrorCannotComplete for both in a process that has never created an
+    `NSApplication` - instantly, not on a timeout, and with the messaging
+    timeout raised to two seconds it is still instant.  Calling
+    `NSApplication.sharedApplication()` flips the same read to a success and
+    nothing else about the process changes (measured 2026-09-13, macOS 26.6.2,
+    `tools/mac_focus_pass.py`).  So Keyhac takes the primary read and a bare
+    script or a pytest run takes the fallback, which is why the fallback has
+    to stay even though the application Keyhac ships never reaches it that
+    way.
+
+    It is reached inside Keyhac too, just for the other reason: the read is
+    served by the front application, so a front application busy for longer
+    than the messaging timeout answers kAXErrorCannotComplete after the full
+    wait.  Measured at roughly one sample in twenty-five against an idle
+    machine.
+
+    **Why the pid comes from the element and not from `NSWorkspace`.** These
+    are two different questions - "which application did the user last
+    activate" and "which application is the keyboard talking to" - and
+    `MacFocusProvider.get_focus` used to ask both and put the two answers in
+    one `Focus`, so `focus.app_name` could name one application while
+    `focus.element` belonged to another.  That is not only a reporting
+    problem: `app_name` is what `define_keytable(app=...)` matches on, and the
+    actions in the table it selects then act on `focus.element`.  One answer
+    to both halves is the point of this function (issue #45).
 
     Args:
         system_wide: The system-wide element to ask first.  MacFocusProvider
             passes its own, which carries a messaging timeout so a hung
             application cannot stall key dispatch; a fresh one is made here
             when there is nothing to reuse.
+        timeout: Messaging timeout to put on the *returned* element, in
+            seconds.  A timeout set on the system-wide element bounds only the
+            read made through it: the element it hands back carries the system
+            default, so the caller's next read into the focused application is
+            unbounded unless it asks here.  Callers that had their own cap
+            before this resolution was shared pass it; `get_focus` does not,
+            because bounding a read it has never bounded would change what a
+            momentarily slow application produces, and that wants its own
+            measurement.
+
+    Returns:
+        `(application element, pid)`, or `(None, None)` when neither source
+        will say.  The pid can be None on its own only if the element refuses
+        to name its process, which would leave a caller with an element it
+        cannot attribute.
+    """
+    ref = (system_wide if system_wide is not None
+           else AS.AXUIElementCreateSystemWide())
+
+    app = _ax_get(ref, "AXFocusedApplication")
+    pid = _pid_of(app) if app is not None else None
+
+    if app is None:
+        running = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if running is None:
+            return None, None
+        pid = int(running.processIdentifier())
+        app = AS.AXUIElementCreateApplication(pid)
+
+    if timeout is not None:
+        AS.AXUIElementSetMessagingTimeout(app, timeout)
+    return app, pid
+
+
+def focused_element(system_wide=None) -> "UIElement | None":
+    """The element that holds the keyboard focus now, or None.
+
+    The application is resolved by `focused_application()`, shared with
+    `MacFocusProvider.get_focus`: the focus predicates below were written on a
+    machine with no Mac, re-derived the system-wide read without its fallback,
+    and fell back to the element's own AXFocused instead - which answers
+    `has_focus()`'s question and not `contains_focus()`'s, so every container
+    that really did contain the focus reported False.  One resolution for
+    every caller is what stops that from being re-derived a third time.
+
+    Args:
+        system_wide: The system-wide element to ask first, passed through to
+            `focused_application()`.
 
     Returns:
         The focused element, or None when nothing has the focus and when the
@@ -70,14 +165,9 @@ def focused_element(system_wide=None) -> "UIElement | None":
         choice `MacFocusProvider.get_focused_element` documents, and issue
         #44's lesson about handing back something that merely resembles it.
     """
-    ref = (system_wide if system_wide is not None
-           else AS.AXUIElementCreateSystemWide())
-    app = _ax_get(ref, "AXFocusedApplication")
+    app, _ = focused_application(system_wide)
     if app is None:
-        running = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if running is None:
-            return None
-        app = AS.AXUIElementCreateApplication(int(running.processIdentifier()))
+        return None
     element = _ax_get(app, "AXFocusedUIElement")
     return UIElement(element) if element is not None else None
 

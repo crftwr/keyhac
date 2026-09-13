@@ -15,7 +15,8 @@ import ApplicationServices as AS
 from AppKit import NSWorkspace, NSRunningApplication
 
 from keyhac.platform.base import Window, WindowProvider
-from keyhac.platform.mac.uielement import UIElement
+from keyhac.platform.mac.uielement import (
+    UIElement, app_name_of, focused_application)
 from keyhac.core import log
 
 logger = log.getLogger("MacWindow")
@@ -150,18 +151,26 @@ class MacWindowProvider(WindowProvider):
     # -- discovery (UI thread only: AX) --------------------------------------
 
     def get_active_window(self) -> MacWindow | None:
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app is None:
+        """The focused window of the application the keyboard is talking to.
+
+        Resolved by `uielement.focused_application()`, the same answer
+        `MacFocusProvider.get_focus` builds a `Focus` from, rather than asking
+        `NSWorkspace.frontmostApplication()` a third time: this was once seen
+        naming VS Code while the operator was working in another application
+        and `ui.focused()` named that other application's field (issue #45).
+        The two sources have not been caught disagreeing since, but one of
+        them cannot disagree with itself.
+        """
+        app_element, pid = focused_application(self._system_wide,
+                                               timeout=AX_MESSAGING_TIMEOUT)
+        if app_element is None:
             return None
-        pid = int(app.processIdentifier())
-        app_element = AS.AXUIElementCreateApplication(pid)
-        AS.AXUIElementSetMessagingTimeout(app_element, AX_MESSAGING_TIMEOUT)
         element = UIElement(app_element).get_attribute_value("AXFocusedWindow")
         if element is None:
             element = UIElement(app_element).get_attribute_value("AXMainWindow")
         if element is None:
             return None
-        return MacWindow(element, str(app.localizedName()), pid)
+        return MacWindow(element, app_name_of(pid), pid)
 
     def list_windows(self) -> list[MacWindow]:
         """Windows of every running app that has any, grouped by application.

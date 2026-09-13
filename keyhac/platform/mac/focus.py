@@ -4,17 +4,22 @@ Ported from keyhac-mac: KeyhacCore_UIElement.swift (focused element lookup)
 and keyhac_focus.py (focus path string construction).
 """
 
-from AppKit import NSWorkspace
 import ApplicationServices as AS
 
 from keyhac.platform.base import FocusProvider, Focus
-from keyhac.platform.mac.uielement import UIElement, _ax_get, focused_element
+from keyhac.platform.mac.uielement import (
+    UIElement, _ax_get, app_name_of, focused_application, focused_element)
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("MacFocus")
 
 # A hung app must not stall key dispatch: cap AX IPC waiting time (seconds).
+# Read what this actually bounds before trusting it: a timeout set on the
+# system-wide element applies to the read made *through* it and not to the
+# application element it returns, so `AXFocusedUIElement` and the _build_path
+# walk below run at the system default (measured at 3-31 ms against healthy
+# applications; unmeasured against a hung one - doc/dev/testing.md, issue #45).
 AX_MESSAGING_TIMEOUT = 0.1
 
 
@@ -49,13 +54,8 @@ class MacFocusProvider(FocusProvider):
 
     def get_focus(self) -> Focus | None:
 
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        app_name = str(app.localizedName()) if app else None
-        pid = int(app.processIdentifier()) if app else None
-
-        focused_app = _ax_get(self._system_wide, "AXFocusedApplication")
-        if focused_app is None and pid is not None:
-            focused_app = AS.AXUIElementCreateApplication(pid)
+        focused_app, pid = focused_application(self._system_wide)
+        app_name = app_name_of(pid)
 
         element = None
         if focused_app is not None:
