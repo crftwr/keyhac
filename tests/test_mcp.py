@@ -466,6 +466,66 @@ def test_a_failure_comes_back_as_a_traceback_rather_than_raising(writable):
     assert "failed" in output
 
 
+def test_a_long_wait_is_capped_so_the_daemon_answers_first(writable,
+                                                           monkeypatch):
+    """Issue #70. An action that legitimately blocks for minutes is exactly
+    when a caller reaches for `wait=120`, and that is the ask that cannot be
+    answered: the client gives up first, and a transport timeout carries
+    nothing about the run - not even that there is one. Capped, the same call
+    comes back as "still running" with the log so far, which is an answer."""
+    release = threading.Event()
+    monkeypatch.setattr(tools_module, "MAX_TOOL_WAIT", 0.2)
+    try:
+        write_action(writable, name="blocking", source=PROBE)
+        writable._startable("blocking.Probe")
+        sys.modules["blocking"].RUN = lambda: release.wait(30)
+        writable.call("start_action", {"name": "blocking.Probe"})
+
+        started = time.monotonic()
+        text = writable.call("get_action_result",
+                             {"name": "blocking.Probe", "wait": 120})
+        elapsed = time.monotonic() - started
+    finally:
+        release.set()
+
+    assert elapsed < 5                      # not the two minutes it was asked
+    assert "still running" in text
+    # And it says the ask was cut: a caller told nothing would read the run as
+    # having been watched for two minutes and drawn a conclusion from that.
+    assert "not the 120s asked for" in text
+
+
+def test_a_wait_inside_the_cap_is_not_reported_as_cut(writable, monkeypatch):
+    """The note belongs to the caller whose ask was shortened. Printed when
+    nothing was cut, it would teach a model to lower a `wait` that was fine."""
+    release = threading.Event()
+    monkeypatch.setattr(tools_module, "MAX_TOOL_WAIT", 5.0)
+    try:
+        write_action(writable, name="patient", source=PROBE)
+        writable._startable("patient.Probe")
+        sys.modules["patient"].RUN = lambda: release.wait(30)
+        writable.call("start_action", {"name": "patient.Probe"})
+        text = writable.call("get_action_result",
+                             {"name": "patient.Probe", "wait": 1})
+    finally:
+        release.set()
+
+    assert "still running" in text
+    assert "asked for" not in text
+
+
+def test_the_tools_stop_waiting_before_the_client_does():
+    """The two halves of one contract, kept in one file and one relationship:
+    a tool that blocks for longer than the client will wait is answered by the
+    transport instead, which is issue #70's whole mechanism. The margin is the
+    round trip, on a daemon that may be busy."""
+    from keyhac.mcp import bridge
+
+    assert server_module.MAX_TOOL_WAIT < server_module.REQUEST_TIMEOUT
+    assert server_module.REQUEST_TIMEOUT - server_module.MAX_TOOL_WAIT >= 10
+    assert bridge.TIMEOUT == server_module.REQUEST_TIMEOUT
+
+
 def test_reload_config_reloads(registry):
     registry.call("reload_config", {})
     assert registry.keymap.reloaded == 1
@@ -1595,6 +1655,52 @@ def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
                           {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                            "params": {"name": "list_windows"}})
     assert "MCP server" in replies[0]["error"]["message"]
+
+
+def test_a_slow_answer_is_not_a_missing_daemon(tmp_path, capsys, monkeypatch):
+    """Issue #70. A call that outlived the timeout took the switch-is-off
+    answer - about a daemon that was listening and working - so the operator
+    was sent to tick a box that is already ticked and the model read the
+    endpoint as gone. Both spellings, because urllib raises a bare
+    TimeoutError when the read runs out and wraps one in URLError when the
+    connection does."""
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+
+    for raised in (TimeoutError("timed out"),
+                   urllib.error.URLError(TimeoutError("timed out"))):
+        def slow(prepared, timeout=None, error=raised):
+            raise error
+
+        monkeypatch.setattr(bridge.urllib.request, "urlopen", slow)
+        replies = _bridge_run(monkeypatch, capsys, endpoint,
+                              {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                               "params": {"name": "describe_screen"}})
+        message = replies[0]["error"]["message"]
+        assert "did not answer" in message
+        assert "AI Integration" not in message
+
+
+def test_a_refused_connection_is_still_the_missing_daemon(tmp_path, capsys,
+                                                          monkeypatch):
+    """The case the timeout was taken out of keeps its own answer: a published
+    endpoint with nothing behind it - a Keyhac killed rather than quit - is
+    the switch-is-off explanation, and still reads as one."""
+    from keyhac.mcp import bridge
+
+    endpoint = tmp_path / "mcp.json"
+    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+
+    def refused(prepared, timeout=None):
+        raise urllib.error.URLError(ConnectionRefusedError(61, "refused"))
+
+    monkeypatch.setattr(bridge.urllib.request, "urlopen", refused)
+    replies = _bridge_run(monkeypatch, capsys, endpoint,
+                          {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "describe_screen"}})
+    assert "AI Integration" in replies[0]["error"]["message"]
 
 
 def test_the_handshake_succeeds_with_no_daemon(tmp_path, capsys, monkeypatch):

@@ -289,6 +289,13 @@ own failure instead of asking the operator to copy it out of a console window.
 `logger.info(...)`, `print(...)` and a logger made with the standard library
 all arrive. `cancel_action` stops one, the same as the operator's Esc.
 
+**"Still running" is an answer, not a failure.** The wait is capped below what
+the connection will hold, so an action that is genuinely long — a `--wait` that
+blocks until the operator closes something — comes back as still running with
+the log so far. Nothing was cancelled; call again, and the log resumes where
+the last one ended. `wait=0` is the cheap version of the same question when all
+you want is whether it is still going.
+
 **Shell out with `capture_output=True`.** It is the one thing that does *not*
 arrive on its own — a child process writes to a real file descriptor, so
 nothing here can see it, and the only place its stderr survives is on the

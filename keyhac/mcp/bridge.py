@@ -49,12 +49,13 @@ import urllib.error
 import urllib.request
 
 from keyhac.core import paths
-from keyhac.mcp.server import ENDPOINT_FILE, PROTOCOL_VERSION
+from keyhac.mcp.server import ENDPOINT_FILE, PROTOCOL_VERSION, REQUEST_TIMEOUT
 
-#: How long to wait on the daemon before answering the client ourselves. Long
-#: enough for a deep tree walk on a slow application; short enough that a wedged
-#: daemon does not hang the conversation with no explanation.
-TIMEOUT = 60.0
+#: How long to wait on the daemon before answering the client ourselves. Half
+#: of a contract with the tools, which cap what they will deliberately block
+#: for at MAX_TOOL_WAIT - so the value lives beside the rest of the endpoint
+#: contract and is imported here rather than written twice.
+TIMEOUT = REQUEST_TIMEOUT
 
 #: How long the placeholder tool waits for the daemon before reporting it
 #: still off. A `ping` answered from the daemon's own thread pool, so this is
@@ -105,6 +106,34 @@ def _no_daemon(path: str) -> str:
             f"Integration: MCP Server' in Keyhac's console window, or 'AI "
             f"Integration > MCP Server' in its tray menu, then try again. "
             f"(endpoint: {path})")
+
+
+def _too_slow() -> str:
+    """Why nothing came back, when something is plainly there.
+
+    A daemon that is listening and working is not a daemon that is absent, and
+    the two took the same answer until issue #70: a call that outlived the
+    timeout was reported with `_no_daemon`'s prose, which sends the operator to
+    tick a switch that is already on. The tools cap what they will block for
+    (MAX_TOOL_WAIT), so what reaches here is a call that is genuinely slow -
+    a deep tree walk on a large application - rather than one that was asked
+    to wait.
+    """
+    return (f"Keyhac is running and did not answer within {TIMEOUT:.0f}s. The "
+            f"call is still going on inside it - nothing was cancelled, and "
+            f"the MCP server is on, so this is a slow call rather than a "
+            f"missing one. Ask for less of the screen at once (a narrower "
+            f"window, fewer nodes, a shallower walk), or try again.")
+
+
+def _timed_out(error: BaseException) -> bool:
+    """Whether a failed request was slow rather than unreachable.
+
+    Both spellings, because urllib raises a bare TimeoutError when the read
+    runs out and wraps one in URLError when the connection does.
+    """
+    return isinstance(error, TimeoutError) or \
+        isinstance(getattr(error, "reason", None), TimeoutError)
 
 
 def _post(endpoint: dict, body: bytes) -> urllib.request.Request:
@@ -299,7 +328,14 @@ def main(argv: list[str] | None = None) -> int:
                     _respond(message, _error(
                         request_id, f"Keyhac returned HTTP {error.code}"))
                 continue
-            except (urllib.error.URLError, OSError):
+            except (urllib.error.URLError, OSError) as error:
+                if _timed_out(error):
+                    # An answer that is late is not an answer that is not
+                    # coming, and the offline path below would say the daemon
+                    # is gone - about a daemon that is working (issue #70).
+                    if request_id is not None:
+                        _respond(message, _error(request_id, _too_slow()))
+                    continue
                 # Published but not listening - a Keyhac killed rather than
                 # quit leaves the file behind. The same state as never
                 # published, and it takes the same answer.
