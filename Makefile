@@ -54,7 +54,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 # pyproject.toml changes.
 VENV_STAMP := $(VENV)/.installed
 
-.PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe icons icons-check \
+.PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass icons icons-check \
         api-reference api-reference-check skill-bundle cleanroom \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
@@ -78,6 +78,10 @@ help:
 	@echo "  make caret-probe - print what the front application reports for the caret"
 	@echo "                     (popup placement, issue #118). Repeats for 20 seconds,"
 	@echo "                     so start it, switch to the app under test and type."
+	@echo "  make mac-focus-pass - (on macOS) print NSWorkspace's and the Accessibility"
+	@echo "                     API's answers for which app is in front, side by side"
+	@echo "                     (issue #45). Samples for a minute; switch apps while"
+	@echo "                     it runs - the finding is in the transitions."
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
@@ -191,6 +195,13 @@ echo: $(VENV_STAMP)
 # which wins over the one here).
 caret-probe: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/caret_probe.py --repeat 20 $(ARGS)
+
+# Two answers to "which application is in front" that get_focus() combines
+# without cross-checking. Like caret-probe this needs the operator to move
+# around while it runs: a divergence, if there is one, lives in the moment
+# after a switch.
+mac-focus-pass: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/mac_focus_pass.py $(ARGS)
 
 # The generated icon assets are committed; `icons` regenerates them from the
 # SVG masters, `icons-check` verifies the two have not drifted.

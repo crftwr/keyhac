@@ -138,10 +138,16 @@ class _FakeWorkspace:
 
 def test_the_focus_resolution_asks_the_front_app_when_system_wide_will_not_say(
         monkeypatch):
-    """Measured on macOS 26.6.2: the system-wide element lists
-    AXFocusedApplication and AXFocusedUIElement among its attributes and then
-    answers kAXErrorCannotComplete for both, every time, while the frontmost
-    application answers the same attribute instantly.
+    """The system-wide element lists AXFocusedApplication and
+    AXFocusedUIElement among its attributes and then answers
+    kAXErrorCannotComplete for both, while the frontmost application answers
+    the same attribute instantly.
+
+    Which callers it refuses was measured later, for issue #45: a process that
+    has never created an NSApplication - every bare script and this test run -
+    is refused instantly, and one that has (Keyhac) is answered.  So this
+    fallback is the path tests and tools take, and the primary read is the one
+    the shipped application takes; both have to work.
     """
     from keyhac.platform.mac import uielement as ue
 
@@ -192,3 +198,105 @@ def test_the_predicates_never_fall_back_to_the_elements_own_flag(monkeypatch):
     element = ue.UIElement("ref")
     assert element.has_focus() is False
     assert element.contains_focus() is False
+
+
+def test_the_focused_application_is_named_by_the_element_not_by_the_workspace(
+        monkeypatch):
+    """Issue #45's structural half.
+
+    `get_focus` used to take `app_name` from NSWorkspace's frontmost
+    application and the focused element from the system-wide AX read, with no
+    cross-check, so one `Focus` could name one application and carry another's
+    element - and `app_name` is what `define_keytable(app=...)` matches on.
+    One resolution answers both halves now, so the two cannot disagree.
+    """
+    from keyhac.platform.mac import uielement as ue
+
+    monkeypatch.setattr(ue, "_ax_get",
+                        lambda element, attribute: "ax-app-ref"
+                        if attribute == "AXFocusedApplication" else None)
+    monkeypatch.setattr(ue, "NSWorkspace", _FakeWorkspace)
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateSystemWide", lambda: "sysw")
+    monkeypatch.setattr(ue.AS, "AXUIElementGetPid",
+                        lambda element, _: (0, 99)
+                        if element == "ax-app-ref" else (-25204, 0))
+
+    app, pid = ue.focused_application()
+    assert app == "ax-app-ref"
+    assert pid == 99, "the pid must come from the element, not from _FakeApp"
+
+
+def test_the_fallback_names_the_process_it_actually_built_the_element_from(
+        monkeypatch):
+    """The other half of the same rule: when the system-wide read is refused
+    and the front application supplies the element, the pid reported is that
+    front application's - still the process the element belongs to."""
+    from keyhac.platform.mac import uielement as ue
+
+    monkeypatch.setattr(ue, "_ax_get", lambda element, attribute: None)
+    monkeypatch.setattr(ue, "NSWorkspace", _FakeWorkspace)
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateSystemWide", lambda: "sysw")
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateApplication",
+                        lambda pid: f"app-{pid}")
+
+    app, pid = ue.focused_application()
+    assert (app, pid) == ("app-4242", 4242)
+
+
+def test_no_focused_application_at_all_is_a_pair_of_nones(monkeypatch):
+    from keyhac.platform.mac import uielement as ue
+
+    class _NoFrontApp(_FakeWorkspace):
+        def frontmostApplication(self):
+            return None
+
+    monkeypatch.setattr(ue, "_ax_get", lambda element, attribute: None)
+    monkeypatch.setattr(ue, "NSWorkspace", _NoFrontApp)
+    monkeypatch.setattr(ue.AS, "AXUIElementCreateSystemWide", lambda: "sysw")
+
+    assert ue.focused_application() == (None, None)
+
+
+class _FakeRunningApp:
+    def __init__(self, name):
+        self._name = name
+
+    def localizedName(self):
+        return self._name
+
+
+def test_the_app_name_is_the_name_of_the_process_holding_the_focus(monkeypatch):
+    from keyhac.platform.mac import uielement as ue
+
+    seen = []
+
+    class _Lookup:
+        @staticmethod
+        def runningApplicationWithProcessIdentifier_(pid):
+            seen.append(pid)
+            return _FakeRunningApp("Claude")
+
+    monkeypatch.setattr(ue, "NSRunningApplication", _Lookup)
+
+    assert ue.app_name_of(99) == "Claude"
+    assert seen == [99]
+
+
+def test_a_pid_that_names_no_running_application_is_unnamed_not_borrowed(
+        monkeypatch):
+    """A focused process that is not an application - a helper, or one already
+    gone - has no name a configuration could have been written against.  None
+    matches no `app=` table; borrowing the frontmost application's name would
+    put back the divergence issue #45 removed.
+    """
+    from keyhac.platform.mac import uielement as ue
+
+    class _NoSuchApp:
+        @staticmethod
+        def runningApplicationWithProcessIdentifier_(pid):
+            return None
+
+    monkeypatch.setattr(ue, "NSRunningApplication", _NoSuchApp)
+
+    assert ue.app_name_of(4242) is None
+    assert ue.app_name_of(None) is None

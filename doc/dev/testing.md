@@ -454,7 +454,10 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `AXFocusedUIElement` and `AXFocusedApplication` among its attributes and
   then answers `kAXErrorCannotComplete` (−25204) for both — every read, with
   the messaging timeout raised to two seconds — while the frontmost
-  application answers the same attribute instantly. Both predicates used that
+  application answers the same attribute instantly. (**Which callers it
+  refuses was established later, and it is not everyone** — see the issue #45
+  pass below. This measurement was taken in a probe process, and that is the
+  kind of process it describes.) Both predicates used that
   read as their primary path and fell back to the element's own `AXFocused`,
   which answers `has_focus()`'s question and not `contains_focus()`'s. So
   `has_focus()` stayed right by luck and `contains_focus()` never walked at
@@ -494,6 +497,63 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `from_hwnd` alone, before `set_focus` is even reached. A hung application is
   a hang, not a lie, and section I of the pass runs behind a watchdog because
   a first run took the whole pass down with it.
+- **Which application is in front, measured both ways** (2026-09-13, macOS
+  26.6.2, `tools/mac_focus_pass.py`, three runs / ~900 samples / 12 driven
+  switches and several real ones). Issue #45 reported
+  `keymap.get_active_window()` naming VS Code while the operator was in
+  Claude, and asked whether `MacFocusProvider.get_focus`'s two uncrossed
+  sources — `NSWorkspace.frontmostApplication()` for `app_name`, the
+  system-wide `AXFocusedApplication` for `element` — can name different
+  applications.
+
+  **The precondition nobody had checked was which process the reading was
+  taken in, and it decides the answer.** The system-wide element refuses
+  `AXFocusedApplication` **instantly** (0–1.5 ms, and still instantly with the
+  messaging timeout raised to two seconds) in a process that has never created
+  an `NSApplication`, and answers a process that has. That is the whole
+  difference: `NSApplication.sharedApplication()` alone flips the same read
+  from −25204 to success in the same process. So the a69211f reading above
+  describes bare scripts and pytest runs, not Keyhac — inside Keyhac the
+  primary read *is* taken, the fallback is dormant, and the two sources really
+  were independent. The fallback still has to stay: it is the path every test
+  and every tool takes.
+
+  **No divergence was caught.** In every sample where the AX read succeeded,
+  the two named the same process — across driven switches sampled 150 ms
+  apart, real switches, and a screen lock. Nor was the issue's second
+  observation reproduced: no sample had more than one application claiming
+  `AXFrontmost`.
+
+  **Two ways the AX read fails, and they mean different things.** After the
+  full messaging timeout (~7% of samples on an idle machine) — the read is
+  served by the front application, so a front application busy for longer than
+  the cap cannot answer it. And fast, 11–20 ms, while the focused application
+  is *exiting*: there AX has already let go and `NSWorkspace` has not, so the
+  fallback names a process that can no longer be reached. That transient is
+  the same shape as issue #44's destroyed-element reports, and it is a
+  staleness, not a disagreement: both halves of the `Focus` still name the
+  dying application.
+
+  What changed anyway is the structural half the issue called real regardless:
+  one resolution, `uielement.focused_application()`, shared by `get_focus()`,
+  `focused_element()` and `get_active_window()` — which asked the same
+  question a third time, in the call the issue was reported against. `app_name`
+  is now the name of the process the element belongs to, so the two cannot
+  disagree by construction, which matters because `app_name` is what
+  `define_keytable(app=...)` matches on and the table it selects then acts on
+  `element`. Pinned in `tests/test_mac_focus.py` and `tests/test_mac_uielement.py`.
+
+  Left measured but unchanged: `get_focus`'s **second** read is uncapped. The
+  messaging timeout is set on the system-wide element, which bounds only the
+  read made through it — the application element it hands back carries the
+  system default, so `AXFocusedUIElement` and the whole `_build_path` walk are
+  unbounded on the key dispatch path. Observed at 3–31 ms against healthy
+  applications, so there is nothing to see on an idle machine; against a hung
+  one the existing comment's promise ("a hung app must not stall key
+  dispatch") is not kept. `focused_application()` takes a `timeout` for it and
+  `get_active_window()` passes the cap it already had; `get_focus()` does not,
+  because bounding a read it has never bounded changes what a momentarily slow
+  application produces and wants its own measurement.
 - **The bug the pass caught is in `fill.py`, not in the Windows layer.**
   `_paste` holds the clipboard swapped until `confirm()` answers, precisely
   because restoring as the keystroke goes out races the target's read of the
