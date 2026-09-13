@@ -72,16 +72,6 @@ logger = log.getLogger("MCP")
 #: to keep.
 DEFAULT_MAX_NODES = 400
 
-#: Below this many elements under a web area, the page is not exposed - the
-#: shell is there and the document is not.
-#:
-#: Set from measurement rather than instinct, after two guesses missed. With
-#: content access off on this machine, VS Code's largest web area holds 30
-#: elements and Claude's 14; with it on, Chrome went from 59 elements to 119
-#: for a trivial page, and a real application's page runs to hundreds. So the
-#: gap this sits in is wide, and 40 sits in it with room on both sides.
-EMPTY_WEB_AREA = 40
-
 #: A window with fewer elements than this has nothing in it at all.
 EMPTY_WINDOW = 5
 
@@ -552,24 +542,47 @@ class ToolRegistry:
         nodes = list(tree.walk())
         text = tree.dump()
 
-        # Order matters, and the first case is the one that would otherwise
-        # send a model down a dead end. A Chromium or Electron window with its
-        # content switched off still reports its *web area* - the shell is
-        # there, the document is not - and marks nodes truncated. A model
-        # reading only the truncation note raises max_nodes, gets the identical
-        # tree back, and concludes the application has no accessible UI. The
-        # discriminator is not how small the window is (measured: 43 elements
-        # for all of VS Code) but how little hangs off the web area.
-        hollow = [area for area in nodes
-                  if (area.role or "").endswith("WebArea")
-                  and len(list(area.walk())) < EMPTY_WEB_AREA]
-        if hollow:
-            text += (f"\n\n[this window has a web area with almost nothing in "
-                     f"it, which is what a Chromium or Electron application "
-                     f"(Chrome, Edge, VS Code, Slack, Claude) looks like before "
-                     f"it is asked to expose its content: call "
-                     f"enable_content_access and read it again. Raising "
-                     f"max_nodes will not help.]")
+        # Order matters, and the first two cases are the ones that would
+        # otherwise send a model down a dead end. A Chromium or Electron window
+        # with no document in it is a browser shell whose renderer has built no
+        # accessibility tree, and the two reasons for that need opposite moves:
+        # ask (enable_content_access), or wait (it was asked, and the document
+        # is still coming). Issue #56: one hint covered both and named the
+        # wrong one, which sent a session that had already enabled it looking
+        # for a switch that was on.
+        #
+        # The discriminator is the absence of a web area, not how little hangs
+        # off one. Measured 2026-09-13 on Chrome 153 and VS Code 24.18: a
+        # Chromium application that has not been asked exposes no web area at
+        # all (fresh Chrome on a loaded page, 37 nodes and zero web areas at
+        # any depth; fresh Electron, 13), and so does one mid-navigation. A
+        # *small* web area means the opposite - example.com reads fully in 8
+        # nodes - and the old "fewer than 40 nodes under the web area" test
+        # fired on exactly those: small pages, documents cut off by max_depth
+        # (Claude's 537 nodes read as 20 at depth 14), and the 2-node hidden
+        # web areas Electron applications carry beside the real one.
+        missing_document = None
+        if not any((area.role or "").endswith("WebArea") for area in nodes):
+            asked = self.ui._content_access_state(window)
+            if asked is False:
+                missing_document = (
+                    "[no document in this window, and its application has not "
+                    "been asked for one - this is what a Chromium or Electron "
+                    "application (Chrome, Edge, VS Code, Slack, Claude) looks "
+                    "like before enable_content_access. Call it, then read "
+                    "again; the tree takes a moment to build (measured 2-3s). "
+                    "Raising max_nodes will not help.]")
+            elif asked is True:
+                missing_document = (
+                    "[no document in this window, but its application has "
+                    "already been asked for one - so this is a document that "
+                    "is not there yet, still loading or mid-navigation. Read "
+                    "again in a moment (measured: under a second on a loaded "
+                    "page, as long as the page takes to arrive otherwise). "
+                    "Calling enable_content_access again changes nothing.]")
+
+        if missing_document:
+            text += f"\n\n{missing_document}"
         elif len(nodes) < EMPTY_WINDOW:
             text += (f"\n\n[only {len(nodes)} element(s) - this window exposes "
                      f"essentially nothing. Check list_windows for a better "

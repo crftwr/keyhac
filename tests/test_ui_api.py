@@ -382,6 +382,48 @@ def test_enable_content_access_reaches_the_application(ui):
     assert asked == [True]
 
 
+def test_content_access_state_asks_the_application(ui):
+    """True/False only where the switch applies; None is "do not ask this
+    question of this application" (issue #56)."""
+    api, element = ui
+
+    class AppElement(FakeElement):
+        chromium = True
+        asked = False
+
+        def is_chromium_application(self):
+            return self.chromium
+
+        def get_manual_accessibility(self):
+            return self.asked
+
+    # The platform class answers these on every element it makes; the answers
+    # that count are the application's, which is what the walk goes up to.
+    element.is_chromium_application = lambda: True
+    element.get_manual_accessibility = lambda: True
+    application = AppElement("Application", key="app")
+    element.parent = lambda: application
+    application.parent = lambda: None
+    node = api.node(element)
+
+    assert api._content_access_state(node) is False
+    application.asked = True
+    assert api._content_access_state(node) is True
+    application.chromium = False
+    assert api._content_access_state(node) is None
+
+
+def test_content_access_state_is_none_where_the_platform_has_no_switch(ui):
+    """Windows: the element's class does not answer the question at all, and
+    the answer costs no walk and no dispatch - describe_screen asks this of
+    every window with no web area in it, which there is most of them."""
+    api, element = ui
+    walked = []
+    element.parent = lambda: walked.append(1)
+    assert api._content_access_state(api.node(element)) is None
+    assert walked == [], "the platform was walked to learn it has no switch"
+
+
 def _wired(ui):
     """The api and the list of enable/disable calls that reach the app."""
     api, element = ui

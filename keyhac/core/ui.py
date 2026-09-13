@@ -1057,6 +1057,12 @@ class UI:
         again (discussion #98). Reading, which is what an action does first,
         needs no wait at all.
 
+        **Handing it back is not free on Electron.** Measured 2026-09-13: VS
+        Code drops its document within a second of the flag going off, where
+        Chrome keeps the page it built. Whatever reads that window next - an
+        action, or `describe_screen` - finds a browser shell with nothing in
+        it, and has to ask again and wait.
+
         Nested blocks are counted, so an inner one does not hand back what an
         outer one still needs. Two different applications at once is not
         something this counts - an action works in one at a time.
@@ -1095,8 +1101,12 @@ class UI:
         Args:
             target: A node in the application, or None for the focused one.
                 Any node will do; the request goes to its application.
-            enable: False to give it back, which is polite and measurably
-                works - Chrome returned to 59 nodes.
+            enable: False to give it back. What that does depends on the
+                application - measured 2026-09-13, an Electron one (VS Code)
+                drops its whole document within a second, while Chrome keeps
+                the page it has already built. So on Electron this is a switch
+                the next reader feels, and it will find a window with no
+                document in it.
 
         Returns:
             True when the platform did something.
@@ -1115,6 +1125,36 @@ class UI:
             return True
 
         return bool(self.on_main_thread(apply))
+
+    def _content_access_state(self, target: UINode | None = None) -> bool | None:
+        """Whether an application needs the content switch, and has had it.
+
+        True when it has been asked, False when it needs asking and has not
+        been, None when the question does not apply - a native application, or
+        a platform with no such switch.
+
+        Internal, and deliberately not part of the action API: it exists so a
+        window with no document in it can be described accurately (issue #56),
+        and an action that branched on it instead of acting and checking the
+        postcondition would be reading a flag where it should be reading the
+        screen.
+        """
+        node = target or self.focused()
+        element = getattr(node, "element", None)
+        # Asked of the class, before anything is walked or dispatched: on
+        # Windows there is no such switch, and `describe_screen` reaches here
+        # for every window that has no web area in it - which on Windows is
+        # most of them, since UIA does not use that role at all.
+        if element is None or not hasattr(element, "is_chromium_application"):
+            return None
+
+        def read():
+            application = self._application_of(element)
+            if not application.is_chromium_application():
+                return None
+            return application.get_manual_accessibility()
+
+        return self.on_main_thread(read)
 
     # -- threads --------------------------------------------------------------
 

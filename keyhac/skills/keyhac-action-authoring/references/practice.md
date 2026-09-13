@@ -389,9 +389,12 @@ application's *content* works at all, which means the next unrelated action
 starts working for reasons nobody chose. An action raises far more often than
 it reaches its last line, and the `with` covers every way out.
 
-**It does not wait**, and does not need to: the tree is readable at once, and
-a press only starts working about two seconds later, which a verb's `until=`
-absorbs by retrying. Do not sleep after it.
+**It does not wait**, and does not need to. On an application whose tree is
+already up - which on a running Keyhac is most of them, because focus tracking
+built it - reading works at once and only a *press* starts working about two
+seconds later. On one that has never been asked, the document itself takes
+1.5-3 s to appear (measured 2026-09-13). Either way a verb's `until=` absorbs
+it by retrying. Do not sleep after it.
 
 Most actions need it less than they think. A control drawn by the application
 itself — Chrome's own toolbar and tabs — answers a press unconditionally; it is

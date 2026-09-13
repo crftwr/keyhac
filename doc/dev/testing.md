@@ -913,6 +913,23 @@ found.
   same mistake and moved with it.
 
 
+- **The `describe_screen` content-access hint named the wrong cause** (issue
+  #56), and the pass that settled it needed two applications the machine was
+  not already running. The trick worth keeping: a *throwaway instance* of a
+  Chromium application is the only way to see the "never asked" state, because
+  the switch is per-application and, once built, a Chrome tree does not come
+  back down. `Google Chrome --user-data-dir=<tmp>` gives one directly; VS Code
+  needs `env -u ELECTRON_RUN_AS_NODE` (the integrated terminal exports it, and
+  with it set the app binary parses its arguments as node and rejects them),
+  and a **short** `--user-data-dir` — its IPC socket path has a 103-character
+  limit, which a scratchpad path silently exceeds. Both instances then need
+  closing; a stray one keeps the profile and the window.
+  The measurement itself is in `doc/dev/ai-integration.md` §10; the
+  reproduction that mattered was a local server that withheld a page body for
+  six seconds, which turned a 50 ms race into a state that could be read at
+  leisure.
+
+
 ## The interactive pass before a release
 
 The genuinely-interactive checks were tracked in issue #10 and are all through

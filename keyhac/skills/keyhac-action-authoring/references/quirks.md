@@ -63,7 +63,15 @@ Next.
 
 Chrome, Edge, VS Code, Slack: a loaded page was **59 nodes of browser chrome
 with no document in it**. After `set_manual_accessibility(True)` on the
-application element, 119 nodes with every field addressable. Reversible.
+application element, 119 nodes with every field addressable.
+
+Re-measured 2026-09-13, with two refinements that decide what you can read. An
+application that has not been asked has **no web area at all** - not a nearly
+empty one - so "no document in this window" is the shape to recognise, and the
+document appears 1.5-3 s after the ask, not instantly. And giving the flag back
+is not symmetric: Chrome keeps the page it has already built, while an Electron
+application drops its whole document within a second, which is the next
+reader's problem as much as yours.
 
 Chrome ignores the targeted `AXManualAccessibility` and only answers to
 `AXEnhancedUserInterface`, which is the blunt "an assistive client is present"

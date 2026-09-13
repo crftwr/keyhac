@@ -664,7 +664,9 @@ moved the API:
   Chrome; only the blunt "an assistive client is present" flag moved it, and
   that one has side effects (VS Code switches to screen-reader rendering). So
   it is an explicit `set_manual_accessibility()` call, never implicit in a
-  walk. Both directions verified: turning it back off restored 59 nodes.
+  walk. Turning it back off was recorded here as restoring 59 nodes; that did
+  not reproduce later and the direction is application-dependent — see
+  §10 *The content-access switch*.
 - **Web content puts text one level below where you ask for it.** A `<pre>`'s
   own `AXValue` is empty and the string lives in a child `AXStaticText`, so a
   container read reports nothing for exactly the elements a log or an error
@@ -1084,6 +1086,58 @@ later, same code. Chromium enables renderer accessibility when a UIA client
 attaches and is not finished by the time that client's first read returns.
 Windows therefore needs no equivalent of macOS's `set_manual_accessibility()` —
 it needs a retry, which `wait_for` already is.
+
+### The content-access switch, and the three states of a browser window
+
+Measured 2026-09-13 on Chrome 153.0.8010.36, VS Code 24.18.1 and macOS 26.6.2,
+investigating issue #56 — a session that had already enabled content access was
+told by `describe_screen` that it had not.
+
+- **A Chromium application that has not been asked exposes no web area at all.**
+  Not a hollow one. A Chrome started with a throwaway profile, showing a fully
+  loaded Wikipedia page, was 37 window nodes with zero web areas **at any
+  depth**; a freshly started Electron application, 13. The document appears
+  1.5–2 s after the flag is written (Chrome) or ~3 s (Electron). So the
+  "web area present but nearly empty" shape the first hint was written against
+  does not occur, and the hint could only ever fire on something else.
+- **What it did fire on were three false positives**, each of them a window
+  whose content was entirely readable: a *small page* (example.com is 8 nodes,
+  and calling `enable_content_access` on it changes nothing — measured
+  identical before and after), a document *cut off by `max_depth`* (Claude's
+  537-node document reads as 20 nodes at the default depth of 14, VS Code's
+  1137 as 27), and the *2-node hidden web areas* Electron applications carry
+  beside the real one.
+- **The flag does not drop across a navigation.** Written True it reads True
+  after the navigation, written False it reads False; the readback follows the
+  write exactly. What does happen is that the web area disappears for the
+  duration of the load — 50 ms to 1 s on a normal page, and a full 6 s against
+  a server that deliberately withheld the body. That transient is the whole of
+  the reported symptom: re-calling `enable_content_access` did not fix it, the
+  second of waiting did.
+- **Only `AXEnhancedUserInterface` reads back.** `AXManualAccessibility` reads
+  False on Electron however often it is written, and Chrome does not advertise
+  it at all. Conversely *every* Cocoa application advertises
+  `AXEnhancedUserInterface` — Finder, Preview, iTerm2 — so the flag alone
+  cannot say whether the question applies.
+- **Which is why "is this Chromium?" is asked of the bundle**, not of the
+  tree: both families ship a `*Helper (Renderer).app`, Electron directly under
+  `Contents/Frameworks` and a browser inside its versioned framework. Verified
+  live against Chrome, VS Code and Claude (True) and Finder, Preview, iTerm2,
+  XeFM (False).
+- **Handing the switch back costs Electron its document.** One second after
+  writing False, VS Code's web area was gone; Chrome kept the page it had
+  built. The one-way-door-on-reading note was a Chrome property, not a
+  Chromium one — and `UI.content_access()` hands the flag back at the end of
+  its block, so on Electron the next reader finds an empty shell.
+- **The design note that the key hook builds the tree still holds.** One
+  `MacFocusProvider.get_focus()` on a fresh Electron application took it from
+  12 nodes and no web area to a web area of 80+, with `AXEnhancedUserInterface`
+  still False — reproduced on the same day. Walking the tree alone does not:
+  four walks changed nothing.
+
+`describe_screen` therefore discriminates on *absence of a web area* plus the
+flag, and says "ask" or "wait" accordingly, rather than guessing from how much
+hangs off a web area.
 
 ### Still unmeasured
 
