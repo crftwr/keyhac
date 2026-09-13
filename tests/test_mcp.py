@@ -68,6 +68,9 @@ class FakeUI:
     def __init__(self, node):
         self.node = node
         self.content_access = []
+        #: What _content_access_state answers: True asked, False needs asking,
+        #: None not a Chromium application.
+        self.content_access_state = None
 
     def focused(self):
         return self.node
@@ -81,6 +84,9 @@ class FakeUI:
     def enable_content_access(self, target=None, enable=True):
         self.content_access.append(enable)
         return True
+
+    def _content_access_state(self, target=None):
+        return self.content_access_state
 
 
 class FakeWindow:
@@ -2002,31 +2008,83 @@ def test_the_tools_option_fails_loudly_without_a_daemon(tmp_path, capsys,
     assert "MCP server" in captured.err
 
 
-def test_a_hollow_web_area_points_at_content_access(registry):
-    """The shape a Chromium/Electron window really has with content off: the
-    web area is present, nearly empty, and its nodes are marked truncated. A
-    model reading only the truncation note raises max_nodes, gets the same tree
-    back, and concludes the application has no accessible UI."""
-    web = FakeNode("page")
-    web.role = "AXWebArea"
+def _browser_shell(registry, asked):
+    """A Chromium window with no document in it, and whether it was asked.
+
+    Measured 2026-09-13: this is the real shape of both states - a fresh Chrome
+    on a loaded page is 37 nodes with no web area at any depth, and so is one
+    mid-navigation. There is no hollow web area to find.
+    """
     root = registry.keymap.node
-    root.children = [web]
+    root.children = [FakeNode(f"chrome{i}") for i in range(8)]
     root.truncated = True
-    text = registry.call("describe_screen", {})
+    registry.keymap.ui.content_access_state = asked
+    return registry.call("describe_screen", {})
+
+
+def test_a_browser_shell_that_was_never_asked_points_at_content_access(registry):
+    text = _browser_shell(registry, asked=False)
+    assert "has not been asked" in text
     assert "enable_content_access" in text
     assert "Raising max_nodes will not help" in text
     assert "[truncated:" not in text, "the misleading advice won"
 
 
+def test_a_browser_shell_that_was_asked_says_the_document_is_not_there_yet(registry):
+    """Issue #56: one hint covered both states and named the wrong one, which
+    sent a session that had already enabled content access looking for a switch
+    that was on. The move here is to wait, not to ask again."""
+    text = _browser_shell(registry, asked=True)
+    assert "already been asked" in text
+    assert "Read again in a moment" in text
+    assert "Calling enable_content_access again changes nothing" in text
+
+
 def test_a_populated_web_area_does_not(registry):
     """A loaded page must not be told to enable what is already enabled."""
-    from keyhac.mcp.tools import EMPTY_WEB_AREA
-
-    web = FakeNode("page", children=[FakeNode(f"n{i}")
-                                     for i in range(EMPTY_WEB_AREA + 1)])
+    web = FakeNode("page", children=[FakeNode(f"n{i}") for i in range(50)])
     web.role = "AXWebArea"
     registry.keymap.node.children = [web]
+    registry.keymap.ui.content_access_state = True
     assert "enable_content_access" not in registry.call("describe_screen", {})
+
+
+def test_a_small_page_is_not_mistaken_for_an_unexposed_one(registry):
+    """example.com reads fully in 8 nodes (measured 2026-09-13), and the old
+    "fewer than 40 nodes under the web area" test called that unexposed - so
+    the hint fired forever on a page that was entirely readable, and calling
+    enable_content_access changed nothing."""
+    web = FakeNode("Example Domain",
+                   children=[FakeNode(f"n{i}") for i in range(7)])
+    web.role = "AXWebArea"
+    registry.keymap.node.children = [web]
+    registry.keymap.ui.content_access_state = True
+    assert "enable_content_access" not in registry.call("describe_screen", {})
+
+
+def test_a_document_cut_off_by_max_depth_is_not_mistaken_for_an_empty_one(registry):
+    """Claude's 537-node document reads as 20 nodes at the default depth of 14
+    (measured 2026-09-13). The cut is what the truncation note is for."""
+    web = FakeNode("app", children=[FakeNode(f"cut{i}") for i in range(6)])
+    web.role = "AXWebArea"
+    web.children[0].truncated = True
+    registry.keymap.node.children = [web]
+    registry.keymap.ui.content_access_state = True
+    text = registry.call("describe_screen", {})
+    assert "enable_content_access" not in text
+    assert "[truncated:" in text
+
+
+def test_a_native_window_with_no_document_says_nothing_about_content_access(registry):
+    """Preview has no web area and never will; None is the platform saying the
+    question does not apply."""
+    root = registry.keymap.node
+    root.children = [FakeNode(f"child{i}") for i in range(8)]
+    root.truncated = True
+    registry.keymap.ui.content_access_state = None
+    text = registry.call("describe_screen", {})
+    assert "enable_content_access" not in text
+    assert "[truncated:" in text
 
 
 def test_a_native_window_keeps_the_truncation_note(registry):

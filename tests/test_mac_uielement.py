@@ -300,3 +300,45 @@ def test_a_pid_that_names_no_running_application_is_unnamed_not_borrowed(
 
     assert ue.app_name_of(4242) is None
     assert ue.app_name_of(None) is None
+
+
+# -- the content-access switch, read rather than written (issue #56) ---------
+
+def test_a_chromium_bundle_is_recognised_by_its_renderer_helper(tmp_path):
+    """Asked of the bundle because the accessibility tree cannot answer: an
+    application that has not been asked exposes no web area, which is the same
+    shape a native window has.  Both families ship a renderer helper - Electron
+    directly under Frameworks, a Chromium browser inside its framework."""
+    from keyhac.platform.mac.uielement import _ships_a_renderer
+
+    electron = tmp_path / "Electron.app/Contents/Frameworks"
+    (electron / "App Helper (Renderer).app").mkdir(parents=True)
+    browser = tmp_path / "Browser.app/Contents/Frameworks"
+    (browser / "Browser Framework.framework/Versions/153/Helpers/"
+               "Browser Helper (Renderer).app").mkdir(parents=True)
+    native = tmp_path / "Native.app/Contents/Frameworks"
+    (native / "SomethingFramework.framework").mkdir(parents=True)
+
+    assert _ships_a_renderer(str(tmp_path / "Electron.app")) is True
+    assert _ships_a_renderer(str(tmp_path / "Browser.app")) is True
+    assert _ships_a_renderer(str(tmp_path / "Native.app")) is False
+    assert _ships_a_renderer(str(tmp_path / "Gone.app")) is False
+
+
+def test_the_switch_reads_back_on_a_live_application():
+    """Live: the value the flag reports is the value that was written, which is
+    what lets describe_screen tell "not asked" from "asked, and the document is
+    not there yet".  Read on Finder, which has the attribute like every Cocoa
+    application and no content behind it, so nothing is disturbed."""
+    import ApplicationServices as AS
+    from keyhac.platform.mac.uielement import UIElement
+
+    for name, pid in UIElement.get_running_applications():
+        if name == "Finder":
+            break
+    else:
+        pytest.skip("Finder is not running")
+
+    app = UIElement(AS.AXUIElementCreateApplication(pid))
+    assert app.get_manual_accessibility() in (True, False)
+    assert app.is_chromium_application() is False

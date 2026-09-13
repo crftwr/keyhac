@@ -1,6 +1,10 @@
 """UIElement - macOS Accessibility automation for configs (port of
 keyhac-mac's KeyhacCore_UIElement, in PyObjC). Exposed as Focus.native."""
 
+import functools
+import glob
+import os
+
 import ApplicationServices as AS
 import Quartz
 from AppKit import NSRunningApplication, NSWorkspace
@@ -50,6 +54,22 @@ def _pid_of(element):
     except Exception:
         return None
     return int(pid) if err == 0 else None
+
+
+@functools.lru_cache(maxsize=64)
+def _ships_a_renderer(bundle_path: str) -> bool:
+    """Whether an application bundle carries a Chromium renderer helper.
+
+    Cached per bundle: this is a filesystem walk, and `describe_screen` asks it
+    of whatever window is in front.  Bundles do not change while they run.
+    """
+    frameworks = os.path.join(bundle_path, "Contents", "Frameworks")
+    return bool(
+        # Electron keeps the helper directly under Frameworks ...
+        glob.glob(os.path.join(frameworks, "*Helper (Renderer).app"))
+        # ... a Chromium browser inside its versioned framework.
+        or glob.glob(os.path.join(frameworks, "*.framework", "Versions", "*",
+                                  "Helpers", "*Helper (Renderer).app")))
 
 
 def app_name_of(pid) -> str | None:
@@ -738,13 +758,28 @@ class UIElement:
         screen-reader-optimised rendering.  So this is an explicit call and
         never something a walk does on its own.
 
-        **Switching it off does not put the tree back.**  Measured again on
-        2026-08-31: six minutes after `set_manual_accessibility(False)` Chrome
-        was still exposing the page, and an earlier note here that it returned
-        to 59 nodes did not reproduce.  What the flag does reverse is whether
-        a *press* into that content is live - on VS Code, eight presses with
-        it unset moved nothing and four with it set all worked - so this is a
-        switch on acting, and close to a one-way door on reading.
+        **Switching it off does not put the tree back - in Chrome.**  Measured
+        again on 2026-08-31: six minutes after `set_manual_accessibility(False)`
+        Chrome was still exposing the page, and an earlier note here that it
+        returned to 59 nodes did not reproduce.  What the flag does reverse
+        there is whether a *press* into that content is live - on VS Code,
+        eight presses with it unset moved nothing and four with it set all
+        worked - so for a browser this is a switch on acting, and close to a
+        one-way door on reading.
+
+        **Electron does put it back.**  Measured 2026-09-13 on a VS Code
+        started with a throwaway profile, so the switch had never been touched:
+        13 nodes and no web area; unchanged after four walks and a focus read;
+        the document appeared 3 seconds after writing True; and one second
+        after writing False the web area was gone again.  So the one-way door
+        is a Chrome property, not a Chromium one, and on Electron a hand-back
+        costs the next reader the whole document.
+
+        **Only `AXEnhancedUserInterface` reads back.**  Same run: a write to it
+        is reflected exactly, on Chrome and on Electron, while
+        `AXManualAccessibility` still read False on VS Code however often it
+        was written - and Chrome does not advertise it at all.  That is why
+        `get_manual_accessibility()` reads only the one.
 
         **The tree is not built by this alone.**  A freshly started Electron
         application exposes 13 nodes and no web area, and stays there however
@@ -768,6 +803,58 @@ class UIElement:
                 # Not every app advertises both; setting an absent one is a
                 # no-op error, not a reason to skip the other.
                 pass
+
+    def get_manual_accessibility(self) -> bool | None:
+        """Whether this application has been asked to expose its content.
+
+        Call on an *application* element.  Only `AXEnhancedUserInterface`
+        answers: measured 2026-09-13, a write to it reads back exactly on both
+        Chrome and an Electron application, while `AXManualAccessibility` still
+        reads False on Electron however often it is written, and Chrome does
+        not have the attribute at all.
+
+        A False here is not on its own "needs asking" - every Cocoa
+        application advertises the attribute, so a native one that was never
+        going to build a web tree reads False too.  `is_chromium_application()`
+        is the half that says whether the question applies.
+
+        Returns:
+            What the application reports, or None when the attribute cannot be
+            read at all.
+        """
+        err, value = AS.AXUIElementCopyAttributeValue(
+            self._ref, "AXEnhancedUserInterface", None)
+        return bool(value) if err == 0 else None
+
+    def is_chromium_application(self) -> bool:
+        """Whether this application's content lives in a Chromium renderer.
+
+        Asked of the bundle rather than of the accessibility tree, because the
+        tree is exactly what is missing when the question matters.  A Chromium
+        application that has not been asked exposes **no web area at all** -
+        measured 2026-09-13, a fresh Chrome showing a loaded Wikipedia page was
+        37 nodes with zero web areas at any depth, and a fresh Electron
+        application 13 - which by shape is indistinguishable from a native
+        window that simply has no web content.
+
+        AX cannot answer it either: every Cocoa application advertises
+        `AXEnhancedUserInterface`, and `AXManualAccessibility` is advertised by
+        Electron but not by Chrome, so asking the tree would miss the browsers
+        the question is mostly about.
+
+        What both families do have is a separate renderer process, whose helper
+        bundle names them - Chromium browsers keep it inside their versioned
+        framework, Electron beside it.
+
+        Returns:
+            True for Chrome, Edge, Brave, VS Code, Slack, Claude and the rest;
+            False for a native application, and for anything whose bundle
+            cannot be found.
+        """
+        app = NSRunningApplication.runningApplicationWithProcessIdentifier_(
+            _pid_of(self._ref))
+        url = app.bundleURL() if app else None
+        return _ships_a_renderer(str(url.path())) if url else False
 
     def get_action_names(self) -> list[str]:
         err, names = AS.AXUIElementCopyActionNames(self._ref, None)

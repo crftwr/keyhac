@@ -278,6 +278,8 @@ with self.ui.content_access():
 
 **It does not wait for the application to act on it.** Measured on VS Code: the write is accepted at once and the tree is readable at once, but a *press* only starts working about two seconds later. Waiting here would put that stall in front of every action, to buy what a verified retry gets for nothing - act, check the postcondition, act again (discussion #98). Reading, which is what an action does first, needs no wait at all. 
 
+**Handing it back is not free on Electron.** Measured 2026-09-13: VS Code drops its document within a second of the flag going off, where Chrome keeps the page it built. Whatever reads that window next - an action, or `describe_screen` - finds a browser shell with nothing in it, and has to ask again and wait. 
+
 Nested blocks are counted, so an inner one does not hand back what an outer one still needs. Two different applications at once is not something this counts - an action works in one at a time. 
 
 
@@ -311,7 +313,7 @@ Ask a Chromium or Electron application to expose its content.
 **Args:**
  
  - <b>`target`</b>:  A node in the application, or None for the focused one.  Any node will do; the request goes to its application. 
- - <b>`enable`</b>:  False to give it back, which is polite and measurably  works - Chrome returned to 59 nodes. 
+ - <b>`enable`</b>:  False to give it back. What that does depends on the  application - measured 2026-09-13, an Electron one (VS Code)  drops its whole document within a second, while Chrome keeps  the page it has already built. So on Electron this is a switch  the next reader feels, and it will find a window with no  document in it. 
 
 
 
