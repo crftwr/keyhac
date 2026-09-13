@@ -406,6 +406,51 @@ class TestFocusSwitching:
         assert e.sent_names()[:2] == ["D-A", "U-A"]
 
 
+class TestFocusChangeKey:
+    """What makes the engine re-merge the key tables (issue #144).
+
+    The trigger used to be `focus.path` alone, and the path is None whenever
+    the focused control cannot be read - which is how an application busy past
+    the AX messaging timeout answers.
+    """
+
+    def _configure(self, keymap):
+        kt_a = keymap.define_keytable(app="alpha")
+        kt_a["F1"] = "A"
+        kt_b = keymap.define_keytable(app="beta")
+        kt_b["F1"] = "B"
+
+    def test_the_app_changing_re_merges_even_with_no_readable_path(self, engine):
+        """Two applications whose focus cannot be read used to look identical
+        to the trigger, so the first one's tables stayed active in the second.
+        """
+        e = engine(self._configure)
+
+        e.focus_provider.focus = Focus(app_name="alpha", pid=1)
+        e.stroke("F1")
+        assert e.sent_names() == ["D-A", "U-A"]
+
+        e.focus_provider.focus = Focus(app_name="beta", pid=2)
+        e.stroke("F1")
+        assert e.sent_names()[-2:] == ["D-B", "U-B"]
+
+    def test_an_unchanged_focus_does_not_re_merge(self, engine):
+        """The whole point of a key: typing into one place must not rebuild
+        the table on every key event."""
+        e = engine(self._configure)
+        e.focus_provider.focus = Focus(app_name="alpha", pid=1,
+                                       window_title="w", path="/alpha/w")
+        e.stroke("F1")
+
+        merges = []
+        original = e.keymap._update_unified_keytable
+        e.keymap._update_unified_keytable = lambda: (merges.append(1), original())
+
+        e.stroke("F1")
+        e.stroke("F1")
+        assert merges == []
+
+
 class TestWindowsPlatform:
 
     def test_class_name_condition(self, engine):
