@@ -544,7 +544,9 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   Documented in [configuration.md](../configuration.md#key-tables),
   `define_keytable()`'s docstring and `platform/win/focus.py`'s. An action
   that needs the element as it is *now* still calls `get_focused_element()`,
-  which pays the 1.6–3.5 ms once, deliberately.
+  which pays the 1.6–3.5 ms once, deliberately. What a revisit would change is
+  the *detector* rather than the call — a pushed focus event asks nobody
+  anything, on either OS — which is issue #150.
 - **Which application is in front, measured both ways** (2026-09-13, macOS
   26.6.2, `tools/mac_focus_pass.py`, three runs / ~900 samples / 12 driven
   switches and several real ones). Issue #45 reported

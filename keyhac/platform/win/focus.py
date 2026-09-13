@@ -58,6 +58,8 @@ So ``focus_path_pattern=`` is **best-effort on Windows** - re-read when the
 window, the focused child window or the title changes, and not when focus
 moves inside one window.  An action that needs the element as it is *now*
 calls ``get_focused_element()``, which pays that cost once, deliberately.
+What would change this is not a cheaper call but a pushed one - a focus-change
+event rather than a poll, which asks nobody anything (issue #150).
 
 STATUS: run on Windows - app/title/class_name and the UIA path are verified
 against Win32 ground truth for the same window.
