@@ -662,6 +662,15 @@ class Keymap:
             app, title and class_name patterns are case-insensitive, take
             fnmatch wildcards (*, ?, []) and "|" alternation, and all the
             conditions given must match.
+
+            On Windows, focus_path_pattern is best-effort: the path is
+            re-read when the window, the focused child window or the title
+            changes, so focus moving *inside* one window - an item in a list,
+            a tab, anything on a Chromium / Electron / WPF / WinUI page -
+            does not re-evaluate it. Reading it on every key event was
+            measured at 1.6-3.5 ms against a responsive application and
+            unbounded against a hung one, which the key path cannot spend.
+            app, title and class_name are exact.
         """
         if class_name is not None and self.platform == "mac":
             logger.warning("class_name= is Windows-only; this key table never activates on macOS.")

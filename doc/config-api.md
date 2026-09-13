@@ -156,6 +156,7 @@ With no condition the table is not added to the keymap: assign it to a key to ma
 **Note:**
 
 > app, title and class_name patterns are case-insensitive, take fnmatch wildcards (*, ?, []) and "|" alternation, and all the conditions given must match. 
+>On Windows, focus_path_pattern is best-effort: the path is re-read when the window, the focused child window or the title changes, so focus moving *inside* one window - an item in a list, a tab, anything on a Chromium / Electron / WPF / WinUI page - does not re-evaluate it. Reading it on every key event was measured at 1.6-3.5 ms against a responsive application and unbounded against a hung one, which the key path cannot spend. app, title and class_name are exact. 
 
 ---
 
@@ -536,6 +537,8 @@ Condition deciding whether a key table is active for the current focus.
 ``keymap.define_keytable()`` builds one from the focus arguments it is given, so configurations do not normally construct it themselves. 
 
 All specified conditions must match (AND).  Within `app`/`title`/ `class_name` patterns, "|" separates alternatives (OR) and fnmatch wildcards (*, ?, []) are available. 
+
+`app`, `title` and `class_name` are exact.  `focus_path_pattern` is exact on macOS and best-effort on Windows, where focus moving inside one window does not re-evaluate it - see `define_keytable()`. 
 
 ### <kbd>method</kbd> `FocusCondition.__init__`
 

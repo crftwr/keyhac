@@ -62,6 +62,10 @@ class FocusCondition:
     All specified conditions must match (AND).  Within `app`/`title`/
     `class_name` patterns, "|" separates alternatives (OR) and fnmatch
     wildcards (*, ?, []) are available.
+
+    `app`, `title` and `class_name` are exact.  `focus_path_pattern` is
+    exact on macOS and best-effort on Windows, where focus moving inside one
+    window does not re-evaluate it - see `define_keytable()`.
     """
 
     def __init__(self,
