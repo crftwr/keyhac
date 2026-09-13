@@ -102,6 +102,42 @@ AX_MESSAGING_TIMEOUT = 0.1
 DRIVE_LIFETIME = 2.5
 DRIVE_GAP = 2.0
 
+#: The same throwaway application, scripted: it focuses one field, moves the
+#: focus to a second one, then renames its window - the three things the
+#: cheap probe in `MacFocusProvider.get_focus` is made of, one at a time, with
+#: nothing else moving.  `--verify-probe` watches which of them invalidate it.
+CHILD_PROBE_SOURCE = """
+import sys
+from AppKit import (NSApplication, NSApplicationActivationPolicyRegular,
+                    NSBackingStoreBuffered, NSMakeRect, NSTextField, NSWindow)
+from Foundation import NSDate, NSRunLoop
+
+app = NSApplication.sharedApplication()
+app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+app.finishLaunching()
+
+window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+    NSMakeRect(240, 240, 340, 160), 1 << 0, NSBackingStoreBuffered, False)
+window.setTitle_("probe one")
+first = NSTextField.alloc().initWithFrame_(NSMakeRect(20, 90, 300, 24))
+second = NSTextField.alloc().initWithFrame_(NSMakeRect(20, 40, 300, 24))
+window.contentView().addSubview_(first)
+window.contentView().addSubview_(second)
+window.makeKeyAndOrderFront_(None)
+window.makeFirstResponder_(first)
+app.activateIgnoringOtherApps_(True)
+
+def wait(seconds):
+    NSRunLoop.currentRunLoop().runUntilDate_(
+        NSDate.dateWithTimeIntervalSinceNow_(seconds))
+
+wait(2.0)
+window.makeFirstResponder_(second)   # same app, same window, same title
+wait(2.0)
+window.setTitle_("probe two")        # same app, same focused control
+wait(2.0)
+"""
+
 #: A throwaway application, spawned as a child process so that --drive can
 #: produce real application switches without touching anything the operator
 #: has open - win_focus_pass.py's rule on the other platform.  It is a
@@ -383,6 +419,62 @@ class Pass:
                   f"{self.multi_frontmost} of {self.changes} transitions.")
 
 
+def verify_probe(seconds: float = 8.0, interval: float = 0.1):
+    """Watch the cheap probe decide, against a script that moves one component
+    at a time (issue #144).
+
+    The check is object identity: `get_focus()` answers out of its cache while
+    the probe holds, so a *new* `Focus` object is exactly the statement "the
+    probe said something moved".  Four changes are expected - the throwaway
+    application arriving, the focus moving between its two fields, its window
+    being renamed, and it quitting - and nothing in between.
+    """
+    from keyhac.platform.mac.focus import MacFocusProvider
+
+    provider = MacFocusProvider()
+    print("Watching the probe.  A throwaway application takes the focus for "
+          "six seconds.\n")
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", CHILD_PROBE_SOURCE],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={**os.environ, "PYTHONWARNINGS": "ignore"})
+
+    start = time.monotonic()
+    previous = object()
+    changes = 0
+    samples = 0
+    try:
+        while time.monotonic() - start < seconds:
+            focus = provider.get_focus()
+            samples += 1
+            if focus is not previous:
+                changes += 1
+                previous = focus
+                elapsed = time.monotonic() - start
+                if focus is None:
+                    print(f"[{elapsed:5.1f}s] new Focus - None")
+                else:
+                    leaf = (focus.path or "").rsplit("/", 1)[-1]
+                    # The element's own identity, so the row where *only* it
+                    # changed is legible: two AXTextField() lines that differ
+                    # nowhere else are the case a Windows probe cannot see.
+                    ref = focus.element._ref if focus.element is not None else None
+                    ident = f"#{AS.CFHash(ref) % 100000:05d}" if ref is not None else ""
+                    print(f"[{elapsed:5.1f}s] new Focus - app={focus.app_name!r} "
+                          f"title={focus.window_title!r} focus={leaf}{ident}")
+            NSRunLoop.currentRunLoop().runUntilDate_(
+                NSDate.dateWithTimeIntervalSinceNow_(interval))
+    finally:
+        if child.poll() is None:
+            child.terminate()
+
+    print(f"\n{samples} calls, {changes} of them rebuilt the Focus.")
+    print("Expected: the application arriving, the focus moving between its "
+          "two fields,\nits window being renamed, and it quitting - and the "
+          "same object in between.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Measure whether NSWorkspace and the Accessibility API "
@@ -391,6 +483,9 @@ def main():
                         help="how long to sample for (default 60)")
     parser.add_argument("--interval", type=float, default=0.2,
                         help="seconds between samples (default 0.2)")
+    parser.add_argument("--verify-probe", action="store_true",
+                        help="watch the cheap probe decide against a scripted "
+                             "throwaway application (issue #144)")
     parser.add_argument("--drive", action="store_true",
                         help="produce the switches too, with a throwaway "
                              "application of this pass's own, so the run is "
@@ -406,6 +501,10 @@ def main():
     if not AS.AXIsProcessTrusted():
         sys.exit("This process does not hold the Accessibility permission - "
                  "grant it to the terminal (or IDE) running this, and rerun.")
+
+    if args.verify_probe:
+        verify_probe()
+        return
 
     Pass().run(args.seconds, args.interval, args.drive)
 

@@ -543,6 +543,67 @@ macOS 15 on this machine). Highlights and the bugs the passes caught:
   `define_keytable(app=...)` matches on and the table it selects then acts on
   `element`. Pinned in `tests/test_mac_focus.py` and `tests/test_mac_uielement.py`.
 
+- **The macOS cheap tier** (2026-09-13, macOS 26.6.2, issue #144). Every key
+  event rebuilt the focus path from scratch: 83 AX reads per `get_focus()`
+  against VS Code, 81 of them `_build_path`'s AXParent walk, and
+  `_check_focus_change` runs on key down *and* key up — **166 round trips per
+  keystroke**, with no early-out for modifier keys, unbound keys, pass-through
+  keys, or a configuration with no key tables at all. Verified identical on
+  both sides of #45 (HEAD `420df99` and its working tree), so the structure
+  predated that change rather than arriving with it.
+
+  The milliseconds were never the argument — warm, that is ~2.5 ms. Every one
+  of those reads is answered by the **focused application's** main thread
+  inside the event tap callback, which is why `hook.py` carries
+  `kCGEventTapDisabledByTimeout` handling and a once-per-second re-enable.
+  `tools/mac_focus_pass.py` caught `AXFocusedApplication` alone hitting the
+  full 100 ms messaging timeout in ~7% of samples with a Python application in
+  front.
+
+  Windows has had the answer since it was written — `win/focus.py`'s probe,
+  two HWNDs and a title, all local Win32 (`GetWindowTextW` does not message
+  another process, so the tier cannot be stalled by a hung application). macOS
+  never got the layer. It has one now: `(frontmost pid, AXFocusedUIElement
+  ref, window title)`, four reads, compared with `CFEqual` for the element.
+
+  **Measured after:** 85 reads on a miss, **4 on a hit**, 8 per keystroke
+  against 166, median `get_focus()` 2.492 ms → **0.141 ms**.
+
+  **Verified live, one probe component at a time**
+  (`make mac-focus-pass ARGS=--verify-probe`, which scripts a throwaway
+  application so the run needs nobody at the keyboard):
+
+  ```
+  [  0.4s] new Focus - app='Python' title='probe one' focus=AXTextField()#80007
+  [  2.3s] new Focus - app='Python' title='probe one' focus=AXTextField()#80039
+  [  4.3s] new Focus - app='Python' title='probe two' focus=AXTextField()#80039
+  ```
+
+  The second row is the same application and the same window title with only
+  the focused element changed — the case `GUITHREADINFO.hwndFocus` cannot see,
+  so this probe is the more accurate of the two, not a weaker port (#145). The
+  third is the same element with only the title changed, which is what `title=`
+  matches on. 78 calls, 5 rebuilds: 94% answered from the cache.
+
+  The title is read **only to compare** and never reaches the `Focus`:
+  `window_title` still comes out of the path walk, transliterated through
+  `FOCUS_PATH_TRANS_TABLE`, because every `title=` pattern is written against
+  that spelling and a raw title used as a value would break each one
+  containing a bracket. What the probe still cannot see is an *ancestor's*
+  title moving under a `focus_path_pattern` while the element and window title
+  both stay put — narrower than the gap Windows has shipped with.
+
+  **The same issue's other half was a staleness bug, not a cost.** The engine
+  re-merged the key tables only when `focus.path` changed, and the path is None
+  whenever the focused control cannot be read — which is exactly how an
+  application busy past the messaging timeout answers. Moving between two such
+  applications left the key unchanged at None and the first one's `app=` tables
+  active in the second. The trigger is now every field a `FocusCondition`
+  reads. `custom_condition_func` is not in it and cannot be: it receives the
+  whole `Focus` and may read anything, so it keeps what it has always had —
+  re-evaluation when the key moves. Pinned in `tests/test_keymap.py` and
+  `tests/test_mac_focus.py`.
+
   Left measured but unchanged: `get_focus`'s **second** read is uncapped. The
   messaging timeout is set on the system-wide element, which bounds only the
   read made through it — the application element it hands back carries the

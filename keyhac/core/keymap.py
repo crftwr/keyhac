@@ -222,6 +222,7 @@ class Keymap:
         self._vk_mod_map = {}               # vk -> modifier bit
         self._vk_vk_map = {}                # replace_key map
         self._focus_path = None
+        self._focus_key = None              # see _check_focus_change
         self._focus = None                  # Focus snapshot
         self._modifier = 0                  # tracked modifier state
         self._last_keydown = None           # for one-shot detection
@@ -274,6 +275,7 @@ class Keymap:
             self._unified_keytable = {}
             self._vk_vk_map = {}
             self._focus_path = None
+            self._focus_key = None
             self._focus = None
             self._modifier = 0
             self.editor = ""
@@ -1104,15 +1106,40 @@ class Keymap:
     # Focus / key table selection
 
     def _check_focus_change(self):
+        """Re-merge the key tables when the focus moved somewhere a condition
+        could read differently.
+
+        **Keyed on every field a FocusCondition reads, not on the path alone.**
+        The path used to be the whole key, which is wrong twice. It is None
+        whenever the focused control cannot be read, so moving between two
+        applications that both refuse to answer left the key unchanged at None
+        and the first application's ``app=`` tables active in the second; and a
+        table with no conditions at all could never be applied while the very
+        first focus was one of those. Neither is exotic - an application busy
+        past the AX messaging timeout refuses exactly that way (issue #144).
+
+        `custom_condition_func` is not in the key and cannot be: it receives
+        the whole Focus and may read anything, including state that is not in
+        it. It is re-evaluated when the key moves, which is what it has always
+        got.
+        """
         focus = self._focus_provider.get_focus()
         self._focus = focus
-        new_focus_path = focus.path if focus else None
 
+        key = None if focus is None else (focus.app_name, focus.pid,
+                                          focus.window_title, focus.class_name,
+                                          focus.path)
+        if key == self._focus_key:
+            return
+        self._focus_key = key
+
+        new_focus_path = focus.path if focus else None
         if self._focus_path != new_focus_path:
             logger.debug(f"Focus path: {new_focus_path}")
             log.Console.get_instance().set_text("focusPath", new_focus_path or "")
             self._focus_path = new_focus_path
-            self._update_unified_keytable()
+
+        self._update_unified_keytable()
 
     def effective_keytable(self) -> dict:
         """The bindings in effect right now, as `{KeyCondition: action}`.
