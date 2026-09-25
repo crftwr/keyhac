@@ -1,9 +1,13 @@
 """Balloon tooltips, drawn as screen marks.
 
 Restores keyhac-win's popBalloon/closeBalloon (multi-stroke help, macro
-status).  Placement: under the caret when one can be read and believed
-(`keyhac.core.anchor`), and otherwise the top-right of the main screen's
-work area - which is where a balloon with nothing to point at belongs.
+status).  Placement is keyhac-win's too, and it lives in `pop` for the same
+reason it was never a parameter there: a balloon answers a keystroke, so it
+belongs where the keystroke was typed.  Under the caret when one can be read
+and believed (`keyhac.core.anchor`), then under the focused control, then on
+the focused window's title bar, and with none of those the top-right of the
+main screen's work area - which is where a balloon with nothing to point at
+belongs.
 
 **A balloon is a mark, not a window.**  It used to be a frameless topmost
 non-activating window with a `Label` in it, which is five window-style fields
@@ -40,19 +44,19 @@ _STYLE = Style(fg=(28, 28, 30), bg=(250, 240, 170))
 _RADIUS = 6.0
 
 
-def multi_stroke_help(balloon: "BalloonManager", keymap):
-    """The callback `main()` hands to `keymap.on_enter_multi_stroke`.
+def focus_anchor(keymap):
+    """What a balloon should be placed against: `(near, over)`.
 
-    A function rather than a lambda in the bootstrap because of what it
-    reads, and that is a claim worth a test that a lambda inside `main()`
-    cannot have.
+    Both `None` means there is nowhere to point at and the corner is what is
+    left.  `near` is small and means *sit under this*; `over` is a whole
+    window frame and means *centre on its top edge*.
 
     **Where the focus is now, not where the keystroke found it.**
     `keymap.focus` looked like the free answer - it is refreshed at the top
-    of `_on_key_down`, so it belongs to the very key that armed the prefix,
-    and reading it keeps a second focus lookup off the hook's clock. On
-    macOS it is also *true*: that provider reads `AXFocusedUIElement` fresh
-    every time. On Windows it is a cache keyed on the foreground window, the
+    of `_on_key_down`, so it belongs to the very key that armed a prefix, and
+    reading it keeps a second focus lookup off the hook's clock. On macOS it
+    is also *true*: that provider reads `AXFocusedUIElement` fresh every
+    time. On Windows it is a cache keyed on the foreground window, the
     focused child window and the title, because a full UIA walk measured
     33 ms and cannot run on every key - and none of those three change when
     the focus moves *inside* a window. In a Chromium or Electron window they
@@ -63,7 +67,7 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     snapshot for the same reason.
 
     So the provider is asked, at 2.1 ms measured against a cross-process
-    Edit - once when a prefix is armed, not once per keystroke, against a
+    Edit - once when a balloon opens, not once per keystroke, against a
     300 ms hook deadline. The snapshot stays as the fall-back: asking can
     answer nothing where the snapshot still holds the window or the
     application, which is a place when the fresh read is not.
@@ -81,25 +85,41 @@ def multi_stroke_help(balloon: "BalloonManager", keymap):
     monitor. The corner is left for having no window either.
 
     Args:
+        keymap: the Keymap whose focus the caret is read from, or None.
+
+    Returns:
+        A `(near, over)` pair of screen rects, either or both None.
+    """
+    if keymap is None:
+        return None, None
+    from keyhac.core.anchor import popup_anchor
+    element = _focused_element_now(keymap)
+    if element is None:
+        element = getattr(getattr(keymap, "focus", None), "element", None)
+    found = popup_anchor(element, _focused_window_rect(keymap))
+    if found is None:
+        return None, None
+    if found[1] == "window":
+        return None, found[0]
+    return found[0], None
+
+
+def multi_stroke_help(balloon: "BalloonManager"):
+    """The callback `main()` hands to `keymap.on_enter_multi_stroke`.
+
+    A function rather than a lambda in the bootstrap because of the text it
+    composes, and that is a claim worth a test that a lambda inside `main()`
+    cannot have.  Where the balloon opens is `pop`'s own business - the same
+    chain every balloon gets, a config's included (issue #152).
+
+    Args:
         balloon: the BalloonManager to pop on.
-        keymap: the Keymap whose focus the caret is read from.
 
     Returns:
         A `callable(name)` for `on_enter_multi_stroke`.
     """
     def show(name):
-        from keyhac.core.anchor import popup_anchor
-        element = _focused_element_now(keymap)
-        if element is None:
-            element = getattr(keymap.focus, "element", None)
-        found = popup_anchor(element, _focused_window_rect(keymap))
-        text = f"Multi-stroke: {name or '...'}"
-        if found is None:
-            balloon.pop("MultiStroke", text)
-        elif found[1] == "window":
-            balloon.pop("MultiStroke", text, over=found[0])
-        else:
-            balloon.pop("MultiStroke", text, near=found[0])
+        balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}")
 
     return show
 
@@ -108,11 +128,11 @@ def _focused_element_now(keymap):
     """The focused element as the platform reports it this instant, or None.
 
     The same question `keymap.ui.focused()` asks, and for the same reason -
-    see this module's `multi_stroke_help`. None where the provider would
-    rather say nothing than hand back a window or an application pretending
-    to be the focus (issue #44), which is why the caller keeps the snapshot
-    behind it, and None too when the read raises: a balloon that fails to
-    open is worse than one in a corner.
+    see this module's `focus_anchor`. None where the provider would rather
+    say nothing than hand back a window or an application pretending to be
+    the focus (issue #44), which is why the caller keeps the snapshot behind
+    it, and None too when the read raises: a balloon that fails to open is
+    worse than one in a corner.
     """
     provider = getattr(keymap, "_focus_provider", None)
     ask = getattr(provider, "get_focused_element", None)
@@ -128,7 +148,7 @@ def _focused_element_now(keymap):
 def _focused_window_rect(keymap):
     """The focused window's frame, or None.
 
-    On the key hook's clock, like the rest of this callback - and affordable
+    On the key hook's clock, like the rest of this placement - and affordable
     for the same reason the chooser's own centring is: it asks the window
     provider the same question from inside the hook callback, and has since
     issue #4.
@@ -145,25 +165,46 @@ def _focused_window_rect(keymap):
 
 class BalloonManager:
 
-    def __init__(self, backend):
+    def __init__(self, backend, keymap=None):
         self._backend = backend
+        self._keymap = keymap
         self._balloons = {}  # name -> ScreenMarker
 
     def pop(self, name: str, text: str, timeout: float = None,
-            near=None, over=None) -> None:
+            near=None, over=None, anchor: str = "caret") -> None:
         """Show (or replace) a named balloon; timeout in seconds.
+
+        It opens where the keystroke was typed: under the text cursor, else
+        under the focused control, else on the focused window's title bar,
+        else the top-right corner of the main screen.  That is keyhac-win's
+        placement, which resolved the caret inside `popBalloon` itself; up to
+        2.4.2 only the multi-stroke help did so here, and every balloon a
+        config popped went to the corner (issue #152).
+
+        Finding the focus asks the platform (UI Automation on Windows,
+        Accessibility on macOS), which is main-thread work - as drawing the
+        balloon already was.  Call this from a key binding, or from a worker
+        by way of `keymap.call_on_main_thread`; no `anchor` makes it safe off
+        the main thread, because the mark is a window.
 
         Args:
             name: Which balloon this is; popping the same name replaces it.
             text: What it says. It wraps rather than being cut short.
             timeout: Seconds until it closes itself, or None to leave it.
-            near: A screen rect to sit *under* - the caret, for the
-                multi-stroke help that appears while the user is typing.
-            over: A screen rect to sit centred on the *top edge* of - the
-                focused window, for when there is nothing inside it to point
-                at. `near` wins if both are given.
+            near: A screen rect to sit *under*, in place of whatever `anchor`
+                would have found - a caret, or a control.
+            over: A screen rect to sit centred on the *top edge* of, for when
+                there is nothing inside it to point at. `near` wins if both
+                are given, and either of them wins over `anchor`.
+            anchor: Where to look when neither `near` nor `over` is given:
+                `"caret"` (the default) walks the chain above, `"window"`
+                goes straight to the focused window's title bar, and
+                `"corner"` asks nowhere - the top-right of the main screen,
+                for a balloon that is not about a place at all.
         """
         self.close(name)
+        if near is None and over is None:
+            near, over = self._anchor(anchor)
         base_w, _base_h = self._backend.base_size
         max_width = _MAX_WIDTH_UNITS * base_w
         try:
@@ -185,6 +226,20 @@ class BalloonManager:
             marker = self._balloons.pop(one, None)
             if marker is not None:
                 marker.close()
+
+    def _anchor(self, anchor: str) -> tuple:
+        """`(near, over)` for one of the named anchor modes.
+
+        lazydocs: ignore
+        """
+        if anchor == "corner":
+            return None, None
+        if anchor == "window":
+            return None, _focused_window_rect(self._keymap)
+        if anchor != "caret":
+            logger.debug(f"Balloon anchor {anchor!r} is not one of 'caret', "
+                         f"'window' or 'corner'; reading the caret.")
+        return focus_anchor(self._keymap)
 
     def _place(self, max_width: float, text: str, near, over=None) -> tuple:
         """Under `near`, else on `over`'s top edge, else the corner.

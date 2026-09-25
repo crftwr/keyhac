@@ -333,6 +333,9 @@ def configure(keymap):
 
     # --- balloon messages of your own ------------------------------------
     def show_balloon():
+        # It opens where you are typing: under the caret, else the focused
+        # control, else the window's title bar.  anchor="window" or
+        # anchor="corner" says otherwise.
         # Absent when running with --no-ui, so ask before using it.
         pop = getattr(keymap, "pop_balloon", None)
         if pop:

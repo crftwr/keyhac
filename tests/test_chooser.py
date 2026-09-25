@@ -1024,10 +1024,10 @@ class TestBalloonIsAMark:
             self.marks.append(mark)
             return mark
 
-    def _manager(self):
+    def _manager(self, keymap=None):
         from keyhac.ui.balloon import BalloonManager
         backend = self._Backend()
-        return BalloonManager(backend), backend
+        return BalloonManager(backend, keymap), backend
 
     def test_a_balloon_is_one_mark(self):
         manager, backend = self._manager()
@@ -1111,10 +1111,10 @@ class TestBalloonIsAMark:
         """The provider is asked when the prefix is armed, rather than the
         snapshot being taken at its word."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
-        multi_stroke_help(manager, _Keymap(_Focused(
+        manager, backend = self._manager(_Keymap(_Focused(
             caret=(400.0, 300.0, 0.0, 18.0),
-            rect=(390.0, 290.0, 300.0, 40.0))))("sub")
+            rect=(390.0, 290.0, 300.0, 40.0))))
+        multi_stroke_help(manager)("sub")
         mark = backend.marks[0]
         assert mark.kwargs["text"] == "Multi-stroke: sub"
         # 330 is the field's bottom edge, not the caret's - a balloon under
@@ -1127,22 +1127,22 @@ class TestBalloonIsAMark:
         Chromium window - the whole UI being one HWND. The balloon opened at
         the field the user had left; it asks the provider now."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
         here = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
                         rect=(390.0, 290.0, 300.0, 40.0))
         left_behind = _Focused(caret=(900.0, 700.0, 0.0, 18.0),
                                rect=(890.0, 690.0, 300.0, 40.0))
-        multi_stroke_help(manager, _Keymap(here, snapshot=left_behind))("sub")
+        manager, backend = self._manager(_Keymap(here, snapshot=left_behind))
+        multi_stroke_help(manager)("sub")
         assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
 
     def test_the_snapshot_is_what_a_provider_with_no_answer_leaves(self):
         """It says nothing rather than hand back a window pretending to be
         the focus (issue #44), and the snapshot has no such scruples."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
         remembered = _Focused(caret=(400.0, 300.0, 0.0, 18.0),
                               rect=(390.0, 290.0, 300.0, 40.0))
-        multi_stroke_help(manager, _Keymap(None, snapshot=remembered))("sub")
+        manager, backend = self._manager(_Keymap(None, snapshot=remembered))
+        multi_stroke_help(manager)("sub")
         assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
 
     def test_a_provider_that_raises_is_not_a_balloon_that_fails(self):
@@ -1152,11 +1152,11 @@ class TestBalloonIsAMark:
             def get_focused_element(self):
                 raise RuntimeError("no focus for you")
 
-        manager, backend = self._manager()
         keymap = _Keymap(_Focused(caret=(400.0, 300.0, 0.0, 18.0),
                                   rect=(390.0, 290.0, 300.0, 40.0)))
         keymap._focus_provider = _Raises()
-        multi_stroke_help(manager, keymap)("sub")
+        manager, backend = self._manager(keymap)
+        multi_stroke_help(manager)("sub")
         assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
 
     def test_a_caret_it_cannot_believe_falls_to_the_field(self):
@@ -1165,10 +1165,10 @@ class TestBalloonIsAMark:
         line tall - so under the field is within a line of where the caret
         actually is, and a great deal better than the corner."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
-        multi_stroke_help(manager, _Keymap(_Focused(
+        manager, backend = self._manager(_Keymap(_Focused(
             caret=(0.0, 1112.0, 0.0, 0.0),
-            rect=(1275.0, 981.0, 409.0, 40.0))))("sub")
+            rect=(1275.0, 981.0, 409.0, 40.0))))
+        multi_stroke_help(manager)("sub")
         mark = backend.marks[0]
         assert (mark.x, mark.y) == (1275.0, 1025.0)
 
@@ -1176,16 +1176,16 @@ class TestBalloonIsAMark:
         """The objection the size rule answers: under a full-window text area
         is neither where you are looking nor out of the way."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
-        multi_stroke_help(manager, _Keymap(_Focused(
+        manager, backend = self._manager(_Keymap(_Focused(
             caret=(0.0, 1112.0, 0.0, 0.0),
-            rect=(100.0, 100.0, 1200.0, 800.0))))("sub")
+            rect=(100.0, 100.0, 1200.0, 800.0))))
+        multi_stroke_help(manager)("sub")
         assert backend.marks[0].y == 25 + 24
 
     def test_no_focus_at_all_is_the_corner_too(self):
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
-        multi_stroke_help(manager, _Keymap(None))(None)
+        manager, backend = self._manager(_Keymap(None))
+        multi_stroke_help(manager)(None)
         assert backend.marks[0].kwargs["text"] == "Multi-stroke: ..."
         assert backend.marks[0].y == 25 + 24
 
@@ -1196,10 +1196,11 @@ class TestBalloonIsAMark:
         on screen where the work is, rather than a corner of another
         monitor."""
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
         grid = (482.0, 293.0, 945.0, 624.0)
-        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid),
-                                           window=(400.0, 200.0, 1100.0, 800.0)))("sub")
+        manager, backend = self._manager(
+            _Keymap(_Focused(caret=grid, rect=grid),
+                    window=(400.0, 200.0, 1100.0, 800.0)))
+        multi_stroke_help(manager)("sub")
         mark = backend.marks[0]
         # "Multi-stroke: sub" is 17 characters: 17 x 8 + 24 = 160 wide, and
         # it hangs two pixels below the top edge rather than flush with it.
@@ -1207,9 +1208,76 @@ class TestBalloonIsAMark:
 
     def test_with_no_window_either_it_is_still_the_corner(self):
         from keyhac.ui.balloon import multi_stroke_help
-        manager, backend = self._manager()
         grid = (482.0, 293.0, 945.0, 624.0)
-        multi_stroke_help(manager, _Keymap(_Focused(caret=grid, rect=grid)))("sub")
+        manager, backend = self._manager(
+            _Keymap(_Focused(caret=grid, rect=grid)))
+        multi_stroke_help(manager)("sub")
+        assert backend.marks[0].y == 25 + 24
+
+    def test_a_config_s_balloon_is_placed_like_the_multi_stroke_one(self):
+        """Issue #152: keyhac-win resolved the caret inside popBalloon, so
+        every balloon a config popped landed where the user was typing. Here
+        the chain lived in the multi-stroke callback instead, and
+        `keymap.pop_balloon("hello", ...)` went to the corner of the main
+        screen - a different monitor, for the reporter."""
+        manager, backend = self._manager(_Keymap(_Focused(
+            caret=(400.0, 300.0, 0.0, 18.0),
+            rect=(390.0, 290.0, 300.0, 40.0))))
+        manager.pop("hello", "Keyhac is running", 2.0)
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (400.0, 334.0)
+
+    def test_anchor_window_skips_the_caret_it_could_have_had(self):
+        """What the chooser's unreachable-row report wants: the control not
+        being where it said it was *is* the failure, so there is nothing
+        inside the window to point at."""
+        manager, backend = self._manager(_Keymap(
+            _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                     rect=(390.0, 290.0, 300.0, 40.0)),
+            window=(400.0, 200.0, 1100.0, 800.0)))
+        manager.pop("help", "Keyhac is running", anchor="window")
+        mark = backend.marks[0]
+        assert (mark.x, mark.y) == (400.0 + (1100.0 - 160.0) / 2, 202.0)
+
+    def test_anchor_corner_asks_the_platform_nothing(self):
+        """A balloon that is not about a place has nothing to ask about: this
+        is the one mode that makes no UIA or AX call at all."""
+        asked = []
+
+        class _Counts:
+            def get_focused_element(self):
+                asked.append(1)
+                return _Focused(caret=(400.0, 300.0, 0.0, 18.0),
+                                rect=(390.0, 290.0, 300.0, 40.0))
+
+        keymap = _Keymap(None)
+        keymap._focus_provider = _Counts()
+        manager, backend = self._manager(keymap)
+        manager.pop("help", "hi", anchor="corner")
+        assert asked == []
+        assert backend.marks[0].y == 25 + 24
+
+    def test_an_explicit_rect_wins_over_the_anchor(self):
+        """`near` is what `ReportCaretAnchor` passes: the anchor it has just
+        reported, rather than a second read that could answer differently."""
+        manager, backend = self._manager(_Keymap(_Focused(
+            caret=(400.0, 300.0, 0.0, 18.0),
+            rect=(390.0, 290.0, 300.0, 40.0))))
+        manager.pop("help", "hi", near=(900.0, 500.0, 0.0, 18.0))
+        assert (backend.marks[0].x, backend.marks[0].y) == (900.0, 522.0)
+
+    def test_an_unknown_anchor_reads_the_caret_rather_than_failing(self):
+        manager, backend = self._manager(_Keymap(_Focused(
+            caret=(400.0, 300.0, 0.0, 18.0),
+            rect=(390.0, 290.0, 300.0, 40.0))))
+        manager.pop("help", "Keyhac is running", anchor="somewhere else")
+        assert (backend.marks[0].x, backend.marks[0].y) == (400.0, 334.0)
+
+    def test_without_a_keymap_there_is_nothing_to_ask(self):
+        """--no-ui has no balloon at all, but the manager is also built bare
+        by the live platform tests, and a corner is what that leaves."""
+        manager, backend = self._manager()
+        manager.pop("help", "hi")
         assert backend.marks[0].y == 25 + 24
 
     def test_a_platform_that_cannot_mark_is_not_an_error(self):
