@@ -41,7 +41,7 @@ per-user directory, exactly as in 1.x. See
 | `keymap.command_RecordStart/Stop/Toggle/Play` | `StartRecordingKeys()` / `StopRecordingKeys()` / `ToggleRecordingKeys()` / `PlaybackRecordedKeys()` |
 | `JobQueue` / `JobItem` | `ThreadedAction` (subclass with `starting()` / `run()` / `finished()`) |
 | `keymap.delayedCall(func, msec)`, `CronItem` / `CronTable` | no built-in equivalent — schedule with `threading` and hand the callback back with `keymap.call_on_main_thread(func)`; see [Timers](#timers-delayedcall--crontable) |
-| `keymap.popBalloon(name, text, timeout)` / `closeBalloon(name)` | `keymap.pop_balloon(…)` / `keymap.close_balloon(…)` |
+| `keymap.popBalloon(name, text, timeout)` / `closeBalloon(name)` | `keymap.pop_balloon(…)` / `keymap.close_balloon(…)` — placed at the caret as before, and `anchor=` can say otherwise |
 | `keymap.popListWindow(listers)` (blocking) | subclass `ChooserAction` (callback-based; there is no blocking list window) |
 | `keymap.getWindow()`, `pyauto.Window` | `keymap.get_active_window()` / `find_window(…)` / `list_windows()` — portable `Window` objects; the raw HWND wrapper is `focus.native` |
 | `keymap.editor = "…"` | unchanged |

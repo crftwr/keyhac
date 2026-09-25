@@ -712,8 +712,34 @@ keymap.pop_balloon("hello", "Keyhac is running", 2.0)   # name, text, timeout
 keymap.close_balloon("hello")
 ```
 
-A balloon is a small frameless tooltip near the focused window. Multi-stroke tables
-pop one automatically. In `--no-ui` mode these attributes are absent — guard with
+A balloon is a small frameless tooltip, and it opens **where you are typing**: under
+the caret, falling back to the focused control, then to the title bar of the focused
+window, and only with none of those to the top-right corner of the main screen. That
+is the same chain the chooser walks — everything in [Where the window
+opens](#where-the-window-opens) applies here too, including the applications that
+answer the caret question with a rectangle that is not where the caret is.
+`ReportCaretAnchor()` is how you find out what one of those does.
+
+Multi-stroke tables pop a balloon of their own automatically.
+
+`anchor=` places it somewhere else:
+
+```python
+keymap.pop_balloon("win", "acting on this window", 2.0, anchor="window")
+keymap.pop_balloon("mode", "insert mode", 2.0, anchor="corner")
+```
+
+`"window"` goes straight to the focused window's title bar, for a balloon about the
+window rather than about a place in it. `"corner"` is the top-right of the main
+screen, for a balloon that is not about a place at all — and the one placement that
+asks the platform nothing.
+
+Popping a balloon is main-thread work, as it always was: it draws a window, and
+finding the caret is a UI Automation (Windows) or Accessibility (macOS) call on top
+of that. Call it from a key binding, or from a `ThreadedAction` worker by way of
+`keymap.call_on_main_thread`.
+
+In `--no-ui` mode these attributes are absent — guard with
 `getattr(keymap, "pop_balloon", None)` if your config must run headless.
 
 ## Logging and the console
@@ -744,7 +770,7 @@ focus path — the two things you need when writing new bindings.
 | `keymap.clipboard_history` | settings + `items()` / `get_current()` / `set_current()` |
 | `keymap.editor` / `edit_config()` / `reload_config()` | config lifecycle (tray menu uses these) |
 | `keymap.replay_buffer` | macro buffer behind the record actions |
-| `keymap.pop_balloon(name, text, timeout)` / `close_balloon(name)` | balloons (UI mode only) |
+| `keymap.pop_balloon(name, text, timeout, anchor=…)` / `close_balloon(name)` | balloons (UI mode only); opens at the caret unless `anchor` says otherwise |
 | `InputText(s)` | type a literal string |
 | `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | mouse output actions |

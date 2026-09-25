@@ -1410,7 +1410,12 @@ class ReportCaretAnchor:
 
     @staticmethod
     def _show(found, caption: str) -> None:
-        """Put a balloon where the real one would go, by the same rules."""
+        """Put a balloon at the anchor just reported.
+
+        Passed explicitly rather than left to `pop`'s own chain, which walks
+        the same one: a second read is a second answer, and a diagnostic whose
+        balloon can disagree with its report diagnoses nothing.
+        """
         keymap = Keymap.get_instance()
         pop = getattr(keymap, "pop_balloon", None)
         if pop is None:

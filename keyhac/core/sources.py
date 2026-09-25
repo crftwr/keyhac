@@ -331,18 +331,10 @@ def _report_unreachable(what: str) -> None:
     pop = getattr(keymap, "pop_balloon", None) if keymap is not None else None
     if pop is None:
         return
-    where = {}
-    try:
-        from keyhac.ui.balloon import _focused_window_rect
-        rect = _focused_window_rect(keymap)
-        if rect is not None:
-            where = {"over": rect}
-    except Exception:
-        # Placement is the nicety; the message is the point.
-        pass
     try:
         pop("Chooser", f"{what}: could not click it - it is not where it said "
-                       f"it was (covered, or scrolled away).", 4.0, **where)
+                       f"it was (covered, or scrolled away).", 4.0,
+            anchor="window")
     except Exception:
         logger.debug("No balloon to report the unreachable control with.")
 

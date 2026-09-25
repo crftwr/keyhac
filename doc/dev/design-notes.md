@@ -1324,6 +1324,21 @@ at all.
 - The old window sized itself with `min(70, max(14, len(text) + 4))`. That was
   a wrap width with no name, and no way for a long balloon to do anything but
   be cut short; it is `max_width` now and the text wraps.
+- **Placement lives in `pop`, not in the caller** (issue #152). It first lived
+  in the multi-stroke callback, which is the one balloon Keyhac pops for
+  itself — so `keymap.pop_balloon(...)` from a config had no anchor and went
+  to the corner, on a multi-monitor setup a screen the user was not looking
+  at. keyhac-win resolved the caret inside `popBalloon` itself, and for a
+  reason that is not about tidiness: a balloon answers a keystroke, so where
+  the keystroke was typed is not a policy any individual caller should be
+  choosing. `anchor=` names the exceptions — `"window"` for a balloon about
+  the window rather than a place in it (the chooser's unreachable-row report),
+  and `"corner"` for a balloon that is not about a place at all, which is the
+  one placement that asks the platform nothing. None of them makes `pop`
+  callable off the main thread — the mark is a window, and that was always
+  main-thread work. An explicit `near=`/`over=` still wins, which is what
+  `ReportCaretAnchor` passes: it has just reported an anchor, and a second
+  read could answer differently.
 - Placement: under the caret when one can be read and believed, and otherwise
   the top-right of the main screen's work area, at the widest the mark could be
   rather than at its actual left edge — a mark sized to its text does not know
@@ -1357,7 +1372,7 @@ at all.
   measured as seventy columns decided it would not fit and clamped to
   1710 − 560 = 1150, a quarter of the screen left of the caret it was meant to
   be under.
-- **The focus is asked for when the prefix is armed, not taken from
+- **The focus is asked for when a balloon opens, not taken from
   `keymap.focus`.** The snapshot was the free answer — refreshed at the top
   of `_on_key_down`, so it belongs to the very keystroke that armed the
   prefix, and reading it keeps a second focus lookup off the hook's clock.
@@ -1371,8 +1386,7 @@ at all.
   Issue #44 is the same staleness found in the action API, where
   `keymap.ui.focused()` stopped reading the snapshot for the same reason.
   `get_focused_element()` measures 2.1 ms against a cross-process Edit, paid
-  once per armed prefix rather than once per key, against a 300 ms hook
-  deadline. The snapshot stays as the fall-back: it holds the window, and
+  once per balloon rather than once per key, against a 300 ms hook deadline. The snapshot stays as the fall-back: it holds the window, and
   then the application, where the provider would rather say nothing. The
   chooser never had the problem — it reads the caret one turn of the loop
   later, where nothing is on the hook's deadline.
