@@ -74,7 +74,7 @@ keyhac/
 windows_app/   # Keyhac.exe launcher + bundle build (build.ps1)
 macos_app/     # Keyhac.app launcher + bundle build (build.sh, create_dmg.sh)
 art/           # hand-maintained SVG icon sources (rendered by tools/make_icons.py)
-tools/         # icon pipeline, release scripts, hook_echo diagnostic
+tools/         # icon pipeline, Pages banner render, release scripts, hook_echo diagnostic
 ```
 
 ## Conventions

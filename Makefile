@@ -54,7 +54,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 # pyproject.toml changes.
 VENV_STAMP := $(VENV)/.installed
 
-.PHONY: help venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass icons icons-check \
+.PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass icons icons-check \
         api-reference api-reference-check skill-bundle cleanroom \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
@@ -84,6 +84,7 @@ help:
 	@echo "                     it runs - the finding is in the transitions."
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
+	@echo "  make banner      - render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
 	@echo "  make cleanroom CASE=n    - clean-room test that bundle: build a room, drive it,"
 	@echo "                             audit the transcript and score it (TASK=\"...\" for your own)"
@@ -202,6 +203,12 @@ caret-probe: $(VENV_STAMP)
 # after a switch.
 mac-focus-pass: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/mac_focus_pass.py $(ARGS)
+
+# GitHub Pages banner.  doc/images/banner.svg is the source; link previews
+# ignore SVG in og:image, so the site serves JPEGs rendered from it (headless
+# Chrome + sips, macOS).  The JPEGs are committed.
+banner:
+	python3 tools/render_banner.py
 
 # The generated icon assets are committed; `icons` regenerates them from the
 # SVG masters, `icons-check` verifies the two have not drifted.

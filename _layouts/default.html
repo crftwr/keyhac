@@ -20,6 +20,11 @@
   {% endif %}
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ page.url | absolute_url }}">
+  <meta property="og:image" content="{{ '/doc/images/banner-og.jpg' | absolute_url }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Keyhac &mdash; Python-scriptable keyboard customization for Windows and macOS">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
 </head>
 <body>
@@ -36,7 +41,7 @@
       </span>
     </header>
     {% if page.url == "/" %}
-    <p><img src="{{ '/doc/images/banner.svg' | relative_url }}" alt="Keyhac &mdash; Python-scriptable keyboard customization for Windows and macOS" width="100%"></p>
+    <p><img src="{{ '/doc/images/banner.jpg' | relative_url }}" alt="Keyhac &mdash; Python-scriptable keyboard customization for Windows and macOS" width="100%"></p>
     {% endif %}
     {{ content }}
     <footer class="mt-5 pt-3 border-top f6 text-gray color-fg-muted">
