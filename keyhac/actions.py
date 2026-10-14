@@ -1442,7 +1442,12 @@ class SnapWindow:
     The window lands where Windows' snap would put it, but Snap Assist does
     not offer to fill the other half, no snap group is formed, dragging the
     window away does not restore its previous size, and dragging the shared
-    edge does not resize the neighbour.
+    edge does not resize the neighbour.  Likewise "full" covers the work area
+    without maximizing the window; for the OS's maximized state (Window >
+    Fill on macOS) call `Window.maximize()`.
+
+    A minimized window is restored and a full-screen one leaves full screen
+    before it is placed; a maximized one stops being maximized.
 
     ```python
     SnapWindow("left")               # left half
@@ -1508,9 +1513,17 @@ class SnapWindow:
             target = (sx, sy + sh * (1 - r), sw, sh * r)
         else:
             target = (sx, sy, sw, sh)
+        # A minimized or full-screen window cannot be placed (macOS refuses the
+        # AX write outright).  A maximized one can: set_frame takes it out of
+        # the maximized state itself.  Restoring it here instead would race
+        # on macOS - Return to Previous Size animates, and lands over the
+        # frame written after it.
         if window.is_minimized():
             window.restore()
-        window.set_frame(*target)
+        if window.is_full_screen():
+            window.set_full_screen(False)
+        if not window.set_frame(*target):
+            logger.warning(f"SnapWindow: {window!r} did not accept the frame.")
 
     def __repr__(self):
         return f'SnapWindow("{self.position}")'

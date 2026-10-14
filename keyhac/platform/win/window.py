@@ -26,6 +26,7 @@ if sys.platform == "win32":
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    SW_MAXIMIZE = 3
     SW_MINIMIZE = 6
     SW_RESTORE = 9
     SWP_NOSIZE = 0x0001
@@ -62,6 +63,8 @@ if sys.platform == "win32":
     user32.IsWindowVisible.restype = wintypes.BOOL
     user32.IsIconic.argtypes = [wintypes.HWND]
     user32.IsIconic.restype = wintypes.BOOL
+    user32.IsZoomed.argtypes = [wintypes.HWND]
+    user32.IsZoomed.restype = wintypes.BOOL
     user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.ShowWindow.restype = wintypes.BOOL
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -246,6 +249,12 @@ class WinWindow(Window):
                 float(rect.bottom - bottom - rect.top - top))
 
     def set_frame(self, x, y, w=None, h=None) -> bool:
+        # SetWindowPos on a maximized window moves it but leaves it flagged
+        # maximized, so the next restore or a double-click on the title bar
+        # does the wrong thing - leave the state first.  (Written on macOS
+        # for issue #157; not yet run - doc/dev/testing.md.)
+        if user32.IsZoomed(self.hwnd):
+            user32.ShowWindow(self.hwnd, SW_RESTORE)
         left, top, right, bottom = self._frame_insets()
         flags = SWP_NOZORDER | SWP_NOACTIVATE
         if w is None or h is None:
@@ -262,6 +271,21 @@ class WinWindow(Window):
 
     def is_minimized(self) -> bool:
         return bool(user32.IsIconic(self.hwnd))
+
+    def is_maximized(self) -> bool:
+        # IsZoomed is already false while minimized - Windows keeps "restore
+        # to maximized" in WINDOWPLACEMENT instead - which is the
+        # one-state-at-a-time contract.  The guard costs nothing.
+        return bool(user32.IsZoomed(self.hwnd)) and not user32.IsIconic(self.hwnd)
+
+    def maximize(self) -> bool:
+        # ShowWindow's return value is the previous visibility, not success,
+        # so the state is read back.  keyhac-win's pyauto sent
+        # WM_SYSCOMMAND/SC_MAXIMIZE instead, which an application can
+        # intercept; whether that matters is an open question for the
+        # Windows pass (doc/dev/testing.md).
+        user32.ShowWindow(self.hwnd, SW_MAXIMIZE)
+        return bool(user32.IsZoomed(self.hwnd))
 
     def restore(self) -> bool:
         return bool(user32.ShowWindow(self.hwnd, SW_RESTORE))

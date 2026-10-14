@@ -876,6 +876,42 @@ The frame is the window as drawn: invisible padding around it (the resize border
 
 ---
 
+### <kbd>method</kbd> `Window.is_full_screen`
+
+```python
+is_full_screen() → bool
+```
+
+Whether the window is in the OS's full-screen mode. 
+
+macOS only.  Windows has no such mode - full screen there is something each application draws for itself, and nothing marks it - so this is always False on Windows. 
+
+
+
+**Returns:**
+  Whether the window is in full screen. 
+
+---
+
+### <kbd>method</kbd> `Window.is_maximized`
+
+```python
+is_maximized() → bool
+```
+
+Whether the window is currently maximized. 
+
+False while the window is minimized or in full screen, even when it will come back maximized: this reports what is on screen now, so at most one of `is_minimized()`, `is_maximized()` and `is_full_screen()` is true. 
+
+On macOS a window counts as maximized when it fills the work area of its screen - the screen less the menu bar and the Dock - which is what Window > Fill gives it.  macOS keeps no maximized flag that another application can read, so a window the user sized to exactly that frame by hand counts too. 
+
+
+
+**Returns:**
+  Whether the window is maximized. 
+
+---
+
 ### <kbd>method</kbd> `Window.is_minimized`
 
 ```python
@@ -883,6 +919,23 @@ is_minimized() → bool
 ```
 
 Whether the window is currently minimized. 
+
+---
+
+### <kbd>method</kbd> `Window.maximize`
+
+```python
+maximize() → bool
+```
+
+Maximize the window. 
+
+On macOS this is Window > Fill: the window fills the work area and the OS remembers its previous size for `restore()`.  It brings the window's application to the front, which Fill needs, and the window animates into place for about a third of a second: `is_maximized()` turns true only at the end, and a frame written before then is overwritten by the animation. A minimized window is restored first.  A window in full screen leaves it and is placed over the work area instead of filled - Fill does not work until the way out of full screen has finished - so `restore()` has no previous size for it, unless it was filled before it went full screen. 
+
+
+
+**Returns:**
+  Whether the request was accepted. 
 
 ---
 
@@ -907,12 +960,16 @@ Minimize the window.
 restore() → bool
 ```
 
-Un-minimize the window. 
+Take the window back one state. 
+
+A minimized window comes back as it was before - maximized, if it was.  A full-screen window leaves full screen, again returning to what it was before.  A maximized window returns to the size it had before it was maximized. 
+
+On macOS, returning from maximized brings the window's application to the front, and works only for a window the OS filled (Window > Fill, or `maximize()` on a window that was not in full screen); one sized to the work area any other way has no previous size to return to, and stays as it is.  The way back animates like the way there (see `maximize()`). 
 
 
 
 **Returns:**
-  Whether the window was restored. 
+  Whether the request was accepted.  On macOS that is not proof of  the effect - see above. 
 
 ---
 
@@ -925,6 +982,8 @@ set_frame(x: float, y: float, w: float = None, h: float = None) → bool
 Move the window, and optionally resize it. 
 
 The coordinates are the visible frame get_frame reports, so a frame read from one window can be given to another unchanged. 
+
+A maximized window is taken out of the maximized state by being placed, so it does not spring back to filling the screen.  A window in full screen or minimized cannot be placed; leave those states first (`set_full_screen(False)`, `restore()`). 
 
 
 
@@ -939,6 +998,29 @@ The coordinates are the visible frame get_frame reports, so a frame read from on
 
 **Returns:**
  Whether the window accepted the change. 
+
+---
+
+### <kbd>method</kbd> `Window.set_full_screen`
+
+```python
+set_full_screen(full_screen: bool = True) → bool
+```
+
+Enter or leave the OS's full-screen mode. 
+
+macOS only; on Windows it does nothing and returns False (see `is_full_screen()`).  Entering full screen brings the window's application to the front. 
+
+
+
+**Args:**
+ 
+ - <b>`full_screen`</b>:  True to enter full screen, False to leave it. 
+
+
+
+**Returns:**
+ Whether the request was accepted.  The transition animates for about half a second, and a request the other way made meanwhile is accepted and then ignored, so a toggle bound to a key should not expect a second press to land straight after the first. 
 
 ---
 
@@ -1277,7 +1359,9 @@ Snap the focused window to a region of its screen (tiling).
 
 The region is the screen's *work area*, so the menu bar and Dock (macOS) and the taskbar (Windows) stay uncovered.  "Its screen" is the one the window overlaps most, so repeated snaps keep a window on the monitor it is already on. 
 
-This places the window itself; it does not enter the OS's own snap state. The window lands where Windows' snap would put it, but Snap Assist does not offer to fill the other half, no snap group is formed, dragging the window away does not restore its previous size, and dragging the shared edge does not resize the neighbour. 
+This places the window itself; it does not enter the OS's own snap state. The window lands where Windows' snap would put it, but Snap Assist does not offer to fill the other half, no snap group is formed, dragging the window away does not restore its previous size, and dragging the shared edge does not resize the neighbour.  Likewise "full" covers the work area without maximizing the window; for the OS's maximized state (Window > Fill on macOS) call `Window.maximize()`. 
+
+A minimized window is restored and a full-screen one leaves full screen before it is placed; a maximized one stops being maximized. 
 
 ```python
 SnapWindow("left")               # left half

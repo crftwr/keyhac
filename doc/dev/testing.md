@@ -184,6 +184,15 @@ defect, not a model defect.
   granted window-server *key focus*: it can order windows front, but in-sandbox
   keyboard-focus probes give unreliable negatives. Only an interactive pass is
   conclusive for focus behavior (chooser typing, etc.).
+- **Window-state animations outlive the state change, and a write made
+  meanwhile is lost.** Fill and Return to Previous Size move the AX frame
+  through ~370 ms, so a test that writes a frame as soon as `is_maximized()`
+  turns true races the tail of it; wait for the frame to stop moving
+  (`_wait_settled`). Full screen is the opposite trap: the frame jumps at
+  once, so no frame-based wait sees its ~0.5 s transition, during which a
+  request the other way is dropped — only a fixed wait
+  (`_wait_full_screen_transition`) works. Each failure looked like a broken
+  feature in whichever test ran next.
 
 ## Live verification record
 
@@ -1002,6 +1011,29 @@ is now the thing to confirm rather than the thing to fix.
   must bring it forward rather than advance the rotation; quit it and one press
   must launch it. On macOS repeat with a localized application name, since
   `app=` matches what the OS reports.
+
+- **Maximize, restore and `SnapWindow` on a maximized window, on Windows**
+  *(new, not yet passed)* — issue #157. `WinWindow.is_maximized`/`maximize`
+  and the de-maximize at the top of `set_frame` were written on macOS and
+  have never run; the reasoning and the macOS measurements are in
+  [design-notes.md](design-notes.md#maximized-and-full-screen-issue-157).
+  `tests/test_win_window.py` has nothing for them yet — adding the round
+  trips there (maximize → `is_maximized()`; `restore()` → not; minimize a
+  maximized window → `is_maximized()` false *while minimized* and true after
+  `restore()`; `set_frame` on a maximized window → not maximized, frame as
+  written) is the first half of this pass. The second half is by eye, on
+  Chrome, where #157 saw it fail: maximize it, run `SnapWindow("left")`, and
+  check that it lands on the left half *and* that double-clicking its title
+  bar afterwards maximizes it rather than restoring some other size. Then
+  three questions only Windows can answer: whether `SW_RESTORE` un-snaps an
+  Aero-snapped window the same way (its "arranged" state) or `SnapWindow`
+  needs more there; whether an application that handles `WM_SYSCOMMAND`
+  itself ignores `ShowWindow(SW_MAXIMIZE)` — pyauto sent `SC_MAXIMIZE`
+  instead, after first using `SetWindowPlacement`; and whether
+  `WinWindow.restore()`'s return value, which is `ShowWindow`'s "was it
+  visible before" rather than success, should become the state read back as
+  `maximize()` does. `is_full_screen()` stays the base `False` on Windows by
+  design.
 
 - **Window geometry against Windows' own snap** *(new, not yet passed)* —
   `WinWindow.get_frame`/`set_frame` now work in the **visible** frame (DWM's

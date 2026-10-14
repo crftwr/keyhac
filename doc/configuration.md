@@ -587,6 +587,8 @@ x, y, w, h = window.get_frame()               #    class_name=), list_windows()
                                               # part of it, on either accessor
 window.set_frame(x + 100, y)
 window.activate(); window.minimize(); window.restore(); window.is_minimized()
+window.maximize(); window.is_maximized()      # macOS: Window > Fill
+window.set_full_screen(True); window.is_full_screen()  # macOS only
 window.title; window.app_name; window.pid; window.class_name  # class_name: Windows
 ```
 
