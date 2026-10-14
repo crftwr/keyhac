@@ -90,6 +90,11 @@ where configurations go wrong.
   because a table that never matches raises nothing.
 - **`class_name=` is Windows-only.** On macOS it never activates; Keyhac warns,
   but the warning is in the console the user may not be watching.
+- **A chooser popup counts as a focus of its own.** While one is open, tables
+  are matched against app `Keyhac`, title `Chooser` — not the application
+  underneath. A table for every focus applies there too (a global `Ctrl-J` →
+  `Down` moves its selection); an `app=` table for the application does not.
+  For "only in the popup", use `define_keytable(app="Keyhac", title="Chooser")`.
 
 ## Platform traps worth checking before you write
 

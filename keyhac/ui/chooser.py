@@ -43,7 +43,8 @@ refuses both, so the flags are inert there.
 
 The keystrokes arrive through the key hook instead - see
 ``keyhac.ui.keyroute`` for that route and, importantly, for what it cannot
-carry. The one real loss is IME composition, which is why Migemo is now part
+carry. They pass through the user's key tables first, matched as if the
+chooser were focused (issue #155), so a configuration's remaps work here too. The one real loss is IME composition, which is why Migemo is now part
 of the default matcher rather than an option: for a localised list, romaji
 matching is what makes the filter reach the rows at all.
 
@@ -214,11 +215,11 @@ class ChooserWindow:
     (top-left origin), the same space keyhac's Window/WindowProvider report.
 
     passes_through: optional `callable(action) -> bool` handed to the key
-    grab, deciding which keys the key tables should have rather than this
-    window. Without it a grab outranks every table, and the chooser's own
-    promises go with it: the key that opened the window cannot close it, and
-    another chooser's key cannot replace it, both arriving here as the
-    letters they are bound to.
+    grab. The key tables are matched against the chooser's own focus first
+    (issue #155), so a chooser bound only in one application's table is not
+    bound there at all; this is asked of what the *real* focus's tables bind
+    such a key to, and True runs it. Without it the key that opened the
+    window cannot close it, and another chooser's key cannot replace it.
 
     below: a screen rect to sit *under* instead, left edges aligned - the
     caret or the focused control (issue #118). It wins over center_on when
@@ -418,11 +419,27 @@ class ChooserWindow:
         moves. The work goes to the main thread instead, which is where every
         other row of this window is already added (see `_deliver`).
 
-        Consuming the key is not deferred, and does not need to be: a grab
-        outranks every table, so `Keymap._modal_input` consumes whatever it
-        routes here whether this handler does anything with it or not. The
-        callback therefore decides nothing - it queues, and returns.
+        Consuming the key is not deferred, and does not need to be: the
+        keymap consumes whatever it routes here whether this handler does
+        anything with it or not. The callback therefore decides nothing - it
+        queues, and returns.
+
+        **The key tables see every key first** (issue #155). They are matched
+        against `chooser_focus()` while the grab is up, so the user's own
+        bindings work here as they do everywhere - `Ctrl-J` remapped to
+        `Down` moves the selection - and what a binding outputs arrives here
+        rather than in the application underneath. This handler gets the keys
+        no table binds, plus that output; text output (`send_text`, so
+        `InputText`) arrives through `text_handler`, a glyph at a time, and
+        since it never needed a key code it is not limited to ASCII.
+
+        Output that is not text and has no event here - `Ctrl-S`, say - is
+        dropped: it has nowhere to go that would not be the application the
+        user is not looking at.
         """
+        from puikit.event import char_key_event
+
+        from keyhac.core.focus import chooser_focus
         from keyhac.core.keymap import Keymap
         from keyhac.ui.keyroute import to_event
 
@@ -431,12 +448,7 @@ class ChooserWindow:
             logger.error("No Keymap: a non-activating chooser has no key route.")
             return
 
-        def handler(key):
-            # to_event stays here: it is a pure O(1) translation, and it is
-            # what says whether there is anything worth queueing at all.
-            event = to_event(key)
-            if event is None:
-                return
+        def queue(event):
             if not self.panel.dispatches_to_main_thread:
                 # Nowhere to hand it to, and nothing driving a loop that would
                 # pick it up - so act on it here, which is what the tick drain
@@ -447,7 +459,22 @@ class ChooserWindow:
             self._keys.append(event)
             self._backend.call_on_main_thread(self._drain_keys)
 
-        keymap.push_modal_input(handler, self._passes_through)
+        def handler(key):
+            # to_event stays here: it is a pure O(1) translation, and it is
+            # what says whether there is anything worth queueing at all.
+            event = to_event(key)
+            if event is None:
+                logger.debug(f"Dropped in the chooser (no event for it): {key}")
+                return
+            queue(event)
+
+        def text_handler(text):
+            for char in text:
+                if char.isprintable():
+                    queue(char_key_event(char))
+
+        keymap.push_modal_input(handler, self._passes_through,
+                                focus=chooser_focus(), on_text=text_handler)
         self._grabbed = True
 
     def _drain_keys(self) -> None:

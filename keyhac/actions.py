@@ -332,17 +332,20 @@ class ChooserAction:
 
     @staticmethod
     def _another_chooser(action) -> bool:
-        """Which keys the grab declines: the ones that open a chooser.
+        """Which of the real focus's bindings still run while a chooser is up:
+        the ones that open a chooser.
 
-        Those are this class's own promises - the key that opened the window
-        closes it, another chooser's key replaces it - and a grab outranking
-        every table is what stopped either from happening. Handing them back
-        to the tables means `__call__` runs, which has done the toggling and
-        the replacing all along.
+        While the window holds the keyboard the key tables are matched as if
+        the chooser were focused (issue #155), so a chooser bound in a table
+        for one application is not bound there at all - and this class's own
+        promises, that the key which opened the window closes it and another
+        chooser's key replaces it, would go with it. Those keys are taken from
+        the real focus's tables instead, so `__call__` runs and does the
+        toggling and the replacing it has done all along.
 
-        Nothing else is handed back. A key bound to `Left` is the list's while
-        this window is up, not the application's underneath, and a bound key
-        arriving as a letter is what a filter field is for.
+        Nothing else is: the rest of the application's bindings are about the
+        application, and a key they bind that the chooser's tables do not is
+        the chooser's own.
         """
         return isinstance(action, ChooserAction)
 

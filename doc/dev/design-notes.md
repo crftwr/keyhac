@@ -252,21 +252,45 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   both paths at once double every character), it takes key status away from the
   window being pasted into, and it would leave the two OSes with different
   input paths. Not worth it for what Migemo already covers.
-- **The grab's owner gets a say in what the grab takes.** `ChooserAction`
-  promises that the key which opened a chooser closes it and that another
-  chooser's key replaces it, and for a non-activating one neither happened: a
-  grab outranks every table, so neither press ever reached an action. Both
-  arrived in the filter field as the letters they were bound to — `Fn-P`
-  typing a `p`, `Fn-V` typing a `v` instead of opening the clipboard.
-  `push_modal_input` therefore takes a second callback, asked of a **modified
-  key down** with whatever the tables bind it to; the chooser answers True for
-  a `ChooserAction`, and the key is left to the tables. `__call__` then does
-  the toggling and the replacing it has done all along.
-- **Only those keys.** A key bound to `Left` stays the list's while the window
-  is up rather than the application's underneath, and an unmodified key is
-  text as far as a filter field is concerned. The narrow version of this fix
-  passed only the *opening* key back, which left `Fn-V` broken in exactly the
-  way `Fn-P` had been — half of one promise.
+- **The key tables come before the grab** *(decided 2026-10-15, issue #155)*.
+  The grab used to outrank every table, so a configuration's bindings did not
+  exist inside the chooser — a global `MOD-J` → `Down` typed a `j` into the
+  filter, and the user had to switch mental keymaps for one window. Now, while a
+  grab is up, the tables are matched against a stand-in focus
+  (`core.focus.chooser_focus()`: app `Keyhac`, title `Chooser`, path
+  `/Keyhac/Chooser`), and `InputContext._flush` diverts non-modifier key output
+  and text to the grab instead of the OS. Everything a binding can be works:
+  remaps, functions, multi-stroke prefixes, user modifiers. Only a key no table
+  binds reaches the chooser's own handling.
+  - **Only the tables move.** `keymap.focus` stays the real focus, and so does
+    everything that acts on a window — `get_active_window()`, window actions,
+    IME, UI reads, MCP. A function bound to a key and run inside the chooser
+    pastes, moves windows and toggles the IME of the application underneath,
+    which is where those things live. The alternative — every focus read
+    answering "the chooser" — would make the chooser's own dismiss-watch, its
+    caret anchoring and its paste act on itself.
+  - **Output the chooser cannot take is dropped**, not sent to the OS: `Ctrl-S`
+    from a binding has no chooser event, and the application underneath is the
+    one place it must not land. Text output carries no key code, so it is not
+    limited to ASCII — `InputText("議事録")` fills the filter.
+  - **Modifier keys and the mouse still reach the OS.** The OS saw the physical
+    modifiers go down and has to see them restored; on Windows that same
+    reconciliation carries the Ctrl tap that keeps a lone Alt from opening the
+    menu bar underneath. A key the chooser itself handles gets that tap too
+    (`_cancel_oneshot_win_alt`), which the grab used to skip.
+  - **An unexpected error consumes the key** while a grab is up, rather than
+    passing it through — passing through is what would leak it into the
+    application underneath.
+  - **The chooser's own promises survive app-specific bindings.** The key that
+    opened a chooser closes it, and another chooser's key replaces it — but a
+    chooser bound only in one application's table is not bound under the
+    stand-in focus. `push_modal_input`'s `passes_through` is therefore asked of
+    what the *real* focus's tables bind a modified key down to, when the
+    chooser's tables bind nothing; the chooser answers True for a
+    `ChooserAction`.
+  - This retires the earlier "only those keys" rule, whose reason was that a key
+    bound to `Left` would have sent `Left` to the application underneath. With
+    the output diverted, that `Left` reaches the chooser.
 - The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
   named keys, and — through `InputHook.char_for_key` — every digit and
@@ -283,8 +307,9 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   `NSTextInputClient` serves only the key window. That is why Migemo is part of the
   default matcher rather than an option — for a localised list it is what makes the
   filter reach the rows.
-- A key grab and a multi-stroke prefix are the same kind of state and are kept
-  mutually exclusive: pushing a grab disarms any armed prefix.
+- Pushing a grab disarms any armed multi-stroke prefix. Inside the grab,
+  prefixes work as anywhere else — they are the tables' business, and the
+  tables come first.
 - **Esc precedence.** `on_key_event` normally offers Esc to a running `ThreadedAction`
   before the key tables. While a grab is up it does not: Esc there means "close this
   window", and the window is what the user is looking at.
