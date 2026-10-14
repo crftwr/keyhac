@@ -143,6 +143,15 @@ def test_initialize_reports_a_protocol_and_a_name(dispatcher):
     assert "tools" in reply["result"]["capabilities"]
 
 
+def test_initialize_declares_the_list_can_change(dispatcher):
+    """Issue #156. The bridge sends `notifications/tools/list_changed` on the
+    daemon's behalf, and a client handshaken here is entitled to drop one this
+    side never declared."""
+    reply = dispatcher.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                               "params": {}})
+    assert reply["result"]["capabilities"]["tools"]["listChanged"] is True
+
+
 def test_notifications_get_no_reply(dispatcher):
     """A reply to a notification is a protocol violation, and clients differ in
     how loudly they complain about it."""
@@ -1660,7 +1669,9 @@ def test_the_bridge_explains_a_missing_daemon(tmp_path, capsys, monkeypatch):
     replies = _bridge_run(monkeypatch, capsys, tmp_path / "absent.json",
                           {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                            "params": {"name": "list_windows"}})
-    assert "MCP server" in replies[0]["error"]["message"]
+    result = replies[0]["result"]
+    assert result["isError"] is True
+    assert "MCP server" in result["content"][0]["text"]
 
 
 def test_a_slow_answer_is_not_a_missing_daemon(tmp_path, capsys, monkeypatch):
@@ -1706,7 +1717,7 @@ def test_a_refused_connection_is_still_the_missing_daemon(tmp_path, capsys,
     replies = _bridge_run(monkeypatch, capsys, endpoint,
                           {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                            "params": {"name": "describe_screen"}})
-    assert "AI Integration" in replies[0]["error"]["message"]
+    assert "AI Integration" in replies[0]["result"]["content"][0]["text"]
 
 
 def test_the_handshake_succeeds_with_no_daemon(tmp_path, capsys, monkeypatch):
@@ -1720,130 +1731,116 @@ def test_the_handshake_succeeds_with_no_daemon(tmp_path, capsys, monkeypatch):
                           {"jsonrpc": "2.0", "id": 2, "method": "ping"})
     assert "error" not in replies[0]
     assert replies[0]["result"]["serverInfo"]["name"] == "keyhac"
-    # The list served next is provisional, so the client has to be willing to
-    # be told to ask again.
+    # Declared as the daemon declares it, so neither handshake rules out the
+    # notification the bridge may send.
     assert replies[0]["result"]["capabilities"]["tools"]["listChanged"] is True
     # The notification is not answered; the ping is.
     assert [reply["id"] for reply in replies] == [1, 2]
 
 
-def test_the_offline_tool_list_says_the_switch_is_off(tmp_path, capsys,
-                                                      monkeypatch):
-    """One tool rather than none. An empty list is a server that connected and
-    offers nothing, which reads as a broken Keyhac; a listed tool puts the
-    reason where both a model and a person look."""
-    from keyhac.mcp import bridge
-
+def test_the_offline_tool_list_is_the_daemons(tmp_path, capsys, monkeypatch):
+    """Issue #156. The list is the same with the switch off as on, so a client
+    that ignores `notifications/tools/list_changed` - which MCP lets it do -
+    is not left holding an offline list until it is restarted."""
     replies = _bridge_run(monkeypatch, capsys, tmp_path / "absent.json",
                           {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-    tools = replies[0]["result"]["tools"]
-    assert [tool["name"] for tool in tools] == [bridge.OFF_TOOL]
-    assert "AI Integration" in tools[0]["description"]
+    assert replies[0]["result"]["tools"] == ToolRegistry(FakeKeymap()).describe()
 
 
-def test_calling_the_offline_tool_repeats_the_explanation(tmp_path, capsys,
-                                                          monkeypatch):
-    """The daemon has never heard of this tool, so the bridge answers it -
-    and while the switch is still off, the answer is the same instruction."""
-    from keyhac.mcp import bridge
-
+def test_a_tool_called_while_off_names_the_switch(tmp_path, capsys,
+                                                  monkeypatch):
+    """With no placeholder in the list, the answer to a call is the one place
+    the switch is named - as a tool result, which is how MCP routes a tool's
+    failure to the model."""
     replies = _bridge_run(monkeypatch, capsys, tmp_path / "absent.json",
                           {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": bridge.OFF_TOOL}})
+                           "params": {"name": "list_windows"}})
     result = replies[0]["result"]
     assert result["isError"] is True
     assert "AI Integration" in result["content"][0]["text"]
 
 
-def test_the_offline_tool_hands_the_list_back_once_the_switch_goes_on(
-        tmp_path, capsys, monkeypatch):
-    """The client caches a tool list. Ticking the switch changes what Keyhac
-    serves and nothing tells the client so - unless this does."""
+def _switched_on_midway(tmp_path, monkeypatch, daemon_tools, second):
+    """Run the pump over a `tools/list` answered offline, then `second` after
+    the operator ticks the switch. Returns every daemon request's method."""
+    import io
     from keyhac.mcp import bridge
 
     endpoint = tmp_path / "mcp.json"
+    asked = []
 
     class Reply:
+        def __init__(self, payload): self.payload = payload
         def __enter__(self): return self
         def __exit__(self, *exc): return False
-        def read(self): return b""
+        def read(self): return json.dumps(self.payload).encode("utf-8")
 
     def answered(prepared, timeout=None):
         if not endpoint.exists():
             raise urllib.error.URLError("connection refused")
-        return Reply()
+        request = json.loads(prepared.data)
+        asked.append(request["method"])
+        result = ({"tools": daemon_tools} if request["method"] == "tools/list"
+                  else {})
+        return Reply({"jsonrpc": "2.0", "id": request["id"], "result": result})
 
     monkeypatch.setattr(bridge.urllib.request, "urlopen", answered)
-
-    def switch_on():
-        endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
-
-    import io
     monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
 
     class Stdin(io.StringIO):
-        """The operator ticks the box between the two calls, which is exactly
-        when they reach for it."""
         def __iter__(self):
             yield json.dumps({"jsonrpc": "2.0", "id": 1,
                               "method": "tools/list"}) + "\n"
-            switch_on()
-            yield json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                              "params": {"name": bridge.OFF_TOOL}}) + "\n"
+            endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
+            yield json.dumps(second) + "\n"
 
     monkeypatch.setattr("sys.stdin", Stdin())
     bridge.main([])
-
-    written = [json.loads(line)
-               for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert written[0]["result"]["tools"][0]["name"] == bridge.OFF_TOOL
-    assert written[1]["result"]["isError"] is False
-    assert written[2] == {"jsonrpc": "2.0",
-                          "method": "notifications/tools/list_changed"}
+    return asked
 
 
-def test_a_daemon_that_answers_ends_the_placeholder(tmp_path, capsys,
+def _written(capsys):
+    return [json.loads(line)
+            for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+def test_switching_on_announces_nothing_when_the_lists_agree(tmp_path, capsys,
+                                                             monkeypatch):
+    """The ordinary case: one install, so the daemon serves exactly what the
+    bridge served, and the call the model makes next simply goes through."""
+    asked = _switched_on_midway(
+        tmp_path, monkeypatch, ToolRegistry(FakeKeymap()).describe(),
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "list_windows"}})
+    written = _written(capsys)
+    assert [reply.get("id") for reply in written] == [1, 2]
+    assert "error" not in written[1]
+    assert asked == ["tools/call", "tools/list"]
+
+
+def test_switching_on_announces_a_list_that_differs(tmp_path, capsys,
                                                     monkeypatch):
-    """Any answered request proves the switch is on, not just a call to the
-    placeholder tool - a client that pings, or one whose user asks for
-    something else first, must not be left holding the offline list."""
-    from keyhac.mcp import bridge
+    """A bridge older or newer than the daemon it reaches served a list the
+    daemon does not, and a client that honours the notification is told so.
+    Any answered request is the cue, not just a tool call."""
+    _switched_on_midway(tmp_path, monkeypatch,
+                        [{"name": "a_newer_tool", "inputSchema": {}}],
+                        {"jsonrpc": "2.0", "id": 2, "method": "ping"})
+    assert _written(capsys)[-1] == {"jsonrpc": "2.0",
+                                    "method": "notifications/tools/list_changed"}
 
-    endpoint = tmp_path / "mcp.json"
-    served = [False]
 
-    class Reply:
-        def __enter__(self): return self
-        def __exit__(self, *exc): return False
-        def read(self):
-            return json.dumps({"jsonrpc": "2.0", "id": 2,
-                               "result": {}}).encode("utf-8")
-
-    def answered(prepared, timeout=None):
-        if not served[0]:
-            raise urllib.error.URLError("connection refused")
-        return Reply()
-
-    monkeypatch.setattr(bridge.urllib.request, "urlopen", answered)
-    endpoint.write_text(json.dumps({"port": 1, "token": "t"}))
-    monkeypatch.setattr(bridge, "endpoint_path", lambda config=None: str(endpoint))
-
-    import io
-
-    class Stdin(io.StringIO):
-        def __iter__(self):
-            yield json.dumps({"jsonrpc": "2.0", "id": 1,
-                              "method": "tools/list"}) + "\n"
-            served[0] = True
-            yield json.dumps({"jsonrpc": "2.0", "id": 2, "method": "ping"}) + "\n"
-
-    monkeypatch.setattr("sys.stdin", Stdin())
-    bridge.main([])
-
-    written = [json.loads(line)
-               for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert written[-1] == {"jsonrpc": "2.0",
-                           "method": "notifications/tools/list_changed"}
+def test_a_relisted_client_needs_no_announcement(tmp_path, capsys,
+                                                 monkeypatch):
+    """A client that asks for the list again once the daemon answers already
+    holds the daemon's own: there is nothing left to tell it, and no reason
+    to ask the daemon twice."""
+    asked = _switched_on_midway(
+        tmp_path, monkeypatch, [{"name": "a_newer_tool", "inputSchema": {}}],
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    written = _written(capsys)
+    assert [reply.get("id") for reply in written] == [1, 2]
+    assert asked == ["tools/list"]
 
 
 def test_an_endpoint_file_the_daemon_left_behind_is_still_off(tmp_path, capsys,
@@ -1863,7 +1860,7 @@ def test_an_endpoint_file_the_daemon_left_behind_is_still_off(tmp_path, capsys,
                           {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
                           {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert replies[0]["result"]["serverInfo"]["name"] == "keyhac"
-    assert replies[1]["result"]["tools"][0]["name"] == bridge.OFF_TOOL
+    assert replies[1]["result"]["tools"] == ToolRegistry(FakeKeymap()).describe()
 
 
 def test_the_bridge_reads_its_pipe_as_utf8(tmp_path, monkeypatch):

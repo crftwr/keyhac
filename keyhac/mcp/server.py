@@ -324,7 +324,10 @@ class Dispatcher:
         from keyhac import __version__
         return {
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
+            # Declared although this server never sends it: the bridge sends
+            # `notifications/tools/list_changed` on its behalf, and a client
+            # that was handshaken here is entitled to drop one undeclared.
+            "capabilities": {"tools": {"listChanged": True}},
             "serverInfo": {"name": "keyhac", "version": __version__},
         }
 

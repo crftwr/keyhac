@@ -284,19 +284,22 @@ over its stdin/stdout. Keyhac cannot be that child — it is a resident daemon
 holding the keyboard hook and your focus history, and a second copy per
 conversation would be a second hook and a second accessibility prompt. So
 `keyhac-mcp-bridge` runs as the child instead and forwards to the daemon
-already running. It holds no tool definitions and no logic, so the two cannot
-drift apart.
+already running. It writes no tool definitions of its own — what it lists comes
+from the same code the daemon serves its tools from — so the two cannot drift
+apart.
 
 **With the switch off, the client stays connected.** An MCP client that meets an
 error while starting a server writes it off as broken and stops calling it — so
 the commonest state there is, Keyhac running with the MCP switch off, used to
 arrive as "keyhac failed to connect", with the explanation on a line nobody
 reads and a client restart needed after you ticked the box. Now the handshake
-succeeds and the bridge lists one tool, `keyhac_mcp_server_is_off`, whose
-description says which box to tick. Tick it and tell the agent to try that tool
-again: Keyhac's own tools replace it on the spot, with no restart. The same
-answer covers the hour having lapsed and a Keyhac that was killed rather than
-quit, both of which look identical from the client's side.
+succeeds and the bridge lists Keyhac's tools whether the switch is on or off.
+Calling one while it is off answers with which box to tick; tick it and tell
+the agent to try again, and the same call goes through — the list never
+changed, so there is nothing for the client to reload and no restart, whether
+or not it supports MCP's tool-list change notification. The same answer covers
+the hour having lapsed and a Keyhac that was killed rather than quit, both of
+which look identical from the client's side.
 
 Register it — Settings → Developer → Edit Config, or
 `~/Library/Application Support/Claude/claude_desktop_config.json`:
