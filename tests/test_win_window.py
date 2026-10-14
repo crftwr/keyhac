@@ -189,6 +189,101 @@ class TestFrameWrites:
         assert not own_window.is_minimized()
 
 
+@pytest.fixture
+def normal_window(own_window):
+    """The test window, out of every state and at a known small frame, and
+    put back that way afterwards - a failed test must not leave the next one
+    starting maximized."""
+    def settle():
+        while own_window.is_minimized() or own_window.is_maximized():
+            assert own_window.restore()
+        assert own_window.set_frame(120, 140, 400, 300)
+        assert own_window.get_frame() == (120, 140, 400, 300)
+    settle()
+    yield own_window
+    settle()
+
+
+class TestMaximize:
+    """issue #157: IsZoomed / SW_MAXIMIZE, and set_frame leaving the state."""
+
+    def test_maximize_and_restore_round_trip(self, normal_window):
+        window = normal_window
+        before = window.get_frame()
+        assert not window.is_maximized()
+        assert window.maximize()
+        assert window.is_maximized()
+        assert not window.is_minimized() and not window.is_full_screen()
+        assert window.get_frame() != before
+        assert window.restore()
+        assert not window.is_maximized()
+        assert window.get_frame() == before
+
+    def test_maximized_covers_the_work_area(self, provider, normal_window):
+        """SW_MAXIMIZE pushes the resize border off the monitor; the visible
+        frame get_frame reports is the work area itself."""
+        window = normal_window
+        assert window.maximize()
+        frame = window.get_frame()
+        assert any(all(abs(a - b) <= 2 for a, b in zip(frame, work))
+                   for work in provider.screen_work_frames()), \
+            f"maximized frame {frame} is no work area"
+
+    def test_minimized_maximized_window_is_one_state_at_a_time(self, normal_window):
+        """Minimizing a maximized window clears IsZoomed; restore() lifts
+        only the minimize and brings it back maximized."""
+        window = normal_window
+        assert window.maximize()
+        assert window.minimize()
+        assert window.is_minimized()
+        assert not window.is_maximized()
+        assert window.restore()
+        assert not window.is_minimized()
+        assert window.is_maximized()
+        assert window.restore()
+        assert not window.is_maximized()
+
+    def test_maximize_a_minimized_window(self, normal_window):
+        window = normal_window
+        assert window.minimize()
+        assert window.maximize()
+        assert window.is_maximized() and not window.is_minimized()
+
+    def test_set_frame_ends_maximized(self, normal_window):
+        """Otherwise the window moves but stays flagged maximized, and the
+        next restore or title-bar double-click picks some other size."""
+        window = normal_window
+        assert window.maximize()
+        assert window.set_frame(150, 160, 420, 310)
+        assert not window.is_maximized()
+        assert window.get_frame() == (150, 160, 420, 310)
+        # Nothing left to restore: the frame written is the normal one.
+        assert not window.restore()
+        assert window.get_frame() == (150, 160, 420, 310)
+
+    def test_set_frame_without_a_size_on_a_maximized_window(self, normal_window):
+        """A move alone keeps the restored size, not the maximized one."""
+        window = normal_window
+        _x, _y, w, h = window.get_frame()
+        assert window.maximize()
+        assert window.set_frame(150, 160)
+        assert not window.is_maximized()
+        assert window.get_frame() == (150, 160, w, h)
+
+    def test_every_verb_with_nothing_to_do_returns_false(self, normal_window):
+        window = normal_window
+        assert not window.restore()
+        assert window.maximize()
+        assert not window.maximize()
+        assert window.minimize()
+        assert not window.minimize()
+
+    def test_full_screen_is_never_reported(self, normal_window):
+        window = normal_window
+        assert not window.enter_full_screen()
+        assert not window.is_full_screen()
+
+
 class TestWorkFrames:
 
     def test_work_frames_sit_inside_the_screens(self, provider):
@@ -266,3 +361,38 @@ class TestSnapLive:
         assert any(abs(wx - sx) <= 2 and abs(wy - sy) <= 2
                    and abs(ww - sw) <= 2 and abs(wh - sh) <= 2
                    for sx, sy, sw, sh in provider.screen_work_frames())
+
+    def test_snap_on_a_maximized_window_leaves_maximized(
+            self, provider, normal_window, monkeypatch):
+        """The #157 report: SnapWindow on maximized Chrome."""
+        from keyhac.actions import MoveWindow, SnapWindow
+        from keyhac.core.keymap import Keymap
+        window = normal_window
+
+        class Stub:
+            def get_active_window(self):
+                return window
+
+            def screen_work_frames(self):
+                return provider.screen_work_frames()
+
+            def screen_frames(self):
+                return provider.screen_frames()
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(Stub))
+
+        sx, sy, sw, sh = MoveWindow._get_best_screen(
+            window.get_frame(), provider.screen_work_frames())
+        expected = (sx, sy, sw / 2, sh)
+        assert window.maximize()
+        SnapWindow("left")()
+        assert not window.is_maximized()
+        assert all(abs(a - b) <= 2.0
+                   for a, b in zip(window.get_frame(), expected)), \
+            f"frame {window.get_frame()} != {expected}"
+        # The snapped frame is the normal one now: maximizing and restoring
+        # comes back to it, not to whatever preceded the maximize.
+        snapped = window.get_frame()
+        assert window.maximize()
+        assert window.restore()
+        assert window.get_frame() == snapped

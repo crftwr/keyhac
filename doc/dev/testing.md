@@ -184,6 +184,18 @@ defect, not a model defect.
   granted window-server *key focus*: it can order windows front, but in-sandbox
   keyboard-focus probes give unreliable negatives. Only an interactive pass is
   conclusive for focus behavior (chooser typing, etc.).
+- **Window-state animations outlive the state change, and a write made
+  meanwhile is lost.** Fill and Return to Previous Size move the AX frame
+  through ~370 ms, so a test that writes a frame as soon as `is_maximized()`
+  turns true races the tail of it; wait for the frame to stop moving
+  (`_wait_settled`). Full screen is the opposite trap: the frame jumps at
+  once, so no frame-based wait sees its ~0.5 s transition, during which a
+  request the other way is dropped — only a fixed wait
+  (`_wait_full_screen_transition`) works. And Fill outlives even its
+  animation: a frame written in the half second after the window stops
+  moving is put back, so `_wait_fill_transition` adds a fixed wait on top
+  of `_wait_settled`. Each failure looked like a broken feature in whichever
+  test ran next.
 
 ## Live verification record
 
@@ -1002,6 +1014,38 @@ is now the thing to confirm rather than the thing to fix.
   must bring it forward rather than advance the rotation; quit it and one press
   must launch it. On macOS repeat with a localized application name, since
   `app=` matches what the OS reports.
+
+- **Maximize, restore and `SnapWindow` on a maximized window, on Windows**
+  *(passed 2026-10-14, Windows 11 26200, Chrome)* — issue #157; the
+  reasoning and the macOS measurements are in
+  [design-notes.md](design-notes.md#maximized-and-full-screen-issue-157).
+  `tests/test_win_window.py`'s `TestMaximize` pins the round trips on a window
+  this process owns (maximize → `is_maximized()`; `restore()` → not; a
+  minimized maximized window is minimized only, and `restore()` brings it back
+  maximized; `set_frame`, with or without a size, ends the state; every verb
+  with nothing to do returns False), and `TestSnapLive` the #157 case itself.
+  Taking the `SW_RESTORE` out of `set_frame` fails three of them, and on
+  Chrome makes `SnapWindow` on a maximized window do nothing visible. What is
+  left for the eye, on Chrome, where #157 saw it fail: maximize it, run
+  `SnapWindow("left")`, and check that it lands on the left half *and* that
+  double-clicking its title bar afterwards maximizes it and a second
+  double-click brings it back to the left half. Then the same starting from
+  a window Windows snapped itself (Win+Right): before the fix the first
+  double-click went back to the size from before Win+Right, because a window
+  the OS snapped stays "arranged" (`IsWindowArranged`) wherever
+  `SetWindowPos` puts it; `set_frame` now `SW_RESTORE`s that state too.
+  `SetWindowPlacement` with the new normal rect also clears it without the
+  brief flash of the old size, but its rect is in workspace coordinates,
+  which are not screen coordinates once the taskbar is on the top or left.
+  The other two open questions answered on the way: Chrome honors
+  `ShowWindow(SW_MAXIMIZE)` (it handles its own non-client area, so it was
+  the likeliest to ignore one), and the state read back straight after
+  `ShowWindow` on another process's window is the new one (maximize 7–8 ms,
+  minimize 5–37 ms, read back True each time). Drive a Chrome started with a
+  throwaway `--user-data-dir`, never the user's own, and double-click the
+  empty tab strip — at high DPI the caption buttons reach well over 260 px
+  in from the right edge. `is_full_screen()` and `enter_full_screen()` stay
+  the base `False` on Windows by design.
 
 - **Window geometry against Windows' own snap** *(new, not yet passed)* —
   `WinWindow.get_frame`/`set_frame` now work in the **visible** frame (DWM's

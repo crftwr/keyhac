@@ -1607,6 +1607,145 @@ at all.
   AXFrontmost, with the cooperative `activateWithOptions:` as fallback (macOS 14+
   ignores the cooperative call when the caller is not the active app).
 
+## Maximized and full screen (issue #157)
+
+keyhac-win had `isMaximized()`/`maximize()` (pyauto: `IsZoomed`,
+`WM_SYSCOMMAND`/`SC_MAXIMIZE`); keyhac-mac had neither, only a sample that
+pressed the zoom button. Keyhac2 lost them in the port. Bringing them back
+meant first deciding what "maximized" is on macOS, which has two states that
+look like it. Everything below was measured on macOS 27.0.1 (MacBook with a
+notch, 1710×1112) against TextEdit, Chrome and the test helper.
+
+- **One state at a time, because the OS layers them.** Minimized and full
+  screen *cover* the window's placement (normal or maximized) and hand it
+  back unchanged: full screen entered from Fill comes back filled, entered
+  from a normal frame comes back normal, and while it is up Window > Fill is
+  disabled. "Full screen is a bigger maximize" fails the second case. Windows
+  is the same shape — minimizing a maximized window clears `IsZoomed` and
+  keeps "restore to maximized" in `WINDOWPLACEMENT`. So `is_minimized()`,
+  `is_maximized()` and `is_full_screen()` report what is on screen and at
+  most one is true, and `restore()` lifts one layer, like `SW_RESTORE`. The
+  covered layer ("will come back maximized") is not public: on macOS the only
+  hint is a private menu item's enabled state (below), which also speaks only
+  for the application's main window. It can be added later as its own
+  method without breaking anything.
+- **One verb in per state, one way out of all of them.** `minimize()`,
+  `maximize()` and `enter_full_screen()` go in; `restore()` is the only way
+  out. A first draft had `set_full_screen(bool)` — the shape of the
+  `AXFullScreen` attribute — which gave full screen alone a second exit, one
+  that answered True on a window that was not in full screen (AX accepts
+  writing the value it already has). The only thing it added over
+  `restore()` was leaving full screen *without* touching any other state,
+  and `if window.is_full_screen(): window.restore()` says that already.
+  Every verb returns False when there is nothing to do, and otherwise
+  whether the change was made — read back from the window, except where
+  macOS animates (Fill, Return to Previous Size), whose result cannot be
+  checked yet when the call returns and is reported as accepted. On Windows
+  that meant replacing `ShowWindow`'s return value, which is the window's
+  previous visibility and not success, with the state read back.
+- **`is_full_screen()` and `enter_full_screen()` are portable but macOS-only
+  in effect**, after `class_name`'s precedent. Windows has no OS full-screen
+  mode — F11 in a browser is the application drawing borderless over the
+  monitor — so the base `False` is the honest answer there, and `SnapWindow`
+  can ask it on both OSes.
+- **Fill, not Zoom.** Window > Zoom (`NSWindow zoom:`, AX `AXZoomWindow`) is
+  the application's: it picks the size and remembers the other one itself,
+  with no state another process can read. Chrome's toggled between
+  1690×1054 and 1710×1074. Fill (macOS 15+ window tiling) is the OS's: always
+  the work area, a "Return to Previous Size", and dragging or an AX frame
+  write ends it. Mixing them confuses both: Zoom after Fill put the window
+  back at its pre-Fill size while the tiled state stayed on. Since macOS 15
+  the green button means full screen (its AX subrole is
+  `AXFullScreenButton`); Zoom is its Option-click.
+- **Fill has no API; its menu item does.** Nothing in AppKit or AX declares
+  it. The OS adds Fill, Center, Move & Resize and Return to Previous Size to
+  every application's windows menu, and each item's `AXIdentifier` is its
+  action selector: `_zoomFill:`, `_zoomUntile:` (`NSWindow` responds to both;
+  the SDK headers declare neither). Pressing the item through AX is public
+  API on our side, but the identifier is private and may change, so a
+  missing Fill falls back to placing the window on the work area (no
+  previous size to return to), and a missing Return to Previous Size makes
+  `restore()` return False. The identifiers are the same in TextEdit,
+  Chrome and a bare puikit app given a windows menu, and they are not
+  localized. A synthesized Fn-Ctrl-F was rejected as a further fallback: a
+  keystroke can land somewhere else, turning a failed operation into a wrong
+  one.
+- **The press needs the application in front, and in front for real.** A
+  press that reaches a background application returns success and does
+  nothing. Right after an AXFrontmost write it was dropped in 2 of 6 trials;
+  waiting until the application reports AXFrontmost (24–48 ms) made it 6 of
+  6, hence `_bring_forward`. AXRaise is what makes the target the main window
+  Fill acts on.
+- **`AXEnabled` on a menu item is stale.** AppKit revalidates items when a
+  menu opens, so through AX the value is whatever it was the last time the
+  user looked — False for an application just brought forward, with Fill
+  working fine. It cannot gate the press, so a fixed-size window is refused
+  by `AXSize` not being settable instead.
+- **`is_maximized()` is a frame test, because there is nothing else.** The
+  window fills the `NSScreen.visibleFrame` of the screen it overlaps most.
+  Fill's frame equalled visibleFrame exactly with the Dock auto-hidden
+  (no strip reserved for it any more), with the Dock shown at the bottom
+  (`984` high) and on the left (`x = 65`). Two settings move it: menu-bar
+  auto-hide under a notch makes visibleFrame start at 37.5 while Fill rounds
+  to 37 (hence 2 px tolerance), and "Tiled windows have margins"
+  (`com.apple.WindowManager` `EnableTiledWindowMargins`) puts Fill 8 px
+  inside every edge — both frames are accepted rather than the preference
+  read, since it belongs to another application. Menu-bar auto-hide on a Mac
+  *without* a notch was not available to measure. A window the user sized to
+  exactly the work area by hand counts as maximized; that is the price of
+  there being no flag. `AXFullScreen` is checked first because under the
+  notch a full-screen window's frame is the work area too.
+- **Everything animates, and a frame written mid-animation loses.** Fill and
+  Return to Previous Size take about 370 ms, and the AX frame moves through
+  the animation, so `is_maximized()` turns true only near its end. A frame
+  written before it ends is overwritten, and so is one written for a while
+  *after* it: the OS goes on finishing the tile once the frame has stopped
+  moving, and put back a frame written 0.2 s after `is_maximized()` turned
+  true in 5 of 5 trials, against 0 of 5 at 0.6 s. A `SnapWindow` pressed
+  within about a second of a `maximize()` therefore does not stick; nothing
+  in AX says when the OS is done, so it is documented, not waited for on
+  the main thread. `SnapWindow` likewise never
+  restores a maximized window before placing it (restore-then-place came
+  back at the pre-Fill size); it relies on the frame write ending Fill, which
+  `set_frame` now promises on both OSes. Full screen is different: the AX
+  frame jumps to its final value at once, but a request the other way
+  within ~0.5 s is accepted and ignored (dropped at 0.4 s, honored from
+  0.6 s), and Fill stays ignored for over 0.4 s after leaving. So
+  `maximize()` on a full-screen window leaves and *places* the window rather
+  than waiting on the main thread — unless it comes back filled already.
+  Writing a frame straight after leaving full screen does land.
+- **AX reads fail while an application animates.** Coming back from the
+  Dock, an application let 0.1 s AX reads time out for 200–400 ms
+  (`kAXErrorCannotComplete`), so the menu walk has its own 0.5 s cap; the
+  hook's 0.1 s one is for the key path, which `maximize()` is not on. The
+  walk runs from the end of the menu bar and skips the Apple menu, whose
+  Recent Items dwarfs everything else: 5–18 ms in Chrome.
+- **AX writes report failure now.** `set_frame` used to drop the AX error,
+  and a full-screen window refuses `AXPosition` with `kAXErrorFailure`, so
+  `SnapWindow` on one reported success and did nothing.
+  `UIElement.set_attribute_value` returns whether the write was accepted.
+- **Windows** (written on macOS, then measured on Windows 11 against
+  Chrome — the pass is in [testing.md](testing.md)): `is_maximized` is
+  `IsZoomed`, `maximize` is `ShowWindow(SW_MAXIMIZE)` read back through
+  `IsZoomed`, and `set_frame` leaves the maximized state with `SW_RESTORE`
+  before `SetWindowPos`, which otherwise moves the window while it stays
+  flagged maximized — the cause of the `SnapWindow` failure on maximized
+  Chrome reported in #157: with the `SW_RESTORE` taken out, Chrome stays
+  maximized and the snap has no visible effect at all. A window Windows
+  snapped itself (Win+arrow, a drag to the edge) has a milder form of the
+  same trap, and the reporter saw trouble after Win+arrow too: the window
+  does move, but it stays "arranged" (`IsWindowArranged`) wherever it is
+  put, and a title-bar double-click takes it back to its size from before
+  the snap instead of maximizing it. `SW_RESTORE` ends that
+  too, so `set_frame` sends it for either; the cost is the pre-snap frame
+  showing for a moment before the write lands. `SetWindowPlacement` would
+  avoid the flash but speaks workspace coordinates, which move with a
+  taskbar on the top or left. Arranged is not a public state: it is not
+  what is on screen (the frame is), only what the OS would do next, and
+  `restore()` on a snapped window returns False — there is no layer to
+  lift. ShowWindow on another process's window returns once the window has
+  changed, so reading the state straight back works.
+
 ## Mouse output
 
 - Portable actions over `InputHook.send_mouse`/`cursor_pos`. Buttons/wheels release

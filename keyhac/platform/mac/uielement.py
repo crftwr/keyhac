@@ -294,8 +294,21 @@ class UIElement:
             return {name: None for name in names}
         return dict(zip(names, [_from_ax(v) for v in values]))
 
-    def set_attribute_value(self, name: str, type_name: str, value) -> None:
-        AS.AXUIElementSetAttributeValue(self._ref, name, _to_ax(type_name, value))
+    def set_attribute_value(self, name: str, type_name: str, value) -> bool:
+        """Write an attribute, and report whether the OS accepted it.
+
+        Args:
+            name: Attribute name ("AXPosition", "AXValue", ...).
+            type_name: How to convert value: "bool", "number", "int",
+                "string", "point", "size", "rect" or "range".
+            value: The new value.
+
+        Returns:
+            Whether the write was accepted.  Acceptance is not the effect:
+            some applications take writes that change nothing.
+        """
+        return AS.AXUIElementSetAttributeValue(
+            self._ref, name, _to_ax(type_name, value)) == 0
 
     def set_focus(self) -> None:
         """Ask for the keyboard focus (the macOS half of the Windows

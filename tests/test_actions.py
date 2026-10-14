@@ -2,7 +2,7 @@
 
 The live macOS counterpart (real AX frame writes) is in test_mac_window.py;
 this file pins the arithmetic: work-area use, ratio, best-screen choice,
-minimized-window restore, and the degraded paths.
+leaving minimized and full screen first, and the degraded paths.
 """
 
 import pytest
@@ -13,11 +13,16 @@ from keyhac.platform.base import Window, WindowProvider
 
 class FakeWindow(Window):
 
-    def __init__(self, frame, minimized=False):
+    def __init__(self, frame, minimized=False, maximized=False,
+                 full_screen=False, accepts_frame=True):
         self._frame = frame
         self._minimized = minimized
+        self._maximized = maximized
+        self._full_screen = full_screen
+        self._accepts_frame = accepts_frame
         self.set_frame_calls = []
         self.restored = False
+        self.events = []
 
     @property
     def title(self):
@@ -36,7 +41,8 @@ class FakeWindow(Window):
 
     def set_frame(self, x, y, w=None, h=None):
         self.set_frame_calls.append((x, y, w, h))
-        return True
+        self.events.append(("set_frame", self._full_screen))
+        return self._accepts_frame
 
     def activate(self):
         return True
@@ -45,9 +51,18 @@ class FakeWindow(Window):
         return self._minimized
 
     def restore(self):
+        self.events.append(("restore", self._full_screen))
         self._minimized = False
+        self._full_screen = False
         self.restored = True
         return True
+
+    def is_maximized(self):
+        return self._maximized
+
+    def is_full_screen(self):
+        return self._full_screen
+
 
 
 class FakeProvider(WindowProvider):
@@ -82,9 +97,9 @@ def snapped(engine):
     """snapped(position, ..., frame=..., screens=, work=) -> FakeWindow after
     the snap ran on a Keymap wired to the fakes."""
     def run(position, ratio=None, frame=(100.0, 100.0, 500.0, 400.0),
-            screens=(SCREEN,), work=(WORK,), minimized=False):
+            screens=(SCREEN,), work=(WORK,), **state):
         fixture = engine(lambda keymap: None)
-        window = FakeWindow(frame, minimized=minimized)
+        window = FakeWindow(frame, **state)
         fixture.keymap.window_provider = FakeProvider(
             window, list(screens), list(work))
         action = (SnapWindow(position) if ratio is None
@@ -135,6 +150,26 @@ class TestSnapGeometry:
         window = snapped("full", minimized=True)
         assert window.restored
         assert window.set_frame_calls  # restored *and* placed
+
+    def test_full_screen_window_leaves_full_screen_before_the_snap(
+            self, snapped):
+        """macOS refuses a frame write to a full-screen window outright."""
+        window = snapped("left", full_screen=True)
+        assert window.events == [("restore", True), ("set_frame", False)]
+        assert window.set_frame_calls == [(0.0, 25.0, 960.0, 1055.0)]
+
+    def test_maximized_window_is_placed_without_restoring_first(
+            self, snapped):
+        """set_frame un-maximizes; restoring first would race on macOS,
+        where Return to Previous Size animates over the frame written
+        after it."""
+        window = snapped("left", maximized=True)
+        assert not window.restored
+        assert window.set_frame_calls == [(0.0, 25.0, 960.0, 1055.0)]
+
+    def test_a_refused_frame_is_logged_not_raised(self, snapped, caplog):
+        snapped("left", accepts_frame=False)
+        assert "did not accept the frame" in caplog.text
 
 
 class TestSnapValidation:

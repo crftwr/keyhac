@@ -36,13 +36,24 @@ WINDOW_TITLE = "keyhac-window-test"
 #: Opens the target window, reports readiness, then services its run loop
 #: (which is what answers our AX requests) until killed.  finishLaunching()
 #: matters: without it AppKit never registers the app's AX server and every
-#: query from outside fails with kAXErrorCannotComplete.
+#: query from outside fails with kAXErrorCannotComplete.  The Window menu is
+#: there for maximize(): the OS adds Fill and Return to Previous Size to
+#: whichever menu an application registers as its windows menu.
 _HELPER_SRC = f"""
 from puikit.backends import create_backend
 backend = create_backend("gui", width=40, height=10, title={WINDOW_TITLE!r})
 backend.open()
-from AppKit import NSApplication
-NSApplication.sharedApplication().finishLaunching()
+from AppKit import NSApplication, NSMenu, NSMenuItem
+app = NSApplication.sharedApplication()
+main_menu = NSMenu.alloc().init()
+for title in ("App", "Window"):
+    item = NSMenuItem.alloc().init()
+    submenu = NSMenu.alloc().initWithTitle_(title)
+    item.setSubmenu_(submenu)
+    main_menu.addItem_(item)
+app.setMainMenu_(main_menu)
+app.setWindowsMenu_(submenu)
+app.finishLaunching()
 print("ready", flush=True)
 def handler(event):  # puikit's EventHandler is a plain callable
     pass
@@ -294,3 +305,244 @@ class TestActivate:
                 element = AS.AXUIElementCreateApplication(
                     previous.processIdentifier())
                 AS.AXUIElementSetAttributeValue(element, "AXFrontmost", True)
+
+
+def _wait_settled(window, timeout=5.0):
+    """Wait until the frame stops moving.
+
+    Fill, Return to Previous Size and the way in and out of full screen
+    animate for 0.3-1 s, and a frame written meanwhile is overwritten by the
+    animation - each test has to start after the last one's has finished.
+    """
+    deadline = time.monotonic() + timeout
+    last = window.get_frame()
+    while time.monotonic() < deadline:
+        _wait_for(lambda: False, timeout=0.2)
+        frame = window.get_frame()
+        if frame is not None and frame == last:
+            return frame
+        last = frame
+    return last
+
+
+def _wait_full_screen_transition():
+    """Let a full-screen transition finish.
+
+    The AX frame jumps to its final value at once, so _wait_settled cannot
+    see this one, yet a request the other way made during the ~0.5 s it
+    animates is silently dropped (measured: dropped at 0.4 s, honored from
+    0.6 s on).
+    """
+    _wait_for(lambda: False, timeout=1.2)
+
+
+def _wait_fill_transition(window):
+    """Let Fill (or Return to Previous Size) finish, not just its animation.
+
+    The frame stops moving ~0.37 s after the press, but the OS goes on
+    finishing the tile for a while and puts back any frame written meanwhile:
+    written 0.2 s after is_maximized() turned true, reverted 5 of 5 times;
+    0.6 s after, 0 of 5.
+    """
+    _wait_settled(window)
+    _wait_for(lambda: False, timeout=0.6)
+
+
+def _close_to(frame, expected, tolerance=2.0):
+    return frame is not None and all(
+        abs(a - b) <= tolerance for a, b in zip(frame, expected))
+
+
+class TestFillGeometry:
+    """is_maximized()'s frame test, without the window server."""
+
+    WORK = (0.0, 38.0, 1710.0, 1074.0)
+
+    def test_the_work_area_itself_fills(self):
+        from keyhac.platform.mac.window import _fills
+        assert _fills(self.WORK, self.WORK)
+
+    def test_fill_with_tiling_margins_fills(self):
+        """System Settings > Desktop & Dock > Tiled windows have margins:
+        Fill lands 8 px inside every edge (measured, macOS 27)."""
+        from keyhac.platform.mac.window import _fills
+        assert _fills((8.0, 46.0, 1694.0, 1058.0), self.WORK)
+
+    def test_half_pixel_rounding_fills(self):
+        """Menu bar auto-hidden under a notch: the work area starts at 37.5,
+        and Fill rounds it."""
+        from keyhac.platform.mac.window import _fills
+        assert _fills((0.0, 37.0, 1710.0, 1075.0), (0.0, 37.5, 1710.0, 1074.5))
+
+    def test_a_classic_zoom_short_of_the_work_area_does_not(self):
+        """Chrome's Window > Zoom stopped 20 px short of the work area."""
+        from keyhac.platform.mac.window import _fills
+        assert not _fills((0.0, 38.0, 1690.0, 1054.0), self.WORK)
+
+    def test_the_screen_the_window_is_mostly_on_is_chosen(self):
+        from keyhac.platform.mac.window import _best_work_frame
+        right = (1710.0, 0.0, 1920.0, 1055.0)
+        assert _best_work_frame((1800.0, 10.0, 500.0, 500.0),
+                                [self.WORK, right]) == right
+        assert _best_work_frame((-5000.0, 0.0, 10.0, 10.0),
+                                [self.WORK, right]) is None
+
+
+@pytest.fixture
+def frontmost_restored():
+    """Hand the front back to whichever application had it: maximize() and
+    restore() bring the helper forward, as Fill needs."""
+    from AppKit import NSWorkspace
+    previous = NSWorkspace.sharedWorkspace().frontmostApplication()
+    yield
+    if previous is not None:
+        element = AS.AXUIElementCreateApplication(previous.processIdentifier())
+        AS.AXUIElementSetAttributeValue(element, "AXFrontmost", True)
+
+
+@pytest.fixture
+def normal_window(own_window):
+    """The helper window, out of every state and at a known small frame, and
+    put back that way afterwards."""
+    def settle():
+        _wait_fill_transition(own_window)
+        if own_window.is_full_screen():
+            _wait_full_screen_transition()
+            own_window.restore()
+            assert _wait_for(lambda: not own_window.is_full_screen()), \
+                "window never left full screen"
+            _wait_full_screen_transition()
+        if own_window.is_minimized():
+            own_window.restore()
+            assert _wait_for(lambda: not own_window.is_minimized())
+        assert _wait_for(lambda: own_window.get_frame() is not None)
+        _wait_settled(own_window)
+        own_window.set_frame(120, 140, 400, 300)
+        assert _wait_for(lambda: _close_to(own_window.get_frame(),
+                                           (120, 140, 400, 300))), \
+            f"frame stayed at {own_window.get_frame()}"
+    settle()
+    yield own_window
+    settle()
+
+
+class TestMaximize:
+
+    def test_maximize_fills_and_restore_returns(
+            self, normal_window, frontmost_restored):
+        """Window > Fill, pressed through AX, and Return to Previous Size."""
+        window = normal_window
+        before = window.get_frame()
+        assert not window.is_maximized()
+        assert window.maximize()
+        assert _wait_for(window.is_maximized), \
+            f"never maximized; frame {window.get_frame()}"
+        assert not window.is_full_screen() and not window.is_minimized()
+        assert window.restore()
+        assert _wait_for(lambda: _close_to(window.get_frame(), before)), \
+            f"frame {window.get_frame()} never returned to {before}"
+        assert not window.is_maximized()
+
+    def test_every_verb_with_nothing_to_do_returns_false(
+            self, normal_window, frontmost_restored):
+        window = normal_window
+        assert not window.restore()
+        assert window.maximize()
+        assert _wait_for(window.is_maximized)
+        _wait_fill_transition(window)
+        assert not window.maximize()
+        assert window.minimize()
+        assert _wait_for(window.is_minimized)
+        assert not window.minimize()
+
+    def test_without_fill_the_window_is_placed(
+            self, normal_window, frontmost_restored, monkeypatch):
+        """No Window > Fill to press (a macOS that renamed it, an application
+        without a windows menu): the same frame, by a frame write."""
+        window = normal_window
+        monkeypatch.setattr(type(window), "_window_menu_item",
+                            lambda self, identifier, depth: None)
+        assert window.maximize()
+        assert _wait_for(window.is_maximized), \
+            f"never maximized; frame {window.get_frame()}"
+
+    def test_set_frame_ends_maximized(self, normal_window, frontmost_restored):
+        window = normal_window
+        assert window.maximize()
+        assert _wait_for(window.is_maximized), \
+            f"never maximized; frame {window.get_frame()}"
+        _wait_fill_transition(window)
+        assert window.set_frame(150, 160, 420, 310)
+        assert _wait_for(lambda: _close_to(window.get_frame(),
+                                           (150, 160, 420, 310)))
+        assert not window.is_maximized()
+
+
+class TestFullScreen:
+
+    def test_full_screen_round_trip_is_not_maximized(
+            self, normal_window, frontmost_restored):
+        window = normal_window
+        assert window.enter_full_screen()
+        assert _wait_for(window.is_full_screen, timeout=5), \
+            "never entered full screen"
+        _wait_full_screen_transition()
+        # One state at a time, even where the full-screen frame equals the
+        # work area (under a notch).
+        assert not window.is_maximized()
+        assert not window.set_frame(10, 10), \
+            "a full-screen window accepted a frame write"
+        assert not window.enter_full_screen()   # already there
+        assert not window.minimize()            # macOS will not
+        assert window.restore()
+        assert _wait_for(lambda: not window.is_full_screen(), timeout=5)
+
+    def test_maximize_from_full_screen(self, normal_window, frontmost_restored):
+        window = normal_window
+        assert window.enter_full_screen()
+        assert _wait_for(window.is_full_screen, timeout=5)
+        _wait_full_screen_transition()
+        assert window.maximize()
+        assert _wait_for(window.is_maximized, timeout=5), \
+            f"never maximized; frame {window.get_frame()}"
+        assert not window.is_full_screen()
+
+    def test_snap_from_full_screen(self, provider, normal_window,
+                                   frontmost_restored, monkeypatch):
+        from keyhac.actions import MoveWindow, SnapWindow
+        from keyhac.core.keymap import Keymap
+        window = normal_window
+
+        class Stub:
+            def get_active_window(self):
+                return window
+
+            def screen_work_frames(self):
+                return provider.screen_work_frames()
+
+            def screen_frames(self):
+                return provider.screen_frames()
+
+        monkeypatch.setattr(Keymap, "get_instance", staticmethod(Stub))
+        works = provider.screen_work_frames()
+        sx, sy, sw, sh = MoveWindow._get_best_screen(window.get_frame(), works)
+        expected = (sx, sy, sw / 2, sh)
+        assert window.enter_full_screen()
+        assert _wait_for(window.is_full_screen, timeout=5)
+        _wait_full_screen_transition()
+        SnapWindow("left")()
+        assert _wait_for(lambda: _close_to(window.get_frame(), expected),
+                         timeout=5), \
+            f"frame {window.get_frame()} never approached {expected}"
+        assert not window.is_full_screen()
+
+    def test_enter_full_screen_from_minimized(
+            self, normal_window, frontmost_restored):
+        window = normal_window
+        assert window.minimize()
+        assert _wait_for(window.is_minimized)
+        assert window.enter_full_screen()
+        assert _wait_for(window.is_full_screen, timeout=5), \
+            "never entered full screen"
+        assert not window.is_minimized()
+        _wait_full_screen_transition()
