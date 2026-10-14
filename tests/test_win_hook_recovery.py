@@ -6,6 +6,10 @@ aimed at a higher-integrity window from a lower-integrity hook. Either way the
 physical events reach the OS while we are blind, and the ones the config
 swallows never reach it afterwards - so a *down* the OS received is matched by
 an up it will never see, and it holds the key forever.
+
+A secure desktop is the same blindness the other way round: the downs reach
+*us*, and the ups go to Winlogon's desktop, so it is the engine that holds the
+key forever (#154, #158).
 """
 
 import sys
@@ -198,3 +202,99 @@ def test_only_modifiers_are_worth_undoing(monkeypatch):
     events = _sent(monkeypatch, hook)
     _press(monkeypatch, hook, 0x41, down=False)      # 'A'
     assert events == []
+
+
+def _input_desktop(monkeypatch, ours):
+    """OpenInputDesktop as it answers from our desktop (a handle) or while
+    Winlogon's secure desktop has the input (access denied)."""
+    from keyhac.platform.win import hook as hook_module
+
+    monkeypatch.setattr(hook_module.user32, "OpenInputDesktop",
+                        lambda *_a: 1 if ours[0] else None)
+    monkeypatch.setattr(hook_module.user32, "CloseDesktop", lambda _h: True)
+
+
+def _watched(monkeypatch):
+    """A hook whose engine notices and OS releases are recorded, with its
+    re-install path made loud so a tick that wanders into it is seen."""
+    hook = WinInputHook()
+    done = []
+    hook._on_restored = lambda: done.append("on_restored")
+    monkeypatch.setattr(hook, "release_stuck_modifiers",
+                        lambda: done.append("release"))
+    monkeypatch.setattr(hook, "uninstall", lambda: done.append("uninstall"))
+    monkeypatch.setattr(hook, "install", lambda *a, **k: done.append("install"))
+    monkeypatch.setattr(hook, "_foreground_is_out_of_reach", lambda: False)
+    return hook, done
+
+
+def test_ctrl_alt_del_takes_the_ups_with_it(monkeypatch):
+    """The reproduction: Ctrl and Alt are always held when the secure desktop
+    takes the input, so their ups go there and the engine keeps them. It is
+    told on the way out, before a key on the way back could read the stale
+    state - and once, however long the other desktop keeps the input."""
+    hook, done = _watched(monkeypatch)
+    ours = [True]
+    _input_desktop(monkeypatch, ours)
+    _press(monkeypatch, hook, 0xA2, down=True, consumed=False)     # LCtrl
+    _press(monkeypatch, hook, 0xA4, down=True, consumed=False)     # LAlt
+    done.clear()
+
+    ours[0] = False
+    for _ in range(3):
+        hook.check_health()
+    assert done == ["on_restored"]
+    assert hook._seen_down == set(), "the downs we saw have no ups coming"
+
+
+def test_the_os_is_put_back_on_the_return(monkeypatch):
+    """SendInput cannot reach a desktop that is not the input one, so the
+    OS's half waits for ours to have the input again."""
+    hook, done = _watched(monkeypatch)
+    ours = [False]
+    _input_desktop(monkeypatch, ours)
+    hook.check_health()
+    done.clear()
+
+    ours[0] = True
+    hook.check_health()
+    assert done == ["release"]
+
+
+def test_the_way_back_is_not_a_strike(monkeypatch):
+    """GetAsyncKeyState reads every key as up from off the input desktop and
+    as whatever is held from on it, so the modifier state appears to move at
+    the return with no callback behind it - which is the sanity check's
+    definition of a lost hook. Four returns must not make a re-install."""
+    hook, done = _watched(monkeypatch)
+    ours = [True]
+    _input_desktop(monkeypatch, ours)
+    for held in ((LSHIFT,), (), (LWIN,), (LSHIFT, LWIN)):
+        ours[0] = False
+        _holding(monkeypatch)
+        hook.check_health()
+        ours[0] = True
+        _holding(monkeypatch, *held)
+        hook.check_health()
+    assert "install" not in done
+    assert hook._sanity_count == 0
+
+
+def test_our_own_desktop_is_the_ordinary_case(monkeypatch):
+    """Every tick on a working machine: nothing reset, nothing sent, and the
+    sanity check runs as it always did."""
+    hook, done = _watched(monkeypatch)
+    _input_desktop(monkeypatch, [True])
+    hook._sanity_count = WinInputHook.SANITY_CHECK_STRIKES - 1
+    hook._callback_seen = False
+    hook._sanity_state = None
+    _holding(monkeypatch, LWIN)
+    hook.check_health()
+    assert done == ["uninstall", "install", "release", "on_restored"]
+
+
+def test_the_input_desktop_is_ours_while_the_tests_run():
+    """The real call, from the desktop the test runner is on: a handle, so
+    the ordinary tick takes the ordinary path."""
+    hook = WinInputHook()
+    assert hook._input_is_elsewhere() is False

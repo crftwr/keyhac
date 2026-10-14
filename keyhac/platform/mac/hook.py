@@ -586,6 +586,7 @@ class MacInputHook(InputHook):
         self._deferred_real_events = []
         if self._event_tap is not None:
             Quartz.CGEventTapEnable(self._event_tap, True)
+        logger.warning("Key hook timed out and has been restored.")
         if self._on_restored is not None:
             self._on_restored()
 

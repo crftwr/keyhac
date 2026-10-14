@@ -13,6 +13,9 @@ Reimplements the behavior keyhac-win got from pyauto (pyautocore.pyd):
   LowLevelHooksTimeout (~300 ms) without any notification; a periodic sanity
   check (ported from keyhac-win Keymap.checkSanity) detects modifier-state
   changes that arrived without hook callbacks and re-installs the hook
+- secure-desktop resync: the same tick watches for Winlogon's desktop taking
+  the input (Ctrl+Alt+Del, UAC, the lock screen's password field), whose key
+  ups the hook never sees, and resets the modifier state across it
 
 STATUS: verified live on Windows, including consume decisions on real
 (untagged) input, extended-key output flags, the sanity-check re-install
@@ -233,6 +236,15 @@ if sys.platform == "win32":
     TOKEN_QUERY = 0x0008
     TokenIntegrityLevel = 25
 
+    # Whether input is on our desktop - see WinInputHook._input_is_elsewhere.
+    user32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL,
+                                        wintypes.DWORD]
+    user32.OpenInputDesktop.restype = wintypes.HANDLE
+    user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+    user32.CloseDesktop.restype = wintypes.BOOL
+
+    DESKTOP_READOBJECTS = 0x0001
+
 
 def _hex(level) -> str:
     """An integrity level as it is written, or "unreadable"."""
@@ -336,6 +348,7 @@ class WinInputHook(InputHook):
         #: Physical keys we have been shown the down of - see _let_go_of.
         self._seen_down = set()
         self._out_of_reach_title = None  # said so about this window already
+        self._elsewhere = False         # input is on a secure desktop
 
     # ------------------------------------------------------------------
 
@@ -480,6 +493,9 @@ class WinInputHook(InputHook):
         """Called from a ~100 ms timer.  Port of keyhac-win checkSanity():
         if the async modifier key state keeps changing while our hook sees no
         callbacks, Windows silently unhooked us - re-install."""
+        if self._input_is_elsewhere():
+            return
+
         state = tuple(user32.GetAsyncKeyState(vk) & 0x8000 for vk in self._modifier_vks)
 
         if self._callback_seen:
@@ -515,6 +531,63 @@ class WinInputHook(InputHook):
                 self.release_stuck_modifiers()
                 if on_restored is not None:
                     on_restored()
+
+    def _input_is_elsewhere(self) -> bool:
+        """Whether this tick belongs to a secure desktop, coming or going.
+
+        **A key held across a desktop switch is released where we cannot
+        see it.** Ctrl+Alt+Del, the UAC prompt and the lock screen's password
+        field all run on Winlogon's secure desktop, and a low-level hook is
+        not called for input there. The switch happens while keys are held -
+        Ctrl and Alt always are at Ctrl+Alt+Del - so the engine has the downs
+        and the ups go to the other desktop. Back on ours, every key is then
+        read as a chord with a modifier nobody is pressing, so the bindings
+        look dead, and every emitted key restores that modifier in the OS
+        too: issues #154 and #158. A reload cured it only because a reload
+        resets the engine's modifier state.
+
+        The engine is told on the way *out*, not the way back. Nothing reaches
+        the hook while the other desktop has the input, so the two are the
+        same reset - except that resetting on return leaves a tick in which a
+        key pressed on arrival is still read against the stale state. The OS's
+        state is the other way round: it is put back on the return, since
+        SendInput cannot reach a desktop that is not the input one. Measured,
+        the OS had already let go of everything by then, so that is a
+        safeguard rather than a repair.
+
+        `OpenInputDesktop` is the signal because it is exact: it fails with
+        access denied for exactly as long as the secure desktop has the input.
+        A null foreground window, the obvious cheaper one, lingers 80-200 ms
+        after the return and also flickers past during ordinary window
+        switches, and a reset there would drop modifiers the user is holding.
+        The shortest switch measured is Win+L's own, about 280 ms before the
+        lock screen proper, which a 100 ms tick still sees.
+
+        The sanity check is skipped while input is elsewhere: GetAsyncKeyState
+        reads every key as up from off the input desktop, so it has nothing to
+        judge.
+        """
+        handle = user32.OpenInputDesktop(0, False, DESKTOP_READOBJECTS)
+        if handle:
+            user32.CloseDesktop(handle)
+        if not handle:
+            if not self._elsewhere:
+                self._elsewhere = True
+                logger.info("Input moved to a secure desktop; keys held now "
+                            "are released where the hook cannot see them, "
+                            "so the modifier state is reset.")
+                self._seen_down.clear()
+                if self._on_restored is not None:
+                    self._on_restored()
+            return True
+        if self._elsewhere:
+            self._elsewhere = False
+            self.release_stuck_modifiers()
+            self._sanity_count = 0
+            self._sanity_state = tuple(user32.GetAsyncKeyState(vk) & 0x8000
+                                       for vk in self._modifier_vks)
+            return True
+        return False
 
     def _foreground_is_out_of_reach(self) -> bool:
         """Whether the window in front is one whose keys we never see anyway.

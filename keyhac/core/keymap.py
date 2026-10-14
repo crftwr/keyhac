@@ -809,8 +809,8 @@ class Keymap:
         lazydocs: ignore
         """
         with self._lock:
-            logger.warning("Key hook timed out and has been restored.")
-            # Modifier key state is not reliable anymore. Resetting.
+            # The platform has logged why: a re-installed hook, or input on a
+            # desktop the hook cannot see. Either way some ups went missing.
             self._modifier = 0
 
     def on_mouse_event(self, kind: str = "button") -> None:

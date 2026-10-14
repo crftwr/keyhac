@@ -458,6 +458,30 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   when a Windows key is among them: a Win down followed by its up with
   nothing in between *is* the Start menu's shortcut, and the down already
   happened.
+- **A secure desktop is the same blindness the other way round** (#154,
+  #158). Ctrl+Alt+Del, the UAC prompt and the lock screen's password field
+  run on Winlogon's desktop, and a low-level hook is not called for input
+  there. The switch happens while keys are held, so the *downs* reach us and
+  the ups go to the other desktop: it is the engine, not the OS, that holds the
+  key. The bindings then look dead — every key is read as a chord with a
+  modifier nobody is pressing — and every emitted key restores that modifier in
+  the OS as well. A reload "fixed" it only by resetting the engine's state.
+  Ctrl+Alt+Del reproduces it every time, since Ctrl and Alt are always down at
+  the switch. Measured from a medium-integrity process (Windows 11 26200):
+  `OpenInputDesktop` fails with access denied for exactly as long as the
+  secure desktop has the input, and `GetAsyncKeyState` reads every key as up
+  for that time and nothing held on the return. A null foreground window
+  lingers 80–200 ms past the return and flickers during ordinary window
+  switches, so it is not the signal. Win+L's own switch, about 280 ms before
+  the lock screen proper, is the shortest seen, and the 100 ms tick catches
+  it. The lock screen itself (`LockApp.exe`) is on the user's desktop, which
+  is why locking alone does not reproduce it and focusing the password field
+  while a key is held does. So `check_health()` resets the engine on the way
+  *out*, because a reset on return leaves a tick in which an arriving key is
+  read against the stale state. It releases the OS's modifiers on the way
+  back, because SendInput cannot reach a desktop that is not the input one.
+  The sanity check is suspended in between: GetAsyncKeyState's jump at the
+  return looks exactly like modifier state moving with no callback.
 
 ## The Start menu is above every band we can reach
 
