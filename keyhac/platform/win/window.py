@@ -65,6 +65,12 @@ if sys.platform == "win32":
     user32.IsIconic.restype = wintypes.BOOL
     user32.IsZoomed.argtypes = [wintypes.HWND]
     user32.IsZoomed.restype = wintypes.BOOL
+    # Absent from early Windows 10 builds; without it a snapped window is
+    # simply not recognised as one.
+    _IsWindowArranged = getattr(user32, "IsWindowArranged", None)
+    if _IsWindowArranged is not None:
+        _IsWindowArranged.argtypes = [wintypes.HWND]
+        _IsWindowArranged.restype = wintypes.BOOL
     user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.ShowWindow.restype = wintypes.BOOL
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -251,9 +257,15 @@ class WinWindow(Window):
     def set_frame(self, x, y, w=None, h=None) -> bool:
         # SetWindowPos on a maximized window moves it but leaves it flagged
         # maximized, so the next restore or a double-click on the title bar
-        # does the wrong thing - leave the state first.  (Written on macOS
-        # for issue #157; not yet run - doc/dev/testing.md.)
-        if user32.IsZoomed(self.hwnd):
+        # does the wrong thing - leave the state first.  A window the OS
+        # snapped (Win+arrow, a drag to the edge) is the same: placed
+        # anywhere it stays "arranged", and a title-bar double-click takes
+        # it back to its size from before the snap instead of maximizing.
+        # SW_RESTORE ends both (measured on Chrome, issue #157); the
+        # pre-snap frame flashes up for a moment before the write lands.
+        if user32.IsZoomed(self.hwnd) or (
+                _IsWindowArranged is not None
+                and _IsWindowArranged(self.hwnd)):
             user32.ShowWindow(self.hwnd, SW_RESTORE)
         left, top, right, bottom = self._frame_insets()
         flags = SWP_NOZORDER | SWP_NOACTIVATE
@@ -279,16 +291,17 @@ class WinWindow(Window):
         return bool(user32.IsZoomed(self.hwnd)) and not user32.IsIconic(self.hwnd)
 
     # ShowWindow's return value is the window's previous visibility, not
-    # success, so each verb reads the state back instead.  (Written on macOS
-    # for issue #157; not yet run - doc/dev/testing.md.)
+    # success, so each verb reads the state back instead.  ShowWindow on
+    # another process's window returns once the window is there: Chrome
+    # read back maximized straight after, in 7 ms (issue #157).
 
     def _placement(self):
         return (bool(user32.IsIconic(self.hwnd)), bool(user32.IsZoomed(self.hwnd)))
 
     def maximize(self) -> bool:
         # keyhac-win's pyauto sent WM_SYSCOMMAND/SC_MAXIMIZE instead, which
-        # an application can intercept; whether that matters is an open
-        # question for the Windows pass.
+        # an application can intercept; ShowWindow does not go through it,
+        # and Chrome, which draws its own title bar, honors it.
         if self.is_maximized():
             return False
         user32.ShowWindow(self.hwnd, SW_MAXIMIZE)

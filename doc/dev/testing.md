@@ -1016,30 +1016,36 @@ is now the thing to confirm rather than the thing to fix.
   `app=` matches what the OS reports.
 
 - **Maximize, restore and `SnapWindow` on a maximized window, on Windows**
-  *(new, not yet passed)* — issue #157. `WinWindow.is_maximized`/`maximize`
-  and the de-maximize at the top of `set_frame` were written on macOS and
-  have never run; the reasoning and the macOS measurements are in
+  *(passed 2026-10-14, Windows 11 26200, Chrome)* — issue #157; the
+  reasoning and the macOS measurements are in
   [design-notes.md](design-notes.md#maximized-and-full-screen-issue-157).
-  `tests/test_win_window.py` has nothing for them yet — adding the round
-  trips there (maximize → `is_maximized()`; `restore()` → not; minimize a
-  maximized window → `is_maximized()` false *while minimized* and true after
-  `restore()`; `set_frame` on a maximized window → not maximized, frame as
-  written) is the first half of this pass. The second half is by eye, on
-  Chrome, where #157 saw it fail: maximize it, run `SnapWindow("left")`, and
-  check that it lands on the left half *and* that double-clicking its title
-  bar afterwards maximizes it rather than restoring some other size. Then
-  three questions only Windows can answer: whether `SW_RESTORE` un-snaps an
-  Aero-snapped window the same way (its "arranged" state) or `SnapWindow`
-  needs more there; whether an application that handles `WM_SYSCOMMAND`
-  itself ignores `ShowWindow(SW_MAXIMIZE)` — pyauto sent `SC_MAXIMIZE`
-  instead, after first using `SetWindowPlacement`; and whether reading the
-  state back straight after `ShowWindow` — which every verb now does in
-  place of `ShowWindow`'s return value, the previous visibility — sees the
-  new state, or whether a window owned by another thread can still be on
-  its way there (`minimize`/`restore` are already used by `SnapWindow` and
-  `ActivateApplication`, which ignore the value). Each verb must return
-  False when there is nothing to do. `is_full_screen()` and
-  `enter_full_screen()` stay the base `False` on Windows by design.
+  `tests/test_win_window.py`'s `TestMaximize` pins the round trips on a window
+  this process owns (maximize → `is_maximized()`; `restore()` → not; a
+  minimized maximized window is minimized only, and `restore()` brings it back
+  maximized; `set_frame`, with or without a size, ends the state; every verb
+  with nothing to do returns False), and `TestSnapLive` the #157 case itself.
+  Taking the `SW_RESTORE` out of `set_frame` fails three of them, and on
+  Chrome makes `SnapWindow` on a maximized window do nothing visible. What is
+  left for the eye, on Chrome, where #157 saw it fail: maximize it, run
+  `SnapWindow("left")`, and check that it lands on the left half *and* that
+  double-clicking its title bar afterwards maximizes it and a second
+  double-click brings it back to the left half. Then the same starting from
+  a window Windows snapped itself (Win+Right): before the fix the first
+  double-click went back to the size from before Win+Right, because a window
+  the OS snapped stays "arranged" (`IsWindowArranged`) wherever
+  `SetWindowPos` puts it; `set_frame` now `SW_RESTORE`s that state too.
+  `SetWindowPlacement` with the new normal rect also clears it without the
+  brief flash of the old size, but its rect is in workspace coordinates,
+  which are not screen coordinates once the taskbar is on the top or left.
+  The other two open questions answered on the way: Chrome honors
+  `ShowWindow(SW_MAXIMIZE)` (it handles its own non-client area, so it was
+  the likeliest to ignore one), and the state read back straight after
+  `ShowWindow` on another process's window is the new one (maximize 7–8 ms,
+  minimize 5–37 ms, read back True each time). Drive a Chrome started with a
+  throwaway `--user-data-dir`, never the user's own, and double-click the
+  empty tab strip — at high DPI the caption buttons reach well over 260 px
+  in from the right edge. `is_full_screen()` and `enter_full_screen()` stay
+  the base `False` on Windows by design.
 
 - **Window geometry against Windows' own snap** *(new, not yet passed)* —
   `WinWindow.get_frame`/`set_frame` now work in the **visible** frame (DWM's

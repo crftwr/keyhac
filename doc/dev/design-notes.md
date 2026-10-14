@@ -1700,12 +1700,27 @@ notch, 1710×1112) against TextEdit, Chrome and the test helper.
   and a full-screen window refuses `AXPosition` with `kAXErrorFailure`, so
   `SnapWindow` on one reported success and did nothing.
   `UIElement.set_attribute_value` returns whether the write was accepted.
-- **Windows** (written blind on macOS, not yet run — the pass is in
-  [testing.md](testing.md)): `is_maximized` is `IsZoomed`, `maximize` is
-  `ShowWindow(SW_MAXIMIZE)` read back through `IsZoomed`, and `set_frame`
-  leaves the maximized state with `SW_RESTORE` before `SetWindowPos`, which
-  otherwise moves the window while it stays flagged maximized — the likely
-  cause of the `SnapWindow` failure on maximized Chrome reported in #157.
+- **Windows** (written on macOS, then measured on Windows 11 against
+  Chrome — the pass is in [testing.md](testing.md)): `is_maximized` is
+  `IsZoomed`, `maximize` is `ShowWindow(SW_MAXIMIZE)` read back through
+  `IsZoomed`, and `set_frame` leaves the maximized state with `SW_RESTORE`
+  before `SetWindowPos`, which otherwise moves the window while it stays
+  flagged maximized — the cause of the `SnapWindow` failure on maximized
+  Chrome reported in #157: with the `SW_RESTORE` taken out, Chrome stays
+  maximized and the snap has no visible effect at all. A window Windows
+  snapped itself (Win+arrow, a drag to the edge) has a milder form of the
+  same trap, and the reporter saw trouble after Win+arrow too: the window
+  does move, but it stays "arranged" (`IsWindowArranged`) wherever it is
+  put, and a title-bar double-click takes it back to its size from before
+  the snap instead of maximizing it. `SW_RESTORE` ends that
+  too, so `set_frame` sends it for either; the cost is the pre-snap frame
+  showing for a moment before the write lands. `SetWindowPlacement` would
+  avoid the flash but speaks workspace coordinates, which move with a
+  taskbar on the top or left. Arranged is not a public state: it is not
+  what is on screen (the frame is), only what the OS would do next, and
+  `restore()` on a snapped window returns False — there is no layer to
+  lift. ShowWindow on another process's window returns once the window has
+  changed, so reading the state straight back works.
 
 ## Mouse output
 
