@@ -424,7 +424,7 @@ class Window(ABC):
         A maximized window is taken out of the maximized state by being
         placed, so it does not spring back to filling the screen.  A window
         in full screen or minimized cannot be placed; leave those states
-        first (`set_full_screen(False)`, `restore()`).
+        first with `restore()`.
 
         Args:
             x: New left edge.
@@ -447,10 +447,12 @@ class Window(ABC):
     # Window state.  The OS keeps a window's placement - normal or maximized -
     # underneath minimized and full screen, which cover it for a while and
     # hand it back unchanged.  The is_* queries report what is on screen now,
-    # so at most one of them is true; restore() lifts one layer, the way
-    # Windows' SW_RESTORE does.  Why it is this model and not "full screen is
-    # a bigger maximize": doc/dev/design-notes.md, "Maximized and full
-    # screen".
+    # so at most one of them is true.  Each state has one verb into it
+    # (minimize, maximize, enter_full_screen) and restore() is the one way
+    # back out of all three, lifting one layer the way Windows' SW_RESTORE
+    # does.  Every verb returns False when there was nothing to do.  Why it
+    # is this model and not "full screen is a bigger maximize":
+    # doc/dev/design-notes.md, "Maximized and full screen".
 
     def is_minimized(self) -> bool:
         """Whether the window is currently minimized."""
@@ -488,12 +490,18 @@ class Window(ABC):
         return False
 
     def restore(self) -> bool:
-        """Take the window back one state.
+        """Take the window back one state - the way out of all of them.
 
         A minimized window comes back as it was before - maximized, if it
         was.  A full-screen window leaves full screen, again returning to
         what it was before.  A maximized window returns to the size it had
-        before it was maximized.
+        before it was maximized.  To leave one particular state and nothing
+        else, ask first:
+
+        ```python
+        if window.is_full_screen():
+            window.restore()
+        ```
 
         On macOS, returning from maximized brings the window's application
         to the front, and works only for a window the OS filled (Window >
@@ -503,8 +511,22 @@ class Window(ABC):
         (see `maximize()`).
 
         Returns:
-            Whether the request was accepted.  On macOS that is not proof of
-            the effect - see above.
+            False when the window was in none of the three states.
+            Otherwise whether the change was made - on macOS, coming back
+            from maximized, whether it was accepted, since the animation
+            leaves nothing to check yet.
+        """
+        return False
+
+    def minimize(self) -> bool:
+        """Minimize the window.
+
+        On macOS a window in full screen cannot be minimized; `restore()` it
+        first.
+
+        Returns:
+            False when the window was already minimized or cannot be
+            minimized; otherwise whether it was.
         """
         return False
 
@@ -515,42 +537,46 @@ class Window(ABC):
         the OS remembers its previous size for `restore()`.  It brings the
         window's application to the front, which Fill needs, and the window
         animates into place for about a third of a second: `is_maximized()`
-        turns true only at the end, and a frame written before then is
-        overwritten by the animation.
-        A minimized window is restored first.  A window in full screen leaves
-        it and is placed over the work area instead of filled - Fill does
-        not work until the way out of full screen has finished - so
-        `restore()` has no previous size for it, unless it was filled before
-        it went full screen.
+        turns true only at the end of it.  For about half a second more the
+        OS is still finishing Fill and puts back any frame written to the
+        window, so a `SnapWindow` straight after a `maximize()` does not
+        stick.
+
+        A minimized window is restored first.  On macOS a window in full
+        screen leaves it and is placed over the work area instead of filled
+        - Fill does not work until the way out of full screen has finished -
+        so `restore()` has no previous size for it, unless it was filled
+        before it went full screen.
 
         Returns:
-            Whether the request was accepted.
+            False when the window was already maximized; otherwise whether
+            it was maximized - on macOS, whether Fill was accepted, since the
+            animation leaves nothing to check yet.
         """
         return False
 
-    def set_full_screen(self, full_screen: bool = True) -> bool:
-        """Enter or leave the OS's full-screen mode.
+    def enter_full_screen(self) -> bool:
+        """Put the window in the OS's full-screen mode.
 
-        macOS only; on Windows it does nothing and returns False (see
-        `is_full_screen()`).  Entering full screen brings the window's
-        application to the front.
+        Leave it with `restore()`.  macOS only; on Windows it does nothing
+        and returns False (see `is_full_screen()`).  It brings the window's
+        application to the front, and a minimized window is restored first.
 
-        Args:
-            full_screen: True to enter full screen, False to leave it.
+        The transition animates for about half a second, and a `restore()`
+        made meanwhile is accepted and then ignored - a full-screen toggle
+        bound to a key will not take a second press straight after the
+        first:
 
-        Returns:
-            Whether the request was accepted.  The transition animates for
-            about half a second, and a request the other way made meanwhile
-            is accepted and then ignored, so a toggle bound to a key should
-            not expect a second press to land straight after the first.
-        """
-        return False
-
-    def minimize(self) -> bool:
-        """Minimize the window.
+        ```python
+        if window.is_full_screen():
+            window.restore()
+        else:
+            window.enter_full_screen()
+        ```
 
         Returns:
-            Whether the window was minimized.
+            False when the window was already in full screen; otherwise
+            whether the request was accepted.
         """
         return False
 

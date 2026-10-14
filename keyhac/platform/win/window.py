@@ -278,20 +278,36 @@ class WinWindow(Window):
         # one-state-at-a-time contract.  The guard costs nothing.
         return bool(user32.IsZoomed(self.hwnd)) and not user32.IsIconic(self.hwnd)
 
+    # ShowWindow's return value is the window's previous visibility, not
+    # success, so each verb reads the state back instead.  (Written on macOS
+    # for issue #157; not yet run - doc/dev/testing.md.)
+
+    def _placement(self):
+        return (bool(user32.IsIconic(self.hwnd)), bool(user32.IsZoomed(self.hwnd)))
+
     def maximize(self) -> bool:
-        # ShowWindow's return value is the previous visibility, not success,
-        # so the state is read back.  keyhac-win's pyauto sent
-        # WM_SYSCOMMAND/SC_MAXIMIZE instead, which an application can
-        # intercept; whether that matters is an open question for the
-        # Windows pass (doc/dev/testing.md).
+        # keyhac-win's pyauto sent WM_SYSCOMMAND/SC_MAXIMIZE instead, which
+        # an application can intercept; whether that matters is an open
+        # question for the Windows pass.
+        if self.is_maximized():
+            return False
         user32.ShowWindow(self.hwnd, SW_MAXIMIZE)
-        return bool(user32.IsZoomed(self.hwnd))
+        return self.is_maximized()
 
     def restore(self) -> bool:
-        return bool(user32.ShowWindow(self.hwnd, SW_RESTORE))
+        # SW_RESTORE lifts one layer: minimized comes back to what it was
+        # (maximized, if it was), maximized comes back to normal.
+        before = self._placement()
+        if before == (False, False):
+            return False
+        user32.ShowWindow(self.hwnd, SW_RESTORE)
+        return self._placement() != before
 
     def minimize(self) -> bool:
-        return bool(user32.ShowWindow(self.hwnd, SW_MINIMIZE))
+        if self.is_minimized():
+            return False
+        user32.ShowWindow(self.hwnd, SW_MINIMIZE)
+        return self.is_minimized()
 
     def activate(self) -> bool:
         """Foreground this window, restoring it first if minimized.

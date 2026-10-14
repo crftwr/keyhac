@@ -51,7 +51,9 @@ class FakeWindow(Window):
         return self._minimized
 
     def restore(self):
+        self.events.append(("restore", self._full_screen))
         self._minimized = False
+        self._full_screen = False
         self.restored = True
         return True
 
@@ -61,10 +63,6 @@ class FakeWindow(Window):
     def is_full_screen(self):
         return self._full_screen
 
-    def set_full_screen(self, full_screen=True):
-        self._full_screen = full_screen
-        self.events.append(("set_full_screen", full_screen))
-        return True
 
 
 class FakeProvider(WindowProvider):
@@ -157,8 +155,7 @@ class TestSnapGeometry:
             self, snapped):
         """macOS refuses a frame write to a full-screen window outright."""
         window = snapped("left", full_screen=True)
-        assert window.events == [("set_full_screen", False),
-                                 ("set_frame", False)]
+        assert window.events == [("restore", True), ("set_frame", False)]
         assert window.set_frame_calls == [(0.0, 25.0, 960.0, 1055.0)]
 
     def test_maximized_window_is_placed_without_restoring_first(

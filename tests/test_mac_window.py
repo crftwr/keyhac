@@ -336,6 +336,18 @@ def _wait_full_screen_transition():
     _wait_for(lambda: False, timeout=1.2)
 
 
+def _wait_fill_transition(window):
+    """Let Fill (or Return to Previous Size) finish, not just its animation.
+
+    The frame stops moving ~0.37 s after the press, but the OS goes on
+    finishing the tile for a while and puts back any frame written meanwhile:
+    written 0.2 s after is_maximized() turned true, reverted 5 of 5 times;
+    0.6 s after, 0 of 5.
+    """
+    _wait_settled(window)
+    _wait_for(lambda: False, timeout=0.6)
+
+
 def _close_to(frame, expected, tolerance=2.0):
     return frame is not None and all(
         abs(a - b) <= tolerance for a, b in zip(frame, expected))
@@ -393,10 +405,10 @@ def normal_window(own_window):
     """The helper window, out of every state and at a known small frame, and
     put back that way afterwards."""
     def settle():
-        _wait_settled(own_window)
+        _wait_fill_transition(own_window)
         if own_window.is_full_screen():
             _wait_full_screen_transition()
-            own_window.set_full_screen(False)
+            own_window.restore()
             assert _wait_for(lambda: not own_window.is_full_screen()), \
                 "window never left full screen"
             _wait_full_screen_transition()
@@ -431,8 +443,17 @@ class TestMaximize:
             f"frame {window.get_frame()} never returned to {before}"
         assert not window.is_maximized()
 
-    def test_restore_of_a_normal_window_is_a_no_op(self, normal_window):
-        assert not normal_window.restore()
+    def test_every_verb_with_nothing_to_do_returns_false(
+            self, normal_window, frontmost_restored):
+        window = normal_window
+        assert not window.restore()
+        assert window.maximize()
+        assert _wait_for(window.is_maximized)
+        _wait_fill_transition(window)
+        assert not window.maximize()
+        assert window.minimize()
+        assert _wait_for(window.is_minimized)
+        assert not window.minimize()
 
     def test_without_fill_the_window_is_placed(
             self, normal_window, frontmost_restored, monkeypatch):
@@ -450,9 +471,7 @@ class TestMaximize:
         assert window.maximize()
         assert _wait_for(window.is_maximized), \
             f"never maximized; frame {window.get_frame()}"
-        # is_maximized() turns true within tolerance of the end of Fill's
-        # animation, and a frame written before it ends is overwritten.
-        _wait_settled(window)
+        _wait_fill_transition(window)
         assert window.set_frame(150, 160, 420, 310)
         assert _wait_for(lambda: _close_to(window.get_frame(),
                                            (150, 160, 420, 310)))
@@ -464,7 +483,7 @@ class TestFullScreen:
     def test_full_screen_round_trip_is_not_maximized(
             self, normal_window, frontmost_restored):
         window = normal_window
-        assert window.set_full_screen(True)
+        assert window.enter_full_screen()
         assert _wait_for(window.is_full_screen, timeout=5), \
             "never entered full screen"
         _wait_full_screen_transition()
@@ -473,12 +492,14 @@ class TestFullScreen:
         assert not window.is_maximized()
         assert not window.set_frame(10, 10), \
             "a full-screen window accepted a frame write"
+        assert not window.enter_full_screen()   # already there
+        assert not window.minimize()            # macOS will not
         assert window.restore()
         assert _wait_for(lambda: not window.is_full_screen(), timeout=5)
 
     def test_maximize_from_full_screen(self, normal_window, frontmost_restored):
         window = normal_window
-        assert window.set_full_screen(True)
+        assert window.enter_full_screen()
         assert _wait_for(window.is_full_screen, timeout=5)
         _wait_full_screen_transition()
         assert window.maximize()
@@ -506,7 +527,7 @@ class TestFullScreen:
         works = provider.screen_work_frames()
         sx, sy, sw, sh = MoveWindow._get_best_screen(window.get_frame(), works)
         expected = (sx, sy, sw / 2, sh)
-        assert window.set_full_screen(True)
+        assert window.enter_full_screen()
         assert _wait_for(window.is_full_screen, timeout=5)
         _wait_full_screen_transition()
         SnapWindow("left")()
@@ -514,3 +535,14 @@ class TestFullScreen:
                          timeout=5), \
             f"frame {window.get_frame()} never approached {expected}"
         assert not window.is_full_screen()
+
+    def test_enter_full_screen_from_minimized(
+            self, normal_window, frontmost_restored):
+        window = normal_window
+        assert window.minimize()
+        assert _wait_for(window.is_minimized)
+        assert window.enter_full_screen()
+        assert _wait_for(window.is_full_screen, timeout=5), \
+            "never entered full screen"
+        assert not window.is_minimized()
+        _wait_full_screen_transition()

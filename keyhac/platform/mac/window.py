@@ -223,7 +223,7 @@ class MacWindow(Window):
         if self.is_minimized():
             return self._set("AXMinimized", "bool", False)
         if self.is_full_screen():
-            return self.set_full_screen(False)
+            return self._set("AXFullScreen", "bool", False)
         if not self.is_maximized():
             return False
         # Return to Previous Size acts on the application's main window and,
@@ -242,6 +242,8 @@ class MacWindow(Window):
         return item.perform_action("AXPress")
 
     def maximize(self) -> bool:
+        if self.is_maximized():
+            return False
         if self.is_minimized():
             self._set("AXMinimized", "bool", False)
         elif self.is_full_screen():
@@ -250,7 +252,7 @@ class MacWindow(Window):
             # the window's frame is back at once, and a frame write is not
             # ignored.  A window that was filled before full screen comes back
             # filled, previous size and all, and needs nothing more.
-            if not self.set_full_screen(False):
+            if not self._set("AXFullScreen", "bool", False):
                 return False
             return self.is_maximized() or self._place_on_work_area()
         # A window that cannot be resized (a fixed-size panel) cannot fill;
@@ -279,10 +281,18 @@ class MacWindow(Window):
             return False
         return self.set_frame(*work)
 
-    def set_full_screen(self, full_screen: bool = True) -> bool:
-        return self._set("AXFullScreen", "bool", bool(full_screen))
+    def enter_full_screen(self) -> bool:
+        if self.is_full_screen():
+            return False
+        if self.is_minimized():
+            self._set("AXMinimized", "bool", False)
+        return self._set("AXFullScreen", "bool", True)
 
     def minimize(self) -> bool:
+        # A full-screen window takes the AXMinimized write and stays put
+        # (measured), as its minimize button is disabled.
+        if self.is_minimized() or self.is_full_screen():
+            return False
         return self._set("AXMinimized", "bool", True)
 
     def _bring_forward(self, timeout=ACTIVATION_TIMEOUT) -> bool:

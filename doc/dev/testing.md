@@ -191,8 +191,11 @@ defect, not a model defect.
   (`_wait_settled`). Full screen is the opposite trap: the frame jumps at
   once, so no frame-based wait sees its ~0.5 s transition, during which a
   request the other way is dropped — only a fixed wait
-  (`_wait_full_screen_transition`) works. Each failure looked like a broken
-  feature in whichever test ran next.
+  (`_wait_full_screen_transition`) works. And Fill outlives even its
+  animation: a frame written in the half second after the window stops
+  moving is put back, so `_wait_fill_transition` adds a fixed wait on top
+  of `_wait_settled`. Each failure looked like a broken feature in whichever
+  test ran next.
 
 ## Live verification record
 
@@ -1029,11 +1032,14 @@ is now the thing to confirm rather than the thing to fix.
   Aero-snapped window the same way (its "arranged" state) or `SnapWindow`
   needs more there; whether an application that handles `WM_SYSCOMMAND`
   itself ignores `ShowWindow(SW_MAXIMIZE)` — pyauto sent `SC_MAXIMIZE`
-  instead, after first using `SetWindowPlacement`; and whether
-  `WinWindow.restore()`'s return value, which is `ShowWindow`'s "was it
-  visible before" rather than success, should become the state read back as
-  `maximize()` does. `is_full_screen()` stays the base `False` on Windows by
-  design.
+  instead, after first using `SetWindowPlacement`; and whether reading the
+  state back straight after `ShowWindow` — which every verb now does in
+  place of `ShowWindow`'s return value, the previous visibility — sees the
+  new state, or whether a window owned by another thread can still be on
+  its way there (`minimize`/`restore` are already used by `SnapWindow` and
+  `ActivateApplication`, which ignore the value). Each verb must return
+  False when there is nothing to do. `is_full_screen()` and
+  `enter_full_screen()` stay the base `False` on Windows by design.
 
 - **Window geometry against Windows' own snap** *(new, not yet passed)* —
   `WinWindow.get_frame`/`set_frame` now work in the **visible** frame (DWM's

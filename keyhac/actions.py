@@ -1514,14 +1514,12 @@ class SnapWindow:
         else:
             target = (sx, sy, sw, sh)
         # A minimized or full-screen window cannot be placed (macOS refuses the
-        # AX write outright).  A maximized one can: set_frame takes it out of
-        # the maximized state itself.  Restoring it here instead would race
-        # on macOS - Return to Previous Size animates, and lands over the
-        # frame written after it.
-        if window.is_minimized():
+        # AX write outright), so those two are restored first.  A maximized
+        # one is not: set_frame takes it out of the maximized state itself,
+        # and restoring it here would race on macOS - Return to Previous
+        # Size animates, and lands over the frame written after it.
+        if window.is_minimized() or window.is_full_screen():
             window.restore()
-        if window.is_full_screen():
-            window.set_full_screen(False)
         if not window.set_frame(*target):
             logger.warning(f"SnapWindow: {window!r} did not accept the frame.")
 

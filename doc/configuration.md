@@ -586,9 +586,11 @@ x, y, w, h = window.get_frame()               #    class_name=), list_windows()
                                               # invisible resize border is not
                                               # part of it, on either accessor
 window.set_frame(x + 100, y)
-window.activate(); window.minimize(); window.restore(); window.is_minimized()
-window.maximize(); window.is_maximized()      # macOS: Window > Fill
-window.set_full_screen(True); window.is_full_screen()  # macOS only
+window.activate()
+window.minimize(); window.maximize()          # maximize: Window > Fill on macOS
+window.enter_full_screen()                    # macOS only
+window.restore()                              # the way back out of all three
+window.is_minimized(); window.is_maximized(); window.is_full_screen()
 window.title; window.app_name; window.pid; window.class_name  # class_name: Windows
 ```
 

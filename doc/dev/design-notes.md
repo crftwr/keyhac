@@ -1605,11 +1605,25 @@ notch, 1710×1112) against TextEdit, Chrome and the test helper.
   hint is a private menu item's enabled state (below), which also speaks only
   for the application's main window. It can be added later as its own
   method without breaking anything.
-- **`is_full_screen()` is portable but macOS-only in effect**, after
-  `class_name`'s precedent. Windows has no OS full-screen mode — F11 in a
-  browser is the application drawing borderless over the monitor — so the
-  base `False` is the honest answer there, and `SnapWindow` can ask it on
-  both OSes.
+- **One verb in per state, one way out of all of them.** `minimize()`,
+  `maximize()` and `enter_full_screen()` go in; `restore()` is the only way
+  out. A first draft had `set_full_screen(bool)` — the shape of the
+  `AXFullScreen` attribute — which gave full screen alone a second exit, one
+  that answered True on a window that was not in full screen (AX accepts
+  writing the value it already has). The only thing it added over
+  `restore()` was leaving full screen *without* touching any other state,
+  and `if window.is_full_screen(): window.restore()` says that already.
+  Every verb returns False when there is nothing to do, and otherwise
+  whether the change was made — read back from the window, except where
+  macOS animates (Fill, Return to Previous Size), whose result cannot be
+  checked yet when the call returns and is reported as accepted. On Windows
+  that meant replacing `ShowWindow`'s return value, which is the window's
+  previous visibility and not success, with the state read back.
+- **`is_full_screen()` and `enter_full_screen()` are portable but macOS-only
+  in effect**, after `class_name`'s precedent. Windows has no OS full-screen
+  mode — F11 in a browser is the application drawing borderless over the
+  monitor — so the base `False` is the honest answer there, and `SnapWindow`
+  can ask it on both OSes.
 - **Fill, not Zoom.** Window > Zoom (`NSWindow zoom:`, AX `AXZoomWindow`) is
   the application's: it picks the size and remembers the other one itself,
   with no state another process can read. Chrome's toggled between
@@ -1660,7 +1674,13 @@ notch, 1710×1112) against TextEdit, Chrome and the test helper.
 - **Everything animates, and a frame written mid-animation loses.** Fill and
   Return to Previous Size take about 370 ms, and the AX frame moves through
   the animation, so `is_maximized()` turns true only near its end. A frame
-  written before it ends is overwritten — `SnapWindow` therefore never
+  written before it ends is overwritten, and so is one written for a while
+  *after* it: the OS goes on finishing the tile once the frame has stopped
+  moving, and put back a frame written 0.2 s after `is_maximized()` turned
+  true in 5 of 5 trials, against 0 of 5 at 0.6 s. A `SnapWindow` pressed
+  within about a second of a `maximize()` therefore does not stick; nothing
+  in AX says when the OS is done, so it is documented, not waited for on
+  the main thread. `SnapWindow` likewise never
   restores a maximized window before placing it (restore-then-place came
   back at the pre-Fill size); it relies on the frame write ending Fill, which
   `set_frame` now promises on both OSes. Full screen is different: the AX
