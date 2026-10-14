@@ -102,8 +102,11 @@ class InputHook(ABC):
                 on_mouse: Callable[[str], None] | None = None) -> None:
         """Install the hook. on_key returns True to consume the event and is
         called synchronously on the thread that runs the event loop.
-        on_restored is called when the OS disabled the hook and it was
-        re-installed/re-enabled (modifier state must be reset).
+        on_restored is called when the hook has missed, or is about to miss,
+        key events - the OS disabled it and it was re-installed/re-enabled,
+        or input moved somewhere the hook cannot follow - so the engine's
+        modifier state can no longer be trusted and must be reset. Saying
+        *which* is the platform's job; the engine only resets.
 
         on_mouse, when given, is called on physical mouse button-down or
         wheel input (observation only; mouse events are never consumed) with
