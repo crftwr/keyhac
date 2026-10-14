@@ -348,6 +348,29 @@ Keyhac's own key hook instead. The one consequence to know about: **an input met
 cannot compose in the filter field** — composition follows OS keyboard focus, and
 this window does not take it. Type romaji and let Migemo find the Japanese.
 
+**Your key bindings work inside the popup.** While it is open, key tables are
+matched as if the popup were the focused window, and what a binding types goes to
+the popup rather than to the app underneath. A table that applies everywhere
+applies there too, so a global cursor remap moves the selection with no extra
+setup; remaps, functions, multi-stroke prefixes and user modifiers all work. To
+bind keys for the popup alone, match it by name — it reports itself as app
+`Keyhac`, title `Chooser` (focus path `/Keyhac/Chooser`, which the console shows
+while it is open):
+
+```python
+kt = keymap.define_keytable(focus_path_pattern="*")
+kt["Ctrl-J"] = "Down"                   # also moves the popup's selection
+kt["Ctrl-K"] = "Up"
+
+kt_chooser = keymap.define_keytable(app="Keyhac", title="Chooser")
+kt_chooser["Ctrl-G"] = "Escape"         # only in the popup
+```
+
+Keys no table binds keep their popup meaning (Up/Down, Enter, Escape, typing into
+the filter). The app underneath keeps its own meaning for the rest: `keymap.focus`
+and window actions still refer to it, and a key output that the popup cannot
+take — `Ctrl-S`, say — is dropped rather than sent there.
+
 ```python
 kt["Fn-Shift-V"] = ShowClipboardSnippets([
     ("📧", "me@example.com"),                          # (icon, text)

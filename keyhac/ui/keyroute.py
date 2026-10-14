@@ -14,6 +14,11 @@ hook.  ``Keymap.push_modal_input`` routes each keystroke here, this turns it
 into the ``Event`` PuiKit's widgets expect, and ``Panel.dispatch_event``
 feeds it to the window's own focused widget.  No OS focus changes hands.
 
+The key tables see each keystroke before this does (issue #155): they are
+matched as if the window were focused, and what a binding outputs is routed
+here too, rather than to the application underneath.  So a key reaching
+``to_event`` is either one no table binds, or a binding's output.
+
 **What this route can and cannot deliver.**  The hook reports a virtual key
 code, not a produced glyph, and Keyhac's per-layout tables map names to codes
 rather than codes to glyphs - so a name like ``Minus`` does not say which

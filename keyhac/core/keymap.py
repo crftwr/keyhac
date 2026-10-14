@@ -217,7 +217,10 @@ class Keymap:
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
         self._modal_input = None            # sticky key grab - see push_modal_input
-        self._modal_passthrough = None      # its owner's say - _grab_declines
+        self._modal_passthrough = None      # its owner's say - _modal_fallback
+        self._modal_text = None             # where the grab's text output goes
+        self._modal_focus = None            # what the tables see while grabbed
+        self._real_keytable = {}            # the tables the real focus picks
         self._unified_keytable = {}         # merged assignments of active tables
         self._vk_mod_map = {}               # vk -> modifier bit
         self._vk_vk_map = {}                # replace_key map
@@ -581,7 +584,7 @@ class Keymap:
         lazydocs: ignore
         """
         with self._lock:
-            focus = self._focus
+            focus = self._table_focus()
             conditioned = list(self._keytable_list)
             all_tables = list(self._all_keytables)
 
@@ -671,6 +674,16 @@ class Keymap:
             measured at 1.6-3.5 ms against a responsive application and
             unbounded against a hung one, which the key path cannot spend.
             app, title and class_name are exact.
+
+            While a chooser popup is open (`ShowClipboardHistory`,
+            `ShowCandidates`, ...), the conditions are checked against the
+            chooser rather than the application underneath: app_name
+            "Keyhac", window_title "Chooser", path "/Keyhac/Chooser".  A
+            table that applies everywhere - `focus_path_pattern="*"` - applies
+            there too, so a remap such as "Ctrl-J" to "Down" moves the
+            selection; a table defined with `app="Keyhac", title="Chooser"`
+            applies only there.  Keys no table binds keep their usual meaning
+            in the chooser.  `keymap.focus` stays the application underneath.
         """
         if class_name is not None and self.platform == "mac":
             logger.warning("class_name= is Windows-only; this key table never activates on macOS.")
@@ -890,8 +903,10 @@ class Keymap:
         except Exception:
             print()
             logger.error(f"Unexpected error happened:\n{traceback.format_exc()}")
-            # Pass the key through on unexpected errors so typing still works.
-            return False
+            # Pass the key through on unexpected errors so typing still works -
+            # unless a chooser holds the keyboard, where passing through is
+            # what would leak the key into the application underneath.
+            return self._modal_input is not None
 
     def _on_key_up(self, vk):
 
@@ -939,27 +954,11 @@ class Keymap:
         except Exception:
             print()
             logger.error(f"Unexpected error happened:\n{traceback.format_exc()}")
-            return False
+            return self._modal_input is not None
 
     def _do_configured_key_action(self, key):
 
         logger.debug(f"INPUT    : {key}")
-
-        # A key grab (push_modal_input) outranks every table: the candidate
-        # window that owns it is not focused, so this is the only route its
-        # keystrokes have.  Modifier keys fall through - their bookkeeping
-        # already ran in the caller, and consuming them here would strand
-        # the modifier state of the application underneath.
-        if self._modal_input is not None and key.vk not in self._vk_mod_map:
-            if not self._grab_declines(key):
-                if key.down and not key.oneshot:
-                    try:
-                        self._modal_input(key)
-                    except Exception:
-                        logger.error(f"Modal input handler failed:\n"
-                                     f"{traceback.format_exc()}")
-                        self._modal_input = None
-                return True
 
         action = None
         if key in self._unified_keytable:
@@ -974,7 +973,24 @@ class Keymap:
             left_multi_stroke = True
 
         if action is None:
-            return left_multi_stroke
+            if left_multi_stroke:
+                return True
+            if self._modal_input is None or key.vk in self._vk_mod_map:
+                return False
+            # A grab is up and no table under the chooser's focus binds this
+            # key.  The tables the real focus picks get one more look - see
+            # _modal_fallback - and otherwise the key is the chooser's own.
+            action = self._modal_fallback(key)
+            if action is None:
+                if key.down and not key.oneshot:
+                    self._cancel_oneshot_win_alt()
+                    try:
+                        self._modal_input(key)
+                    except Exception:
+                        logger.error(f"Modal input handler failed:\n"
+                                     f"{traceback.format_exc()}")
+                        self.pop_modal_input()
+                return True
 
         if callable(action):
             action_name = getattr(action, "__name__", None) or repr(action)
@@ -1004,81 +1020,106 @@ class Keymap:
     # ------------------------------------------------------------------
     # Modal input (spike - discussion #112)
 
-    def _grab_declines(self, key) -> bool:
-        """Whether the grab leaves this key to the key tables.
+    def _modal_fallback(self, key):
+        """The binding a grab's owner wants run although the chooser's tables
+        have none for this key, or None.
 
-        A grab outranking every table is what a window with no OS focus
-        needs, and it is also how the chooser's own promises were broken:
-        the key that opened it could not close it and another chooser's key
-        could not replace it, because neither press ever reached an action.
-        The grab's owner therefore gets a say - it is handed whatever the
-        tables bind the key to, and answers whether it would rather the
-        tables had it.
+        Matching the tables against the chooser's focus is what lets a
+        configuration's bindings work inside it, and it is also what would
+        break the chooser's own promises: the key that opened a chooser closes
+        it and another chooser's key replaces it, but a chooser bound in a
+        table for one application is not bound under the chooser's focus at
+        all.  So the tables the *real* focus picks get a second look, and the
+        grab's owner is handed what they bind and answers whether to run it.
 
         **Key downs carrying a modifier only.**  An unmodified key is text as
-        far as a filter field is concerned, and a filter field is what is
-        grabbing; a key up follows whatever its down did, the grab having
-        been released by then if the down closed the window.
+        far as a filter field is concerned, and a key up follows whatever its
+        down did.
         """
         if self._modal_passthrough is None or key.oneshot or not key.down \
                 or not key.mod:
-            return False
+            return None
+        action = self._real_keytable.get(key)
+        if action is None:
+            return None
         try:
-            return bool(self._modal_passthrough(self._unified_keytable.get(key)))
+            return action if self._modal_passthrough(action) else None
         except Exception:
             logger.error(f"Modal input passthrough failed:\n"
                          f"{traceback.format_exc()}")
-            return False
+            return None
 
-    def push_modal_input(self, handler, passes_through=None) -> None:
-        """Route every non-modifier key to `handler` until it is popped.
+    def push_modal_input(self, handler, passes_through=None, focus=None,
+                         on_text=None) -> None:
+        """Hand the keyboard to a window that has no OS keyboard focus.
 
         The mechanism a non-activating candidate window needs: the window
         never takes OS keyboard focus, so its keystrokes have to arrive
         through the hook that is already installed.
 
-        A grab is the same kind of state a multi-stroke prefix already is -
-        "the next keystroke resolves somewhere other than the active key
-        tables, and unmatched keys are consumed rather than passed through"
-        - differing in only two properties: it does not leave after one key,
-        and it has a catch-all instead of a table.  So the two are kept
-        mutually exclusive by construction: pushing a grab disarms any armed
-        prefix, and there is never a prefix and a grab up at once.  Whether
-        they should share one slot outright, rather than one policy, is the
-        open question this spike exists to inform.
+        **The key tables still come first** (issue #155).  While the grab is
+        up they are matched against `focus` instead of the real focus, so a
+        configuration's bindings mean the same inside the window as anywhere
+        else - remaps, functions, multi-stroke prefixes, user modifiers - and
+        key output goes to the window rather than to the OS
+        (`InputContext._flush`).  Only a key no table binds reaches `handler`.
+        The real focus is left alone: `keymap.focus` and everything that acts
+        on a window keeps meaning the application underneath.
 
-        Esc is the one key that does not arrive here first: `on_key_event`
-        offers it to a running `ThreadedAction` before the tables are
-        consulted, and consumes it if that stopped something.  With a grab
-        up and an action running, Esc therefore cancels the action and the
-        candidate window stays open.  That ordering is deliberate for the
-        action, and probably wrong for the window; it is one of the
-        decisions a real implementation has to make explicitly.
+        A grab disarms any armed multi-stroke prefix, and while it is up an
+        unexpected error consumes the key rather than passing it through -
+        the application underneath is not where the user is typing.
+
+        Esc is not offered to a running `ThreadedAction` while a grab is up,
+        as `on_key_event` otherwise does before the tables: Esc there means
+        "close this window", and the window is what the user is looking at.
 
         Args:
             handler: Called with the `KeyCondition` of each non-modifier key
-                *down* (never a one-shot echo, never a key up).  Modifier
-                keys keep their normal bookkeeping so the handler sees
-                correct modifier state; every non-modifier key is consumed,
-                so the focused application sees nothing while the grab is up.
+                *down* (never a one-shot echo, never a key up) that no table
+                binds, and of each non-modifier key down in key output while
+                the grab is up.  Modifier keys keep their normal bookkeeping
+                and still reach the OS, so the application underneath never
+                sees a modifier stuck.
             passes_through: Optional `callable(action) -> bool`, asked of a
-                modified key down with whatever the tables bind it to (None
-                where they bind nothing).  True leaves the key to the tables
-                instead of consuming it - see `_grab_declines`.
+                modified key down that the tables bind under the real focus
+                but not under `focus` - see `_modal_fallback`.
+            focus: The `Focus` the key tables are matched against while the
+                grab is up.  None keeps the real one.
+            on_text: Optional `callable(str)` taking `send_text()` output.
+                Without it, text output is dropped.
 
         lazydocs: ignore
         """
-        self._leave_multi_stroke()
-        self._modal_input = handler
-        self._modal_passthrough = passes_through
+        with self._lock:
+            self._leave_multi_stroke()
+            self._real_keytable = self._merged_keytable(self._focus)
+            self._modal_input = handler
+            self._modal_passthrough = passes_through
+            self._modal_text = on_text
+            self._modal_focus = focus
+            self._update_unified_keytable()
+            self._show_focus_path(self._table_focus())
 
     def pop_modal_input(self) -> None:
         """Release the grab pushed by :meth:`push_modal_input`.
 
         lazydocs: ignore
         """
-        self._modal_input = None
-        self._modal_passthrough = None
+        with self._lock:
+            if self._modal_input is None:
+                return
+            self._modal_input = None
+            self._modal_passthrough = None
+            self._modal_text = None
+            self._modal_focus = None
+            self._real_keytable = {}
+            # The real focus was tracked all along; the tables were not
+            # re-merged for it, so make the next key re-merge them, and do it
+            # now for whatever was last read.
+            self._focus_key = None
+            self._update_unified_keytable()
+            self._show_focus_path(self._focus)
 
     def modal_input_active(self) -> bool:
         """Whether a key grab is up.
@@ -1135,6 +1176,12 @@ class Keymap:
         focus = self._focus_provider.get_focus()
         self._focus = focus
 
+        # While a grab is up the tables are matched against the chooser's
+        # focus, which does not move; the real one is still read above, so
+        # `keymap.focus` keeps answering, and pop_modal_input re-merges.
+        if self._modal_input is not None:
+            return
+
         key = None if focus is None else (focus.app_name, focus.pid,
                                           focus.window_title, focus.class_name,
                                           focus.path)
@@ -1142,13 +1189,23 @@ class Keymap:
             return
         self._focus_key = key
 
+        self._show_focus_path(focus)
+        self._update_unified_keytable()
+
+    def _show_focus_path(self, focus) -> None:
+        """Put the path the tables are matched against in the console."""
         new_focus_path = focus.path if focus else None
         if self._focus_path != new_focus_path:
             logger.debug(f"Focus path: {new_focus_path}")
             log.Console.get_instance().set_text("focusPath", new_focus_path or "")
             self._focus_path = new_focus_path
 
-        self._update_unified_keytable()
+    def _table_focus(self):
+        """The focus the key tables are matched against: a grab's, while one
+        is up (see push_modal_input), and the real one otherwise."""
+        if self._modal_input is not None and self._modal_focus is not None:
+            return self._modal_focus
+        return self._focus
 
     def effective_keytable(self) -> dict:
         """The bindings in effect right now, as `{KeyCondition: action}`.
@@ -1165,14 +1222,19 @@ class Keymap:
         return dict(self._unified_keytable)
 
     def _update_unified_keytable(self):
-        self._unified_keytable = {}
         if self._multi_stroke_keytable:
-            self._unified_keytable.update(self._multi_stroke_keytable.table)
+            self._unified_keytable = dict(self._multi_stroke_keytable.table)
         else:
-            # Merged in definition order - later tables override earlier ones
-            for focus_condition, keytable in self._keytable_list:
-                if focus_condition.check(self._focus):
-                    self._unified_keytable.update(keytable.table)
+            self._unified_keytable = self._merged_keytable(self._table_focus())
+
+    def _merged_keytable(self, focus) -> dict:
+        """Every table whose condition holds for `focus`, merged in
+        definition order - later tables override earlier ones."""
+        merged = {}
+        for focus_condition, keytable in self._keytable_list:
+            if focus_condition.check(focus):
+                merged.update(keytable.table)
+        return merged
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1219,7 +1281,12 @@ class Keymap:
     @property
     def focus(self) -> Focus | None:
         """Portable snapshot of the current keyboard focus (a Focus), or None
-        before the first key event."""
+        before the first key event.
+
+        Always the real focus.  While a chooser is open the key tables are
+        matched against the chooser instead (see `define_keytable`), but this
+        stays the application underneath - the one a paste, a window move or
+        an IME change acts on."""
         return self._focus
 
     # ------------------------------------------------------------------

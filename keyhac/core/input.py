@@ -295,6 +295,50 @@ class InputContext:
                 self._input_seq.append((vk, False))
                 self._virtual_modifier &= ~modkey
 
+    def _divert(self, seq) -> list:
+        """Hand key output to the window holding the keyboard, and return what
+        is left for the OS.
+
+        A chooser that has no OS keyboard focus would never see an injected
+        key - the OS delivers it to the application underneath, which is
+        exactly where it must not land (issue #155).  So non-modifier keys
+        and text go to the grab instead, each key with the modifiers in force
+        at that point of the batch, which is the combination the OS would
+        have seen.  Key ups are dropped: the grab acts on downs.
+
+        Modifier keys and the mouse still go out.  The modifiers are the
+        batch reconciling itself with what is physically held - the OS saw
+        those keys go down, and has to see them restored - and on Windows
+        that reconciliation is also what carries the Ctrl tap that keeps a
+        lone Alt or Win from opening a menu.
+        """
+        mod = self._real_modifier & ~MODKEY_USER_ALL
+        on_key = self._keymap._modal_input
+        on_text = self._keymap._modal_text
+        rest, diverted = [], []
+        for item in seq:
+            if item[0] == "mouse":
+                rest.append(item)
+            elif item[0] == "text":
+                diverted.append(item)
+                if on_text is not None:
+                    on_text(item[1])
+            else:
+                vk, down = item
+                # A user modifier's key is never emitted as a modifier, so
+                # when it is in the batch it is the key itself - SandS's
+                # Space, sent from its one-shot binding.
+                modkey = self._vk_mod_map.get(vk, 0) & ~MODKEY_USER_ALL
+                if modkey:
+                    mod = (mod | modkey) if down else (mod & ~modkey)
+                    rest.append(item)
+                elif down:
+                    diverted.append(item)
+                    on_key(KeyCondition(vk, mod & ~MODKEY_USER_ALL))
+        if diverted:
+            logger.debug("CHOOSER  : " + " ".join(_format_item(i) for i in diverted))
+        return rest
+
     def _flush(self):
         self.send_modifier_keys(self._real_modifier)
         seq, self._input_seq = self._input_seq, []
@@ -304,6 +348,9 @@ class InputContext:
         # the log shows which action ran but not one byte of what it emitted,
         # and questions like "is the modifier released around this batch?"
         # cannot be answered from a log at all.
+        if seq and not self._replay and self._keymap._modal_input is not None:
+            seq = self._divert(seq)
+
         if seq:
             logger.debug("SEND     : " + " ".join(_format_item(i) for i in seq))
 

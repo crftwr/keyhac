@@ -60,6 +60,8 @@ lazydocs: ignore
 
 Portable snapshot of the current keyboard focus (a Focus), or None before the first key event. 
 
+Always the real focus.  While a chooser is open the key tables are matched against the chooser instead (see `define_keytable`), but this stays the application underneath - the one a paste, a window move or an IME change acts on. 
+
 ---
 
 #### <kbd>property</kbd> Keymap.mcp_server_running
@@ -157,6 +159,7 @@ With no condition the table is not added to the keymap: assign it to a key to ma
 
 > app, title and class_name patterns are case-insensitive, take fnmatch wildcards (*, ?, []) and "|" alternation, and all the conditions given must match. 
 >On Windows, focus_path_pattern is best-effort: the path is re-read when the window, the focused child window or the title changes, so focus moving *inside* one window - an item in a list, a tab, anything on a Chromium / Electron / WPF / WinUI page - does not re-evaluate it. Reading it on every key event was measured at 1.6-3.5 ms against a responsive application and unbounded against a hung one, which the key path cannot spend. app, title and class_name are exact. 
+>While a chooser popup is open (`ShowClipboardHistory`, `ShowCandidates`, ...), the conditions are checked against the chooser rather than the application underneath: app_name "Keyhac", window_title "Chooser", path "/Keyhac/Chooser".  A table that applies everywhere - `focus_path_pattern="*"` - applies there too, so a remap such as "Ctrl-J" to "Down" moves the selection; a table defined with `app="Keyhac", title="Chooser"` applies only there.  Keys no table binds keep their usual meaning in the chooser.  `keymap.focus` stays the application underneath. 
 
 ---
 

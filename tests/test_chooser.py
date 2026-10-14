@@ -210,18 +210,21 @@ class TestAChooserKeyReachesItsAction:
         assert [c.display for c in chooser._filtered] == ["clip one", "clip two"]
         assert chooser._edit.text == "", "the bug: a 'v' typed into the query"
 
-    def test_a_key_bound_to_something_else_still_belongs_to_the_window(
+    def test_a_key_bound_to_something_else_acts_on_the_window(
             self, keyhac_engine, ui_backend):
-        """Only the keys that open a chooser are handed back. A key bound to
-        `Left` is the list's while this window is up, not the application's
-        underneath."""
+        """Issue #155: a key bound to `Down` moves the chooser's selection -
+        the binding runs, and its output is the window's, not the
+        application's underneath."""
         self._open(keyhac_engine)
         keyhac_engine.keymap.define_keytable(
-            focus_path_pattern="*")["Fn-J"] = "Left"
+            focus_path_pattern="*")["Fn-J"] = "Down"
         self._press(keyhac_engine)
         chooser = ChooserAction._open[1]
+        keyhac_engine.hook.sent.clear()
         self._press(keyhac_engine, "J")
-        assert chooser._edit.text == "j"
+        assert chooser._edit.text == ""
+        assert chooser.in_list and chooser._list.selected == 0
+        assert "Down" not in " ".join(keyhac_engine.sent_names())
         assert ChooserAction._open is not None
 
 

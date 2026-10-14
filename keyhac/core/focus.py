@@ -53,6 +53,22 @@ def match_window_fields(window, app: str = None, title: str = None,
     return True
 
 
+def chooser_focus() -> Focus:
+    """The focus key tables are matched against while a chooser is open.
+
+    A non-activating chooser never takes OS keyboard focus, so the real focus
+    stays on the application underneath - but the keystrokes are the
+    chooser's, and the tables that decide what they mean are chosen as if the
+    chooser were focused.  This is what it looks like to a condition: a table
+    written ``define_keytable(app="Keyhac", title="Chooser")`` applies there
+    and nowhere else, and one with ``focus_path_pattern="*"`` applies there as
+    everywhere.  There is no element behind it, so ``native`` and ``element``
+    are None.
+    """
+    return Focus(app_name="Keyhac", window_title="Chooser",
+                 path="/Keyhac/Chooser")
+
+
 class FocusCondition:
     """Condition deciding whether a key table is active for the current focus.
 

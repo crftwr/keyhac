@@ -128,21 +128,30 @@ class TestModalGrab:
         assert seen[-1].mod & (MODKEY_SHIFT | MODKEY_SHIFT_L | MODKEY_SHIFT_R), \
             "the handler must see the real modifier state"
 
-    def test_popping_restores_normal_dispatch(self, engine):
-        calls = []
+    def test_the_tables_come_first_and_the_rest_is_the_grabs(self, engine):
+        """Issue #155: a grab no longer outranks the tables - it gets what
+        they do not bind."""
+        calls, seen = [], []
 
         def configure(keymap):
             table = keymap.define_keytable(focus_path_pattern="*")
             table["A"] = lambda: calls.append("a")
 
         fixture = engine(configure)
-        fixture.keymap.push_modal_input(lambda key: None)
+        fixture.stroke("Shift")             # a first key, so the focus is read
+        fixture.keymap.push_modal_input(seen.append)
         fixture.stroke("A")
-        assert calls == [], "the grab outranks the key table"
-
-        fixture.keymap.pop_modal_input()
-        fixture.stroke("A")
+        fixture.stroke("B")
         assert calls == ["a"]
+        assert [str(k) for k in seen] == ["D-B"]
+
+    def test_popping_restores_normal_dispatch(self, engine):
+        fixture = engine(lambda keymap: None)
+        seen = []
+        fixture.keymap.push_modal_input(seen.append)
+        fixture.keymap.pop_modal_input()
+        assert fixture.stroke("A") == (False, False)
+        assert seen == []
 
     def test_pushing_a_grab_disarms_a_multi_stroke_prefix(self, engine):
         """One modal slot, so a prefix and a grab can never both be up."""
@@ -294,3 +303,245 @@ class TestNonActivatingChooser:
         release.set()
         assert canceled == [True]
         assert not fixture.keymap.modal_input_active()
+
+
+class TestTheKeymapInsideTheChooser:
+    """Issue #155: while a chooser holds the keyboard, the user's key tables
+    are matched as if it were focused, and their output is the window's."""
+
+    @pytest.fixture
+    def opened(self, engine):
+        backends = []
+
+        def make(configure, platform="mac", items=None):
+            fixture = engine(configure, platform=platform)
+            from puikit.backends.memory_backend import MemoryBackend
+            backend = MemoryBackend(width=100, height=30)
+            backend.open()
+            backends.append(backend)
+            runtime.backend = backend
+            fixture.stroke("Shift")         # read the focus, as any key would
+            fixture.hook.sent.clear()
+            items = items or [("*", "alpha", 1), ("*", "beta", 2),
+                              ("*", "alpine", 3)]
+            return fixture, ChooserWindow(backend, items, activates=False)
+
+        yield make
+        runtime.backend = None
+        for backend in backends:
+            backend.close()
+
+    @staticmethod
+    def _chord(fixture, mod, name):
+        fixture.down(mod)
+        fixture.stroke(name)
+        fixture.up(mod)
+
+    @staticmethod
+    def _keys_to_os(fixture):
+        """What reached the OS, minus the modifier bookkeeping around it."""
+        mods = {"Ctrl", "LCtrl", "Shift", "LShift", "Alt", "LAlt", "Cmd",
+                "LCmd", "Fn", "LFn"}
+        return [n for n in fixture.sent_names() if n[2:] not in mods]
+
+    def test_a_remap_moves_the_selection(self, opened):
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            table["Ctrl-J"] = "Down"
+            table["Ctrl-K"] = "Up"
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "J")
+        self._chord(fixture, "LCtrl", "J")
+        assert chooser.in_list and chooser._list.selected == 1
+        self._chord(fixture, "LCtrl", "K")
+        assert chooser._list.selected == 0
+        assert self._keys_to_os(fixture) == [], "nothing for the app underneath"
+        chooser.dismiss()
+
+    def test_modifier_keys_still_reach_the_os(self, opened):
+        fixture, chooser = opened(
+            lambda keymap: keymap.define_keytable(focus_path_pattern="*"))
+        assert fixture.down("LCtrl") is False
+        assert fixture.up("LCtrl") is False
+        chooser.dismiss()
+
+    def test_unbound_keys_keep_their_chooser_meaning(self, opened):
+        fixture, chooser = opened(
+            lambda keymap: keymap.define_keytable(focus_path_pattern="*"))
+        for name in ("A", "L"):
+            assert fixture.stroke(name) == (True, True)
+        fixture.stroke("Down")
+        assert chooser._edit.text == "al"
+        assert chooser._list.selected == 0
+        chooser.dismiss()
+
+    def test_a_functions_output_reaches_the_filter(self, opened):
+        def configure(keymap):
+            def type_al():
+                with keymap.get_input_context() as ctx:
+                    ctx.send_key("A")
+                    ctx.send_text("lp")
+            keymap.define_keytable(focus_path_pattern="*")["Ctrl-T"] = type_al
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "T")
+        assert chooser._edit.text == "alp"
+        assert [c.display for c in chooser._filtered] == ["alpha", "alpine"]
+        assert self._keys_to_os(fixture) == []
+        chooser.dismiss()
+
+    def test_text_output_is_not_limited_to_ascii(self, opened):
+        def configure(keymap):
+            def type_japanese():
+                with keymap.get_input_context() as ctx:
+                    ctx.send_text("議事録")
+            keymap.define_keytable(focus_path_pattern="*")["Ctrl-T"] = type_japanese
+
+        fixture, chooser = opened(configure,
+                                  items=[("*", "議事録メモ", 1), ("*", "alpha", 2)])
+        self._chord(fixture, "LCtrl", "T")
+        assert chooser._edit.text == "議事録"
+        assert [c.display for c in chooser._filtered] == ["議事録メモ"]
+        chooser.dismiss()
+
+    def test_a_multi_stroke_prefix_works(self, opened):
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            sub = keymap.define_keytable(name="Ctrl-X")
+            table["Ctrl-X"] = sub
+            sub["N"] = "Down"
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "X")
+        fixture.stroke("N")
+        assert chooser._edit.text == ""
+        assert chooser.in_list and chooser._list.selected == 0
+        chooser.dismiss()
+
+    def test_an_unmatched_key_after_a_prefix_is_consumed(self, opened):
+        """The inherited unmatched-consume rule holds here too."""
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            sub = keymap.define_keytable(name="Ctrl-X")
+            table["Ctrl-X"] = sub
+            sub["N"] = "Down"
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "X")
+        fixture.stroke("Q")
+        fixture.stroke("A")
+        assert chooser._edit.text == "a"
+        chooser.dismiss()
+
+    def test_a_user_modifier_works(self, opened):
+        def configure(keymap):
+            keymap.define_modifier("RAlt", "RUser0")
+            keymap.define_keytable(focus_path_pattern="*")["User0-J"] = "Down"
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "RAlt", "J")
+        assert chooser.in_list and chooser._list.selected == 0
+        assert chooser._edit.text == ""
+        chooser.dismiss()
+
+    def test_a_chooser_table_applies_only_while_it_is_open(self, opened):
+        calls = []
+
+        def configure(keymap):
+            table = keymap.define_keytable(app="Keyhac", title="Chooser")
+            table["Ctrl-J"] = "Down"
+            table["Ctrl-Q"] = lambda: calls.append("q")
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "J")
+        assert chooser.in_list and chooser._list.selected == 0
+        chooser.dismiss()
+
+        fixture.hook.sent.clear()
+        self._chord(fixture, "LCtrl", "Q")
+        assert calls == [], "back on the app, the chooser's table is gone"
+
+    def test_the_apps_own_table_does_not_apply_inside(self, opened):
+        calls = []
+
+        def configure(keymap):
+            keymap.define_keytable(app="testapp")["Ctrl-J"] = \
+                lambda: calls.append("app")
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "J")
+        assert calls == []
+        chooser.dismiss()
+        self._chord(fixture, "LCtrl", "J")
+        assert calls == ["app"], "and it is back once the chooser closes"
+
+    def test_keymap_focus_stays_the_real_one(self, opened):
+        fixture, chooser = opened(
+            lambda keymap: keymap.define_keytable(focus_path_pattern="*"))
+        fixture.stroke("A")
+        assert fixture.keymap.focus.app_name == "testapp"
+        assert "focus path: /Keyhac/Chooser" in fixture.keymap.describe_keymap()
+        chooser.dismiss()
+        assert "focus path: /testapp/" in fixture.keymap.describe_keymap()
+
+    def test_a_condition_function_sees_the_chooser(self, opened):
+        seen = []
+
+        def configure(keymap):
+            def condition(focus):
+                seen.append((focus.app_name, focus.window_title))
+                return True
+            keymap.define_keytable(custom_condition_func=condition)
+
+        fixture, chooser = opened(configure)
+        assert ("Keyhac", "Chooser") in seen
+        chooser.dismiss()
+
+    def test_output_with_no_chooser_event_is_dropped(self, opened):
+        def configure(keymap):
+            keymap.define_keytable(focus_path_pattern="*")["Ctrl-J"] = "Cmd-S"
+
+        fixture, chooser = opened(configure)
+        self._chord(fixture, "LCtrl", "J")
+        assert chooser._edit.text == ""
+        assert self._keys_to_os(fixture) == [], "not to the app underneath"
+        chooser.dismiss()
+
+    def test_an_error_in_a_binding_does_not_leak_the_key(self, opened):
+        def configure(keymap):
+            def boom():
+                raise RuntimeError("broken binding")
+            keymap.define_keytable(focus_path_pattern="*")["Ctrl-J"] = boom
+
+        fixture, chooser = opened(configure)
+        fixture.down("LCtrl")
+        assert fixture.down("J") is True
+        assert fixture.up("J") is True
+        fixture.up("LCtrl")
+        chooser.dismiss()
+
+    def test_a_lone_alt_is_still_fenced_on_windows(self, opened):
+        """The OS saw Alt go down and the key consumed: without the Ctrl tap,
+        releasing Alt opens the menu bar of the application underneath."""
+        fixture, chooser = opened(
+            lambda keymap: keymap.define_keytable(focus_path_pattern="*"),
+            platform="windows")
+        fixture.down("LAlt")
+        fixture.stroke("A")
+        fixture.up("LAlt")
+        assert "D-LCtrl" in fixture.sent_names()
+        chooser.dismiss()
+
+    def test_a_remap_on_windows_fences_alt_too(self, opened):
+        fixture, chooser = opened(
+            lambda keymap: keymap.define_keytable(
+                focus_path_pattern="*").__setitem__("Alt-J", "Down"),
+            platform="windows")
+        fixture.down("LAlt")
+        fixture.stroke("J")
+        fixture.up("LAlt")
+        assert chooser.in_list and chooser._list.selected == 0
+        assert "D-LCtrl" in fixture.sent_names()
+        assert "D-Down" not in fixture.sent_names()
+        chooser.dismiss()
