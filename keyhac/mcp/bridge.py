@@ -7,7 +7,7 @@ conversation would be a second hook, a second accessibility prompt, and no
 access to the running one's state. So this runs as the child instead and
 forwards every message to the daemon already running.
 
-**It contains no tool definitions and no logic on purpose.** Everything the
+**It writes no tool definitions and no logic on purpose.** Everything the
 model sees is served by the daemon, so the two cannot drift apart into a bridge
 that advertises a tool the daemon no longer has. If you find yourself adding a
 branch here for a specific method, it belongs on the other side.
@@ -17,11 +17,20 @@ that meets a JSON-RPC error at `initialize` writes the server off as broken and
 stops calling it - so the state a user meets most often, Keyhac running with its
 MCP switch off, arrives as "keyhac failed to connect" with the reason on a line
 nobody reads, and the way out is a client restart rather than a tick in Keyhac.
-Instead the handshake succeeds, `tools/list` serves one tool whose name and
-description say the switch is off and how to turn it on, and calling that tool
-re-checks. It cannot drift from the daemon either: what it serves exists only
-while the daemon serves nothing, and `notifications/tools/list_changed` hands
-the list back the moment one answers.
+Instead the handshake succeeds and `tools/list` serves Keyhac's own tools, built
+by importing the same `ToolRegistry` the daemon serves them from - generated,
+not written twice, so it cannot drift either. Calling one while the switch is
+off answers with which box to tick.
+
+**The list does not change when the switch does** (issue #156). It used to:
+the bridge served one placeholder tool while the daemon was silent and sent
+`notifications/tools/list_changed` when it answered. Honouring that
+notification is optional in MCP, and a client that ignores it - Amazon Quick -
+kept the placeholder until it was restarted, which is the very cost the offline
+answers exist to remove. The notification is now sent only when the daemon's
+list really differs from the one served here, which takes two installs at
+different versions: a bridge process older than the Keyhac it reaches, or a
+development checkout's bridge in front of the bundled daemon.
 
 `--tools` is the other exception, and it holds to the same rule: it prints what
 the daemon answers to `tools/list`, verbatim. It knows no tool names, no
@@ -57,14 +66,10 @@ from keyhac.mcp.server import ENDPOINT_FILE, PROTOCOL_VERSION, REQUEST_TIMEOUT
 #: contract and is imported here rather than written twice.
 TIMEOUT = REQUEST_TIMEOUT
 
-#: How long the placeholder tool waits for the daemon before reporting it
-#: still off. A `ping` answered from the daemon's own thread pool, so this is
-#: a localhost round trip and not a tree walk.
+#: How long to wait on the daemon's own tool list, asked for once after it
+#: starts answering. Answered from a table, so this is a localhost round trip
+#: and not a tree walk.
 PROBE_TIMEOUT = 5.0
-
-#: The tool served while the daemon is silent. Named as a sentence because the
-#: name is the half of a tool listing every client shows.
-OFF_TOOL = "keyhac_mcp_server_is_off"
 
 
 def endpoint_path(config: str | None = None) -> str:
@@ -158,10 +163,10 @@ def _notify(method: str) -> None:
 def _handshake() -> dict:
     """The `initialize` result, for the daemon that is not there to give one.
 
-    `listChanged` is declared because the whole point of answering is that what
-    is served next is provisional: the client has to accept being told to ask
-    again once the switch goes on. The version is this bridge's own, which is
-    the only one it can know - the daemon reports its own when it is up.
+    `listChanged` is declared, as the daemon declares it, for the one case in
+    which this bridge's list and the daemon's differ. The version is this
+    bridge's own, which is the only one it can know - the daemon reports its
+    own when it is up.
     """
     from keyhac import __version__
     return {"protocolVersion": PROTOCOL_VERSION,
@@ -169,43 +174,28 @@ def _handshake() -> dict:
             "serverInfo": {"name": "keyhac", "version": __version__}}
 
 
-def _off_tool(path: str) -> dict:
-    """The one tool served while the daemon is silent.
+def own_tools() -> list[dict]:
+    """The tool list this install's daemon serves, without asking it.
 
-    A tool rather than an empty list: a server that connects and offers nothing
-    reads as a broken Keyhac and says nothing about the switch, while a listed
-    tool carries the reason in the two places a model and a person both look -
-    the name and the description. Calling it is also the cheapest way to find
-    out whether the switch has since been ticked.
+    Built from the registry rather than copied from it: `describe()` reads
+    only the definitions, and the keymap a registry is bound to is touched by
+    the tools when they run, which none do here.
     """
-    return {"name": OFF_TOOL,
-            "description": (f"{_no_daemon(path)} Calling this tool checks "
-                            f"again: once Keyhac answers, its own tools "
-                            f"replace this one."),
-            "inputSchema": {"type": "object", "properties": {}}}
+    from keyhac.mcp.tools import ToolRegistry
+    return ToolRegistry(None).describe()
 
 
-def _tool_called(message: dict) -> str | None:
-    params = message.get("params")
-    return params.get("name") if isinstance(params, dict) else None
-
-
-def _answering(endpoint: dict) -> bool:
-    """Whether the daemon behind a published endpoint is really there.
-
-    The file outliving the daemon is an ordinary state - a Keyhac killed rather
-    than quit leaves one - so its presence is not the answer. `ping` is, and it
-    is the cheapest question the protocol has. A rejected token counts as no:
-    a stale credential and a stale port are the same stale file.
-    """
+def _daemon_tools(endpoint: dict) -> list[dict] | None:
+    """What the daemon serves to `tools/list`, or None if it did not say."""
     body = json.dumps({"jsonrpc": "2.0", "id": 0,
-                       "method": "ping"}).encode("utf-8")
+                       "method": "tools/list"}).encode("utf-8")
     try:
         with urllib.request.urlopen(_post(endpoint, body),
-                                    timeout=PROBE_TIMEOUT):
-            return True
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
+                                    timeout=PROBE_TIMEOUT) as reply:
+            served = json.loads(reply.read().decode("utf-8"))
+        return served["result"]["tools"]
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def print_tools(path: str) -> int:
@@ -272,11 +262,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.tools:
         return print_tools(path)
 
-    # Whether the tool list the client is holding is ours. Only then is there
-    # anything to announce when the daemon starts answering: the notification
-    # means "what I gave you is stale", and a client that never saw the
-    # placeholder is already holding the daemon's own list.
-    placeholder_served = False
+    # Whether the tool list the client is holding is ours rather than the
+    # daemon's. Only then is there anything to check when the daemon starts
+    # answering - and only a difference between the two is worth announcing,
+    # since a client is free to ignore the announcement.
+    own_served = False
 
     for line in sys.stdin:
         line = line.strip()
@@ -298,21 +288,6 @@ def main(argv: list[str] | None = None) -> int:
             endpoint = read_endpoint(path)
         except (OSError, ValueError):
             endpoint = None
-
-        # Ours to answer whichever way the daemon is: it has never heard of
-        # this tool and would refuse the call.
-        if method == "tools/call" and _tool_called(message) == OFF_TOOL:
-            back = endpoint is not None and _answering(endpoint)
-            if request_id is not None:
-                text = ("Keyhac's MCP server is answering again - its own "
-                        "tools are available now." if back else _no_daemon(path))
-                _respond(message, _result(request_id, {
-                    "content": [{"type": "text", "text": text}],
-                    "isError": not back}))
-            if back and placeholder_served:
-                placeholder_served = False
-                _notify("notifications/tools/list_changed")
-            continue
 
         body = None
         if endpoint is not None:
@@ -349,9 +324,17 @@ def main(argv: list[str] | None = None) -> int:
             elif method == "ping":
                 _respond(message, _result(request_id, {}))
             elif method == "tools/list":
-                placeholder_served = True
-                _respond(message, _result(request_id,
-                                          {"tools": [_off_tool(path)]}))
+                own_served = True
+                _respond(message, _result(request_id, {"tools": own_tools()}))
+            elif method == "tools/call":
+                # A tool result rather than a JSON-RPC error: with no
+                # placeholder in the list, this answer is the one place the
+                # switch is named, and MCP routes tool failures to the model
+                # this way - a client may show a protocol error as a bare
+                # "tool failed".
+                _respond(message, _result(request_id, {
+                    "content": [{"type": "text", "text": _no_daemon(path)}],
+                    "isError": True}))
             else:
                 _respond(message, _error(request_id, _no_daemon(path)))
             continue
@@ -361,9 +344,15 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(body.decode("utf-8") + "\n")
             sys.stdout.flush()
 
-        if placeholder_served:
-            placeholder_served = False
-            _notify("notifications/tools/list_changed")
+        if own_served:
+            if method == "tools/list":
+                own_served = False        # the daemon's list just went out
+            else:
+                served = _daemon_tools(endpoint)
+                if served is not None:
+                    own_served = False
+                    if served != own_tools():
+                        _notify("notifications/tools/list_changed")
     return 0
 
 

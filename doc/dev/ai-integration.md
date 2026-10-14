@@ -296,6 +296,11 @@ The work cannot simply live in the bridge, for three reasons:
 
 **Keyhac speaks localhost HTTP; the bridge is a stdio↔HTTP shim and nothing else.** No
 tool definitions, no logic — otherwise versions diverge and must be maintained twice.
+The one thing it answers itself is the daemon's absence (switch off): the handshake,
+and `tools/list` from the daemon's own `ToolRegistry`, imported rather than copied.
+Serving the real list there keeps it identical across the switch, because honouring
+`notifications/tools/list_changed` is optional and a client that ignores it (Amazon
+Quick, issue #156) otherwise needed a restart to see the tools again.
 
 **How the bridge is *launched* is per-install, and the Store build dictated its
 shape.** `pip install` generates a console script; the zip bundle has no pip, so
