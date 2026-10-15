@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import sys
+import threading
 from typing import Any
 
 from keyhac.core import log
@@ -312,11 +314,55 @@ CONTROL_TYPE_NAMES = {
 }
 
 
+#: Calls on this thread that UIA_TRANSACTION/CONNECTION_TIMEOUT_MS cut short.
+#: Per thread, because a chooser walk on a worker timing out says nothing
+#: about what the main thread is reading. Read through `timeout_count()`.
+_timeouts = threading.local()
+
+
+def timeout_count() -> int:
+    """How many UI Automation calls on this thread have timed out so far.
+
+    Compared before and after a compound read, it says whether any call
+    inside it was cut short - the cue to stop asking (issue #171): the
+    timeout bounds one call, so a read of N calls into a hung application
+    costs N of them unless the caller gives up after the first.
+    """
+    return getattr(_timeouts, "count", 0)
+
+
 def _com_call(ptr, index, restype, argtypes, *args):
     """Invoke vtable slot `index` on the COM interface pointer `ptr`."""
     vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
     prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
-    return prototype(vtable[index])(ptr, *args)
+    result = prototype(vtable[index])(ptr, *args)
+    if isinstance(result, int) and result & 0xFFFFFFFF == UIA_E_TIMEOUT:
+        _timeouts.count = timeout_count() + 1
+    return result
+
+
+def _gives_up_after_timeout(empty):
+    """Make an element read answer `empty` at once once a call on that
+    element has timed out (issue #171).
+
+    A hung application's element costs a full timeout on every read, and a
+    caller reading several attributes of it - a focus walk, an action
+    checking role then name then value - paid each one. One timeout is
+    enough to know; the element is a snapshot handle and is not revived (a
+    fresh one, from a fresh find, asks again).
+    """
+    def decorate(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if self._timed_out:
+                return empty()
+            before = timeout_count()
+            result = method(self, *args, **kwargs)
+            if timeout_count() != before:
+                self._timed_out = True
+            return result
+        return wrapper
+    return decorate
 
 
 def _release(ptr) -> None:
@@ -647,6 +693,11 @@ class UIElement:
         "SelectedText": _PatternId.Text,
     }
 
+    #: Set once a call on this element has timed out; see
+    #: _gives_up_after_timeout. A class default, so an element built without
+    #: __init__ (the tests' detached ones) has it too.
+    _timed_out = False
+
     def __init__(self, ptr):
         self._ptr = ptr
 
@@ -686,6 +737,7 @@ class UIElement:
             return None
         return out
 
+    @_gives_up_after_timeout(lambda: None)
     def get_attribute_value(self, name: str) -> Any:
         if not self._ptr:
             return None
@@ -801,6 +853,7 @@ class UIElement:
 
     # -- tree ---------------------------------------------------------------
 
+    @_gives_up_after_timeout(lambda: None)
     def parent(self) -> "UIElement | None":
         walker = _control_view_walker()
         if walker is None or not self._ptr:
@@ -809,6 +862,7 @@ class UIElement:
                            ctypes.c_void_p(self._ptr.value))
         return UIElement(ptr) if ptr else None
 
+    @_gives_up_after_timeout(list)
     def children(self) -> list["UIElement"]:
         """The control-view child elements.
 
@@ -1009,6 +1063,7 @@ class UIElement:
         """The selected text inside this element, or None."""
         return self.get_attribute_value("SelectedText")
 
+    @_gives_up_after_timeout(lambda: None)
     def get_text(self) -> str | None:
         """This element's whole text content.
 
@@ -1023,9 +1078,15 @@ class UIElement:
         # Value-first returned the short one as if it were whole. An empty
         # document range still falls through to Value, for providers that
         # implement the pattern and leave it blank.
+        before = timeout_count()
         text = self._document_text()
         if text:
             return text
+        if timeout_count() != before:
+            # The Text pattern's call was cut short, so Value would be too:
+            # one timeout, not two (508 ms measured on PR #172 before this).
+            self._timed_out = True
+            return None
         value = self.get_attribute_value("Value")
         if isinstance(value, str) and len(value) >= MSAA_VALUE_CUT:
             # A native EDIT has no Text pattern, and its Value comes through

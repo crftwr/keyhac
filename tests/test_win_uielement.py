@@ -244,3 +244,69 @@ def test_the_shared_client_carries_the_call_timeouts():
                                  [ctypes.POINTER(ctypes.c_ulong)],
                                  ctypes.byref(value))
         assert hr == 0 and value.value == expected
+
+
+def test_an_element_stops_asking_after_one_timeout():
+    """Issue #171 / PR #172: the timeout bounds one call, so a caller reading
+    several attributes of a hung application's element paid one each. After
+    the first, the element answers "no value" at once."""
+    import keyhac.platform.win.uielement as uielement
+
+    calls = []
+
+    @uielement._gives_up_after_timeout(lambda: None)
+    def read(self, name):
+        calls.append(name)
+        uielement._timeouts.count = uielement.timeout_count() + 1
+
+    element = _detached_element()
+    assert read(element, "Name") is None
+    assert read(element, "Value") is None
+    assert element.get_attribute_value("Value") is None
+    assert element.parent() is None and element.children() == []
+    assert calls == ["Name"], "one call reached the application"
+
+
+def test_the_focus_path_stops_at_the_first_timeout(monkeypatch):
+    """The focus walk runs inside the keyboard hook: GetFocusedElement
+    answered, then the application stopped - one timeout, then the window
+    path, never a half-read chain."""
+    import keyhac.platform.win.uielement as uielement
+    from keyhac.platform.win.focus import WinFocusProvider
+
+    reads = []
+
+    class Hung:
+        def get_attribute_value(self, name):
+            reads.append(name)
+            uielement._timeouts.count = uielement.timeout_count() + 1
+
+        def parent(self):
+            reads.append("parent")
+            return Hung()
+
+    monkeypatch.setattr(uielement.UIElement, "from_focus",
+                        staticmethod(lambda: Hung()))
+    provider = WinFocusProvider.__new__(WinFocusProvider)
+    path, element = provider._build_path("notepad", "Untitled", "Notepad")
+    assert path == "/Application(notepad)/Notepad(Untitled)"
+    assert element is None
+    assert "parent" not in reads, "stopped before walking up"
+
+
+def test_get_text_pays_one_timeout_not_two(monkeypatch):
+    """PR #172 measured get_text at 508 ms on a hung window: the Text
+    pattern, then Value, each timing out."""
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    asked = []
+
+    def document():
+        uielement._timeouts.count = uielement.timeout_count() + 1
+        return None
+
+    monkeypatch.setattr(element, "_document_text", document)
+    monkeypatch.setattr(uielement.UIElement, "get_attribute_value",
+                        lambda self, name: asked.append(name))
+    assert element.get_text() is None and asked == []
