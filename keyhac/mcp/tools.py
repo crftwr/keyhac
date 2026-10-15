@@ -72,6 +72,27 @@ logger = log.getLogger("MCP")
 #: to keep.
 DEFAULT_MAX_NODES = 400
 
+#: Ceiling on a `describe_screen` reply, in characters (issue #67).
+#:
+#: The node budget bounds how much is *read*, not how much is *returned*: a
+#: line's length is the node's name, which is not truncated (web content puts
+#: whole paragraphs there), plus two spaces of indent per level, 60 of them at
+#: depth 30. And max_nodes is the caller's to raise - #67 was max_nodes=6000.
+#:
+#: The real ceiling is the MCP client's, and the protocol has no way to learn
+#: it, so this sits under the smallest one known. Claude Code's tool-output
+#: default is 25,000 tokens; Claude Desktop publishes none, and answers an
+#: over-size reply with a generic error that loses the turn - which is what
+#: #67 hit. Sized for the worst ratio rather than the usual one: English tree
+#: text runs ~3-4 characters per token, but CJK names approach one token per
+#: character, so 20,000 characters stays at or under ~20,000 tokens - 80% of
+#: that default - whatever the screen's language. The same figure as
+#: MAX_CAPTURE, the other reply that grows with what is on screen.
+#:
+#: A backstop, not the working budget: DEFAULT_MAX_NODES keeps an ordinary
+#: read far below it (400 Finder nodes ~1,700 tokens).
+MAX_SCREEN_CHARS = 20_000
+
 #: The selector keys `describe_screen(within=)` takes - find_elements' own,
 #: so a container is named the way any element is (issue #95).
 WITHIN_KEYS = ("role", "name", "value", "identifier", "text")
@@ -112,6 +133,31 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
     return (f"reported {len(nodes)} node(s), cut off at {len(cut)} point(s) "
             f"({', '.join(bounds)}); deepest level reached: "
             f"{max(node.depth for node in nodes)}")
+
+
+def _cut_screen(text: str, total: int, scoped: bool) -> str:
+    """A `describe_screen` reply cut to MAX_SCREEN_CHARS, saying where.
+
+    Whole lines only, so every node shown is shown intact and can be copied
+    into a selector. What is missing is everything after the cut in tree
+    order - whole panels, not just the bottom of one - which is why the
+    advice is to narrow rather than to page through it.
+    """
+    kept, size = [], 0
+    for line in text.splitlines():
+        if size + len(line) + 1 > MAX_SCREEN_CHARS:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    shown = max(0, len(kept) - (1 if scoped else 0))
+    return ("\n".join(kept)
+            + f"\n\n[cut at {MAX_SCREEN_CHARS} characters: showing {shown} of "
+              f"{total} node(s), in tree order - everything after this line "
+              f"is missing, not just the bottom of the window. A larger read "
+              f"would be too large for the client to accept, so narrow it: "
+              f"within= one container from the lines above, roles= for the "
+              f"kinds of element you need, or find_elements for a specific "
+              f"one]")
 
 
 def _portable_role_spelling(pattern: str) -> str | None:
@@ -427,7 +473,11 @@ class ToolRegistry:
                      "max_depth": {**integer, "description": "How deep to "
                                    "walk (default 14)."},
                      "max_nodes": {**integer, "description":
-                                   f"Node budget (default {DEFAULT_MAX_NODES})."},
+                                   f"Node budget (default {DEFAULT_MAX_NODES}). "
+                                   f"However many are read, the reply is cut "
+                                   f"at {MAX_SCREEN_CHARS} characters - past "
+                                   f"that, narrow with within= or roles= "
+                                   f"rather than raising this."},
                      "roles": {**string, "description": "Only report elements "
                                "whose role matches this pattern."},
                      "within": {"type": "object", "description":
@@ -837,6 +887,11 @@ class ToolRegistry:
                     "page, as long as the page takes to arrive otherwise). "
                     "Calling enable_content_access again changes nothing.]")
 
+        if len(text) > MAX_SCREEN_CHARS:
+            # Cut on a line boundary and said out loud, ahead of the bound
+            # hints below: "raise max_nodes" is the opposite of the advice a
+            # reply that is already too large needs.
+            return _cut_screen(text, len(nodes), placed is not None)
         if missing_document:
             text += f"\n\n{missing_document}"
         elif placed is None and len(nodes) < EMPTY_WINDOW:

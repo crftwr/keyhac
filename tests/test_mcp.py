@@ -431,6 +431,49 @@ def test_describe_screen_within_rejects_what_it_cannot_use(registry):
         registry.call("describe_screen", {"within": {"max_depth": 30}})
 
 
+def _wide_tree(count, name_chars):
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="Docs")
+    root.children = [UINode(role="AXLink", name=f"{i:04d} " + "x" * name_chars,
+                            depth=1)
+                     for i in range(count)]
+    return root
+
+
+def test_describe_screen_cuts_a_reply_too_large_for_the_client(registry):
+    """Issue #67: the node budget bounds what is read, not what is returned -
+    long names (web content) and a raised max_nodes produced a reply the
+    client refused, losing the whole turn. Cut on whole lines, with the
+    count and the advice to narrow rather than to raise a bound."""
+    tree = _wide_tree(500, 100)
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {"max_nodes": 6000})
+    body, note = text.split("\n\n[cut at ")
+    assert len(body) <= tools_module.MAX_SCREEN_CHARS
+    shown = body.splitlines()
+    assert shown[0] == "AXWindow 'Docs'"
+    assert all(line.endswith("x'") for line in shown[1:]), "whole lines only"
+    assert f"showing {len(shown)} of 501 node(s)" in note
+    assert "within=" in note and "Raise the bound" not in note
+
+
+def test_describe_screen_within_the_ceiling_is_untouched(registry):
+    tree = _wide_tree(50, 100)
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {})
+    assert "[cut at" not in text and len(text.splitlines()) == 51
+
+
+def test_a_scoped_cut_does_not_count_the_placing_line(registry):
+    tree = _wide_tree(500, 100)
+    tree.reread = lambda **kw: tree
+    _with_container(registry, tree)
+    text = registry.call("describe_screen", {"within": {"role": "Window"}})
+    body = text.split("\n\n[cut at ")[0]
+    assert f"showing {len(body.splitlines()) - 1} of 501" in text
+
+
 def test_a_missing_window_says_what_to_do_next(registry):
     with pytest.raises(RuntimeError, match="list_windows"):
         registry.call("describe_screen", {"app": "Nope"})
