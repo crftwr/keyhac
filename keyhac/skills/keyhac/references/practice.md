@@ -53,6 +53,19 @@ patterns accept the macOS names with or without the `AX` prefix, but the prefix
 is stripped from the *role*, not the pattern: `role="AXTable"` matches nothing
 on Windows.
 
+**For visible text, match with `text=`.** Where a string lives differs by
+element and by platform: a macOS static text carries it as its `value`, a
+Windows `Text` element as its `name`, a button as its `name` on both. `text=`
+matches label and content together - the two joined by a space, in that order
+- so `find(role="StaticText|Text", text="*page*of*")` finds the page label
+wherever it keeps its words. The leading `*` is for an element that has both: a
+pattern written for the content alone would miss the label in front of it. Use
+`name=` or `value=` only when you mean that one field.
+
+**A `Locator`'s bounds travel with it.** `LOC.criteria()` includes its
+`max_depth` / `max_nodes`, and `find`, `find_all` and the waits all accept them
+from there - `wait_for(**LOC.criteria())` needs no bound of its own.
+
 **A node is a snapshot.** `find`/`find_all` read the live UI each time; the
 node they return does not update. Re-`find` after the screen changes.
 
