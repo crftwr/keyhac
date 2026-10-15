@@ -10,6 +10,7 @@ the result so the model can read it.
 import json
 import logging
 import pathlib
+import re
 import sys
 import os
 import shutil
@@ -450,7 +451,7 @@ def test_describe_screen_cuts_a_reply_too_large_for_the_client(registry):
     registry.keymap.node.reread = lambda **kw: tree
     text = registry.call("describe_screen", {"max_nodes": 6000})
     body, note = text.split("\n\n[cut at ")
-    assert len(body) <= tools_module.MAX_REPLY_CHARS
+    assert len(text) <= tools_module.MAX_REPLY_CHARS, "the note included"
     shown = body.splitlines()
     assert shown[0] == "AXWindow 'Docs'"
     assert all(line.endswith("x'") for line in shown[1:]), "whole lines only"
@@ -492,12 +493,18 @@ def test_read_text_returns_the_end_of_a_long_text(registry):
     text = _scrollback(registry, 5000)               # 55,000 characters
     reply = registry.call("read_text", {})
     note, body = reply.split("\n", 1)
-    assert len(body) <= tools_module.MAX_REPLY_CHARS
+    assert len(reply) <= tools_module.MAX_REPLY_CHARS, "the note included"
     assert body.endswith("line 04999\n") and body.startswith("line ")
     begin = len(text) - len(body)
     assert note.startswith(f"[characters {begin}-{len(text)} of {len(text)} "
                            f"(the end)")
-    assert f"start={begin - tools_module.MAX_REPLY_CHARS}" in note
+    # Going back starts on a line boundary too (PR #165 Windows pass), and
+    # reaches the range already read - no gap.
+    before = int(re.search(r"start=(\d+) reads what comes before",
+                           note).group(1))
+    assert text[before - 1] == "\n"
+    previous = registry.call("read_text", {"start": before}).split("\n", 1)[1]
+    assert before + len(previous) >= begin
 
 
 def test_read_text_start_pages_through_on_whole_lines(registry):

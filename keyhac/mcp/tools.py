@@ -96,6 +96,12 @@ DEFAULT_MAX_NODES = 400
 #: as the session that produced it.
 MAX_REPLY_CHARS = 20_000
 
+#: What the content of a cut reply may use: the ceiling above, less room for
+#: the note that says where the cut is - so the whole reply, note included,
+#: stays under MAX_REPLY_CHARS. The longest note is describe_screen's, ~430
+#: characters.
+MAX_CUT_BODY = MAX_REPLY_CHARS - 500
+
 #: The selector keys `describe_screen(within=)` takes - find_elements' own,
 #: so a container is named the way any element is (issue #95).
 WITHIN_KEYS = ("role", "name", "value", "identifier", "text")
@@ -139,7 +145,8 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
 
 
 def _cut_screen(text: str, total: int, scoped: bool) -> str:
-    """A `describe_screen` reply cut to MAX_REPLY_CHARS, saying where.
+    """A `describe_screen` reply cut to MAX_REPLY_CHARS, saying where - the
+    body to MAX_CUT_BODY, so the note fits under the ceiling as well.
 
     Whole lines only, so every node shown is shown intact and can be copied
     into a selector. What is missing is everything after the cut in tree
@@ -148,7 +155,7 @@ def _cut_screen(text: str, total: int, scoped: bool) -> str:
     """
     kept, size = [], 0
     for line in text.splitlines():
-        if size + len(line) + 1 > MAX_REPLY_CHARS:
+        if size + len(line) + 1 > MAX_CUT_BODY:
             break
         kept.append(line)
         size += len(line) + 1
@@ -163,6 +170,15 @@ def _cut_screen(text: str, total: int, scoped: bool) -> str:
               f"one]")
 
 
+def _line_start(text: str, offset: int, limit: int) -> int:
+    """The first line start at or after `offset`, if one comes before
+    `limit`; otherwise `offset` itself (a range inside one long line)."""
+    if offset == 0 or text[offset - 1] == "\n":
+        return offset
+    newline = text.find("\n", offset, limit)
+    return newline + 1 if newline != -1 and newline + 1 < limit else offset
+
+
 def _text_range(text: str, start: int | None) -> str:
     """At most MAX_REPLY_CHARS of `text`, and which characters they are.
 
@@ -170,19 +186,17 @@ def _text_range(text: str, start: int | None) -> str:
     or a log's newest lines are - the reason it is usually being read. Cut
     on line boundaries where the range has any, so a regex written against
     the reply sees whole lines; the range reported is the one returned, so
-    the next `start` follows on exactly.
+    the next `start` follows on exactly. The `start` offered for going back
+    is on a line boundary too, which costs an overlap of under one line with
+    the range already read - a gap would be the alternative.
     """
     total = len(text)
     if start is None:
-        begin = max(0, total - MAX_REPLY_CHARS)
-        if begin > 0:
-            newline = text.find("\n", begin, total)
-            if newline != -1 and newline + 1 < total:
-                begin = newline + 1
+        begin = _line_start(text, max(0, total - MAX_CUT_BODY), total)
         end = total
     else:
         begin = min(max(0, start), total)
-        end = min(total, begin + MAX_REPLY_CHARS)
+        end = min(total, begin + MAX_CUT_BODY)
         if end < total:
             newline = text.rfind("\n", begin, end)
             if newline > begin:
@@ -192,8 +206,8 @@ def _text_range(text: str, start: int | None) -> str:
              "a range")
     advice = []
     if begin > 0:
-        advice.append(f"start={max(0, begin - MAX_REPLY_CHARS)} reads what "
-                      f"comes before")
+        before = _line_start(text, max(0, begin - MAX_CUT_BODY), begin)
+        advice.append(f"start={before} reads what comes before")
     if end < total:
         advice.append(f"start={end} reads on")
     note = (f"[characters {begin}-{end} of {total} ({where}); "
