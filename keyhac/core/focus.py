@@ -167,6 +167,20 @@ class FocusCondition:
 
 # Transliteration used when building focus path strings, so that fnmatch
 # special characters in titles cannot break patterns (from keyhac-mac).
+#: How long a focus path an accessibility timeout cut short is reused before
+#: the application is asked again, in seconds (issue #175).
+#:
+#: Asking again on every key event got the full path back on the first key
+#: after the application answered, but paid a timeout on every key down *and*
+#: key up while it stayed hung - measured on Windows, keys sent every 150 ms
+#: were handled every ~680 ms, and the keyboard hook is serial, so every
+#: application waited. Caching it until focus moved (the first shape) cost one
+#: timeout and kept the window-level path long after the hang. One second
+#: bounds both: at most one timeout a second while hung, and the full path
+#: back within a second of recovery. Both platform providers use it.
+CUT_SHORT_FOCUS_RETRY = 1.0
+
+
 FOCUS_PATH_TRANS_TABLE = str.maketrans({
     "(": "<",
     ")": ">",

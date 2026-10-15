@@ -193,10 +193,15 @@ def test_an_unanswering_application_is_matched_on_its_name_alone(monkeypatch):
         reads.append(attribute)
         raise Unresponsive("busy")
 
+    asked_front_app = []
     monkeypatch.setattr(mf, "focused_application",
-                        lambda system_wide: ("ax-app-ref", 99))
+                        lambda system_wide: asked_front_app.append(1)
+                        or ("ax-app-ref", 99))
     monkeypatch.setattr(mf, "app_name_of", lambda pid: "Busy")
     monkeypatch.setattr(mf, "_ax_get", hung)
+    monkeypatch.setattr(mf, "_front_pid", lambda: 99)
+    clock = [100.0]
+    monkeypatch.setattr(mf.time, "monotonic", lambda: clock[0])
 
     provider = mf.MacFocusProvider()
     focus = provider.get_focus()
@@ -204,6 +209,33 @@ def test_an_unanswering_application_is_matched_on_its_name_alone(monkeypatch):
     assert focus.app_name == "Busy" and focus.pid == 99
     assert focus.path == "/AXApplication(Busy)"
     assert focus.window_title is None
-    # Not cached: the next key asks again, so a recovery is seen at once.
+
+    # Reused within CUT_SHORT_FOCUS_RETRY, asking the application nothing -
+    # not even AXFocusedApplication, which the front app would serve too.
+    clock[0] += 0.5
+    assert provider.get_focus() is focus
+    assert reads == ["AXFocusedUIElement"] and asked_front_app == [1]
+
+    # After it, asked again - so a recovery is seen within a second.
+    clock[0] += 1.0
     provider.get_focus()
     assert reads == ["AXFocusedUIElement"] * 2
+
+
+def test_a_cut_short_focus_is_not_reused_for_another_application(monkeypatch):
+    from keyhac.core.uitree import Unresponsive
+    from keyhac.platform.mac import focus as mf
+
+    def hung(element, attribute):
+        raise Unresponsive("busy")
+
+    monkeypatch.setattr(mf, "focused_application",
+                        lambda system_wide: ("ax-app-ref", 99))
+    monkeypatch.setattr(mf, "app_name_of", lambda pid: f"app-{pid}")
+    monkeypatch.setattr(mf, "_ax_get", hung)
+    front = [99]
+    monkeypatch.setattr(mf, "_front_pid", lambda: front[0])
+    provider = mf.MacFocusProvider()
+    first = provider.get_focus()
+    front[0] = 42                       # the user switched away
+    assert provider.get_focus() is not first

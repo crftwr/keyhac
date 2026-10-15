@@ -68,9 +68,10 @@ against Win32 ground truth for the same window.
 import ctypes
 import os
 import sys
+import time
 
 from keyhac.platform.base import FocusProvider, Focus
-from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
+from keyhac.core.focus import CUT_SHORT_FOCUS_RETRY, FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("WinFocus")
@@ -179,8 +180,9 @@ class WinFocusProvider(FocusProvider):
         self._probe = None      # last cheap Win32 probe
         self._focus = None      # the Focus built for it
         # Set by _build_path when a UIA timeout cut the path to the window
-        # level - a Focus not to cache (see get_focus).
+        # level - a Focus cached only briefly (see get_focus).
         self._path_cut_short = False
+        self._focus_expires = None  # when a cut-short Focus is asked again
 
     def get_focused_element(self):
         """UIA's own answer, asked fresh - no probe cache, no path walk.
@@ -224,7 +226,9 @@ class WinFocusProvider(FocusProvider):
         # these are unchanged, which is the common case (every keystroke
         # typed into one window).
         probe = (int(foreground), int(focus_hwnd), title)
-        if probe == self._probe and self._focus is not None:
+        if probe == self._probe and self._focus is not None and (
+                self._focus_expires is None
+                or time.monotonic() < self._focus_expires):
             return self._focus
 
         exe = top.get_process_name()
@@ -245,20 +249,17 @@ class WinFocusProvider(FocusProvider):
             native=focused,
             element=element,
         )
-        # A path a timeout cut short is not cached (issue #175, as on macOS):
-        # the cheap tier would hand it back on every key until the window,
-        # the focused control or the title changed - and in a Chromium or
-        # Electron window none of them do when focus moves inside the page,
-        # so the window-level path could outlive the hang by minutes. Not
-        # caching costs the next key event its one timeout while the
-        # application is still hung, and gives the full path back on the
-        # first key after it answers.
-        if self._path_cut_short:
-            self._probe = None
-            self._focus = None
-        else:
-            self._probe = probe
-            self._focus = focus
+        # A path a timeout cut short is reused for CUT_SHORT_FOCUS_RETRY
+        # only (issue #175, as on macOS). Cached like any other, the cheap
+        # tier handed it back until the window, the focused control or the
+        # title changed - and in a Chromium or Electron window none of them do
+        # when focus moves inside the page, so the window-level path could
+        # outlive the hang by minutes. Not cached at all, every key down and
+        # up paid a timeout while the application stayed hung.
+        self._probe = probe
+        self._focus = focus
+        self._focus_expires = (time.monotonic() + CUT_SHORT_FOCUS_RETRY
+                               if self._path_cut_short else None)
         return focus
 
     # ------------------------------------------------------------------

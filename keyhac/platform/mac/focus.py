@@ -5,15 +5,17 @@ and keyhac_focus.py (focus path string construction).
 """
 
 import os
+import time
 
 import ApplicationServices as AS
+from AppKit import NSWorkspace
 
 from keyhac.platform.base import FocusProvider, Focus
 from keyhac.core.uitree import Unresponsive
 from keyhac.platform.mac.uielement import (
     AX_MESSAGING_TIMEOUT, UIElement, _ax_get, app_name_of,
     focused_application, focused_element)
-from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
+from keyhac.core.focus import CUT_SHORT_FOCUS_RETRY, FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("MacFocus")
@@ -23,6 +25,12 @@ logger = log.getLogger("MacFocus")
 # process - not only the reads made through that element (measured, issue
 # #175) - and a read it cuts short raises Unresponsive, which get_focus
 # catches at the first one.
+
+
+def _front_pid() -> int | None:
+    """The front application's pid from NSWorkspace - asking it nothing."""
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return int(front.processIdentifier()) if front is not None else None
 
 
 def _same_probe(probe, previous) -> bool:
@@ -56,6 +64,8 @@ class MacFocusProvider(FocusProvider):
         AS.AXUIElementSetMessagingTimeout(self._system_wide, AX_MESSAGING_TIMEOUT)
         self._probe = None      # last cheap AX probe - see get_focus()
         self._focus = None      # the Focus built for it
+        # (pid, Focus, expiry) for a Focus a timeout cut short - see get_focus
+        self._cut_short = None
 
     def get_focused_element(self) -> "UIElement | None":
         """Ask the system where focus is, without building a focus path.
@@ -117,6 +127,18 @@ class MacFocusProvider(FocusProvider):
         path under a `focus_path_pattern`. That is narrower than the gap
         Windows has shipped with for as long as it has had a probe.
         """
+        # A Focus a timeout cut short is reused for CUT_SHORT_FOCUS_RETRY while
+        # the same application is in front (issue #175). Checked before any
+        # AX read, because the first of them - AXFocusedApplication, through
+        # the system-wide element - is served by the front application too,
+        # and would pay the timeout again on every key event; NSWorkspace
+        # asks it nothing.
+        if self._cut_short is not None:
+            pid, focus, expires = self._cut_short
+            if time.monotonic() < expires and _front_pid() == pid:
+                return focus
+            self._cut_short = None
+
         focused_app, pid = focused_application(self._system_wide)
 
         if focused_app is None:
@@ -152,15 +174,18 @@ class MacFocusProvider(FocusProvider):
             # first timeout and match on the application alone. The reads
             # used to carry on - six on a rebuild, 610 ms measured, and three
             # on every later key event - and ended in a path of '/()', which
-            # matched nothing. Not cached: the next key asks again, so an
-            # application that recovers is seen at once.
+            # matched nothing. Reused for CUT_SHORT_FOCUS_RETRY only, so an
+            # application that recovers gets its full path back within it.
             self._probe = None
             self._focus = None
             element = None if pid == os.getpid() else UIElement(focused_app)
             path = "/AXApplication({})".format(
                 (app_name or "").translate(FOCUS_PATH_TRANS_TABLE))
-            return Focus(app_name=app_name, pid=pid, path=path,
-                         native=element, element=element)
+            focus = Focus(app_name=app_name, pid=pid, path=path,
+                          native=element, element=element)
+            self._cut_short = (pid, focus,
+                               time.monotonic() + CUT_SHORT_FOCUS_RETRY)
+            return focus
 
         # native and element are the same object here: on macOS the focused
         # semantic element *is* the native handle. They diverge on Windows,
