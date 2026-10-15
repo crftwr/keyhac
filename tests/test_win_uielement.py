@@ -149,3 +149,51 @@ def test_get_text_falls_back_to_value_without_a_document(monkeypatch):
     for document in (None, ""):
         monkeypatch.setattr(element, "_document_text", lambda: document)
         assert element.get_text() == "Tokyo"
+
+
+def _edit_with_value(monkeypatch, value, window_text):
+    element = _detached_element()
+    monkeypatch.setattr(element, "_document_text", lambda: None)
+    monkeypatch.setattr(element, "get_attribute_value", lambda name: value)
+    asked = []
+    monkeypatch.setattr(element, "_window_text",
+                        lambda: asked.append(True) or window_text)
+    return element, asked
+
+
+def test_get_text_asks_the_window_when_value_hits_the_msaa_limit(monkeypatch):
+    """Issue #169: a native EDIT's Value is cut at 4,096 by the MSAA proxy
+    and there is no Text pattern; WM_GETTEXT has the whole text."""
+    from keyhac.platform.win.uielement import MSAA_VALUE_LIMIT
+
+    whole = "line\r\n" * 5600                       # 33,600 characters
+    element, asked = _edit_with_value(
+        monkeypatch, whole[:MSAA_VALUE_LIMIT], whole)
+    assert element.get_text() == whole and asked
+
+
+def test_get_text_below_the_limit_never_asks_the_window(monkeypatch):
+    """Every shorter read - and its line endings - stays what it was."""
+    element, asked = _edit_with_value(monkeypatch, "rich one\rrich two",
+                                      "rich one\r\nrich two")
+    assert element.get_text() == "rich one\rrich two" and not asked
+
+
+def test_get_text_keeps_the_value_when_the_window_has_no_more(monkeypatch):
+    """A password EDIT answers WM_GETTEXT from outside with nothing."""
+    from keyhac.platform.win.uielement import MSAA_VALUE_LIMIT
+
+    value = "x" * MSAA_VALUE_LIMIT
+    for answer in (None, "", value):
+        element, _asked = _edit_with_value(monkeypatch, value, answer)
+        assert element.get_text() == value
+
+
+def test_window_text_is_only_asked_of_edit_controls(monkeypatch):
+    element = _detached_element()
+    attributes = {"NativeWindowHandle": 0x1234, "ClassName": "Button"}
+    monkeypatch.setattr(element, "get_attribute_value", attributes.get)
+    assert element._window_text() is None
+    attributes["NativeWindowHandle"] = 0
+    attributes["ClassName"] = "WindowsForms10.EDIT.app.0.2bf8098_r6_ad1"
+    assert element._window_text() is None, "no window, nothing to ask"

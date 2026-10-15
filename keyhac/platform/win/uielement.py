@@ -36,6 +36,21 @@ logger = log.getLogger("WinUIElement")
 #: Sibling bound on UIElement.children() - see its docstring.
 MAX_CHILDREN = 2000
 
+#: Longest Value the MSAA proxy hands back for a native EDIT / RichEdit
+#: control; anything longer arrives cut to this. A Value this long is the cue
+#: to ask the window itself (issue #169).
+MSAA_VALUE_LIMIT = 4096
+
+#: Window classes whose whole text WM_GETTEXT returns - the Win32 EDIT and
+#: RichEdit controls, also as WinForms wraps them ("WindowsForms10.EDIT.app.0.
+#: 2bf8098_r6_ad1"). Matched on a dot-separated part, case-insensitively.
+_EDIT_CLASS_PARTS = ("edit", "richedit20w", "richedit20a", "richedit50w")
+
+#: Cap on each WM_GETTEXT* send.  The same 100 ms the IME uses, for the same
+#: reason: get_text runs on the main thread, which also services the keyboard
+#: hook, and a send into a hung window must not hold it past the hook timeout.
+TEXT_SEND_TIMEOUT_MS = 100
+
 #: How far up from the focused element contains_focus() looks.  Bounded so
 #: that a miss costs a handful of cross-process reads rather than a walk to
 #: the desktop; deep enough for a composite control, whose parts are one level
@@ -91,6 +106,14 @@ if sys.platform == "win32":
 
     # Not UIA at all: the display a rectangle landed on, for get_coordinate_scale.
     user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.WPARAM)]
+    user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+    WM_GETTEXT = 0x000D
+    WM_GETTEXTLENGTH = 0x000E
+    SMTO_NORMAL = 0x0000
+    SMTO_ABORTIFHUNG = 0x0002
     user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
     user32.MonitorFromPoint.restype = wintypes.HANDLE
     MONITOR_DEFAULTTONEAREST = 0x2
@@ -931,7 +954,54 @@ class UIElement:
         text = self._document_text()
         if text:
             return text
-        return self.get_attribute_value("Value")
+        value = self.get_attribute_value("Value")
+        if isinstance(value, str) and len(value) >= MSAA_VALUE_LIMIT:
+            # A native EDIT has no Text pattern, and its Value comes through
+            # the MSAA proxy cut at 4,096 characters (issue #169): a 33,600-
+            # character WinForms TextBox read as its first 4,096. Only a Value
+            # at the limit asks the window, so every shorter read - and its
+            # line endings, which differ between EDIT and RichEdit - stays
+            # exactly what it was.
+            whole = self._window_text()
+            if whole is not None and len(whole) > len(value):
+                return whole
+        return value
+
+    def _window_text(self) -> str | None:
+        """The whole text of the native EDIT / RichEdit control this element
+        is, by WM_GETTEXT; None for anything else, or on no answer.
+
+        WM_GETTEXT is marshalled across processes by the system, which is
+        what makes it usable on another application's control. A password
+        EDIT answers it with nothing from outside its process, which comes
+        back here as an empty string and loses to the Value it was meant to
+        replace.
+        """
+        hwnd = self.get_attribute_value("NativeWindowHandle")
+        class_name = self.get_attribute_value("ClassName") or ""
+        if not hwnd or not any(part in _EDIT_CLASS_PARTS
+                               for part in class_name.lower().split(".")):
+            return None
+        flags = SMTO_NORMAL | SMTO_ABORTIFHUNG
+        length = wintypes.WPARAM()
+        if not user32.SendMessageTimeoutW(hwnd, WM_GETTEXTLENGTH, 0, 0, flags,
+                                          TEXT_SEND_TIMEOUT_MS,
+                                          ctypes.byref(length)):
+            logger.debug(f"WM_GETTEXTLENGTH to {class_name} got no answer "
+                         f"(error {ctypes.get_last_error()}).")
+            return None
+        # WM_GETTEXTLENGTH may overstate (it counts DBCS bytes on some
+        # controls) but never understates; the copy says how much it wrote.
+        buffer = ctypes.create_unicode_buffer(length.value + 1)
+        copied = wintypes.WPARAM()
+        if not user32.SendMessageTimeoutW(
+                hwnd, WM_GETTEXT, len(buffer),
+                ctypes.cast(buffer, ctypes.c_void_p).value or 0, flags,
+                TEXT_SEND_TIMEOUT_MS, ctypes.byref(copied)):
+            logger.debug(f"WM_GETTEXT to {class_name} got no answer "
+                         f"(error {ctypes.get_last_error()}).")
+            return None
+        return buffer[:copied.value]
 
     def _document_text(self) -> str | None:
         """The Text pattern's whole document range, or None without one."""

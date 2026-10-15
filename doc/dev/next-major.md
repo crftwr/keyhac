@@ -119,3 +119,26 @@ generator list and the `_is_action` base-name match in
 `keyhac/mcp/extensions.py`. The AST scan matches on the *trailing* base name,
 so a config that still writes `ThreadedAction` keeps being discovered
 throughout.
+
+## Windows `read_text()`: one line separator
+
+**What.** Normalise line endings to `\n` in `UINode.read_text()` on Windows,
+as macOS already returns them. Today what comes back depends on the
+provider: a native EDIT gives `\r\n`, a RichEdit's Value gives `\r` alone
+(`'rich line one\rrich line two\r…'`), and Chromium and the console give
+`\n`.
+
+**Why.** One `config.py` is meant to run on both OSes. A regex anchored on
+`\n`, or `splitlines()` followed by an equality test, behaves differently
+depending on which control answered, and a RichEdit's `\r` defeats `$` with
+`re.M` entirely. Found in the Windows pass on #168, filed as #169.
+
+**Why it waits.** It changes what an existing action reads. An action written
+against a Windows EDIT may already split on `\r\n`, or match it. #169's fix
+was kept to texts that were being cut anyway (a Value at the 4,096-character
+MSAA limit), so every shorter read, separators included, is unchanged.
+
+**Migration.** Actions that split on `\r\n` or `\r` switch to
+`splitlines()` or to `\n`. The release note should list the controls whose
+output changes.
+
