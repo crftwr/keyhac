@@ -906,21 +906,32 @@ class UIElement:
     def get_text(self) -> str | None:
         """This element's whole text content.
 
-        Value pattern first, which covers fields and combo boxes, then the
-        Text pattern's document range, which is what a terminal, a document
-        view or an editor buffer offers instead.
+        The Text pattern's document range first - what a terminal, a document
+        view or an editor buffer offers - then the Value pattern, which
+        covers fields and combo boxes that have no Text pattern.
         """
-        value = self.get_attribute_value("Value")
-        if isinstance(value, str) and value:
-            return value
+        # Text pattern first, not Value (issue #166). Chromium truncates
+        # ValuePattern.Value at 10,000 characters while the document range of
+        # the same element holds all of it - measured in Edge: a <textarea>
+        # of 3,000 log lines reads 10,000 by Value, 181,416 by DocumentRange.
+        # Value-first returned the short one as if it were whole. An empty
+        # document range still falls through to Value, for providers that
+        # implement the pattern and leave it blank.
+        text = self._document_text()
+        if text:
+            return text
+        return self.get_attribute_value("Value")
+
+    def _document_text(self) -> str | None:
+        """The Text pattern's whole document range, or None without one."""
         pattern = self._pattern(_PatternId.Text)
         if pattern is None:
-            return value
+            return None
         try:
             text_range = _element_out(pattern,
                                       _IUIAutomationTextPattern.get_DocumentRange)
             if text_range is None:
-                return value
+                return None
             try:
                 return _range_text(text_range)
             finally:

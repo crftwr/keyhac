@@ -128,3 +128,24 @@ def test_a_range_s_text_is_shown_as_itself():
     assert _shown("\n") == repr("\n")
     assert _shown(None).startswith("nothing")
     assert _shown("x" * 60).endswith("...'")
+
+
+def test_get_text_prefers_the_document_range_over_a_truncated_value(monkeypatch):
+    """Issue #166: Chromium truncates ValuePattern.Value at 10,000 characters
+    while the Text pattern's document range holds the whole text - so the
+    document range is read first."""
+    element = _detached_element()
+    whole = "x" * 45_000
+    monkeypatch.setattr(element, "_document_text", lambda: whole)
+    monkeypatch.setattr(element, "get_attribute_value",
+                        lambda name: whole[:10_000])
+    assert element.get_text() == whole
+
+
+def test_get_text_falls_back_to_value_without_a_document(monkeypatch):
+    """A combo box has no Text pattern; a provider may leave it blank."""
+    element = _detached_element()
+    monkeypatch.setattr(element, "get_attribute_value", lambda name: "Tokyo")
+    for document in (None, ""):
+        monkeypatch.setattr(element, "_document_text", lambda: document)
+        assert element.get_text() == "Tokyo"
