@@ -246,32 +246,63 @@ def test_the_shared_client_carries_the_call_timeouts():
         assert hr == 0 and value.value == expected
 
 
-def test_an_element_stops_asking_after_one_timeout():
-    """Issue #171 / PR #172: the timeout bounds one call, so a caller reading
-    several attributes of a hung application's element paid one each. After
-    the first, the element answers "no value" at once."""
+def test_a_timed_out_call_raises_unresponsive(monkeypatch):
+    """Issue #171: a call the UIA timeout cut short raises, ending the read
+    it interrupts - a walk or a text read into a hung application pays the
+    limit once, not once per element it had left."""
     import keyhac.platform.win.uielement as uielement
+    from keyhac.core.uitree import Unresponsive
 
-    calls = []
-
-    @uielement._gives_up_after_timeout(lambda: None)
-    def read(self, name):
-        calls.append(name)
-        uielement._timeouts.count = uielement.timeout_count() + 1
-
-    element = _detached_element()
-    assert read(element, "Name") is None
-    assert read(element, "Value") is None
-    assert element.get_attribute_value("Value") is None
-    assert element.parent() is None and element.children() == []
-    assert calls == ["Name"], "one call reached the application"
+    monkeypatch.setattr(uielement, "_raw_com_call",
+                        lambda *args: uielement.UIA_E_TIMEOUT - (1 << 32))
+    with pytest.raises(Unresponsive, match="did not answer"):
+        uielement._com_call(object(), 23, None, [])
 
 
-def test_the_focus_path_stops_at_the_first_timeout(monkeypatch):
+def test_one_timeout_per_key_event(monkeypatch):
+    """Inside a key event, the first timeout spends the event's budget and
+    every later call raises without being made: the focus read and a bound
+    function together wait for one time limit, not two."""
+    import keyhac.platform.win.uielement as uielement
+    from keyhac.core.uitree import Unresponsive, one_timeout_per_key_event
+
+    made = []
+
+    def raw(*args):
+        made.append(args[1])
+        return uielement.UIA_E_TIMEOUT - (1 << 32)
+
+    monkeypatch.setattr(uielement, "_raw_com_call", raw)
+    with one_timeout_per_key_event():
+        for slot in (23, 24):
+            with pytest.raises(Unresponsive):
+                uielement._com_call(object(), slot, None, [])
+    assert made == [23], "the second was refused without being made"
+    # Outside a key event (an action's worker) each call is made.
+    with pytest.raises(Unresponsive):
+        uielement._com_call(object(), 25, None, [])
+    assert made == [23, 25]
+
+
+def test_release_runs_whatever_the_budget_says(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+    from keyhac.core.uitree import _spend_budget, one_timeout_per_key_event
+
+    released = []
+    monkeypatch.setattr(uielement, "_raw_com_call",
+                        lambda *args: released.append(args[1]) or 0)
+    with one_timeout_per_key_event():
+        _spend_budget()
+        uielement._release(object())
+    assert released == [2]
+
+
+def test_the_focus_path_falls_back_at_the_first_timeout(monkeypatch):
     """The focus walk runs inside the keyboard hook: GetFocusedElement
-    answered, then the application stopped - one timeout, then the window
-    path, never a half-read chain."""
+    answered, then the application stopped - the walk ends there and the
+    window path is reported, never a half-read chain."""
     import keyhac.platform.win.uielement as uielement
+    from keyhac.core.uitree import Unresponsive
     from keyhac.platform.win.focus import WinFocusProvider
 
     reads = []
@@ -279,7 +310,7 @@ def test_the_focus_path_stops_at_the_first_timeout(monkeypatch):
     class Hung:
         def get_attribute_value(self, name):
             reads.append(name)
-            uielement._timeouts.count = uielement.timeout_count() + 1
+            raise Unresponsive("hung")
 
         def parent(self):
             reads.append("parent")
@@ -291,22 +322,25 @@ def test_the_focus_path_stops_at_the_first_timeout(monkeypatch):
     path, element = provider._build_path("notepad", "Untitled", "Notepad")
     assert path == "/Application(notepad)/Notepad(Untitled)"
     assert element is None
-    assert "parent" not in reads, "stopped before walking up"
+    assert reads == ["ControlType"], "stopped at the first"
 
 
 def test_get_text_pays_one_timeout_not_two(monkeypatch):
     """PR #172 measured get_text at 508 ms on a hung window: the Text
-    pattern, then Value, each timing out."""
+    pattern, then Value, each timing out. The first now ends it."""
     import keyhac.platform.win.uielement as uielement
+    from keyhac.core.uitree import Unresponsive
 
     element = _detached_element()
     asked = []
 
     def document():
-        uielement._timeouts.count = uielement.timeout_count() + 1
-        return None
+        raise Unresponsive("hung")
 
     monkeypatch.setattr(element, "_document_text", document)
     monkeypatch.setattr(uielement.UIElement, "get_attribute_value",
                         lambda self, name: asked.append(name))
-    assert element.get_text() is None and asked == []
+    with pytest.raises(Unresponsive):
+        element.get_text()
+    assert asked == []
+

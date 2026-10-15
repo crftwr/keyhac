@@ -250,9 +250,8 @@ class WinFocusProvider(FocusProvider):
         """(path, focused UIElement). The UIA control hierarchy from the
         application down to the focused element, or the window-level path when
         UI Automation is unavailable."""
+        from keyhac.core.uitree import Unresponsive
         from keyhac.platform.win.uielement import UIElement
-
-        from keyhac.platform.win.uielement import timeout_count
 
         # Same shape, one level deep - patterns written against the full
         # path still parse, they just cannot match below the window.
@@ -260,9 +259,11 @@ class WinFocusProvider(FocusProvider):
                                       _component(class_name, title)))
 
         element = None
-        before = timeout_count()
         try:
             element = UIElement.from_focus()
+        except Unresponsive:
+            logger.debug("UIA timed out asking for the focus; using the "
+                         "window-level path.")
         except Exception:
             logger.debug("UIA focus query failed; falling back to window path.",
                          exc_info=True)
@@ -272,30 +273,26 @@ class WinFocusProvider(FocusProvider):
 
         chain = []
         elm = element
-        for _ in range(MAX_PATH_DEPTH):
-            if elm is None:
-                break
-            control_type = elm.get_attribute_value("ControlType")
-            # The desktop root is every app's parent and says nothing; stop
-            # there so the path is rooted at the application, like macOS's
-            # AXApplication.
-            if control_type == "Pane" and elm.get_attribute_value("ClassName") == "#32769":
-                break
-            chain.append((control_type, elm.get_attribute_value("Name")))
-            if timeout_count() != before:
-                # Issue #171: this runs inside the keyboard hook, and the
-                # timeout bounds one call. GetFocusedElement answered and the
-                # application stopped answering after it, so every further
-                # read would cost another 250 ms against a 300 ms hook
-                # budget. Stop at the first, and report the window level -
-                # a half-read chain would be a path that matches nothing.
-                logger.debug("UIA timed out building the focus path; using the "
-                             "window-level path.")
-                return window_path, None
-            elm = elm.parent()
-
-        if timeout_count() != before:
-            # The last parent() was the one cut short: same reasoning.
+        try:
+            for _ in range(MAX_PATH_DEPTH):
+                if elm is None:
+                    break
+                control_type = elm.get_attribute_value("ControlType")
+                # The desktop root is every app's parent and says nothing;
+                # stop there so the path is rooted at the application, like
+                # macOS's AXApplication.
+                if control_type == "Pane" and \
+                        elm.get_attribute_value("ClassName") == "#32769":
+                    break
+                chain.append((control_type, elm.get_attribute_value("Name")))
+                elm = elm.parent()
+        except Unresponsive:
+            # Issue #171: GetFocusedElement answered and the application
+            # stopped answering after it. The exception has already ended the
+            # walk at the first time limit; report the window level - a
+            # half-read chain would be a path that matches nothing.
+            logger.debug("UIA timed out building the focus path; using the "
+                         "window-level path.")
             return window_path, None
 
         components = [""] + [_component("Application", app_name)]

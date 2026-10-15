@@ -44,7 +44,7 @@ from typing import Any, Callable
 
 from keyhac.core import log
 from keyhac.core.action import ActionCancelled, current_action
-from keyhac.core.uitree import UINode, find_element, get_ui_tree
+from keyhac.core.uitree import UINode, Unresponsive, find_element, get_ui_tree
 
 logger = log.getLogger("Wait")
 
@@ -181,6 +181,7 @@ def wait_for(condition: Callable[[], Any],
     _refuse_to_block_the_loop("wait_for")
     deadline = time.monotonic() + timeout
     gap = interval if interval is not None else MIN_INTERVAL
+    unanswered = 0
 
     while True:
         # Here, at the top, rather than anywhere else in the loop: this is
@@ -198,17 +199,34 @@ def wait_for(condition: Callable[[], Any],
         # elements, and those reads are safe off the loop thread. Evaluating
         # it there held the thread the keyboard hook runs on for as long as
         # the target took to answer, on every poll of every wait.
-        result = condition()
+        try:
+            result = condition()
+        except Unresponsive:
+            # "Not yet", not a failure: the application may answer on the
+            # next poll, and an action waiting for it to finish loading is
+            # exactly when it is busy. Counted, so a wait that runs out can
+            # say the screen was never answering rather than never matching.
+            unanswered += 1
+            result = None
         if result:
             return result
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise WaitTimeout(
                 f"timed out after {timeout}s waiting for "
-                f"{message or 'a condition'}")
+                f"{message or 'a condition'}" + _unanswered_note(unanswered))
         time.sleep(min(gap, remaining))
         if interval is None:
             gap = min(gap * BACKOFF, MAX_INTERVAL)
+
+
+def _unanswered_note(times: int) -> str:
+    """What a WaitTimeout adds when the application was not answering."""
+    if not times:
+        return ""
+    return (f" - the application did not answer {times} time(s) while "
+            f"waiting, so it may be busy or hung rather than the element "
+            f"being absent")
 
 
 def wait_for_element(root, timeout: float = DEFAULT_TIMEOUT,
@@ -310,13 +328,25 @@ def wait_for_stable(root, quiet: float = DEFAULT_QUIET,
         # equivalent ones has not changed anything the action cares about.
         return tuple((n.depth, n.role, n.name, n.value) for n in tree.walk())
 
+    unanswered = 0
+
+    def read():
+        # An application that does not answer has not settled: a reading it
+        # could not give is a change, so the quiet period starts again.
+        nonlocal unanswered
+        try:
+            return signature()
+        except Unresponsive:
+            unanswered += 1
+            return object()
+
     deadline = time.monotonic() + timeout
-    previous = signature()
+    previous = read()
     stable_since = time.monotonic()
 
     while True:
         time.sleep(min(MIN_INTERVAL * 2, max(deadline - time.monotonic(), 0) or 0.01))
-        current = signature()
+        current = read()
         now = time.monotonic()
         if current != previous:
             previous = current
@@ -326,4 +356,5 @@ def wait_for_stable(root, quiet: float = DEFAULT_QUIET,
         if now >= deadline:
             raise WaitTimeout(
                 f"timed out after {timeout}s waiting for the UI to stop "
-                f"changing (never quiet for {quiet}s)")
+                f"changing (never quiet for {quiet}s)"
+                + _unanswered_note(unanswered))

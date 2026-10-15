@@ -145,6 +145,7 @@ ACTION_API_NAMES = [
     "FillFailed",
     "ActionCancelled",
     "StaleElement",
+    "Unresponsive",
 ]
 
 ACTION_HEADER = """# Action API reference
@@ -152,8 +153,8 @@ ACTION_HEADER = """# Action API reference
 The surface an action uses to drive another application: finding windows,
 searching element trees, waiting for the screen to change, filling fields.
 Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
-methods on the nodes it hands back — the three exception names below are the
-only ones a config imports. The values the verbs take (`Locator`, `Appears`,
+methods on the nodes it hands back — the exception names below are the only
+ones a config imports. The values the verbs take (`Locator`, `Appears`,
 `Front`, `Gone`, `Reads`, `Stable`) are reached through `ui` as well:
 `ui.Locator(...)`, `ui.Appears(...)`.
 
@@ -169,7 +170,8 @@ skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 > raised when a node you are still
 > holding refers to something that no longer exists — which is the signal to
 > re-find it, as distinct from `FillFailed`, which means the selector was
-> wrong. Address elements by `identifier` where there is one, then by role plus
+> wrong, and from `Unresponsive`, which means the application did not answer
+> in time. Address elements by `identifier` where there is one, then by role plus
 > name or text.
 
 **Cross-platform by shape, not by data.** Every method here exists and behaves

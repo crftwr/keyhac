@@ -313,6 +313,15 @@ and a hung application stalls the action rather than the keyboard. Keyhac's
 own windows are not visible to this API. Calling a *wait* on the loop thread
 raises rather than freezing the keyboard.
 
+**Read the screen in `run()`, not in `starting()`.** `starting()` runs inside
+the keyboard hook: use what the key press already named (`keymap.focus`) and
+nothing that has to ask an application.
+
+**`Unresponsive` means the application did not answer**, which is neither
+"not found" nor `StaleElement`. Waits treat it as "not yet" and ask again, and
+a `WaitTimeout` that follows says the application never answered. Anywhere
+else it ends the read; let it end the action, or catch it to retry later.
+
 ## Failure, progress, resume
 
 These actions run for tens of minutes over hundreds of items. A read that fails

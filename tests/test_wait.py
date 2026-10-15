@@ -358,3 +358,31 @@ def test_reads_nest_inside_a_condition_already_on_the_loop(engine):
     thread.start()
     thread.join(timeout=5)
     assert seen == ["loop"]
+
+
+def test_a_wait_treats_an_unanswering_application_as_not_yet():
+    """Issue #171: Unresponsive inside a condition is "not yet", not a
+    failure - an application busy loading is exactly when an action waits on
+    it, and the next poll may find it answering."""
+    from keyhac.core.uitree import Unresponsive
+
+    answers = iter([Unresponsive("busy"), Unresponsive("busy"), "found"])
+
+    def condition():
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    assert wait_for(condition, timeout=2, interval=0.01) == "found"
+
+
+def test_a_wait_that_runs_out_says_the_application_never_answered():
+    from keyhac.core.uitree import Unresponsive
+
+    def condition():
+        raise Unresponsive("busy")
+
+    with pytest.raises(WaitTimeout, match="did not answer .* time"):
+        wait_for(condition, timeout=0.1, interval=0.02,
+                 message="the results table")

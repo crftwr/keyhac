@@ -806,3 +806,40 @@ class TestActionRepr:
                     obj.__repr__ is object.__repr__:
                 missing.append(name)
         assert missing == [], f"no __repr__: {missing}"
+
+
+def test_an_unanswering_application_stops_the_bound_function_not_the_hook(
+        engine, caplog):
+    """Issue #171: Unresponsive out of a bound function (or an action's
+    starting()) is caught where the reason can be logged, the key stays
+    handled, and the rest of the key event may not wait for another time
+    limit - one per key event."""
+    from keyhac.core.uitree import (Unresponsive, _refuse_if_budget_spent,
+                                    _spend_budget)
+
+    seen = []
+
+    def reads_a_hung_window():
+        _spend_budget()
+        raise Unresponsive("the application did not answer")
+
+    def checks_the_budget():
+        try:
+            _refuse_if_budget_spent()
+            seen.append("asked")
+        except Unresponsive:
+            seen.append("refused")
+
+    def configure(keymap):
+        kt = keymap.define_keytable(focus_path_pattern="*")
+        kt["Ctrl-1"] = reads_a_hung_window
+        kt["Ctrl-2"] = checks_the_budget
+
+    e = engine(configure)
+    e.down("LCtrl")
+    with caplog.at_level("WARNING"):
+        assert e.down("1") is True
+    assert "stopped: the application did not answer" in caplog.text
+    e.up("1")
+    e.down("2")                          # a new key event, a new budget
+    assert seen == ["asked"]

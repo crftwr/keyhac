@@ -36,7 +36,9 @@ page with a search form, a 3-row result table and a modal):
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
 
@@ -63,6 +65,78 @@ class StaleElement(Exception):
     because a dead element reports no actions - true, and the least useful true
     thing to say.
     """
+
+class Unresponsive(Exception):
+    """The application did not answer within its time limit.
+
+    Raised by any live read or act on another application's elements when
+    that application is busy or hung - it has stopped answering accessibility
+    requests, so the screen cannot be read right now.  A third answer beside
+    the two `StaleElement` separates: not *the screen moved*, not *the
+    selector is wrong*, but *nobody is answering*.
+
+    Raised rather than read as "no value", because it ends the read it
+    interrupts: a walk, a search or a text read stops at the first one
+    instead of paying the time limit again on every element it had left.
+
+    What to do with it:
+
+    - Inside a wait (`ui.wait`, `wait_for`, the `until=` checks) nothing:
+      waits treat it as "not yet" and ask again, so an application that
+      recovers is found, and a `WaitTimeout` that follows says how many times
+      it did not answer.
+    - Anywhere else in `run()`, let it end the action, or catch it to retry
+      later or report.  The traceback names it, which is the point.
+    - In `starting()` or a plain function bound to a key, it ends that
+      function and the key is still treated as handled.  Read the screen in
+      `run()` instead.
+    """
+
+
+class _KeyEventBudget(threading.local):
+    """At most one time limit spent per key event (issue #171).
+
+    A key event's whole handling - deciding the focus, then running a bound
+    function or an action's `starting()` - happens inside the keyboard hook,
+    which the OS drops when it overruns.  Each call into a hung application
+    costs its time limit, and `Unresponsive` ends only the read it
+    interrupts; two separate reads in one key event would still pay twice.
+    So the engine opens a budget around each key event, the platform spends
+    it on the first timeout, and every call after that in the same event
+    raises at once without asking anyone.
+    """
+
+    active = False
+    spent = False
+
+
+_key_event_budget = _KeyEventBudget()
+
+
+@contextlib.contextmanager
+def one_timeout_per_key_event():
+    """Open a key event's budget. lazydocs: ignore"""
+    previous = (_key_event_budget.active, _key_event_budget.spent)
+    _key_event_budget.active, _key_event_budget.spent = True, False
+    try:
+        yield
+    finally:
+        _key_event_budget.active, _key_event_budget.spent = previous
+
+
+def _refuse_if_budget_spent() -> None:
+    """Raise at once if this key event already paid a time limit."""
+    if _key_event_budget.active and _key_event_budget.spent:
+        raise Unresponsive(
+            "not asked: an application already failed to answer during this "
+            "key event, and a key event may wait for at most one")
+
+
+def _spend_budget() -> None:
+    """Record that this key event has paid its time limit."""
+    if _key_event_budget.active:
+        _key_event_budget.spent = True
+
 
 #: Depth bound.  Deep enough to reach table cells in web content (which sit at
 #: about 10) without following an Electron tree to its bottom.

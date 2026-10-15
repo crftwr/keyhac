@@ -22,6 +22,7 @@ from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core import log, permissions
 from keyhac.core.action import ThreadedAction
+from keyhac.core.uitree import Unresponsive, one_timeout_per_key_event
 from keyhac.core.config import Config
 from keyhac.platform.base import InputHook, FocusProvider, Focus, KeyEvent
 
@@ -781,7 +782,11 @@ class Keymap:
                 # every Esc would change what the focused application sees.
                 return True
 
-        with self._lock:
+        # One accessibility time limit per key event, whatever the focus read
+        # and the bound function do between them (issue #171): this all runs
+        # inside the hook's deadline, and a second call into a hung
+        # application would pay the limit again.
+        with self._lock, one_timeout_per_key_event():
             if event.down:
                 return bool(self._on_key_down(event.vk))
             else:
@@ -997,7 +1002,15 @@ class Keymap:
             action_name = getattr(action, "__name__", None) or repr(action)
             logger.debug(f"CALL     : {action_name}")
             self._cancel_oneshot_win_alt()
-            action()
+            try:
+                action()
+            except Unresponsive as error:
+                # Caught here rather than by the hook's catch-all, which logs
+                # one line with no reason: the reason is the whole message.
+                # The key stays handled - it was bound, and what it ran stopped
+                # because an application did not answer, not because the
+                # binding was wrong.
+                logger.warning(f"{action_name} stopped: {error}")
 
         elif isinstance(action, KeyTable):
             self._cancel_oneshot_win_alt()

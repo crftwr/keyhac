@@ -323,8 +323,11 @@ class ThreadedAction:
     def starting(self) -> None:
         """Called on the event-loop thread the moment the action triggers.
 
-        It runs under the engine lock, so keep it light - capture what the
-        key press names, log intent, and leave the work to run().
+        It runs under the engine lock, inside the keyboard hook, so keep it
+        light - capture what the key press names (`keymap.focus`, already
+        read), log intent, and leave reading the screen to run().  A read
+        here into an application that does not answer raises `Unresponsive`,
+        and the action does not start.
         """
 
     def run(self) -> Any:

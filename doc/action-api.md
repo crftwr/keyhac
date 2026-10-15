@@ -3,8 +3,8 @@
 The surface an action uses to drive another application: finding windows,
 searching element trees, waiting for the screen to change, filling fields.
 Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
-methods on the nodes it hands back — the three exception names below are the
-only ones a config imports. The values the verbs take (`Locator`, `Appears`,
+methods on the nodes it hands back — the exception names below are the only
+ones a config imports. The values the verbs take (`Locator`, `Appears`,
 `Front`, `Gone`, `Reads`, `Stable`) are reached through `ui` as well:
 `ui.Locator(...)`, `ui.Appears(...)`.
 
@@ -20,7 +20,8 @@ skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 > raised when a node you are still
 > holding refers to something that no longer exists — which is the signal to
 > re-find it, as distinct from `FillFailed`, which means the selector was
-> wrong. Address elements by `identifier` where there is one, then by role plus
+> wrong, and from `Unresponsive`, which means the application did not answer
+> in time. Address elements by `identifier` where there is one, then by role plus
 > name or text.
 
 **Cross-platform by shape, not by data.** Every method here exists and behaves
@@ -32,7 +33,7 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [ThreadedAction](#class-threadedaction) · [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
+**Contents:** [ThreadedAction](#class-threadedaction) · [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement) · [Unresponsive](#class-unresponsive)
 
 
 ## <kbd>class</kbd> `ThreadedAction`
@@ -140,7 +141,7 @@ starting() → None
 
 Called on the event-loop thread the moment the action triggers. 
 
-It runs under the engine lock, so keep it light - capture what the key press names, log intent, and leave the work to run(). 
+It runs under the engine lock, inside the keyboard hook, so keep it light - capture what the key press names (`keymap.focus`, already read), log intent, and leave reading the screen to run().  A read here into an application that does not answer raises `Unresponsive`, and the action does not start. 
 
 ---
 
@@ -1157,6 +1158,23 @@ So the node has to say when it has gone stale, and say it in a way an action can
 - `FillFailed` / an empty search - *the selector is wrong*. The action was  written against a screen that is not this one, and running it again will  fail the same way. 
 
 Before this existed both arrived as "element supports no press action", because a dead element reports no actions - true, and the least useful true thing to say. 
+
+---
+
+
+## <kbd>class</kbd> `Unresponsive`
+The application did not answer within its time limit. 
+
+Raised by any live read or act on another application's elements when that application is busy or hung - it has stopped answering accessibility requests, so the screen cannot be read right now.  A third answer beside the two `StaleElement` separates: not *the screen moved*, not *the selector is wrong*, but *nobody is answering*. 
+
+Raised rather than read as "no value", because it ends the read it interrupts: a walk, a search or a text read stops at the first one instead of paying the time limit again on every element it had left. 
+
+What to do with it: 
+
+
+- Inside a wait (`ui.wait`, `wait_for`, the `until=` checks) nothing:  waits treat it as "not yet" and ask again, so an application that  recovers is found, and a `WaitTimeout` that follows says how many times  it did not answer. 
+- Anywhere else in `run()`, let it end the action, or catch it to retry  later or report.  The traceback names it, which is the point. 
+- In `starting()` or a plain function bound to a key, it ends that  function and the key is still treated as handled.  Read the screen in  `run()` instead. 
 
 ---
 

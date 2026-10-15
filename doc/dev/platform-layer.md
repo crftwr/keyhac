@@ -124,10 +124,14 @@ house style for raw-ctypes Win32/COM):
   `CUIAutomation8`, with `ConnectionTimeout` and `TransactionTimeout` set to
   250 ms. Without them, a read into an application that had stopped pumping
   waited for as long as the application stayed stopped. That was 23 s
-  measured, on the thread that services the hook. The ceiling applies per
-  call, so a compound read gives up after its first timeout: an element that
-  timed out answers "no value" from then on, and the focus walk returns the
-  window-level path. **Accepted, not fixed**: focus moving into a hung
+  measured, on the thread that services the hook. A call the ceiling cuts
+  short raises `Unresponsive`, which ends the read it interrupts - a walk or a
+  text read pays the limit once, not once per element - and the focus walk
+  catches it and returns the window-level path. A key event may pay at most
+  one: the engine opens a budget around each, the first timeout spends it,
+  and every later call in the same event raises without being made (the
+  focus read and a bound function's reads together). Waits catch
+  `Unresponsive` as "not yet" and ask again. **Accepted, not fixed**: focus moving into a hung
   application costs the first key one timeout (~270 ms measured, under the
   300 ms budget). While the application is hung, its focus path stops at the
   window, so a `focus_path_pattern` that names a control below the window does
