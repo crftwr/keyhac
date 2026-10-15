@@ -57,6 +57,19 @@ class Focus:
             vocabulary of attribute names, "AXRole" versus "ControlType".
             Portable code uses app_name / window_title / class_name and the
             focus path instead.
+
+            **May be None**, so check before using it:
+
+            - while one of Keyhac's own windows is in front. Keyhac's own
+              windows do not exist to its API (issue #173), and the rest of
+              the Focus is still filled in for key tables to match on;
+            - on Windows, when UI Automation could not say - unavailable, or
+              a call into an application that stopped answering timed out
+              (issue #171);
+            - on macOS, only when not even the front application could be
+              named. An unreadable control falls back to its window, then to
+              the application element, so this is otherwise never None -
+              but it is not always the control itself.
         native: The platform power object - a UIElement (macOS) or
             NativeWindow, an HWND wrapper (Windows).
     """
