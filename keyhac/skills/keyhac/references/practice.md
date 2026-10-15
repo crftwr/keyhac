@@ -206,6 +206,17 @@ it says leave that where you found it. Which window is front is not that: a
 keystroke goes to whatever is in front, so an action that does not take the
 front is typing into somebody else's window.
 
+**When more than one window matches, choose on purpose and say which.**
+`ui.window(app=...)` hands back the first match, and with two windows of the
+same site open that is a coin toss. Use `ui.windows(...)` - each node's `name`
+is its title - and pick by something the task decides: the one showing the
+start the task needs, the one whose title names the record. If nothing decides
+it, stop and say there were several rather than driving one at random; the
+other may be the operator's work. And pin the choice for the rest of the run:
+activate by that window's own title, and make `given=ui.Front(app=...,
+title=...)` name it too - `Front` matches by pattern, so two windows sharing a
+title would both satisfy it.
+
 ## Locators are values
 
 Write the selector once and pass it around:

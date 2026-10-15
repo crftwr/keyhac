@@ -632,7 +632,7 @@ Matches exactly like `keymap.find_window` and `define_keytable`: case-insensitiv
 
 
 **Returns:**
- The window's element as a node, or None when nothing matched. 
+ The window's element as a node, or None when nothing matched. The node's `name` is the window title; its `value` is None. Where several windows match, this is the first - see `windows()`. 
 
 ---
 
@@ -644,7 +644,7 @@ windows(app: 'str' = None, title: 'str' = None) → list[UINode]
 
 Every matching top-level window, as nodes. 
 
-For the cases where "the window" is ambiguous - a browser with several windows open, or an application whose settings live in a second one. 
+For the cases where "the window" is ambiguous - a browser with several windows open, or an application whose settings live in a second one. Each node's `name` is that window's title. 
 
 ---
 
