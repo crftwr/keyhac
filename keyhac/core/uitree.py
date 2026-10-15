@@ -123,6 +123,12 @@ class UINode:
     children: list["UINode"] = field(default_factory=list)
     truncated: bool = False
 
+    # Set when the platform's own sibling cap cut this node's children, to
+    # the cap - Windows lists at most MAX_CHILDREN of them. A third bound,
+    # besides max_depth and max_nodes, and the one no argument raises; the
+    # node is also marked truncated. Private for the same reason as _parent.
+    _children_capped = None
+
     # Structural parent within the walk that built this node - private
     # plumbing for the MCP ancestor path (issue #55), not public shape, and
     # deliberately not a dataclass field: a back-edge in __eq__ would recurse
@@ -492,7 +498,12 @@ def get_ui_tree(root, max_depth: int = DEFAULT_MAX_DEPTH,
             # Only a real cut, not a leaf that happens to sit at the bound.
             node.truncated = bool(_children(element))
             return node
-        for child in _children(element):
+        children = _children(element)
+        capped = getattr(element, "_children_capped", None)
+        if capped:
+            node._children_capped = capped
+            node.truncated = True
+        for child in children:
             if budget[0] <= 0:
                 node.truncated = True
                 break
@@ -549,6 +560,19 @@ def find_elements(root, role: str | None = None, name: str | None = None,
         must stop the action rather than proceed on a guess.
     """
     tree = get_ui_tree(root, max_depth=max_depth, max_nodes=max_nodes)
+    return _matching(tree, role=role, name=name, value=value,
+                     identifier=identifier, text=text, predicate=predicate)
+
+
+def _matching(tree: UINode, role=None, name=None, value=None, identifier=None,
+              text=None, predicate=None) -> list[UINode]:
+    """The nodes of an already-walked `tree` that `find_elements` would match.
+
+    Private, and split out so the MCP `find_elements` tool can search a tree
+    it walked itself - keeping the walk's truncation marks, which a no-match
+    reply needs (issue #151) - without a second walk and without the public
+    stats parameter doc/dev/next-major.md holds back.
+    """
     out = []
     for node in tree.walk():
         if role is not None and not match_role(node.role, role):

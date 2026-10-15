@@ -132,13 +132,23 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
     just stops discarding them.
     """
     cut = [node for node in nodes if node.truncated]
-    by_depth = sum(1 for node in cut if node.depth >= max_depth)
-    by_budget = len(cut) - by_depth
+    capped = [node for node in cut
+              if getattr(node, "_children_capped", None)]
+    by_depth = sum(1 for node in cut if node.depth >= max_depth
+                   and not getattr(node, "_children_capped", None))
+    by_budget = len(cut) - by_depth - len(capped)
     bounds = []
     if by_depth:
         bounds.append(f"{by_depth} by max_depth={max_depth}")
     if by_budget:
         bounds.append(f"{by_budget} by the max_nodes={max_nodes} budget")
+    if capped:
+        # The bound no argument raises (PR #167): said with what does work.
+        bounds.append(
+            f"{len(capped)} by the platform listing only the first "
+            f"{capped[0]._children_capped} children of an element - no "
+            f"argument raises that one, so search for the element by "
+            f"name or identifier, or within= a narrower container")
     return (f"reported {len(nodes)} node(s), cut off at {len(cut)} point(s) "
             f"({', '.join(bounds)}); deepest level reached: "
             f"{max(node.depth for node in nodes)}")
@@ -215,6 +225,15 @@ def _text_range(text: str, start: int | None) -> str:
             f"own read_text() gets the whole text - the cut is only this "
             f"reply's]")
     return f"{note}\n{text[begin:end]}"
+
+
+def _raisable(nodes: list) -> bool:
+    """Whether a max_* bound did any of the cutting - the only cuts that
+    "raise the bound" advice can fix (PR #167: a walk cut only by the
+    platform's sibling cap was told to raise one in the same breath as
+    being told none would help)."""
+    return any(node.truncated and not getattr(node, "_children_capped", None)
+               for node in nodes)
 
 
 def _portable_role_spelling(pattern: str) -> str | None:
@@ -471,6 +490,39 @@ def _writes(*, destructive: bool, idempotent: bool,
             "idempotentHint": idempotent, "openWorldHint": open_world}
 
 
+def _check_arguments(tool, arguments: dict) -> None:
+    """Refuse arguments the schema does not name, saying what it does name.
+
+    Issue #151: a wrong name used to arrive as Python's own "unexpected
+    keyword argument" TypeError - and for the tools that take **criteria,
+    not even that, but a failure from deep inside the search. The schema is
+    the contract the client was shown, so it is what the call is checked
+    against, and the refusal lists it.
+    """
+    properties = tool.schema.get("properties", {})
+    required = tool.schema.get("required", [])
+    unknown = sorted(set(arguments) - set(properties))
+    missing = [key for key in required if arguments.get(key) is None]
+    if not unknown and not missing:
+        return
+    takes = ", ".join(f"{key} (required)" if key in required else key
+                      for key in properties) or "no arguments"
+    problems = []
+    if unknown:
+        problems.append(f"does not take {', '.join(unknown)}")
+    if missing:
+        problems.append(f"needs {', '.join(missing)}")
+    message = f"{tool.name} {' and '.join(problems)}. It takes: {takes}."
+    if "predicate" in unknown:
+        # The action API's escape hatch, and the one criterion a JSON call
+        # cannot carry: it is a Python callable. Said specifically, because
+        # the docs present it beside the others.
+        message += (" predicate is action-only - a Python callable, which "
+                    "cannot cross this connection. Search with the other "
+                    "criteria here, and put the predicate in the action.")
+    raise TypeError(message)
+
+
 class Tool:
     """One callable, its JSON Schema, and the description the agent reads."""
 
@@ -502,6 +554,7 @@ class ToolRegistry:
         if tool is None:
             raise KeyError(f"unknown tool {name!r} "
                            f"(have: {', '.join(sorted(self.tools))})")
+        _check_arguments(tool, arguments)
         return tool.run(**arguments)
 
     # -- the tools -----------------------------------------------------------
@@ -594,14 +647,15 @@ class ToolRegistry:
                               "Matches label and content together."},
                      "limit": {**integer, "description": "Maximum matches "
                                "to report (default 20)."},
+                     "offset": {**integer, "description": "Matches to skip "
+                                "before reporting - for reading past the "
+                                "first `limit` of a long list (default 0)."},
                      "max_depth": {**integer, "description": "How deep to "
                                    f"search (default {uitree.DEFAULT_MAX_DEPTH}"
                                    "). Web content can nest controls 30+ "
-                                   "levels down, and a search cut short by "
-                                   "this bound reports the same 'no element "
-                                   "matching' as a genuinely absent element - "
-                                   "raise it before concluding one is not "
-                                   "there."},
+                                   "levels down; a search this bound cut "
+                                   "short says so, and which bound to "
+                                   "raise."},
                      "max_nodes": {**integer, "description": "Node budget for "
                                    "the search (default "
                                    f"{uitree.DEFAULT_MAX_NODES})."}}},
@@ -985,32 +1039,43 @@ class ToolRegistry:
             # guess, and a measured session guessed twice.
             text += (f"\n\n[truncated: "
                      f"{_truncation_shape(nodes, max_depth, max_nodes)}. "
-                     f"Raise the bound that did the cutting, or narrow with "
-                     f"roles=, before concluding this is the whole screen]")
+                     + ("Raise the bound that did the cutting, or narrow "
+                        "with roles=, "
+                        if _raisable(nodes) else "")
+                     + "before concluding this is the whole screen]")
         return text
 
-    def find_elements(self, app=None, title=None, limit=20, max_depth=None,
-                      max_nodes=None, **criteria) -> str:
+    def find_elements(self, app=None, title=None, limit=20, offset=0,
+                      max_depth=None, max_nodes=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
         if not criteria:
             raise ValueError("give at least one of role/name/value/"
                              "identifier/text")
         window = self._window(app, title)
-        bounds = {}
-        if max_depth is not None:
-            bounds["max_depth"] = int(max_depth)
-        if max_nodes is not None:
-            bounds["max_nodes"] = int(max_nodes)
-        matches = window.find_all(**criteria, **bounds)
+        max_depth = (uitree.DEFAULT_MAX_DEPTH if max_depth is None
+                     else int(max_depth))
+        max_nodes = (uitree.DEFAULT_MAX_NODES if max_nodes is None
+                     else int(max_nodes))
+        # One walk, searched here rather than through find_all (issue #151).
+        # find_all hands back only the matches, so its walk's truncation
+        # marks died inside it, and a no-match could not say whether the
+        # bounds had cut the search short - the diagnostic that re-walked to
+        # recover them was reverted (#76) for describing a second snapshot.
+        # Walking with reread and matching privately keeps the one tree the
+        # search actually saw, at the same cost, with no public stats class.
+        tree = window.reread(max_depth=max_depth, max_nodes=max_nodes)
+        matches = uitree._matching(tree, **criteria)
         if not matches:
-            # Deliberately plain. This cannot tell "absent" from "not within
-            # the bounds" - the walked tree and its truncation marks die
-            # inside find_all, and the runtime diagnostic that re-walked the
-            # tree here to recover them was reverted: a second live walk,
-            # describing a second snapshot the search never saw. The
-            # ambiguity is accepted and taught in the max_depth description
-            # instead; issue #76 holds the candidate real fix.
             text = f"no element matching {criteria}"
+            nodes = list(tree.walk())
+            if any(node.truncated for node in nodes):
+                text += (f"\n\n[the search was cut short, so this does not "
+                         f"mean the element is absent - "
+                         f"{_truncation_shape(nodes, max_depth, max_nodes)}"
+                         + (". Raise the bound that did the cutting and "
+                            "search again; web content can nest controls "
+                            "30+ levels down]"
+                            if _raisable(nodes) else "]"))
             role = criteria.get("role")
             suggested = (_portable_role_spelling(role)
                          if isinstance(role, str) else None)
@@ -1018,8 +1083,7 @@ class ToolRegistry:
                 text += (f'\n\n[an "AX"-prefixed role pattern only matches '
                          f'macOS roles - the unprefixed spelling matches the '
                          f'AX name too and is the portable one: try '
-                         f'role="{suggested}". On macOS, also raise max_depth '
-                         f'before concluding the element is not there]')
+                         f'role="{suggested}"]')
             return text
         # A count is not neutral (issue #93): a selector matching more than
         # one element is a prediction that find() will grab whichever comes
@@ -1033,7 +1097,16 @@ class ToolRegistry:
             lines = [f"{len(matches)} matches - ambiguous: find() with these "
                      f"criteria gets only the first in tree order. Under each, "
                      f"what would make it the only match:"]
-        for node in matches[:int(limit)]:
+        # Paged rather than only cut (issue #151): "... and N more" with no
+        # way to reach them left the tail of a long match list unreadable.
+        first = max(0, int(offset))
+        if first >= len(matches):
+            return (f"{len(matches)} match(es) - offset={first} is past the "
+                    f"last one; offsets run 0 to {len(matches) - 1}.")
+        shown = matches[first:first + int(limit)]
+        if first:
+            lines.append(f"  (from match {first + 1})")
+        for node in shown:
             line = f"  {node!r} value={node.value!r} rect={node.rect}"
             path = _ancestor_path(node)
             if path:
@@ -1041,8 +1114,10 @@ class ToolRegistry:
             lines.append(line)
             if len(matches) > 1:
                 lines.append(f"    -> {uniqueness.narrowing(node)}")
-        if len(matches) > int(limit):
-            lines.append(f"  ... and {len(matches) - int(limit)} more")
+        rest = len(matches) - first - len(shown)
+        if rest > 0:
+            lines.append(f"  ... and {rest} more - offset={first + len(shown)} "
+                         f"shows the next")
         if uniqueness.cut:
             lines.append(
                 "\n[the walk was cut off by its bounds, so this is unique / "
