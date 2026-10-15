@@ -1742,7 +1742,9 @@ notch, 1710×1112) against TextEdit, Chrome and the test helper.
 - **AX reads fail while an application animates.** Coming back from the
   Dock, an application let 0.1 s AX reads time out for 200–400 ms
   (`kAXErrorCannotComplete`), so the menu walk has its own 0.5 s cap; the
-  hook's 0.1 s one is for the key path, which `maximize()` is not on. The
+  process-wide 0.25 s one (`AX_MESSAGING_TIMEOUT`, raised from 0.1 s in
+  issue #175 for exactly this) is for the key path, which `maximize()` is
+  not on. The
   walk runs from the end of the menu bar and skips the Apple menu, whose
   Recent Items dwarfs everything else: 5–18 ms in Chrome.
 - **AX writes report failure now.** `set_frame` used to drop the AX error,

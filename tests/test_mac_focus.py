@@ -177,3 +177,33 @@ def test_losing_the_application_entirely_clears_the_cache(monkeypatch):
                         lambda system_wide: (None, None))
     assert probe.provider.get_focus() is None
     assert probe.provider._focus is None
+
+
+def test_an_unanswering_application_is_matched_on_its_name_alone(monkeypatch):
+    """Issue #175: the first read that times out ends the focus build - one
+    timeout, not the six (610 ms) a rebuild used to pay - and the Focus still
+    carries what an app= table matches on, with a path naming the
+    application instead of the '/()' the old walk ended in."""
+    from keyhac.core.uitree import Unresponsive
+    from keyhac.platform.mac import focus as mf
+
+    reads = []
+
+    def hung(element, attribute):
+        reads.append(attribute)
+        raise Unresponsive("busy")
+
+    monkeypatch.setattr(mf, "focused_application",
+                        lambda system_wide: ("ax-app-ref", 99))
+    monkeypatch.setattr(mf, "app_name_of", lambda pid: "Busy")
+    monkeypatch.setattr(mf, "_ax_get", hung)
+
+    provider = mf.MacFocusProvider()
+    focus = provider.get_focus()
+    assert reads == ["AXFocusedUIElement"], "stopped at the first"
+    assert focus.app_name == "Busy" and focus.pid == 99
+    assert focus.path == "/AXApplication(Busy)"
+    assert focus.window_title is None
+    # Not cached: the next key asks again, so a recovery is seen at once.
+    provider.get_focus()
+    assert reads == ["AXFocusedUIElement"] * 2

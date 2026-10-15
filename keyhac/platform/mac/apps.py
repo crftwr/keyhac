@@ -8,6 +8,7 @@ from AppKit import NSApplication, NSRunningApplication
 
 from keyhac.core import log
 from keyhac.platform.base import AppControl
+from keyhac.platform.mac.uielement import AX_MESSAGING_TIMEOUT
 
 logger = log.getLogger("MacApps")
 
@@ -18,9 +19,6 @@ _EDITOR_FALLBACKS = ("Visual Studio Code", "Xcode", "TextEdit")
 # NSApplicationActivateIgnoringOtherApps is deprecated but still the reliable
 # way to bring the previously-focused app back before a programmatic paste.
 _ACTIVATE_IGNORING_OTHER_APPS = 1 << 1
-
-#: Same cap the focus provider and window provider use.
-AX_MESSAGING_TIMEOUT = 0.1
 
 
 class MacAppControl(AppControl):
