@@ -323,6 +323,29 @@ def test_the_focus_path_falls_back_at_the_first_timeout(monkeypatch):
     assert path == "/Application(notepad)/Notepad(Untitled)"
     assert element is None
     assert reads == ["ControlType"], "stopped at the first"
+    # Marked, so get_focus does not cache it: the next key asks again and an
+    # application that has recovered gets its full path back (#175).
+    assert provider._path_cut_short is True
+
+
+def test_a_full_focus_path_is_not_marked_cut_short(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+    from keyhac.platform.win.focus import WinFocusProvider
+
+    class Edit:
+        def get_attribute_value(self, name):
+            return {"ControlType": "Edit", "Name": "Body"}.get(name)
+
+        def parent(self):
+            return None
+
+    monkeypatch.setattr(uielement.UIElement, "from_focus",
+                        staticmethod(lambda: Edit()))
+    provider = WinFocusProvider.__new__(WinFocusProvider)
+    provider._path_cut_short = True             # left over from a hang
+    path, element = provider._build_path("notepad", "Untitled", "Notepad")
+    assert path.endswith("/Edit(Body)") and element is not None
+    assert provider._path_cut_short is False
 
 
 def test_get_text_pays_one_timeout_not_two(monkeypatch):
@@ -375,3 +398,49 @@ def test_a_worker_thread_lands_in_the_mta():
     APTTYPE_MTA, APTTYPEQUALIFIER_IMPLICIT_MTA = 1, 1
     assert seen == {"hr": 0, "kind": APTTYPE_MTA,
                     "qualifier": APTTYPEQUALIFIER_IMPLICIT_MTA}
+
+
+def test_a_cut_short_focus_is_reused_for_a_second_only(monkeypatch):
+    """PR #176's Windows pass: not caching a cut-short focus at all made every
+    key down and up pay a timeout while the window stayed hung (keys every
+    150 ms handled every ~680 ms, system-wide). It is reused for
+    CUT_SHORT_FOCUS_RETRY, then asked again so a recovery is seen in time."""
+    import keyhac.platform.win.focus as wf
+
+    class Native:
+        def __init__(self, hwnd):
+            self.hwnd = hwnd
+
+        def get_text(self):
+            return "Hung"
+
+        def get_process_name(self):
+            return "hung.exe"
+
+        def get_class_name(self):
+            return "Edit"
+
+        def get_pid(self):
+            return 4242
+
+    monkeypatch.setattr(wf.user32, "GetForegroundWindow", lambda: 1)
+    monkeypatch.setattr(wf.user32, "GetWindowThreadProcessId", lambda *a: 7)
+    monkeypatch.setattr(wf.user32, "GetGUIThreadInfo", lambda *a: 0)
+    monkeypatch.setattr(wf, "NativeWindow", Native)
+    clock = [100.0]
+    monkeypatch.setattr(wf.time, "monotonic", lambda: clock[0])
+    builds = []
+
+    def build(self, app_name, title, class_name):
+        builds.append(1)
+        self._path_cut_short = True
+        return "/Application(hung)/Edit(Hung)", None
+
+    monkeypatch.setattr(wf.WinFocusProvider, "_build_path", build)
+    provider = wf.WinFocusProvider()
+    first = provider.get_focus()
+    clock[0] += 0.5
+    assert provider.get_focus() is first and builds == [1], "reused"
+    clock[0] += 1.0
+    provider.get_focus()
+    assert builds == [1, 1], "asked again after the second"

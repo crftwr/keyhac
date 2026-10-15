@@ -18,16 +18,15 @@ import time
 import ApplicationServices as AS
 from AppKit import NSWorkspace, NSRunningApplication
 
+from keyhac.core.uitree import Unresponsive
 from keyhac.platform.base import Window, WindowProvider
 from keyhac.platform.mac.uielement import (
-    UIElement, app_name_of, focused_application, keyhac_in_front)
+    AX_MESSAGING_TIMEOUT, UIElement, app_name_of, focused_application,
+    keyhac_in_front)
 from keyhac.core import log
 
 logger = log.getLogger("MacWindow")
 
-#: Same cap the focus provider uses, so a pathological AX tree cannot hang the
-#: hook thread.
-AX_MESSAGING_TIMEOUT = 0.1
 
 #: Window-menu items the OS adds to every AppKit application (macOS 15+),
 #: identified by their action selectors.  Private selectors - nothing in the
@@ -122,11 +121,45 @@ def _find_menu_item(menu, identifier, depth):
     return None
 
 
+class _Patient(UIElement):
+    """The element as the Window API reads it: a timeout is "no value".
+
+    Since issue #175 an AX timeout raises `Unresponsive` from the element
+    API, so a walk ends at the first one. The Window API keeps its own
+    contract, the one Windows' Win32 window operations have always had: an
+    answer of None or False, never an exception - and its own code depends
+    on it, polling `is_minimized()` / `is_full_screen()` through animations
+    that let AX reads time out for hundreds of milliseconds (design-notes,
+    "AX reads fail while an application animates").
+    """
+
+    def get_attribute_value(self, name):
+        try:
+            return super().get_attribute_value(name)
+        except Unresponsive:
+            return None
+
+    def set_attribute_value(self, name, type_name, value):
+        try:
+            return super().set_attribute_value(name, type_name, value)
+        except Unresponsive:
+            return False
+
+    def perform_action(self, name):
+        try:
+            return super().perform_action(name)
+        except Unresponsive:
+            return False
+
+
 class MacWindow(Window):
     """An AXWindow element plus the application it belongs to."""
 
     def __init__(self, element: UIElement, app_name: str = None, pid: int = None):
         self._element = element
+        # What the window operations read through: the same element, with a
+        # timeout answering None (see _Patient).
+        self._ops = _Patient(element._ref)
         self._app_name = app_name
         self._pid = pid
 
@@ -150,7 +183,7 @@ class MacWindow(Window):
 
     @property
     def title(self) -> str | None:
-        return self._element.get_attribute_value("AXTitle")
+        return self._ops.get_attribute_value("AXTitle")
 
     @property
     def app_name(self) -> str | None:
@@ -171,12 +204,12 @@ class MacWindow(Window):
     # -- geometry -----------------------------------------------------------
 
     def get_frame(self):
-        frame = self._element.get_attribute_value("AXFrame")
+        frame = self._ops.get_attribute_value("AXFrame")
         if frame is not None:
             return tuple(frame)
         # Not every app exposes AXFrame; position + size always work.
-        position = self._element.get_attribute_value("AXPosition")
-        size = self._element.get_attribute_value("AXSize")
+        position = self._ops.get_attribute_value("AXPosition")
+        size = self._ops.get_attribute_value("AXSize")
         if position is None or size is None:
             return None
         return (position[0], position[1], size[0], size[1])
@@ -189,7 +222,7 @@ class MacWindow(Window):
         that happened.
         """
         try:
-            return self._element.set_attribute_value(name, type_name, value)
+            return self._ops.set_attribute_value(name, type_name, value)
         except Exception:
             logger.debug(f"AX write of {name} failed", exc_info=True)
             return False
@@ -205,10 +238,10 @@ class MacWindow(Window):
     # -- state --------------------------------------------------------------
 
     def is_minimized(self) -> bool:
-        return bool(self._element.get_attribute_value("AXMinimized"))
+        return bool(self._ops.get_attribute_value("AXMinimized"))
 
     def is_full_screen(self) -> bool:
-        return bool(self._element.get_attribute_value("AXFullScreen"))
+        return bool(self._ops.get_attribute_value("AXFullScreen"))
 
     def is_maximized(self) -> bool:
         # AXFullScreen first: under a notch a full-screen window keeps clear
@@ -310,7 +343,7 @@ class MacWindow(Window):
             return False
         app = AS.AXUIElementCreateApplication(self._pid)
         AS.AXUIElementSetMessagingTimeout(app, AX_MESSAGING_TIMEOUT)
-        app = UIElement(app)
+        app = _Patient(app)
         was_in_front = bool(app.get_attribute_value("AXFrontmost"))
         if not self.activate():
             return False
@@ -335,7 +368,7 @@ class MacWindow(Window):
             return None
         app = AS.AXUIElementCreateApplication(self._pid)
         AS.AXUIElementSetMessagingTimeout(app, MENU_TIMEOUT)
-        bar = UIElement(app).get_attribute_value("AXMenuBar")
+        bar = _Patient(app).get_attribute_value("AXMenuBar")
         if not isinstance(bar, UIElement):
             return None
         for title_item in reversed(bar.children()[1:]):
@@ -360,7 +393,7 @@ class MacWindow(Window):
             return False
         if self.is_minimized():
             self.restore()
-        self._element.perform_action("AXRaise")
+        self._ops.perform_action("AXRaise")
         app_element = AS.AXUIElementCreateApplication(self._pid)
         AS.AXUIElementSetMessagingTimeout(app_element, AX_MESSAGING_TIMEOUT)
         if AS.AXUIElementSetAttributeValue(app_element, "AXFrontmost", True) == 0:
@@ -398,9 +431,9 @@ class MacWindowProvider(WindowProvider):
                                                timeout=AX_MESSAGING_TIMEOUT)
         if app_element is None or pid == os.getpid():
             return None
-        element = UIElement(app_element).get_attribute_value("AXFocusedWindow")
+        element = _Patient(app_element).get_attribute_value("AXFocusedWindow")
         if element is None:
-            element = UIElement(app_element).get_attribute_value("AXMainWindow")
+            element = _Patient(app_element).get_attribute_value("AXMainWindow")
         if element is None:
             return None
         return MacWindow(element, app_name_of(pid), pid)
@@ -432,7 +465,7 @@ class MacWindowProvider(WindowProvider):
                 continue
             app_element = AS.AXUIElementCreateApplication(pid)
             AS.AXUIElementSetMessagingTimeout(app_element, AX_MESSAGING_TIMEOUT)
-            elements = UIElement(app_element).get_attribute_value("AXWindows") or []
+            elements = _Patient(app_element).get_attribute_value("AXWindows") or []
             app_name = str(app.localizedName())
             for element in elements:
                 if isinstance(element, UIElement):

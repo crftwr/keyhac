@@ -68,9 +68,10 @@ against Win32 ground truth for the same window.
 import ctypes
 import os
 import sys
+import time
 
 from keyhac.platform.base import FocusProvider, Focus
-from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
+from keyhac.core.focus import CUT_SHORT_FOCUS_RETRY, FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("WinFocus")
@@ -171,11 +172,17 @@ def _component(role: str | None, name: str | None) -> str:
 
 class WinFocusProvider(FocusProvider):
 
+    _path_cut_short = False
+
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinFocusProvider requires Windows")
         self._probe = None      # last cheap Win32 probe
         self._focus = None      # the Focus built for it
+        # Set by _build_path when a UIA timeout cut the path to the window
+        # level - a Focus cached only briefly (see get_focus).
+        self._path_cut_short = False
+        self._focus_expires = None  # when a cut-short Focus is asked again
 
     def get_focused_element(self):
         """UIA's own answer, asked fresh - no probe cache, no path walk.
@@ -219,7 +226,9 @@ class WinFocusProvider(FocusProvider):
         # these are unchanged, which is the common case (every keystroke
         # typed into one window).
         probe = (int(foreground), int(focus_hwnd), title)
-        if probe == self._probe and self._focus is not None:
+        if probe == self._probe and self._focus is not None and (
+                self._focus_expires is None
+                or time.monotonic() < self._focus_expires):
             return self._focus
 
         exe = top.get_process_name()
@@ -240,8 +249,17 @@ class WinFocusProvider(FocusProvider):
             native=focused,
             element=element,
         )
+        # A path a timeout cut short is reused for CUT_SHORT_FOCUS_RETRY
+        # only (issue #175, as on macOS). Cached like any other, the cheap
+        # tier handed it back until the window, the focused control or the
+        # title changed - and in a Chromium or Electron window none of them do
+        # when focus moves inside the page, so the window-level path could
+        # outlive the hang by minutes. Not cached at all, every key down and
+        # up paid a timeout while the application stayed hung.
         self._probe = probe
         self._focus = focus
+        self._focus_expires = (time.monotonic() + CUT_SHORT_FOCUS_RETRY
+                               if self._path_cut_short else None)
         return focus
 
     # ------------------------------------------------------------------
@@ -259,11 +277,13 @@ class WinFocusProvider(FocusProvider):
                                       _component(class_name, title)))
 
         element = None
+        self._path_cut_short = False
         try:
             element = UIElement.from_focus()
         except Unresponsive:
             logger.debug("UIA timed out asking for the focus; using the "
                          "window-level path.")
+            self._path_cut_short = True
         except Exception:
             logger.debug("UIA focus query failed; falling back to window path.",
                          exc_info=True)
@@ -293,6 +313,7 @@ class WinFocusProvider(FocusProvider):
             # half-read chain would be a path that matches nothing.
             logger.debug("UIA timed out building the focus path; using the "
                          "window-level path.")
+            self._path_cut_short = True
             return window_path, None
 
         components = [""] + [_component("Application", app_name)]

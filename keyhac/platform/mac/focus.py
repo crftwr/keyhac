@@ -5,24 +5,32 @@ and keyhac_focus.py (focus path string construction).
 """
 
 import os
+import time
 
 import ApplicationServices as AS
+from AppKit import NSWorkspace
 
 from keyhac.platform.base import FocusProvider, Focus
+from keyhac.core.uitree import Unresponsive
 from keyhac.platform.mac.uielement import (
-    UIElement, _ax_get, app_name_of, focused_application, focused_element)
-from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
+    AX_MESSAGING_TIMEOUT, UIElement, _ax_get, app_name_of,
+    focused_application, focused_element)
+from keyhac.core.focus import CUT_SHORT_FOCUS_RETRY, FOCUS_PATH_TRANS_TABLE
 from keyhac.core import log
 
 logger = log.getLogger("MacFocus")
 
-# A hung app must not stall key dispatch: cap AX IPC waiting time (seconds).
-# Read what this actually bounds before trusting it: a timeout set on the
-# system-wide element applies to the read made *through* it and not to the
-# application element it returns, so `AXFocusedUIElement` and the _build_path
-# walk below run at the system default (measured at 3-31 ms against healthy
-# applications; unmeasured against a hung one - doc/dev/testing.md, issue #45).
-AX_MESSAGING_TIMEOUT = 0.1
+# A hung app must not stall key dispatch. Set on the system-wide element
+# below, AX_MESSAGING_TIMEOUT is the default for every AX element in the
+# process - not only the reads made through that element (measured, issue
+# #175) - and a read it cuts short raises Unresponsive, which get_focus
+# catches at the first one.
+
+
+def _front_pid() -> int | None:
+    """The front application's pid from NSWorkspace - asking it nothing."""
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return int(front.processIdentifier()) if front is not None else None
 
 
 def _same_probe(probe, previous) -> bool:
@@ -56,6 +64,8 @@ class MacFocusProvider(FocusProvider):
         AS.AXUIElementSetMessagingTimeout(self._system_wide, AX_MESSAGING_TIMEOUT)
         self._probe = None      # last cheap AX probe - see get_focus()
         self._focus = None      # the Focus built for it
+        # (pid, Focus, expiry) for a Focus a timeout cut short - see get_focus
+        self._cut_short = None
 
     def get_focused_element(self) -> "UIElement | None":
         """Ask the system where focus is, without building a focus path.
@@ -117,6 +127,18 @@ class MacFocusProvider(FocusProvider):
         path under a `focus_path_pattern`. That is narrower than the gap
         Windows has shipped with for as long as it has had a probe.
         """
+        # A Focus a timeout cut short is reused for CUT_SHORT_FOCUS_RETRY while
+        # the same application is in front (issue #175). Checked before any
+        # AX read, because the first of them - AXFocusedApplication, through
+        # the system-wide element - is served by the front application too,
+        # and would pay the timeout again on every key event; NSWorkspace
+        # asks it nothing.
+        if self._cut_short is not None:
+            pid, focus, expires = self._cut_short
+            if time.monotonic() < expires and _front_pid() == pid:
+                return focus
+            self._cut_short = None
+
         focused_app, pid = focused_application(self._system_wide)
 
         if focused_app is None:
@@ -125,26 +147,45 @@ class MacFocusProvider(FocusProvider):
             app_name = app_name_of(pid)
             return Focus(app_name=app_name, pid=pid) if app_name else None
 
-        # Not named focused_element: that is the module-level resolution this
-        # file imports, and shadowing it here is how the two get confused.
-        control = _ax_get(focused_app, "AXFocusedUIElement")
-        window = _ax_get(focused_app, "AXFocusedWindow")
-        title = _ax_get(window, "AXTitle") if window is not None else None
-
-        probe = (pid, control, str(title) if title is not None else None)
-        if self._focus is not None and _same_probe(probe, self._probe):
-            return self._focus
-
-        # Both reads are already in hand, so the fallback chain costs nothing
-        # beyond them: a focused control if there is one, else the window it
-        # would have been in, else the application itself - a key table can
-        # still match on *something* when the control cannot be read.
-        element = control if control is not None else window
-        if element is None:
-            element = focused_app
-
         app_name = app_name_of(pid)
-        path, window_title = self._build_path(element)
+        try:
+            # Not named focused_element: that is the module-level resolution
+            # this file imports, and shadowing it is how the two get confused.
+            control = _ax_get(focused_app, "AXFocusedUIElement")
+            window = _ax_get(focused_app, "AXFocusedWindow")
+            title = _ax_get(window, "AXTitle") if window is not None else None
+
+            probe = (pid, control, str(title) if title is not None else None)
+            if self._focus is not None and _same_probe(probe, self._probe):
+                return self._focus
+
+            # Both reads are already in hand, so the fallback chain costs
+            # nothing beyond them: a focused control if there is one, else
+            # the window it would have been in, else the application itself
+            # - a key table can still match on *something* when the control
+            # cannot be read.
+            element = control if control is not None else window
+            if element is None:
+                element = focused_app
+
+            path, window_title = self._build_path(element)
+        except Unresponsive:
+            # The application stopped answering (issue #175): stop at the
+            # first timeout and match on the application alone. The reads
+            # used to carry on - six on a rebuild, 610 ms measured, and three
+            # on every later key event - and ended in a path of '/()', which
+            # matched nothing. Reused for CUT_SHORT_FOCUS_RETRY only, so an
+            # application that recovers gets its full path back within it.
+            self._probe = None
+            self._focus = None
+            element = None if pid == os.getpid() else UIElement(focused_app)
+            path = "/AXApplication({})".format(
+                (app_name or "").translate(FOCUS_PATH_TRANS_TABLE))
+            focus = Focus(app_name=app_name, pid=pid, path=path,
+                          native=element, element=element)
+            self._cut_short = (pid, focus,
+                               time.monotonic() + CUT_SHORT_FOCUS_RETRY)
+            return focus
 
         # native and element are the same object here: on macOS the focused
         # semantic element *is* the native handle. They diverge on Windows,

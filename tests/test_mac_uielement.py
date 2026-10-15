@@ -342,3 +342,53 @@ def test_the_switch_reads_back_on_a_live_application():
     app = UIElement(AS.AXUIElementCreateApplication(pid))
     assert app.get_manual_accessibility() in (True, False)
     assert app.is_chromium_application() is False
+
+
+def test_a_timed_out_ax_call_raises_unresponsive():
+    """Issue #175: kAXErrorCannotComplete - the messaging timeout cut the
+    call short - raises, as UIA_E_TIMEOUT does on Windows (#174)."""
+    from keyhac.core.uitree import Unresponsive
+    from keyhac.platform.mac import uielement
+
+    with pytest.raises(Unresponsive, match="did not answer accessibility"):
+        uielement._ax(lambda *args: (uielement.kAXErrorCannotComplete, None),
+                      "element", "AXRole", None)
+    assert uielement._ax(lambda *args: (0, "AXButton")) == (0, "AXButton")
+
+
+def test_one_ax_timeout_per_key_event():
+    from keyhac.core.uitree import Unresponsive, one_timeout_per_key_event
+    from keyhac.platform.mac import uielement
+
+    made = []
+
+    def call(*args):
+        made.append(args)
+        return (uielement.kAXErrorCannotComplete, None)
+
+    with one_timeout_per_key_event():
+        for attribute in ("AXRole", "AXTitle"):
+            with pytest.raises(Unresponsive):
+                uielement._ax(call, attribute)
+    assert made == [("AXRole",)], "the second was refused without being made"
+
+
+def test_the_window_api_reads_a_timeout_as_no_value(monkeypatch):
+    """The Window API keeps its contract - None or False, never an
+    exception - since its own code polls through animations that let reads
+    time out; only the element API raises."""
+    from keyhac.core.uitree import Unresponsive
+    from keyhac.platform.mac import uielement
+    from keyhac.platform.mac.window import MacWindow
+
+    def hung(self, *args):
+        raise Unresponsive("busy")
+
+    monkeypatch.setattr(uielement.UIElement, "get_attribute_value", hung)
+    monkeypatch.setattr(uielement.UIElement, "set_attribute_value", hung)
+    monkeypatch.setattr(uielement.UIElement, "perform_action", hung)
+    window = MacWindow(uielement.UIElement("ref"), "Busy", 99)
+    assert window.title is None
+    assert window.is_minimized() is False
+    with pytest.raises(Unresponsive):
+        window.element.get_attribute_value("AXTitle")

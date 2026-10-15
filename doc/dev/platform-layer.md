@@ -171,6 +171,14 @@ a few AX calls need `objc.loadBundleFunctions`-style care).
   unsafe chars) for `focus_path_pattern` compat; expose portable `app_name` (running-app
   localized name), `pid`, `window_title` (walk to `AXWindow`, read `AXTitle`).
   Set `AXUIElementSetMessagingTimeout` small — a hung app must not stall key dispatch.
+  Set on the system-wide element it is the **process-wide default** for every AX
+  element (measured, issue #175), so `AX_MESSAGING_TIMEOUT` (0.25 s) bounds every
+  read Keyhac makes unless an element sets its own (the menu walk's 0.5 s). A read
+  it cuts short (`kAXErrorCannotComplete`) raises `Unresponsive` from the element
+  API, and a key event may pay one; `get_focus` stops there and matches on the
+  application alone. The `Window` API reads a timeout as "no value", as Win32
+  window operations do. Measured: the AX default is ~1.5 s, and the event tap is
+  disabled after a callback stalls 1.0–1.5 s.
 - **UIElement**: port the attribute get/set/action API (marshalling AXValue types) —
   users script window moves and app automation with it (keyhac-mac's `MoveWindow` uses
   `AXPosition`).

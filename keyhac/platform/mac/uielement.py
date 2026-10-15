@@ -10,7 +10,47 @@ import Quartz
 from AppKit import NSRunningApplication, NSWorkspace
 from Foundation import NSArray, NSDictionary
 
-from keyhac.core.uitree import _first_name
+from keyhac.core.uitree import (
+    Unresponsive, _first_name, _refuse_if_budget_spent, _spend_budget)
+
+#: Ceiling on one accessibility call into another application, in seconds -
+#: the same 250 ms as Windows' UIA calls (#172), for the same reason.
+#:
+#: Set on the system-wide element, it is the default for *every* AX element
+#: in the process (measured, issue #175: a fresh, never-capped application
+#: element read a blocked app in 105 ms with 0.1 s set there, 1,523 ms with
+#: nothing set - the OS default is ~1.5 s). An element's own setting overrides
+#: it, as the menu walk's MENU_TIMEOUT does.
+#:
+#: Sized against two measurements. Healthy reads take 3-31 ms (#45), and an
+#: application animating back from the Dock fails 0.1 s reads for 200-400 ms
+#: (design-notes), which is what made 100 ms too tight once a timeout raises.
+#: And the event tap is disabled after a callback stalls 1.0-1.5 s (#175), so
+#: with a key event paying at most one timeout (_ax), 250 ms leaves room.
+AX_MESSAGING_TIMEOUT = 0.25
+
+#: The AX error a call cut short by the messaging timeout answers.
+kAXErrorCannotComplete = -25204
+
+
+def _ax(call, *args):
+    """Make one AX call, raising `Unresponsive` when the timeout cut it short.
+
+    Every AX call in the element API goes through here (issue #175). A call
+    answering kAXErrorCannotComplete ends the read it interrupts - a walk or
+    a text read pays the timeout once, not once per element it had left -
+    and inside a key event it spends the event's budget, so every later call
+    in that event raises without being made. The Windows twin is _com_call.
+    """
+    _refuse_if_budget_spent()
+    result = call(*args)
+    err = result[0] if isinstance(result, tuple) else result
+    if err == kAXErrorCannotComplete:
+        _spend_budget()
+        raise Unresponsive(
+            f"the application did not answer accessibility within "
+            f"{AX_MESSAGING_TIMEOUT * 1000:.0f} ms - it is busy or hung")
+    return result
 
 _AX_TYPES = {
     "point": AS.kAXValueCGPointType, "size": AS.kAXValueCGSizeType,
@@ -31,13 +71,17 @@ FOCUS_ANCESTOR_LIMIT = 4
 
 
 def _ax_get(element, attribute):
-    """One attribute, or None for any reason at all - error, absence or throw.
+    """One attribute, or None when the element does not have it or a call
+    fails - except a timeout, which raises `Unresponsive` (see `_ax`).
 
     MacFocusProvider's twin, kept here because focus.py imports this module and
     not the other way round.
     """
     try:
-        err, value = AS.AXUIElementCopyAttributeValue(element, attribute, None)
+        err, value = _ax(AS.AXUIElementCopyAttributeValue, element, attribute,
+                         None)
+    except Unresponsive:
+        raise
     except Exception:
         return None
     return None if err != 0 else value
@@ -112,8 +156,10 @@ def focused_application(system_wide=None, timeout=None) -> tuple:
     It is reached inside Keyhac too, just for the other reason: the read is
     served by the front application, so a front application busy for longer
     than the messaging timeout answers kAXErrorCannotComplete after the full
-    wait.  Measured at roughly one sample in twenty-five against an idle
-    machine.
+    wait - which raises `Unresponsive` (issue #175), caught here: the
+    fallback asks NSWorkspace, which asks no application.  In a key event
+    that timeout is the event's one, so the caller's next AX read raises at
+    once and `get_focus` settles for the application.
 
     **Why the pid comes from the element and not from `NSWorkspace`.** These
     are two different questions - "which application did the user last
@@ -131,14 +177,11 @@ def focused_application(system_wide=None, timeout=None) -> tuple:
             application cannot stall key dispatch; a fresh one is made here
             when there is nothing to reuse.
         timeout: Messaging timeout to put on the *returned* element, in
-            seconds.  A timeout set on the system-wide element bounds only the
-            read made through it: the element it hands back carries the system
-            default, so the caller's next read into the focused application is
-            unbounded unless it asks here.  Callers that had their own cap
-            before this resolution was shared pass it; `get_focus` does not,
-            because bounding a read it has never bounded would change what a
-            momentarily slow application produces, and that wants its own
-            measurement.
+            seconds, overriding the process-wide default.  Usually not
+            needed: a timeout set on the system-wide element is the default
+            for every AX element in the process (measured, issue #175), so
+            the element handed back is already bounded by
+            AX_MESSAGING_TIMEOUT.
 
     Returns:
         `(application element, pid)`, or `(None, None)` when neither source
@@ -149,7 +192,10 @@ def focused_application(system_wide=None, timeout=None) -> tuple:
     ref = (system_wide if system_wide is not None
            else AS.AXUIElementCreateSystemWide())
 
-    app = _ax_get(ref, "AXFocusedApplication")
+    try:
+        app = _ax_get(ref, "AXFocusedApplication")
+    except Unresponsive:
+        app = None
     pid = _pid_of(app) if app is not None else None
 
     if app is None:
@@ -286,11 +332,11 @@ class UIElement:
         return _pid_of(self._ref)
 
     def get_attribute_names(self) -> list[str]:
-        err, names = AS.AXUIElementCopyAttributeNames(self._ref, None)
+        err, names = _ax(AS.AXUIElementCopyAttributeNames, self._ref, None)
         return [str(n) for n in names] if err == 0 and names else []
 
     def get_attribute_value(self, name: str):
-        err, value = AS.AXUIElementCopyAttributeValue(self._ref, name, None)
+        err, value = _ax(AS.AXUIElementCopyAttributeValue, self._ref, name, None)
         return _from_ax(value) if err == 0 else None
 
     def get_attribute_values(self, names: list[str]) -> dict:
@@ -310,7 +356,7 @@ class UIElement:
             have maps to None, so a caller reads the result the same way
             whether the element answered or not.
         """
-        err, values = AS.AXUIElementCopyMultipleAttributeValues(
+        err, values = _ax(AS.AXUIElementCopyMultipleAttributeValues, 
             self._ref, list(names), 0, None)
         if err != 0 or values is None:
             return {name: None for name in names}
@@ -329,7 +375,7 @@ class UIElement:
             Whether the write was accepted.  Acceptance is not the effect:
             some applications take writes that change nothing.
         """
-        return AS.AXUIElementSetAttributeValue(
+        return _ax(AS.AXUIElementSetAttributeValue, 
             self._ref, name, _to_ax(type_name, value)) == 0
 
     def set_focus(self) -> None:
@@ -416,7 +462,7 @@ class UIElement:
         offset into a line number, AXRangeForLine turns that back into a range,
         AXStringForRange turns a range into text.
         """
-        err, out = AS.AXUIElementCopyParameterizedAttributeValue(
+        err, out = _ax(AS.AXUIElementCopyParameterizedAttributeValue, 
             self._ref, name, _to_ax(type_name, value), None)
         return _from_ax(out) if err == 0 else None
 
@@ -590,11 +636,11 @@ class UIElement:
         from `AXBoundsForRange` (Excel's grid answers that way) and would
         have to agree with itself about both.
         """
-        err, marker_range = AS.AXUIElementCopyAttributeValue(
+        err, marker_range = _ax(AS.AXUIElementCopyAttributeValue, 
             self._ref, "AXSelectedTextMarkerRange", None)
         if err != 0 or marker_range is None:
             return None
-        err, bounds = AS.AXUIElementCopyParameterizedAttributeValue(
+        err, bounds = _ax(AS.AXUIElementCopyParameterizedAttributeValue, 
             self._ref, "AXBoundsForTextMarkerRange", marker_range, None)
         if err != 0:
             return None
@@ -725,7 +771,7 @@ class UIElement:
         per node over a whole tree.  Attributes the element does not have come
         back as an AX error value, which _from_ax renders as None.
         """
-        err, values = AS.AXUIElementCopyMultipleAttributeValues(
+        err, values = _ax(AS.AXUIElementCopyMultipleAttributeValues, 
             self._ref, _DESCRIBE_ATTRS, 0, None)
         if err != 0 or values is None:
             got = {}
@@ -857,7 +903,7 @@ class UIElement:
             What the application reports, or None when the attribute cannot be
             read at all.
         """
-        err, value = AS.AXUIElementCopyAttributeValue(
+        err, value = _ax(AS.AXUIElementCopyAttributeValue, 
             self._ref, "AXEnhancedUserInterface", None)
         return bool(value) if err == 0 else None
 
@@ -892,7 +938,7 @@ class UIElement:
         return _ships_a_renderer(str(url.path())) if url else False
 
     def get_action_names(self) -> list[str]:
-        err, names = AS.AXUIElementCopyActionNames(self._ref, None)
+        err, names = _ax(AS.AXUIElementCopyActionNames, self._ref, None)
         return [str(n) for n in names] if err == 0 and names else []
 
     def perform_action(self, name: str) -> bool:
@@ -903,7 +949,7 @@ class UIElement:
         wrong thing §3.7 exists to refuse. Windows already returned a bool
         here; now both do.
         """
-        return AS.AXUIElementPerformAction(self._ref, name) == 0
+        return _ax(AS.AXUIElementPerformAction, self._ref, name) == 0
 
     def is_stale(self) -> bool:
         """True when the element this reference points at no longer exists.
@@ -916,7 +962,7 @@ class UIElement:
         A fact, not a policy - `keyhac.core.uitree.StaleElement` is raised by
         the layer that decides what to do about it.
         """
-        err, _ = AS.AXUIElementCopyAttributeValue(self._ref, "AXRole", None)
+        err, _ = _ax(AS.AXUIElementCopyAttributeValue, self._ref, "AXRole", None)
         return err == AS.kAXErrorInvalidUIElement
 
     def role(self) -> str | None:
@@ -973,7 +1019,7 @@ class UIElement:
         # into our own process (issue #173). Asked of the window server first.
         if UIElement.keyhac_at_point(x, y):
             return None
-        err, element = AS.AXUIElementCopyElementAtPosition(
+        err, element = _ax(AS.AXUIElementCopyElementAtPosition, 
             AS.AXUIElementCreateSystemWide(), x, y, None)
         return UIElement(element) if err == 0 and element else None
 
