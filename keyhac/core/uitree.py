@@ -549,6 +549,19 @@ def find_elements(root, role: str | None = None, name: str | None = None,
         must stop the action rather than proceed on a guess.
     """
     tree = get_ui_tree(root, max_depth=max_depth, max_nodes=max_nodes)
+    return _matching(tree, role=role, name=name, value=value,
+                     identifier=identifier, text=text, predicate=predicate)
+
+
+def _matching(tree: UINode, role=None, name=None, value=None, identifier=None,
+              text=None, predicate=None) -> list[UINode]:
+    """The nodes of an already-walked `tree` that `find_elements` would match.
+
+    Private, and split out so the MCP `find_elements` tool can search a tree
+    it walked itself - keeping the walk's truncation marks, which a no-match
+    reply needs (issue #151) - without a second walk and without the public
+    stats parameter doc/dev/next-major.md holds back.
+    """
     out = []
     for node in tree.walk():
         if role is not None and not match_role(node.role, role):

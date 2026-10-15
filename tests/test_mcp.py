@@ -49,6 +49,7 @@ class FakeNode:
             yield from child.walk()
 
     def reread(self, **kwargs):
+        self.reread_with = kwargs        # the bounds the last walk was given
         return self
 
     def dump(self):
@@ -530,12 +531,52 @@ def test_find_elements_requires_a_criterion(registry):
 
 def test_find_elements_passes_the_walk_bounds_through(registry):
     """Issue #68: controls in web content sit 30+ levels down, and the tool
-    offered no way to reach past the default depth - find_all had the
-    parameters all along."""
+    offered no way to reach past the default depth."""
     registry.call("find_elements",
                   {"role": "PopUpButton", "max_depth": 45, "max_nodes": 6000})
-    assert registry.keymap.node.searched == {
-        "role": "PopUpButton", "max_depth": 45, "max_nodes": 6000}
+    assert registry.keymap.node.reread_with == {"max_depth": 45,
+                                                "max_nodes": 6000}
+
+
+def test_a_wrong_argument_name_is_refused_with_the_right_ones(registry):
+    """Issue #151: `module=` for `name=` arrived as Python's own TypeError,
+    and the caller found the names by trial and error. The refusal now
+    lists what the tool takes, required ones marked."""
+    with pytest.raises(TypeError) as raised:
+        registry.call("write_extension", {"module": "x", "source": ""})
+    message = str(raised.value)
+    assert message.startswith("write_extension does not take module")
+    assert "name (required), source (required)" in message
+    with pytest.raises(TypeError, match="start_action needs name"):
+        registry.call("start_action", {})
+
+
+def test_predicate_is_refused_as_action_only(registry):
+    """The action API's callable criterion cannot cross JSON; it used to
+    fail as "'str' object is not callable" from inside the search."""
+    with pytest.raises(TypeError, match="predicate is action-only"):
+        registry.call("find_elements", {"role": "Button",
+                                        "predicate": "lambda n: True"})
+
+
+def test_find_elements_pages_with_offset(registry):
+    """Issue #151: "... and N more" had no way to reach the N."""
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="List")
+    root.children = [UINode(role="AXRow", name=f"row {i}") for i in range(25)]
+    for row in root.children:
+        row._parent = root
+    registry.keymap.node.reread = lambda **kw: root
+    first = registry.call("find_elements", {"role": "Row", "limit": 10})
+    assert first.startswith("25 matches")
+    assert "... and 15 more - offset=10 shows the next" in first
+    second = registry.call("find_elements", {"role": "Row", "limit": 10,
+                                             "offset": 10})
+    assert "(from match 11)" in second and "'row 10'" in second
+    assert "'row 9'" not in second and "offset=20" in second
+    last = registry.call("find_elements", {"role": "Row", "offset": 20})
+    assert "'row 24'" in last and "more" not in last
 
 
 def test_the_bounds_alone_are_not_a_criterion(registry):
@@ -543,22 +584,27 @@ def test_the_bounds_alone_are_not_a_criterion(registry):
         registry.call("find_elements", {"max_depth": 45})
 
 
-def test_a_no_match_stays_plain_even_when_the_walk_was_cut(registry):
-    """Deliberate (#68 second thoughts, issue #76): the runtime diagnostic
-    that re-walked the tree on an empty result - to say whether "no match"
-    meant "absent" or "not within the bounds" - was reverted. It cost a
-    second live accessibility walk, and it described a second snapshot the
-    search never saw. The ambiguity is accepted for now: taught statically
-    in the max_depth schema description, with the candidate real fix (a
-    stats out-parameter on find_all) recorded in the issue."""
+def test_a_no_match_says_when_the_walk_was_cut(registry):
+    """Issue #151 (and #76 before it): "no match" from a search the bounds
+    cut short read exactly like an absent element. The tool now walks once
+    and matches that tree itself, so the cut is read off the snapshot that
+    was searched - not off a second walk, which is why #76's diagnostic was
+    reverted."""
     root = registry.keymap.node
-    root.find_all = lambda **criteria: []
     root.truncated = True
-    reread = []
-    root.reread = lambda **kw: reread.append(kw) or root
+    root.depth = 14
+    walks = []
+    root.reread = lambda **kw: walks.append(kw) or root
+    text = registry.call("find_elements", {"role": "PopUpButton"})
+    assert text.startswith("no element matching {'role': 'PopUpButton'}")
+    assert "does not mean the element is absent" in text
+    assert "1 by max_depth=14" in text
+    assert len(walks) == 1, "one walk - the one that was searched"
+
+
+def test_a_no_match_from_a_whole_walk_stays_plain(registry):
     text = registry.call("find_elements", {"role": "PopUpButton"})
     assert text == "no element matching {'role': 'PopUpButton'}"
-    assert reread == [], "and no second walk happened to say more"
 
 
 def test_an_ax_prefixed_no_match_names_the_portable_spelling(registry):
@@ -567,21 +613,20 @@ def test_an_ax_prefixed_no_match_names_the_portable_spelling(registry):
     The hint is syntactic, read off the pattern alone, so the no-match path
     stays a single walk (issue #76)."""
     root = registry.keymap.node
-    root.find_all = lambda **criteria: []
-    reread = []
-    root.reread = lambda **kw: reread.append(kw) or root
+    walks = []
+    root.reread = lambda **kw: walks.append(kw) or root
     text = registry.call("find_elements", {"role": "AXPopUpButton|Cell"})
     assert text.startswith(
         "no element matching {'role': 'AXPopUpButton|Cell'}")
     assert 'role="PopUpButton|Cell"' in text
-    assert reread == [], "the hint is syntactic - no second walk"
+    assert len(walks) == 1, "the hint is syntactic - no second walk"
 
 
 def test_a_wildcard_ax_pattern_gets_no_suggestion(registry):
     """Stripping "AX*" would leave "*" - every role - so it is left alone
     and the no-match reply stays plain."""
     root = registry.keymap.node
-    root.find_all = lambda **criteria: []
+    root.role = "Window"                 # a Windows role: "AX*" misses it
     text = registry.call("find_elements", {"role": "AX*"})
     assert text == "no element matching {'role': 'AX*'}"
 
@@ -606,7 +651,9 @@ def test_find_elements_names_each_matchs_ancestors(registry):
     right._parent = root
     button_l._parent = left
     button_r._parent = right
-    registry.keymap.node.find_all = lambda **criteria: [button_l, button_r]
+    root.children, left.children, right.children = \
+        [left, right], [button_l], [button_r]
+    registry.keymap.node.reread = lambda **kw: root
     text = registry.call("find_elements", {"role": "Button"})
     assert "path=AXWindow(Translate)/AXTabGroup(#source)" in text
     assert "path=AXWindow(Translate)/AXTabGroup(Target)" in text
@@ -618,7 +665,7 @@ def test_a_match_that_is_the_searched_root_carries_no_path(registry):
     from keyhac.core.uitree import UINode
 
     window = UINode(role="AXWindow", name="Main", rect=(0, 0, 100, 100))
-    registry.keymap.node.find_all = lambda **criteria: [window]
+    registry.keymap.node.reread = lambda **kw: window
     text = registry.call("find_elements", {"role": "Window"})
     assert text == ("1 match - unique: find() with these criteria gets this "
                     "element.\n"
@@ -649,7 +696,15 @@ def _translate_window():
 
 
 def _verdicts(registry, matches):
-    registry.keymap.node.find_all = lambda **criteria: matches
+    """Search the tree `matches` belong to for buttons, with every button
+    not in `matches` relabelled so only those match."""
+    root = matches[0]
+    while root._parent is not None:
+        root = root._parent
+    for node in root.walk():
+        if node.role == "AXButton" and all(node is not m for m in matches):
+            node.role = "AXImage"
+    registry.keymap.node.reread = lambda **kw: root
     text = registry.call("find_elements", {"role": "Button"})
     return text, [line.strip()[3:] for line in text.splitlines()
                   if line.strip().startswith("->")]

@@ -71,6 +71,13 @@ using the deep-search pattern wanting "did my search see everything?" without
 paying their own `reread`), or a major release settling the shape deliberately.
 Issue #76 was closed in favor of this entry.
 
+**Update (issue #151).** The MCP consumer no longer needs this. The tool
+now walks once with `reread` and matches that tree through the private
+`uitree._matching`, so its no-match reply reads the cut off the snapshot
+that was searched — one walk, no public class. What is left is the action
+side: an action asking "did my search see everything?" of `find_all` itself.
+That is now the only event that would justify building it.
+
 **Migration.** None — additive. Ship the class and parameter in
 `keyhac/core/uitree.py`, thread them through `UINode.find_all`, and teach the
 MCP no-match branch in `keyhac/mcp/tools.py` to read the stats; the pinning
