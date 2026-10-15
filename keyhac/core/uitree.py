@@ -123,6 +123,12 @@ class UINode:
     children: list["UINode"] = field(default_factory=list)
     truncated: bool = False
 
+    # Set when the platform's own sibling cap cut this node's children, to
+    # the cap - Windows lists at most MAX_CHILDREN of them. A third bound,
+    # besides max_depth and max_nodes, and the one no argument raises; the
+    # node is also marked truncated. Private for the same reason as _parent.
+    _children_capped = None
+
     # Structural parent within the walk that built this node - private
     # plumbing for the MCP ancestor path (issue #55), not public shape, and
     # deliberately not a dataclass field: a back-edge in __eq__ would recurse
@@ -492,7 +498,12 @@ def get_ui_tree(root, max_depth: int = DEFAULT_MAX_DEPTH,
             # Only a real cut, not a leaf that happens to sit at the bound.
             node.truncated = bool(_children(element))
             return node
-        for child in _children(element):
+        children = _children(element)
+        capped = getattr(element, "_children_capped", None)
+        if capped:
+            node._children_capped = capped
+            node.truncated = True
+        for child in children:
             if budget[0] <= 0:
                 node.truncated = True
                 break

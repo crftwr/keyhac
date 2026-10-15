@@ -577,6 +577,41 @@ def test_find_elements_pages_with_offset(registry):
     assert "'row 9'" not in second and "offset=20" in second
     last = registry.call("find_elements", {"role": "Row", "offset": 20})
     assert "'row 24'" in last and "more" not in last
+    past = registry.call("find_elements", {"role": "Row", "offset": 40})
+    assert past == ("25 match(es) - offset=40 is past the last one; offsets "
+                    "run 0 to 24.")
+
+
+def test_a_platform_sibling_cap_reads_as_a_cut(registry):
+    """PR #167 Windows pass: UIA children() stops at MAX_CHILDREN siblings,
+    and the node was not marked - so a search past the 2000th row read as
+    "absent". get_ui_tree now marks it from the element, and the reply names
+    the bound no argument raises."""
+    from keyhac.core.uitree import get_ui_tree
+
+    class Element:
+        def __init__(self, role, name=None, children=(), capped=None):
+            self.role, self.name = role, name
+            self._kids = list(children)
+            self._children_capped = None
+            self._capped = capped
+
+        def describe(self):
+            return {"role": self.role, "name": self.name}
+
+        def children(self):
+            self._children_capped = self._capped
+            return list(self._kids)
+
+    grid = Element("Table", children=[Element("Row", f"row {i}")
+                                      for i in range(3)], capped=3)
+    root = Element("Window", "Grid", children=[grid])
+    registry.keymap.node.reread = lambda **kw: get_ui_tree(root, **kw)
+    text = registry.call("find_elements", {"name": "row 2400"})
+    assert "does not mean the element is absent" in text
+    assert "only the first 3 children" in text
+    assert "by max_depth" not in text and "budget" not in text, \
+        "counted as its own bound, not as depth or budget"
 
 
 def test_the_bounds_alone_are_not_a_criterion(registry):

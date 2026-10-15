@@ -726,6 +726,12 @@ class UIElement:
         keyhac.core.uitree gets to apply its node budget, and a data grid can
         have tens of thousands of siblings.
         """
+        # A cut list is recorded on the element as the cap it hit, and
+        # get_ui_tree marks the node truncated from it. Without that, a
+        # search past the 2000th sibling read as a plain "no match" - which
+        # since #151 is a claim the element is absent - and no max_* argument
+        # could have told the caller otherwise (PR #167 Windows pass).
+        self._children_capped = None
         walker = _control_view_walker()
         if walker is None or not self._ptr:
             return []
@@ -737,6 +743,11 @@ class UIElement:
             out.append(child)
             ptr = _element_out(walker, _IUIAutomationTreeWalker.GetNextSiblingElement,
                                ctypes.c_void_p(ptr.value))
+        if ptr:
+            # The sibling past the cap: fetched, never wrapped, so never
+            # released by a UIElement.
+            _release(ptr)
+            self._children_capped = MAX_CHILDREN
         return out
 
     def identity_key(self):

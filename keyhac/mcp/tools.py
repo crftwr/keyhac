@@ -132,13 +132,23 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
     just stops discarding them.
     """
     cut = [node for node in nodes if node.truncated]
-    by_depth = sum(1 for node in cut if node.depth >= max_depth)
-    by_budget = len(cut) - by_depth
+    capped = [node for node in cut
+              if getattr(node, "_children_capped", None)]
+    by_depth = sum(1 for node in cut if node.depth >= max_depth
+                   and not getattr(node, "_children_capped", None))
+    by_budget = len(cut) - by_depth - len(capped)
     bounds = []
     if by_depth:
         bounds.append(f"{by_depth} by max_depth={max_depth}")
     if by_budget:
         bounds.append(f"{by_budget} by the max_nodes={max_nodes} budget")
+    if capped:
+        # The bound no argument raises (PR #167): said with what does work.
+        bounds.append(
+            f"{len(capped)} by the platform listing only the first "
+            f"{capped[0]._children_capped} children of an element - no "
+            f"argument raises that one, so search for the element by "
+            f"name or identifier, or within= a narrower container")
     return (f"reported {len(nodes)} node(s), cut off at {len(cut)} point(s) "
             f"({', '.join(bounds)}); deepest level reached: "
             f"{max(node.depth for node in nodes)}")
@@ -1078,6 +1088,9 @@ class ToolRegistry:
         # Paged rather than only cut (issue #151): "... and N more" with no
         # way to reach them left the tail of a long match list unreadable.
         first = max(0, int(offset))
+        if first >= len(matches):
+            return (f"{len(matches)} match(es) - offset={first} is past the "
+                    f"last one; offsets run 0 to {len(matches) - 1}.")
         shown = matches[first:first + int(limit)]
         if first:
             lines.append(f"  (from match {first + 1})")
