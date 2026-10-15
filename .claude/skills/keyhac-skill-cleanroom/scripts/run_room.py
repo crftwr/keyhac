@@ -180,6 +180,14 @@ def open_fixture(case: int | None) -> None:
     names = FIXTURES.get(case or 0, [])
     if not names:
         return
+    # A run that ended early, or a run before this existed, leaves its
+    # fixture windows up - and the next room meets two windows of the same
+    # site and spends its run deciding which to drive (2026-10-16, case 1:
+    # most of that room's questions were this). The old windows are on
+    # another port, so they are recognised by host and page name.
+    closed = close_fixture_windows()
+    if closed:
+        print(f"  closed:  {closed} fixture window(s) left by an earlier run")
     # The whole set: the pages link to each other, and pagination is the task.
     served = pathlib.Path(tempfile.mkdtemp(prefix="keyhac-cleanroom-screen-"))
     shutil.copytree(ROOT / "examples" / "actions" / "fixtures", served,
@@ -191,6 +199,48 @@ def open_fixture(case: int | None) -> None:
         _load(f"{origin}/{name}", _title_of(served / name), name)
         print(f"  screen:  {name} (Safari, {origin}/{name})")
     time.sleep(1.0)  # Safari needs a moment before the tree is readable.
+
+
+def close_fixture_windows() -> int:
+    """Close the Safari windows showing a fixture page; how many it closed.
+
+    Only windows whose page is served from 127.0.0.1 *and* is one of the
+    fixture files - never a window of the operator's, which would have to be
+    on that host and named like a fixture to match.
+    """
+    fixtures = sorted(p.name for p in
+                      (ROOT / "examples" / "actions" / "fixtures").glob("*.html"))
+    names = ", ".join(f'"{name}"' for name in fixtures)
+    script = f'''set fixtures to {{{names}}}
+    set closed to 0
+    if application "Safari" is running then
+        tell application "Safari"
+            -- From the last window back: closing one renumbers the rest,
+            -- and a forward walk skips the window after each close.
+            repeat with i from (count of windows) to 1 by -1
+                set w to window i
+                try
+                    set u to URL of current tab of w
+                    if u starts with "http://127.0.0.1:" then
+                        repeat with f in fixtures
+                            if u ends with ("/" & f) then
+                                close w
+                                set closed to closed + 1
+                                exit repeat
+                            end if
+                        end repeat
+                    end if
+                end try
+            end repeat
+        end tell
+    end if
+    return closed'''
+    asked = subprocess.run(["osascript", "-e", script], capture_output=True,
+                           text=True, check=False)
+    try:
+        return int(asked.stdout.strip() or 0)
+    except ValueError:
+        return 0
 
 
 def _title_of(page: pathlib.Path) -> str:
@@ -697,7 +747,13 @@ def main() -> int:
     desktop_before = set(DESKTOP.iterdir()) if DESKTOP.exists() else set()
     open_fixture(args.case)
     before = set(EXTENSIONS.glob("*.py")) if EXTENSIONS.exists() else set()
-    exit_code = run_session(room, bridge, args.model, args.max_turns)
+    try:
+        exit_code = run_session(room, bridge, args.model, args.max_turns)
+    finally:
+        # The room's screen is the runner's to take down, as it was the
+        # runner's to put up: left open, it is the next room's second window.
+        if args.case in FIXTURES:
+            close_fixture_windows()
     if exit_code != 0:
         print(f"  ! the room session exited {exit_code}")
 

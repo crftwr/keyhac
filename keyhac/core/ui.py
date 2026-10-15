@@ -475,6 +475,8 @@ class UI:
 
         Returns:
             The window's element as a node, or None when nothing matched.
+            The node's `name` is the window title; its `value` is None.
+            Where several windows match, this is the first - see `windows()`.
         """
         window = self._keymap.find_window(app=app, title=title,
                                           class_name=class_name)
@@ -485,6 +487,7 @@ class UI:
 
         For the cases where "the window" is ambiguous - a browser with several
         windows open, or an application whose settings live in a second one.
+        Each node's `name` is that window's title.
         """
         from keyhac.core.focus import match_window_fields
 
