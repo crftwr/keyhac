@@ -478,9 +478,101 @@ def test_a_match_that_is_the_searched_root_carries_no_path(registry):
     window = UINode(role="AXWindow", name="Main", rect=(0, 0, 100, 100))
     registry.keymap.node.find_all = lambda **criteria: [window]
     text = registry.call("find_elements", {"role": "Window"})
-    assert text == ("1 match(es):\n"
+    assert text == ("1 match - unique: find() with these criteria gets this "
+                    "element.\n"
                     "  UINode(AXWindow name='Main') value=None "
                     "rect=(0, 0, 100, 100)")
+
+
+def _translate_window():
+    """Two tab groups, each with an "English" button; the left group also
+    holds a uniquely named one. Built as a walk would build it, so the
+    `_parent` chains lead back to a root."""
+    from keyhac.core.uitree import UINode
+
+    def adopt(parent, *children):
+        for child in children:
+            child._parent = parent
+        parent.children = list(children)
+        return parent
+
+    english_l = UINode(role="AXButton", name="English")
+    english_r = UINode(role="AXButton", name="English")
+    swap = UINode(role="AXButton", name="Swap", identifier="swap-languages")
+    left = adopt(UINode(role="AXTabGroup", identifier="source"),
+                 english_l, swap)
+    right = adopt(UINode(role="AXTabGroup", name="Target"), english_r)
+    root = adopt(UINode(role="AXWindow", name="Translate"), left, right)
+    return root, english_l, english_r, swap
+
+
+def _verdicts(registry, matches):
+    registry.keymap.node.find_all = lambda **criteria: matches
+    text = registry.call("find_elements", {"role": "Button"})
+    return text, [line.strip()[3:] for line in text.splitlines()
+                  if line.strip().startswith("->")]
+
+
+def test_an_ambiguous_match_names_what_would_single_it_out(registry):
+    """Issue #93: "N matches" is a prediction that find() grabs the wrong one,
+    so the reply says so and measures, per match, the narrowing that would
+    make it unique - identifier first, then name, then a container."""
+    _root, english_l, english_r, swap = _translate_window()
+    text, verdicts = _verdicts(registry, [english_l, swap, english_r])
+    assert text.startswith("3 matches - ambiguous")
+    assert verdicts == [
+        "unique within role='TabGroup', identifier='source', "
+        "with name='English'",
+        "unique with identifier='swap-languages'",
+        "unique within role='TabGroup', name='Target'"]
+
+
+def test_a_unique_name_is_offered_before_a_container(registry):
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = None
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_a_generated_identifier_is_not_offered(registry):
+    """An id the framework numbered (React's useId here) is unique today and
+    renumbered next render - the advice would break the action later."""
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = ":r1f:"
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_a_container_that_is_not_itself_unique_is_not_offered(registry):
+    """A scoped search is two finds; the container's must be unique too."""
+    root, english_l, english_r, _swap = _translate_window()
+    left, right = root.children
+    right.name, right.identifier = None, None
+    left.identifier = None
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts == ["nothing separates it but its position - no "
+                        "identifier, name or container is its alone"] * 2
+
+
+def test_a_narrowing_pattern_matches_only_its_own_text(registry):
+    """Names carrying fnmatch metacharacters are bracketed, so the offered
+    pattern is literal - "Save*" would also match "Save As"."""
+    from keyhac.core.uitree import match_pattern
+
+    root, english_l, english_r, _swap = _translate_window()
+    english_l.name = "Save*"
+    english_r.name = "Save As"
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts[0] == "unique with name='Save[*]'"
+    assert match_pattern("Save*", "Save[*]")
+    assert not match_pattern("Save As", "Save[*]")
+
+
+def test_a_cut_walk_qualifies_the_verdict(registry):
+    root, english_l, english_r, _swap = _translate_window()
+    root.children[1].truncated = True
+    text, _verdicts_ = _verdicts(registry, [english_l, english_r])
+    assert "within what was read" in text
 
 
 def test_an_action_reports_what_it_logged(writable):

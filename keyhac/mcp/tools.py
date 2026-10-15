@@ -170,6 +170,151 @@ def _ancestor_path(node) -> str:
     return "/".join(reversed(segments))
 
 
+#: Identifier shapes a framework generates rather than a person names: React's
+#: useId (":r1:", "«r1»"), AppKit's "_NS:123", Ember's "ember123", anything
+#: carrying a long run of digits, hex/UUID runs, and ids with no letters at
+#: all. They are unique today and renumbered on the next render, so offering
+#: one as the narrowing would be advice that breaks the action later. A
+#: heuristic, and deliberately one-sided: a real name it rejects only costs
+#: the suggestion falling through to name or scope.
+_GENERATED_ID = re.compile(
+    r"^(:r\w*:|«r\w*»|_NS:\d+|ember\d+|.*\d{4,}.*|[0-9a-f-]{8,}|[\W\d_]+)$",
+    re.IGNORECASE)
+
+#: Longest name offered verbatim as a narrowing; past it, a prefix pattern.
+NARROWING_NAME_CHARS = 60
+
+
+def _literal(text) -> str | None:
+    """`text` as a pattern matching only itself, or None if it cannot be one.
+
+    fnmatch metacharacters are bracketed; "|" is the alternation separator
+    and has no escape, and the matcher strips each branch, so text carrying
+    either cannot be written as an exact pattern.
+    """
+    text = str(text)
+    if not text or "|" in text or text != text.strip():
+        return None
+    return re.sub(r"([*?\[])", r"[\1]", text)
+
+
+def _name_pattern(name) -> str | None:
+    name = str(name)
+    if len(name) <= NARROWING_NAME_CHARS:
+        return _literal(name)
+    prefix = _literal(name[:NARROWING_NAME_CHARS].rstrip())
+    return prefix + "*" if prefix else None
+
+
+def _portable_role(role: str) -> str:
+    return role[2:] if role.startswith("AX") and len(role) > 2 else role
+
+
+def _selects(node, selector: dict) -> bool:
+    """Whether `node` matches `selector`, the way find_elements matches."""
+    for field_name, pattern in selector.items():
+        value = getattr(node, field_name)
+        if field_name == "role":
+            if not uitree.match_role(value, pattern):
+                return False
+        elif not uitree.match_pattern(value, pattern):
+            return False
+    return True
+
+
+def _container_selector(node) -> dict | None:
+    """Role plus the one fact that best names a container, as a selector."""
+    if not node.role:
+        return None
+    selector = {"role": _portable_role(node.role)}
+    if node.identifier and not _GENERATED_ID.match(str(node.identifier)):
+        pattern = _literal(node.identifier)
+        if pattern:
+            selector["identifier"] = pattern
+            return selector
+    if node.name:
+        pattern = _name_pattern(node.name)
+        if pattern:
+            selector["name"] = pattern
+    return selector
+
+
+def _keywords(selector: dict) -> str:
+    return ", ".join(f"{key}={value!r}" for key, value in selector.items())
+
+
+class _Uniqueness:
+    """Whether each match of a search is the only one, and if not, what
+    would make it so (issue #93).
+
+    Computed from the snapshot the search walked - the matches' `_parent`
+    chains lead back to its root - so the verdict is a measurement of the
+    tree that was actually read rather than guidance about which selectors
+    tend to be stable (the lesson of #58). Adding a criterion can only
+    shrink a match set, so a narrowing is checked against the other matches
+    alone; a container is checked twice, since a scoped search is two finds
+    and the first one has to be unique as well.
+    """
+
+    def __init__(self, matches: list):
+        self.matches = matches
+        self.match_ids = {id(match) for match in matches}
+        root = matches[0]
+        while getattr(root, "_parent", None) is not None:
+            root = root._parent
+        self.nodes = list(root.walk())
+        self.cut = any(node.truncated for node in self.nodes)
+        self._selected: dict = {}
+
+    def _only(self, selector: dict):
+        """The one node in the walk `selector` matches, or None."""
+        key = tuple(sorted(selector.items()))
+        if key not in self._selected:
+            hits = [n for n in self.nodes if _selects(n, selector)]
+            self._selected[key] = hits[0] if len(hits) == 1 else None
+        return self._selected[key]
+
+    def narrowing(self, match) -> str:
+        others = [m for m in self.matches if m is not match]
+
+        def separates(field_name, pattern):
+            return pattern is not None and not any(
+                uitree.match_pattern(getattr(other, field_name), pattern)
+                for other in others)
+
+        identifier = match.identifier
+        if identifier and not _GENERATED_ID.match(str(identifier)):
+            pattern = _literal(identifier)
+            if separates("identifier", pattern):
+                return f"unique with identifier={pattern!r}"
+        if match.name:
+            pattern = _name_pattern(match.name)
+            if separates("name", pattern):
+                return f"unique with name={pattern!r}"
+        # Nearest container first: the smallest scope is the one least
+        # likely to move. The walk's root is skipped - it is the window the
+        # search already ran in. Within a container the match's own name may
+        # still be needed, when a sibling in the same container matches too.
+        name = _name_pattern(match.name) if match.name else None
+        ancestor = getattr(match, "_parent", None)
+        while ancestor is not None and getattr(ancestor, "_parent", None) \
+                is not None:
+            selector = _container_selector(ancestor)
+            if selector and self._only(selector) is ancestor:
+                inside = [node for node in ancestor.walk()
+                          if id(node) in self.match_ids]
+                if len(inside) == 1:
+                    return f"unique within {_keywords(selector)}"
+                if name is not None and sum(
+                        uitree.match_pattern(node.name, name)
+                        for node in inside) == 1:
+                    return (f"unique within {_keywords(selector)}, "
+                            f"with name={name!r}")
+            ancestor = ancestor._parent
+        return ("nothing separates it but its position - no identifier, "
+                "name or container is its alone")
+
+
 def _running_action(name: str):
     """A running action filed under `name`, whoever started it.
 
@@ -289,7 +434,10 @@ class ToolRegistry:
                  "ancestor path - which is how to tell two same-role "
                  "containers apart. Use when a full tree is more than you "
                  "need, or to check that a selector you are about to write "
-                 "actually matches.",
+                 "actually matches. Says whether the match is unique; when "
+                 "it is not, find() would take the first, so each match "
+                 "comes with the identifier, name or container that would "
+                 "make it the only one.",
                  {"type": "object", "properties": {
                      **window_args,
                      "role": {**string, "description": "Role pattern. The AX "
@@ -666,15 +814,33 @@ class ToolRegistry:
                          f'role="{suggested}". On macOS, also raise max_depth '
                          f'before concluding the element is not there]')
             return text
-        lines = [f"{len(matches)} match(es):"]
+        # A count is not neutral (issue #93): a selector matching more than
+        # one element is a prediction that find() will grab whichever comes
+        # first at run time. So the verdict comes first, and each ambiguous
+        # match says what would single it out.
+        uniqueness = _Uniqueness(matches)
+        if len(matches) == 1:
+            lines = ["1 match - unique: find() with these criteria gets this "
+                     "element."]
+        else:
+            lines = [f"{len(matches)} matches - ambiguous: find() with these "
+                     f"criteria gets only the first in tree order. Under each, "
+                     f"what would make it the only match:"]
         for node in matches[:int(limit)]:
             line = f"  {node!r} value={node.value!r} rect={node.rect}"
             path = _ancestor_path(node)
             if path:
                 line += f" path={path}"
             lines.append(line)
+            if len(matches) > 1:
+                lines.append(f"    -> {uniqueness.narrowing(node)}")
         if len(matches) > int(limit):
             lines.append(f"  ... and {len(matches) - int(limit)} more")
+        if uniqueness.cut:
+            lines.append(
+                "\n[the walk was cut off by its bounds, so this is unique / "
+                "ambiguous within what was read: an element past the cut could "
+                "also match. Raise max_depth / max_nodes to be sure]")
         return "\n".join(lines)
 
     def read_text(self, app=None, title=None, **criteria) -> str:
