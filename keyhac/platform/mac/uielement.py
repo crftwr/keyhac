@@ -164,6 +164,20 @@ def focused_application(system_wide=None, timeout=None) -> tuple:
     return app, pid
 
 
+def keyhac_in_front() -> bool:
+    """Whether Keyhac itself is the front application - asked without AX.
+
+    Keyhac's own windows do not exist to Keyhac's APIs (issue #173), and the
+    reads that find "the focused thing" are served by the front application:
+    with Keyhac in front they would be AX into our own process, which
+    crashes off the main thread - and the APIs run on whichever thread calls
+    them. So they ask this first and answer None. NSRunningApplication's
+    properties are atomic, which makes the check safe from any thread.
+    """
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    return front is not None and int(front.processIdentifier()) == os.getpid()
+
+
 def focused_element(system_wide=None) -> "UIElement | None":
     """The element that holds the keyboard focus now, or None.
 
@@ -185,8 +199,10 @@ def focused_element(system_wide=None) -> "UIElement | None":
         choice `MacFocusProvider.get_focused_element` documents, and issue
         #44's lesson about handing back something that merely resembles it.
     """
-    app, _ = focused_application(system_wide)
-    if app is None:
+    if keyhac_in_front():
+        return None
+    app, pid = focused_application(system_wide)
+    if app is None or pid == os.getpid():
         return None
     element = _ax_get(app, "AXFocusedUIElement")
     return UIElement(element) if element is not None else None
@@ -262,6 +278,12 @@ class UIElement:
 
     def __init__(self, ref):
         self._ref = ref
+
+    def process_id(self) -> int | None:
+        """The process this element belongs to - a local read, asking the
+        application nothing, so it answers even when that application hangs.
+        `UI.node` uses it to keep Keyhac's own windows out of the API."""
+        return _pid_of(self._ref)
 
     def get_attribute_names(self) -> list[str]:
         err, names = AS.AXUIElementCopyAttributeNames(self._ref, None)
@@ -946,9 +968,37 @@ class UIElement:
         no selection.  Screen coordinates, top-left origin - the same
         convention as get_screen_frames() and a UINode's rect.
         """
+        # Answered by whichever application owns the point - so with one of
+        # Keyhac's own windows there (a balloon, the chooser) it would be AX
+        # into our own process (issue #173). Asked of the window server first.
+        if UIElement.keyhac_at_point(x, y):
+            return None
         err, element = AS.AXUIElementCopyElementAtPosition(
             AS.AXUIElementCreateSystemWide(), x, y, None)
         return UIElement(element) if err == 0 and element else None
+
+    @staticmethod
+    def keyhac_at_point(x: float, y: float) -> bool:
+        """Whether the front-most window at a screen point is Keyhac's own.
+
+        CoreGraphics' window list, front to back - the window server's
+        answer, asking no application anything, so it is safe from any
+        thread. A click's hit test asks this before anything else: a point
+        under one of our windows is covered, and our windows do not exist to
+        the element API (issue #173).
+        """
+        infos = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly
+            | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID) or []
+        for info in infos:
+            bounds = info.get("kCGWindowBounds")
+            if not bounds or not info.get("kCGWindowAlpha", 1):
+                continue
+            if (bounds["X"] <= x < bounds["X"] + bounds["Width"]
+                    and bounds["Y"] <= y < bounds["Y"] + bounds["Height"]):
+                return int(info.get("kCGWindowOwnerPID", 0)) == os.getpid()
+        return False
 
     @staticmethod
     def get_running_applications() -> list[tuple[str, int]]:

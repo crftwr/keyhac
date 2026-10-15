@@ -1,16 +1,18 @@
 """macOS window operations - Accessibility API + CoreGraphics.
 
 The macOS half of the portable Window / WindowProvider pair (see
-keyhac/platform/base.py).  Windows are AX elements; the geometry queries that
-a ThreadedAction worker may call use CoreGraphics instead, because AppKit and
-AX are main-thread only here (AX into our *own* process off the main thread
-crashes with SIGTRAP - the rule MoveWindow's thread contract came from).
+keyhac/platform/base.py).  Windows are AX elements, and every one this
+provider hands out belongs to another application: Keyhac's own windows do
+not exist here (issue #173).  That is what makes the whole provider usable
+from any thread - AX into our *own* process off the main thread crashes with
+SIGTRAP, AX into another application does not.
 
 STATUS: written to spec against the AX calls already proven in
 keyhac/platform/mac/uielement.py and the previous MoveWindow implementation;
 needs a live macOS pass (this session ran on Windows).
 """
 
+import os
 import time
 
 import ApplicationServices as AS
@@ -18,7 +20,7 @@ from AppKit import NSWorkspace, NSRunningApplication
 
 from keyhac.platform.base import Window, WindowProvider
 from keyhac.platform.mac.uielement import (
-    UIElement, app_name_of, focused_application)
+    UIElement, app_name_of, focused_application, keyhac_in_front)
 from keyhac.core import log
 
 logger = log.getLogger("MacWindow")
@@ -377,7 +379,7 @@ class MacWindowProvider(WindowProvider):
         self._system_wide = AS.AXUIElementCreateSystemWide()
         AS.AXUIElementSetMessagingTimeout(self._system_wide, AX_MESSAGING_TIMEOUT)
 
-    # -- discovery (UI thread only: AX) --------------------------------------
+    # -- discovery (AX, never into our own process - any thread) --------------
 
     def get_active_window(self) -> MacWindow | None:
         """The focused window of the application the keyboard is talking to.
@@ -390,9 +392,11 @@ class MacWindowProvider(WindowProvider):
         The two sources have not been caught disagreeing since, but one of
         them cannot disagree with itself.
         """
+        if keyhac_in_front():
+            return None
         app_element, pid = focused_application(self._system_wide,
                                                timeout=AX_MESSAGING_TIMEOUT)
-        if app_element is None:
+        if app_element is None or pid == os.getpid():
             return None
         element = UIElement(app_element).get_attribute_value("AXFocusedWindow")
         if element is None:
@@ -421,6 +425,11 @@ class MacWindowProvider(WindowProvider):
             if app.activationPolicy() != 0:  # NSApplicationActivationPolicyRegular
                 continue
             pid = int(app.processIdentifier())
+            if pid == os.getpid():
+                # Our own windows do not exist here (issue #173) - skipped
+                # before anything is asked, since asking would be AX into
+                # our own process.
+                continue
             app_element = AS.AXUIElementCreateApplication(pid)
             AS.AXUIElementSetMessagingTimeout(app_element, AX_MESSAGING_TIMEOUT)
             elements = UIElement(app_element).get_attribute_value("AXWindows") or []
@@ -438,7 +447,7 @@ class MacWindowProvider(WindowProvider):
     def window_frames(self):
         return UIElement.get_onscreen_window_frames()
 
-    # -- geometry (UI thread only: AppKit) ------------------------------------
+    # -- geometry (AppKit: the loop thread, via Keymap.screen_work_frames) ----
 
     def screen_work_frames(self):
         """Work area per screen (menu bar and Dock excluded), primary first.

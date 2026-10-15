@@ -234,6 +234,36 @@ def test_node_wraps_a_platform_element_shallowly(ui):
     assert api.node(node) is node       # idempotent
 
 
+def test_keyhacs_own_windows_are_not_visible(ui):
+    """Issue #173: reads run on the caller's thread, and AX into our own
+    process off the main thread crashes - so our own windows are refused at
+    the door every root comes through, and nothing is read from them."""
+    import os
+
+    api, element = ui
+    element.process_id = lambda: os.getpid()
+    element.describe = lambda: pytest.fail("nothing is read from our own")
+    assert api.node(element) is None
+    element.process_id = lambda: os.getpid() + 1
+    del element.describe
+    assert api.node(element).role == "Window"
+
+
+def test_element_reads_run_on_the_calling_thread(ui):
+    """Issue #173: a worker's find goes straight to the element; the loop
+    thread - where the keyboard hook runs - is not involved."""
+    api, element = ui
+    ran_on = []
+    original = element.children
+    element.children = lambda: (
+        ran_on.append(threading.current_thread().name) or original())
+    thread = threading.Thread(
+        target=lambda: api.node(element).find(role="Button"), name="worker")
+    thread.start()
+    thread.join(timeout=5)
+    assert ran_on and set(ran_on) == {"worker"}
+
+
 # -- node methods -----------------------------------------------------------
 
 def test_find_and_find_all(ui):

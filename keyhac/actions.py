@@ -1121,10 +1121,10 @@ class MoveWindow(ThreadedAction):
 
     def starting(self):
         """lazydocs: ignore"""
-        # ALL window reads happen here, on the main thread. On macOS these are
-        # AX calls, and AX into our OWN process off the main thread SIGTRAPs
-        # (they are in-process, not IPC) - and this action must also work on
-        # Keyhac's own windows. Window's thread contract says the same.
+        # The window the key was pressed on, captured as it was pressed. Here
+        # because that is the moment that names it, not for a thread rule:
+        # Window is usable from run() too (issue #173), and Keyhac's own
+        # windows are not offered, so with one in front this is None.
         keymap = Keymap.get_instance()
         self.wnd = keymap.get_active_window()
         self.frame = self.wnd.get_frame() if self.wnd is not None else None
@@ -1459,10 +1459,8 @@ class SnapWindow:
     ```
     """
 
-    # Deliberately a plain main-thread action, not a ThreadedAction: unlike
-    # MoveWindow there is no window-edge scan to push off-thread, just
-    # arithmetic - and both the Window accessors and the work-area query
-    # (AppKit-backed on macOS) are UI-thread only anyway.
+    # Deliberately a plain action, not a ThreadedAction: unlike MoveWindow
+    # there is no window-edge scan to push off-thread, just arithmetic.
 
     POSITIONS = ("left", "right", "top", "bottom", "full")
 
@@ -1585,9 +1583,9 @@ class ActivateApplication(ThreadedAction):
     #   grouped by application.  So windows[0] cannot answer "is this
     #   application in front"; get_active_window() can, and does.
     #
-    # Thread contract: every window read and the activation itself happen in
-    # starting(), on the event-loop thread - Window accessors are UI-thread
-    # only - which leaves run() with nothing but the launch.
+    # Every window read and the activation happen in starting(), so the key
+    # takes effect while it is still the key being pressed; run() is left
+    # with nothing but the launch.
 
     def __init__(self, app: str, launch: str = None,
                  cycle: bool = True, reverse: bool = False):

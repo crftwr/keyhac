@@ -4,6 +4,8 @@ Ported from keyhac-mac: KeyhacCore_UIElement.swift (focused element lookup)
 and keyhac_focus.py (focus path string construction).
 """
 
+import os
+
 import ApplicationServices as AS
 
 from keyhac.platform.base import FocusProvider, Focus
@@ -148,6 +150,12 @@ class MacFocusProvider(FocusProvider):
         # semantic element *is* the native handle. They diverge on Windows,
         # where native is an HWND wrapper and element is a UIA element.
         ui_element = UIElement(element)
+        # Keyhac in front keeps everything key dispatch matches on - the
+        # name, the title, the path - but hands out no element (issue #173):
+        # our own windows do not exist to the element API, and an action
+        # reading this one from its worker would be AX into our own process.
+        if pid == os.getpid():
+            ui_element = None
         focus = Focus(
             app_name=app_name,
             pid=pid,

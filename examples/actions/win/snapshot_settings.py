@@ -75,8 +75,7 @@ class SnapshotWinSettings(ThreadedAction):
     def run(self):
         window = self.ui.wait(self._settings_window, timeout=20,
                           message=f"the {self.title} dialog")
-        tabs = (
-            lambda: [node.name for node in self._tabs(window) if node.name])
+        tabs = [node.name for node in self._tabs(window) if node.name]
         if not tabs:
             raise RuntimeError("no tab strip in this dialog")
         originally = (next(

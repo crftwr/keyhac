@@ -14,11 +14,14 @@ inside an action.
         for row in window.find_all(role="AXRow|DataItem"):
             print([cell.all_text for cell in row.children])
 
-Everything here and on `UINode` reads the live UI and therefore dispatches to
-the event-loop thread on its own.  Nothing about that is visible from an action,
-which was the point: element access is main-thread-only, an action's pipeline
-runs on a worker, and the first six actions written against the function-style
-API wrapped nearly every line in a dispatch call.
+Everything here and on `UINode` reads the live UI on the calling thread - an
+action's worker, normally - and goes straight to the other application.  It
+used to dispatch to the event-loop thread, on a rule wider than its reason:
+only AX into *our own* process is main-thread-only, and Keyhac's own windows
+are now not visible to this API at all (issue #173).  Either way nothing about
+threads is visible from an action, which was the point of the first six
+actions written against the function-style API wrapping nearly every line in a
+dispatch call.
 
 CROSS-PLATFORM BY SHAPE, NOT BY DATA.  Every method here exists and behaves the
 same way on Windows and macOS.  What does *not* carry across is the content of
@@ -37,6 +40,7 @@ Windows does not, where it returns False and does nothing.
 from __future__ import annotations
 
 import contextlib
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -239,8 +243,10 @@ class Front(Condition):
     def check(self, ui):
         """lazydocs: ignore"""
         from keyhac.core.focus import match_window_fields
-        provider = getattr(ui._keymap, "window_provider", None)
-        active = provider.get_active_window() if provider is not None else None
+        # Through the keymap, which takes window lookups to the loop thread:
+        # a condition is evaluated on the caller's thread (issue #173), and a
+        # window lookup is the one part of it that is not an element read.
+        active = ui._keymap.get_active_window()
         if active is None:
             return None
         if not match_window_fields(active, app=self.app, title=self.title):
@@ -453,8 +459,7 @@ class UI:
             fails every attribute read is not.
         """
         provider = self._keymap._focus_provider
-        return self.on_main_thread(
-            lambda: self.node(provider.get_focused_element()))
+        return self.node(provider.get_focused_element())
 
     def window(self, app: str = None, title: str = None,
                class_name: str = None) -> UINode | None:
@@ -508,12 +513,26 @@ class UI:
 
         The escape hatch for an element obtained some other way - through
         `keymap.focus.element`, or a platform call this API does not cover.
+
+        Returns:
+            The node, or None - also for an element of Keyhac's own windows,
+            which this API does not see.
         """
         if element is None:
             return None
         if isinstance(element, UINode):
             return element
-        return self.on_main_thread(lambda: get_ui_tree(element, max_depth=0))
+        # Every node is another application's (issue #173). Reads run on the
+        # calling thread, and AX into our own process off the main thread
+        # crashes - so our own windows are refused here, at the one door
+        # every root comes through, rather than routed back to the loop on
+        # each read. What this gives up is driving Keyhac's own UI from an
+        # action; screen readers are unaffected, since this is only our API
+        # declining to look at itself.
+        process_id = getattr(element, "process_id", None)
+        if process_id is not None and process_id() == os.getpid():
+            return None
+        return get_ui_tree(element, max_depth=0)
 
     # -- waiting -------------------------------------------------------------
 
@@ -639,9 +658,11 @@ class UI:
         target.reread()
 
         def act():
-            # AX from a worker goes through the loop thread; the ladder reads
-            # geometry, hit-tests and injects a click, all of which are its.
-            return self.on_main_thread(lambda: act_on(target.element))
+            # On this thread (issue #173): the ladder reads geometry,
+            # hit-tests and injects a click, and none of that needs the loop
+            # - injection is thread-safe on both OSes, and the hit test never
+            # asks one of Keyhac's own windows anything.
+            return act_on(target.element)
 
         return self._until(act, until, timeout, retry_interval,
                            what=f"clicking {locator or target!r}",
@@ -659,7 +680,7 @@ class UI:
         than a wrapper: asking a window to activate is not the same as it
         being in front, and the difference is where a keystroke goes. It was
         also the last thing an action had to reach around this API to do -
-        `keymap.find_window(...).activate()` on the loop thread, by hand.
+        `keymap.find_window(...).activate()`, by hand.
 
         Args:
             app: Application pattern, as `window()` takes it.
@@ -678,10 +699,8 @@ class UI:
             WaitTimeout: It never came to the front.
         """
         def act():
-            def bring():
-                window = self._keymap.find_window(app=app, title=title)
-                return window.activate() if window is not None else False
-            return self.on_main_thread(bring)
+            window = self._keymap.find_window(app=app, title=title)
+            return window.activate() if window is not None else False
 
         return self._until(act, Front(app=app, title=title), timeout,
                            retry_interval, what=f"activating {app or title!r}")
@@ -782,7 +801,7 @@ class UI:
         notches = -abs(amount) if by == "down" else abs(amount)
 
         def act():
-            return self.on_main_thread(lambda: turn(view.element, notches))
+            return turn(view.element, notches)
 
         return self._until(act, until, timeout, retry_interval,
                            what=f"scrolling {by}", given=given) or view
@@ -828,7 +847,7 @@ class UI:
             raise ValueError("menu() needs a menu path")
         item = self.wait(lambda: self._menu_item(path), timeout=timeout,
                          message=f"the menu path {' > '.join(path)}")
-        return self._until(lambda: self.on_main_thread(lambda: act_on(item.element)),
+        return self._until(lambda: act_on(item.element),
                            until, timeout, retry_interval,
                            what=f"the menu command {' > '.join(path)}",
                            given=given) or item
@@ -856,7 +875,7 @@ class UI:
                     return None
             return node
 
-        return self.on_main_thread(find)
+        return find()
 
     def _target(self, locator, within, node, timeout):
         """The element a verb is about: the one in hand, or the one found.
@@ -1124,7 +1143,7 @@ class UI:
             setter(enable)
             return True
 
-        return bool(self.on_main_thread(apply))
+        return bool(apply())
 
     def _content_access_state(self, target: UINode | None = None) -> bool | None:
         """Whether an application needs the content switch, and has had it.
@@ -1154,16 +1173,18 @@ class UI:
                 return None
             return application.get_manual_accessibility()
 
-        return self.on_main_thread(read)
+        return read()
 
     # -- threads --------------------------------------------------------------
 
     def on_main_thread(self, func: Callable[[], Any]) -> Any:
         """Run `func` on the event-loop thread and return its result.
 
-        Every method here already does this, so an action needs it only to make
-        several reads atomic with respect to a UI that is moving underneath -
-        or to call a platform element method this API does not wrap.
+        Nothing in Keyhac's API needs it: element reads, the verbs and the
+        window calls run on the calling thread, an action's worker included,
+        and the few platform calls that cannot (the clipboard, the macOS work
+        area and input source) take themselves there. It remains for a
+        platform call of your own that has to run on the loop thread.
         """
         from keyhac.core.wait import evaluate_on_main_thread
         return evaluate_on_main_thread(func)

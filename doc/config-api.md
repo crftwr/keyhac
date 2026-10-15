@@ -90,7 +90,7 @@ call_on_main_thread(callback) → None
 
 Run a callback on the thread that owns the event loop. 
 
-Thread-safe, and the supported way for a worker thread to reach anything main-thread-only: UI, window moves, AX writes. ThreadedAction.run() is the usual caller; finished() already arrives here, so it needs this only for work it defers further. 
+Thread-safe. Keyhac's own API does not need it from a worker - elements, windows and the verbs run on the calling thread, and what cannot takes itself to the loop - so this is for a platform call of your own that must run on the event-loop thread, or for touching Keyhac's own UI. 
 
 
 
@@ -225,7 +225,7 @@ Matching is exactly define_keytable's: case-insensitive, fnmatch wildcards, "|" 
 
 **Note:**
 
-> UI-thread only. 
+> Safe from any thread. Keyhac's own windows never match. 
 
 ---
 
@@ -246,7 +246,7 @@ Get the frontmost window.
 
 **Note:**
 
-> UI-thread only, like everything on Window - never call it from a ThreadedAction.run(). 
+> Safe from any thread. Keyhac's own windows do not exist here: with one of them in front, this answers None. 
 
 ---
 
@@ -269,7 +269,7 @@ There is no window argument on purpose: macOS can only ever address the current 
 
 **Note:**
 
-> UI-thread only.  "Off" is the same answer for two different situations, on both OSes: an IME that is installed and closed, and no IME in the picture at all - a plain keyboard layout on Windows, a plain layout or an input method's Roman mode on macOS. 
+> Safe from any thread; it is taken to the event-loop thread, where macOS's input-source API has to run.  "Off" is the same answer for two different situations, on both OSes: an IME that is installed and closed, and no IME in the picture at all - a plain keyboard layout on Windows, a plain layout or an input method's Roman mode on macOS. 
 
 ---
 
@@ -331,7 +331,7 @@ List the visible top-level windows.
 
 **Note:**
 
-> UI-thread only. 
+> Safe from any thread. Keyhac's own windows are not listed. 
 
 ---
 
@@ -404,7 +404,7 @@ Get the work area of every screen.
 
 **Note:**
 
-> UI-thread only - the macOS implementation is an AppKit query. 
+> Safe from any thread. The macOS implementation is an AppKit query, so it is taken to the event-loop thread. 
 
 ---
 
@@ -431,7 +431,7 @@ Turn the IME on or off for whatever holds the input focus.
 
 **Note:**
 
-> UI-thread only, and it takes effect **at once** - unlike key output, which `InputContext` only queues for the application. Wrapping a `send_key` batch in "off ... back on" therefore does not work: the restore lands before the keys do and they are composed anyway.  Use `InputContext.send_text` for literal text, which the IME does not intercept. 
+> Safe from any thread, like get_ime_status().  It takes effect **at once** - unlike key output, which `InputContext` only queues for the application. Wrapping a `send_key` batch in "off ... back on" therefore does not work: the restore lands before the keys do and they are composed anyway.  Use `InputContext.send_text` for literal text, which the IME does not intercept. 
 >The two OSes differ in how far "on" reaches: macOS selects a Japanese input source even from a US layout, while Windows only opens an IME that the focused window is already typing under - asking for "on" while a plain layout like en-US is active returns False rather than switching the input language, which is the user's own Win+Space to give. 
 >Whether a change also affects other applications is the user's OS setting ("Let me use a different input method for each app window" on Windows, "Automatically switch to a document's input source" on macOS), not something Keyhac decides. 
 
@@ -454,7 +454,7 @@ Get the frames of all normal on-screen windows.
 
 **Note:**
 
-> Thread-safe - callable from a ThreadedAction.run().  It is the geometry query to use there, since Window itself is not. 
+> Thread-safe, and cheaper than list_windows(): no window is asked anything. 
 
 ---
 
@@ -772,6 +772,13 @@ Available as ``keymap.focus``, and passed to every ``custom_condition_func``.
  - <b>`class_name`</b>:  Win32 window class name (Windows only; None on macOS). 
  - <b>`path`</b>:  Focus path string - on macOS the AX focus path  ("/AXApplication(Xcode)/AXWindow(...)..."), on Windows a  synthesized "/{app_name}/{class_name}({title})" (provisional  format). 
  - <b>`element`</b>:  The focused *semantic* element - an AX UIElement (macOS) or a  UI Automation UIElement (Windows).  Same shape on both  (get_attribute_names(), get_attribute_value(), get_action_names(),  perform_action(), parent()), but each uses its own OS's  vocabulary of attribute names, "AXRole" versus "ControlType".  Portable code uses app_name / window_title / class_name and the  focus path instead. 
+
+ **May be None**, so check before using it: 
+
+
+        - while one of Keyhac's own windows is in front. Keyhac's own  windows do not exist to its API (issue #173), and the rest of  the Focus is still filled in for key tables to match on; 
+        - on Windows, when UI Automation could not say - unavailable, or  a call into an application that stopped answering timed out  (issue #171); 
+        - on macOS, only when not even the front application could be  named. An unreadable control falls back to its window, then to  the application element, so this is otherwise never None -  but it is not always the control itself. 
  - <b>`native`</b>:  The platform power object - a UIElement (macOS) or  NativeWindow, an HWND wrapper (Windows). 
 
 ---
@@ -802,7 +809,7 @@ The portable half of keyhac-win's pyauto.Window and keyhac-mac's AXWindow elemen
 
 **Note:**
 
-> Everything on this class is UI-thread only.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP.  Read that narrowly: it is *our own process*. AX into another application is a different thing entirely and is safe from a worker - it is how the candidate window walks a menu bar without holding the keyboard (doc/dev/design-notes.md, "Streaming a source").  A ThreadedAction therefore reads windows in starting(), computes in run(), and writes back in finished(); the thread-safe queries a run() may call are keymap.screen_frames() and keymap.window_frames(). 
+> Usable from any thread, because no Window is ever one of Keyhac's own (issue #173): the lookups skip our process before asking it anything.  That is the whole of the rule.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP - but AX into another application is safe from a worker, which is how the candidate window walks a menu bar (doc/dev/design-notes.md, "Streaming a source") and how an action's run() reads and moves windows.  On Windows, reading another process's window title does not message it. 
 
 
 ---
@@ -1046,7 +1053,7 @@ Base class for time-consuming key actions.
 
 Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
 
-Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The same goes for `Window` objects and the geometry and IME calls on `keymap`; the few platform calls that cannot run off the main thread take themselves there. Keyhac's own windows are not visible to any of it. 
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
@@ -1115,8 +1122,6 @@ finished(result: Any) → None
 
 Called on the event-loop thread once run() has returned. 
 
-Main-thread-only APIs are allowed here too. 
-
 
 
 **Args:**
@@ -1148,7 +1153,7 @@ starting() → None
 
 Called on the event-loop thread the moment the action triggers. 
 
-Main-thread-only APIs (UI, windows, AX) are allowed here; it runs under the engine lock, so keep it light. 
+It runs under the engine lock, inside the keyboard hook, so keep it light - capture what the key press names (`keymap.focus`, already read), log intent, and leave reading the screen to run().  A read here into an application that does not answer raises `Unresponsive`, and the action does not start. 
 
 ---
 

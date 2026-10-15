@@ -36,7 +36,9 @@ page with a search form, a 3-row result table and a modal):
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
 
@@ -64,6 +66,78 @@ class StaleElement(Exception):
     thing to say.
     """
 
+class Unresponsive(Exception):
+    """The application did not answer within its time limit.
+
+    Raised by any live read or act on another application's elements when
+    that application is busy or hung - it has stopped answering accessibility
+    requests, so the screen cannot be read right now.  A third answer beside
+    the two `StaleElement` separates: not *the screen moved*, not *the
+    selector is wrong*, but *nobody is answering*.
+
+    Raised rather than read as "no value", because it ends the read it
+    interrupts: a walk, a search or a text read stops at the first one
+    instead of paying the time limit again on every element it had left.
+
+    What to do with it:
+
+    - Inside a wait (`ui.wait`, `wait_for`, the `until=` checks) nothing:
+      waits treat it as "not yet" and ask again, so an application that
+      recovers is found, and a `WaitTimeout` that follows says how many times
+      it did not answer.
+    - Anywhere else in `run()`, let it end the action, or catch it to retry
+      later or report.  The traceback names it, which is the point.
+    - In `starting()` or a plain function bound to a key, it ends that
+      function and the key is still treated as handled.  Read the screen in
+      `run()` instead.
+    """
+
+
+class _KeyEventBudget(threading.local):
+    """At most one time limit spent per key event (issue #171).
+
+    A key event's whole handling - deciding the focus, then running a bound
+    function or an action's `starting()` - happens inside the keyboard hook,
+    which the OS drops when it overruns.  Each call into a hung application
+    costs its time limit, and `Unresponsive` ends only the read it
+    interrupts; two separate reads in one key event would still pay twice.
+    So the engine opens a budget around each key event, the platform spends
+    it on the first timeout, and every call after that in the same event
+    raises at once without asking anyone.
+    """
+
+    active = False
+    spent = False
+
+
+_key_event_budget = _KeyEventBudget()
+
+
+@contextlib.contextmanager
+def one_timeout_per_key_event():
+    """Open a key event's budget. lazydocs: ignore"""
+    previous = (_key_event_budget.active, _key_event_budget.spent)
+    _key_event_budget.active, _key_event_budget.spent = True, False
+    try:
+        yield
+    finally:
+        _key_event_budget.active, _key_event_budget.spent = previous
+
+
+def _refuse_if_budget_spent() -> None:
+    """Raise at once if this key event already paid a time limit."""
+    if _key_event_budget.active and _key_event_budget.spent:
+        raise Unresponsive(
+            "not asked: an application already failed to answer during this "
+            "key event, and a key event may wait for at most one")
+
+
+def _spend_budget() -> None:
+    """Record that this key event has paid its time limit."""
+    if _key_event_budget.active:
+        _key_event_budget.spent = True
+
+
 #: Depth bound.  Deep enough to reach table cells in web content (which sit at
 #: about 10) without following an Electron tree to its bottom.
 DEFAULT_MAX_DEPTH = 14
@@ -77,8 +151,8 @@ class UINode:
     """One element, projected onto the facts both platforms agree on.
 
     Every member is one of two kinds.  `find`, `find_all`, `reread`, the
-    waits and the text layer read the live UI each time they are called,
-    dispatching to the event-loop thread themselves; `text`, `all_text`,
+    waits and the text layer read the live UI each time they are called, on
+    the thread that calls them; `text`, `all_text`,
     `children`, `walk` and `dump` are free reads of this snapshot, showing
     the screen as it was when the node was read.
 
@@ -192,11 +266,14 @@ class UINode:
 
     # -- searching -----------------------------------------------------------
     #
-    # Every method below reads the live UI, so every one dispatches to the
-    # event-loop thread itself.  That is not a convenience: element access is
-    # main-thread-only, an action's pipeline runs on a worker, and making each
-    # call site remember that produced a wrapper around nearly every line of
-    # the first six actions written against this API.
+    # Every method below reads the live UI, on the calling thread (issue
+    # #173).  These used to dispatch to the event-loop thread, on a rule wider
+    # than the reason for it: AX into *our own* process off the main thread
+    # crashes, AX into another application does not (platform/base.py).
+    # Keyhac's own windows never become nodes - `UI.node` refuses them - so
+    # every node here is another application's, and a read from an action's
+    # worker goes straight there. A hung target then stalls that worker and
+    # nothing else, where it used to hold the thread the keyboard hook runs on.
 
     def find(self, max_depth: int = DEFAULT_MAX_DEPTH,
              max_nodes: int = DEFAULT_MAX_NODES, **criteria) -> "UINode | None":
@@ -226,9 +303,8 @@ class UINode:
                 `predicate`; patterns are case-insensitive fnmatch with "|"
                 alternation.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_element(
-            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
+        return find_element(self, max_depth=max_depth, max_nodes=max_nodes,
+                            **criteria)
 
     def find_all(self, max_depth: int = DEFAULT_MAX_DEPTH,
                  max_nodes: int = DEFAULT_MAX_NODES,
@@ -249,9 +325,8 @@ class UINode:
             max_nodes: Node budget for the underlying walk.
             **criteria: As `find`.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_elements(
-            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
+        return find_elements(self, max_depth=max_depth, max_nodes=max_nodes,
+                             **criteria)
 
     def reread(self, max_depth: int = DEFAULT_MAX_DEPTH,
                max_nodes: int = DEFAULT_MAX_NODES,
@@ -260,10 +335,8 @@ class UINode:
 
         A UINode is a snapshot: the screen moves on, and nothing here notices.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: get_ui_tree(
-            self, max_depth=max_depth, max_nodes=max_nodes, roles=roles,
-            prune=prune))
+        return get_ui_tree(self, max_depth=max_depth, max_nodes=max_nodes,
+                           roles=roles, prune=prune)
 
     def dump(self, max_value: int = 60) -> str:
         """This subtree as indented text - to read, and to hand to an AI agent.
@@ -323,11 +396,10 @@ class UINode:
         time.  This is what `focus()` checks, and the two are worth separating
         when an action wants to know where the focus *is* without moving it.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
         probe = getattr(self.element, "has_focus", None)
         if probe is None:
             return False
-        return bool(evaluate_on_main_thread(probe))
+        return bool(probe())
 
     def contains_focus(self) -> bool:
         """Whether the keyboard focus is on this element *or inside it*.
@@ -346,11 +418,10 @@ class UINode:
         Which of the two it is, the tree says; `UI.focused()` names the
         element that actually has the focus.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
         probe = getattr(self.element, "contains_focus", None)
         if probe is None:
             return False
-        return bool(evaluate_on_main_thread(probe))
+        return bool(probe())
 
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.
@@ -414,11 +485,10 @@ class UINode:
         wait_for_stable(self, quiet=quiet, timeout=timeout, **bounds)
 
     def _on_element(self, method: str):
-        from keyhac.core.wait import evaluate_on_main_thread
         call = getattr(self.element, method, None)
         if call is None:
             return None
-        return evaluate_on_main_thread(call)
+        return call()
 
 
     def walk(self) -> Iterator["UINode"]:

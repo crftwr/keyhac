@@ -57,6 +57,19 @@ class Focus:
             vocabulary of attribute names, "AXRole" versus "ControlType".
             Portable code uses app_name / window_title / class_name and the
             focus path instead.
+
+            **May be None**, so check before using it:
+
+            - while one of Keyhac's own windows is in front. Keyhac's own
+              windows do not exist to its API (issue #173), and the rest of
+              the Focus is still filled in for key tables to match on;
+            - on Windows, when UI Automation could not say - unavailable, or
+              a call into an application that stopped answering timed out
+              (issue #171);
+            - on macOS, only when not even the front application could be
+              named. An unreadable control falls back to its window, then to
+              the application element, so this is otherwise never None -
+              but it is not always the control itself.
         native: The platform power object - a UIElement (macOS) or
             NativeWindow, an HWND wrapper (Windows).
     """
@@ -358,16 +371,15 @@ class Window(ABC):
     hand these out; configurations never construct one.
 
     Note:
-        Everything on this class is UI-thread only.  On macOS these are
+        Usable from any thread, because no Window is ever one of Keyhac's
+        own (issue #173): the lookups skip our process before asking it
+        anything.  That is the whole of the rule.  On macOS these are
         Accessibility calls, and AX into our own process off the main thread
-        crashes with SIGTRAP.  Read that narrowly: it is *our own process*.
-        AX into another application is a different thing entirely and is safe
-        from a worker - it is how the candidate window walks a menu bar
-        without holding the keyboard (doc/dev/design-notes.md, "Streaming a
-        source").  A ThreadedAction therefore reads windows in
-        starting(), computes in run(), and writes back in finished(); the
-        thread-safe queries a run() may call are keymap.screen_frames() and
-        keymap.window_frames().
+        crashes with SIGTRAP - but AX into another application is safe from a
+        worker, which is how the candidate window walks a menu bar
+        (doc/dev/design-notes.md, "Streaming a source") and how an action's
+        run() reads and moves windows.  On Windows, reading another
+        process's window title does not message it.
     """
 
     @property
@@ -592,16 +604,15 @@ class Window(ABC):
 class WindowProvider(ABC):
     """Window discovery and screen geometry.
 
-    find_window/list_windows/get_active_window follow Window's UI-thread
-    contract; screen_frames/window_frames are deliberately thread-safe so that
-    geometry math can run in a ThreadedAction worker.
-
-    That split is not cosmetic on either OS. On macOS the safe pair uses
-    CoreGraphics rather than AppKit/AX. On Windows, reading a window's *title*
-    is a blocking SendMessage(WM_GETTEXT) to the owning thread, so anything
-    that touches titles - list_windows, find_window - can wedge against a UI
-    thread that is not pumping, while the pure-geometry queries never message
-    another thread at all.
+    Everything here is usable from any thread, and none of it ever returns
+    one of Keyhac's own windows (issue #173) - the two facts are one: the
+    lookups skip our own process before asking it anything, which is what
+    keeps them off the paths that only our own UI thread could serve (AX
+    into our own process on macOS, WM_GETTEXT to our own windows on
+    Windows).  screen_work_frames is the exception on macOS, where it is an
+    AppKit query; `Keymap.screen_work_frames` takes it to the loop thread.
+    screen_frames/window_frames ask no application anything at all, which
+    makes them the cheap choice for geometry.
     """
 
     @abstractmethod
@@ -649,8 +660,9 @@ class WindowProvider(ABC):
     def screen_work_frames(self) -> list[tuple[float, float, float, float]]:
         """Like screen_frames(), but the *work area*: the part of each screen
         not covered by the menu bar / Dock (macOS) or taskbar (Windows).
-        Same order as screen_frames(). UI-thread only in portable code: the
-        macOS implementation is an AppKit query (thread-safe on Windows)."""
+        Same order as screen_frames(). An AppKit query on macOS, so
+        `Keymap.screen_work_frames` takes it to the loop thread; thread-safe
+        on Windows."""
 
     @abstractmethod
     def window_frames(self) -> list[tuple[float, float, float, float]]:

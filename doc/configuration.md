@@ -623,11 +623,18 @@ case-insensitive, `.exe` optional. Screen geometry lives on `keymap`:
 menu bar / Dock / taskbar) and `window_frames()` (all normal on-screen windows) —
 each frame is an `(x, y, w, h)` tuple in a shared coordinate space.
 
-**Thread contract**: `Window` objects, `focus.element` and `screen_work_frames()`
-are UI-thread only — never touch them from a `ThreadedAction.run()`. The
-thread-safe geometry pair is `screen_frames()` / `window_frames()`. A
-`ThreadedAction` reads windows in `starting()`, computes in `run()`, and writes
-back in `finished()`.
+**Thread contract**: there is none to follow. `Window` objects, elements,
+`keymap.ui` and the geometry queries can all be used from a
+`ThreadedAction.run()`. They talk to the other application directly, so a
+slow or hung application stalls that action and not the keyboard. The few
+platform calls that cannot run off the main thread take themselves there:
+the clipboard, `screen_work_frames()` and the IME calls.
+
+What makes that possible is one rule: **Keyhac's own windows do not exist to
+Keyhac's APIs**. Window lookups skip them, the element API never hands one
+out, and `focus.element` is `None` while a Keyhac window is in front. (Key
+tables still match there, on `app=` and the rest.) Screen readers are not
+affected.
 
 ## The Focus object
 
@@ -708,9 +715,9 @@ class Fetch(ThreadedAction):
 kt["Fn-G"] = Fetch()
 ```
 
-`starting()` and `finished()` run on the main thread (UI and window access allowed);
-`run()` runs on a worker (input contexts allowed, windows/elements not — see the
-thread contract above).
+`starting()` and `finished()` run on the main thread and should stay light;
+`run()` runs on a worker, and everything an action needs is allowed there (see
+the thread contract above).
 
 The pool is a **single worker shared by every threaded action**, so a `run()` that
 sleeps or loops delays every other one until it returns. Keep long waits short, and
@@ -791,9 +798,9 @@ focus path — the two things you need when writing new bindings.
 | `keymap.replace_key(src, dst)` / `define_modifier(key, mod)` | pre-engine remap / user modifiers |
 | `keymap.get_input_context()` | virtual input batch; thread-safe |
 | `keymap.focus` | current `Focus` snapshot |
-| `keymap.get_active_window()` / `list_windows()` / `find_window(...)` | portable `Window` objects; UI thread only |
-| `keymap.screen_frames()` / `screen_work_frames()` / `window_frames()` | screen/window geometry; `screen_work_frames` UI thread only |
-| `keymap.get_ime_status()` / `set_ime_status(on)` | IME on/off for the input focus; UI thread only |
+| `keymap.get_active_window()` / `list_windows()` / `find_window(...)` | portable `Window` objects (Keyhac's own windows excluded) |
+| `keymap.screen_frames()` / `screen_work_frames()` / `window_frames()` | screen/window geometry |
+| `keymap.get_ime_status()` / `set_ime_status(on)` | IME on/off for the input focus |
 | `keymap.clipboard_history` | settings + `items()` / `get_current()` / `set_current()` |
 | `keymap.editor` / `edit_config()` / `reload_config()` | config lifecycle (tray menu uses these) |
 | `keymap.replay_buffer` | macro buffer behind the record actions |

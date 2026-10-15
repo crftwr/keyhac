@@ -239,13 +239,16 @@ def test_refuses_to_block_the_loop_thread(engine, monkeypatch):
         wait_for(lambda: False, timeout=0.2)
 
 
-def test_worker_thread_dispatches_to_the_loop(engine):
-    """The normal path: run() waits, the condition runs on the loop thread."""
+def test_a_worker_evaluates_its_condition_on_its_own_thread(engine):
+    """Issue #173: run() waits, and the condition runs right there on the
+    worker - not on the loop thread, where an element read into a hung
+    application held the keyboard hook for as long as it took."""
     fixture = engine(lambda keymap: None)
     ran_on = []
+    dispatched = []
 
     def dispatcher(callback):
-        # Stand in for the event loop: run it on a dedicated "loop" thread.
+        dispatched.append(callback)
         thread = threading.Thread(target=callback, name="loop")
         thread.start()
         thread.join()
@@ -258,11 +261,60 @@ def test_worker_thread_dispatches_to_the_loop(engine):
             lambda: ran_on.append(threading.current_thread().name) or "done",
             timeout=2)
 
-    thread = threading.Thread(target=worker)
+    thread = threading.Thread(target=worker, name="worker")
     thread.start()
     thread.join(timeout=5)
     assert result["value"] == "done"
-    assert ran_on == ["loop"]
+    assert ran_on == ["worker"] and dispatched == []
+
+
+def test_only_the_loop_bound_platform_calls_go_to_the_loop(engine):
+    """Issue #173: window lookups run on the caller's thread like everything
+    else - Keyhac's own windows are not in them, so nothing they ask is our
+    own process. What still goes to the loop is what cannot run anywhere
+    else: the macOS work area (NSScreen) and input source (TIS), which take
+    themselves there so that an action never has to know its thread."""
+    fixture = engine(lambda keymap: None)
+    ran_on = {}
+
+    def record(name, value=None):
+        def call(*args):
+            ran_on[name] = threading.current_thread().name
+            return value
+        return call
+
+    class Windows:
+        get_active_window = record("get_active_window")
+        list_windows = record("list_windows", [])
+        screen_work_frames = record("screen_work_frames", [])
+
+    class Ime:
+        get_status = record("get_status")
+        set_status = record("set_status", True)
+
+    def dispatcher(callback):
+        thread = threading.Thread(target=callback, name="loop")
+        thread.start()
+        thread.join()
+
+    keymap = fixture.keymap
+    keymap.set_main_thread_dispatcher(dispatcher)
+    keymap.window_provider = Windows()
+    keymap.ime_provider = Ime()
+
+    def worker():
+        keymap.get_active_window()
+        keymap.list_windows()
+        keymap.screen_work_frames()
+        keymap.get_ime_status()
+        keymap.set_ime_status(True)
+
+    thread = threading.Thread(target=worker, name="worker")
+    thread.start()
+    thread.join(timeout=5)
+    assert ran_on == {"get_active_window": "worker", "list_windows": "worker",
+                      "screen_work_frames": "loop", "get_status": "loop",
+                      "set_status": "loop"}
 
 
 def test_element_waits_take_a_caller_supplied_message():
@@ -306,3 +358,31 @@ def test_reads_nest_inside_a_condition_already_on_the_loop(engine):
     thread.start()
     thread.join(timeout=5)
     assert seen == ["loop"]
+
+
+def test_a_wait_treats_an_unanswering_application_as_not_yet():
+    """Issue #171: Unresponsive inside a condition is "not yet", not a
+    failure - an application busy loading is exactly when an action waits on
+    it, and the next poll may find it answering."""
+    from keyhac.core.uitree import Unresponsive
+
+    answers = iter([Unresponsive("busy"), Unresponsive("busy"), "found"])
+
+    def condition():
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    assert wait_for(condition, timeout=2, interval=0.01) == "found"
+
+
+def test_a_wait_that_runs_out_says_the_application_never_answered():
+    from keyhac.core.uitree import Unresponsive
+
+    def condition():
+        raise Unresponsive("busy")
+
+    with pytest.raises(WaitTimeout, match="did not answer .* time"):
+        wait_for(condition, timeout=0.1, interval=0.02,
+                 message="the results table")

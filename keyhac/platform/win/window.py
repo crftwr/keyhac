@@ -379,7 +379,9 @@ class WinWindowProvider(WindowProvider):
         # Normalize to the top-level frame: the foreground window is already
         # top-level, but a caller may pass a child through fromHWND-style code.
         root = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
-        return WinWindow(root)
+        window = WinWindow(root)
+        # Keyhac's own windows do not exist to Keyhac's APIs (issue #173).
+        return None if window.pid == os.getpid() else window
 
     def list_windows(self) -> list[WinWindow]:
         """Visible top-level windows that have a title, in Z-order (front
@@ -394,7 +396,14 @@ class WinWindowProvider(WindowProvider):
         windows = []
         shell = user32.GetShellWindow()
 
+        own = os.getpid()
+
         def _callback(hwnd, _lparam):
+            # Our own windows first, and skipped (issue #173): they do not
+            # exist to Keyhac's APIs, and reading one's title from a worker
+            # would send our own UI thread a message.
+            if WinWindow(hwnd).pid == own:
+                return True
             if (user32.IsWindowVisible(hwnd)
                     and user32.GetWindowTextLengthW(hwnd) > 0
                     and hwnd != shell

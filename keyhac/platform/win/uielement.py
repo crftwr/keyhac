@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
-import functools
+import os
 import sys
 import threading
 from typing import Any
 
 from keyhac.core import log
-from keyhac.core.uitree import _first_name
+from keyhac.core.uitree import (
+    Unresponsive, _first_name, _refuse_if_budget_spent, _spend_budget)
 
 logger = log.getLogger("WinUIElement")
 
@@ -87,6 +88,10 @@ if sys.platform == "win32":
     ole32.CoCreateInstance.restype = ctypes.c_long
     ole32.CoUninitialize.argtypes = []
     ole32.CoUninitialize.restype = None
+    # Windows 8+. Absent before it, where get_automation() goes without.
+    if hasattr(ole32, "CoIncrementMTAUsage"):
+        ole32.CoIncrementMTAUsage.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        ole32.CoIncrementMTAUsage.restype = ctypes.c_long
     oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
     oleaut32.SysFreeString.restype = None
     oleaut32.SysAllocString.argtypes = [ctypes.c_wchar_p]
@@ -114,6 +119,11 @@ if sys.platform == "win32":
         wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
         wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.WPARAM)]
     user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+    user32.WindowFromPoint.argtypes = [wintypes.POINT]
+    user32.WindowFromPoint.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.GetWindowLongW.restype = wintypes.LONG
     GWL_STYLE = -16
@@ -314,60 +324,36 @@ CONTROL_TYPE_NAMES = {
 }
 
 
-#: Calls on this thread that UIA_TRANSACTION/CONNECTION_TIMEOUT_MS cut short.
-#: Per thread, because a chooser walk on a worker timing out says nothing
-#: about what the main thread is reading. Read through `timeout_count()`.
-_timeouts = threading.local()
-
-
-def timeout_count() -> int:
-    """How many UI Automation calls on this thread have timed out so far.
-
-    Compared before and after a compound read, it says whether any call
-    inside it was cut short - the cue to stop asking (issue #171): the
-    timeout bounds one call, so a read of N calls into a hung application
-    costs N of them unless the caller gives up after the first.
-    """
-    return getattr(_timeouts, "count", 0)
-
-
 def _com_call(ptr, index, restype, argtypes, *args):
-    """Invoke vtable slot `index` on the COM interface pointer `ptr`."""
-    vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
-    prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
-    result = prototype(vtable[index])(ptr, *args)
+    """Invoke vtable slot `index` on the COM interface pointer `ptr`.
+
+    A call UIA_TRANSACTION/CONNECTION_TIMEOUT_MS cut short raises
+    `Unresponsive` (issue #171): it ends the read it interrupts, so a walk or
+    a text read into a hung application pays the limit once rather than once
+    per element it had left. Inside a key event, the first one also spends
+    that event's budget, and every call after it raises without asking.
+    """
+    _refuse_if_budget_spent()
+    result = _raw_com_call(ptr, index, restype, argtypes, *args)
     if isinstance(result, int) and result & 0xFFFFFFFF == UIA_E_TIMEOUT:
-        _timeouts.count = timeout_count() + 1
+        _spend_budget()
+        raise Unresponsive(
+            f"the application did not answer UI Automation within "
+            f"{UIA_TRANSACTION_TIMEOUT_MS} ms - it is busy or hung")
     return result
 
 
-def _gives_up_after_timeout(empty):
-    """Make an element read answer `empty` at once once a call on that
-    element has timed out (issue #171).
-
-    A hung application's element costs a full timeout on every read, and a
-    caller reading several attributes of it - a focus walk, an action
-    checking role then name then value - paid each one. One timeout is
-    enough to know; the element is a snapshot handle and is not revived (a
-    fresh one, from a fresh find, asks again).
-    """
-    def decorate(method):
-        @functools.wraps(method)
-        def wrapper(self, *args, **kwargs):
-            if self._timed_out:
-                return empty()
-            before = timeout_count()
-            result = method(self, *args, **kwargs)
-            if timeout_count() != before:
-                self._timed_out = True
-            return result
-        return wrapper
-    return decorate
+def _raw_com_call(ptr, index, restype, argtypes, *args):
+    """The call itself - for IUnknown::Release, which must run whatever the
+    key event's budget says, since it only drops a reference we hold."""
+    vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+    prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
+    return prototype(vtable[index])(ptr, *args)
 
 
 def _release(ptr) -> None:
     if ptr:
-        _com_call(ptr, 2, ctypes.c_ulong, [])  # IUnknown::Release
+        _raw_com_call(ptr, 2, ctypes.c_ulong, [])  # IUnknown::Release
 
 
 def _same_element(first, second):
@@ -557,11 +543,17 @@ def get_automation():
         _automation_failed = True
         return None
     try:
-        # UIA needs COM on this thread. S_FALSE means already initialized;
-        # RPC_E_CHANGED_MODE means someone chose MTA, which UIA also accepts.
-        hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-        if hr not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
-            raise OSError(f"CoInitializeEx failed: 0x{hr & 0xFFFFFFFF:08x}")
+        _keep_the_mta()
+        # The main thread is the loop's STA, as it always was. Any other
+        # thread is left alone: it is in the implicit MTA _keep_the_mta()
+        # keeps alive, and initialising it as an STA here would bind the
+        # shared client to a thread with no pump that may exit.
+        if threading.current_thread() is threading.main_thread():
+            # S_FALSE means already initialized; RPC_E_CHANGED_MODE means
+            # someone chose MTA, which UIA also accepts.
+            hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            if hr not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
+                raise OSError(f"CoInitializeEx failed: 0x{hr & 0xFFFFFFFF:08x}")
         ptr = _create_bounded_automation()
         if ptr is None:
             ptr = ctypes.c_void_p()
@@ -579,6 +571,35 @@ def get_automation():
                        f"to the window level and element access is disabled.")
         return None
     return _automation
+
+
+#: The cookie CoIncrementMTAUsage hands back; held for the process's life.
+_mta_cookie = None
+
+
+def _keep_the_mta() -> None:
+    """Keep the process-wide MTA alive, once (issue #173, PR #174).
+
+    Every thread that reads elements now does it on its own - an action's
+    run(), the MCP server's, start_action's - and none of them initialises
+    COM. A thread that has not is in the *implicit* MTA, the apartment the
+    chooser's walks were measured in (#126), but only while some MTA exists;
+    the Windows pass on #174 found these threads reporting
+    CO_E_NOTINITIALIZED, no apartment at all. CoIncrementMTAUsage is the API
+    for exactly that: it keeps the MTA alive without a thread of its own, so
+    every uninitialised thread lands in it rather than each kind of worker
+    being wrapped in com_worker_thread().
+    """
+    global _mta_cookie
+    if _mta_cookie is not None or not hasattr(ole32, "CoIncrementMTAUsage"):
+        return
+    cookie = ctypes.c_void_p()
+    hr = ole32.CoIncrementMTAUsage(ctypes.byref(cookie))
+    if hr == S_OK:
+        _mta_cookie = cookie
+    else:
+        logger.warning(f"CoIncrementMTAUsage failed: 0x{hr & 0xFFFFFFFF:08x}; "
+                       f"worker threads may have no COM apartment.")
 
 
 def _create_bounded_automation():
@@ -693,10 +714,10 @@ class UIElement:
         "SelectedText": _PatternId.Text,
     }
 
-    #: Set once a call on this element has timed out; see
-    #: _gives_up_after_timeout. A class default, so an element built without
-    #: __init__ (the tests' detached ones) has it too.
-    _timed_out = False
+    def process_id(self) -> int | None:
+        """The process this element belongs to. `UI.node` uses it to keep
+        Keyhac's own windows out of the element API (issue #173)."""
+        return self.get_attribute_value("ProcessId")
 
     def __init__(self, ptr):
         self._ptr = ptr
@@ -737,7 +758,6 @@ class UIElement:
             return None
         return out
 
-    @_gives_up_after_timeout(lambda: None)
     def get_attribute_value(self, name: str) -> Any:
         if not self._ptr:
             return None
@@ -853,7 +873,6 @@ class UIElement:
 
     # -- tree ---------------------------------------------------------------
 
-    @_gives_up_after_timeout(lambda: None)
     def parent(self) -> "UIElement | None":
         walker = _control_view_walker()
         if walker is None or not self._ptr:
@@ -862,7 +881,6 @@ class UIElement:
                            ctypes.c_void_p(self._ptr.value))
         return UIElement(ptr) if ptr else None
 
-    @_gives_up_after_timeout(list)
     def children(self) -> list["UIElement"]:
         """The control-view child elements.
 
@@ -1063,7 +1081,6 @@ class UIElement:
         """The selected text inside this element, or None."""
         return self.get_attribute_value("SelectedText")
 
-    @_gives_up_after_timeout(lambda: None)
     def get_text(self) -> str | None:
         """This element's whole text content.
 
@@ -1078,15 +1095,12 @@ class UIElement:
         # Value-first returned the short one as if it were whole. An empty
         # document range still falls through to Value, for providers that
         # implement the pattern and leave it blank.
-        before = timeout_count()
+        # A Text pattern call cut short raises out of here, so Value is not
+        # asked as well: one time limit, not two (508 ms measured on PR #172
+        # when both were).
         text = self._document_text()
         if text:
             return text
-        if timeout_count() != before:
-            # The Text pattern's call was cut short, so Value would be too:
-            # one timeout, not two (508 ms measured on PR #172 before this).
-            self._timed_out = True
-            return None
         value = self.get_attribute_value("Value")
         if isinstance(value, str) and len(value) >= MSAA_VALUE_CUT:
             # A native EDIT has no Text pattern, and its Value comes through
@@ -1487,6 +1501,9 @@ class UIElement:
         ElementFromPoint's slot (7) comes from the same header ordering that
         ElementFromHandle (6) and GetFocusedElement (8), both verified, sit in.
         """
+        # Keyhac's own windows do not exist to the element API (issue #173).
+        if UIElement.keyhac_at_point(x, y):
+            return None
         automation = get_automation()
         if automation is None:
             return None
@@ -1497,6 +1514,21 @@ class UIElement:
         if hr != S_OK or not out.value:
             return None
         return UIElement(out)
+
+    @staticmethod
+    def keyhac_at_point(x: float, y: float) -> bool:
+        """Whether the window at a screen point is one of Keyhac's own.
+
+        WindowFromPoint and GetWindowThreadProcessId, which message no
+        window - safe from any thread. A click's hit test asks this first: a
+        point under one of our windows is covered (issue #173).
+        """
+        hwnd = user32.WindowFromPoint(wintypes.POINT(int(x), int(y)))
+        if not hwnd:
+            return False
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value == os.getpid()
 
     @staticmethod
     def from_hwnd(hwnd) -> "UIElement | None":

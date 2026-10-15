@@ -278,7 +278,7 @@ exists because the reason is otherwise unreachable.
 
 ## Structure
 
-Waiting belongs on a worker; reading elements belongs on the loop thread. That
+The pipeline - reading elements, acting, waiting - belongs on a worker. That
 is `ThreadedAction`, and it is not optional - a key press must return control
 immediately:
 
@@ -307,9 +307,20 @@ class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
 `finished()` can tell a run that stopped early from one that reached the end.
 
-`self.ui` and every node method dispatch to the loop thread themselves, so an
-action's body has no thread ceremony in it. Calling a *wait* on the loop
-thread raises rather than freezing the keyboard.
+`self.ui` and every node method run on the worker that calls them, reading the
+other application directly, so an action's body has no thread ceremony in it
+and a hung application stalls the action rather than the keyboard. Keyhac's
+own windows are not visible to this API. Calling a *wait* on the loop thread
+raises rather than freezing the keyboard.
+
+**Read the screen in `run()`, not in `starting()`.** `starting()` runs inside
+the keyboard hook: use what the key press already named (`keymap.focus`) and
+nothing that has to ask an application.
+
+**`Unresponsive` means the application did not answer**, which is neither
+"not found" nor `StaleElement`. Waits treat it as "not yet" and ask again, and
+a `WaitTimeout` that follows says the application never answered. Anywhere
+else it ends the read; let it end the action, or catch it to retry later.
 
 ## Failure, progress, resume
 

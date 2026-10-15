@@ -3,8 +3,8 @@
 The surface an action uses to drive another application: finding windows,
 searching element trees, waiting for the screen to change, filling fields.
 Reached through `keymap.ui` (or `self.ui` inside a `ThreadedAction`) and the
-methods on the nodes it hands back — the three exception names below are the
-only ones a config imports. The values the verbs take (`Locator`, `Appears`,
+methods on the nodes it hands back — the exception names below are the only
+ones a config imports. The values the verbs take (`Locator`, `Appears`,
 `Front`, `Gone`, `Reads`, `Stable`) are reached through `ui` as well:
 `ui.Locator(...)`, `ui.Appears(...)`.
 
@@ -20,7 +20,8 @@ skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
 > raised when a node you are still
 > holding refers to something that no longer exists — which is the signal to
 > re-find it, as distinct from `FillFailed`, which means the selector was
-> wrong. Address elements by `identifier` where there is one, then by role plus
+> wrong, and from `Unresponsive`, which means the application did not answer
+> in time. Address elements by `identifier` where there is one, then by role plus
 > name or text.
 
 **Cross-platform by shape, not by data.** Every method here exists and behaves
@@ -32,7 +33,7 @@ screen that was inspected first, so it is not portable — the framework is.
 `UI.enable_content_access()` is the one deliberately one-sided call, exposed so
 an action can make it unconditionally.
 
-**Contents:** [ThreadedAction](#class-threadedaction) · [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement)
+**Contents:** [ThreadedAction](#class-threadedaction) · [UI](#class-ui) · [UINode](#class-uinode) · [Locator](#class-locator) · [Appears](#class-appears) · [Front](#class-front) · [Gone](#class-gone) · [Reads](#class-reads) · [Stable](#class-stable) · [WaitTimeout](#class-waittimeout) · [FillFailed](#class-fillfailed) · [ActionCancelled](#class-actioncancelled) · [StaleElement](#class-staleelement) · [Unresponsive](#class-unresponsive)
 
 
 ## <kbd>class</kbd> `ThreadedAction`
@@ -40,7 +41,7 @@ Base class for time-consuming key actions.
 
 Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
 
-Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The same goes for `Window` objects and the geometry and IME calls on `keymap`; the few platform calls that cannot run off the main thread take themselves there. Keyhac's own windows are not visible to any of it. 
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
@@ -109,8 +110,6 @@ finished(result: Any) → None
 
 Called on the event-loop thread once run() has returned. 
 
-Main-thread-only APIs are allowed here too. 
-
 
 
 **Args:**
@@ -142,7 +141,7 @@ starting() → None
 
 Called on the event-loop thread the moment the action triggers. 
 
-Main-thread-only APIs (UI, windows, AX) are allowed here; it runs under the engine lock, so keep it light. 
+It runs under the engine lock, inside the keyboard hook, so keep it light - capture what the key press names (`keymap.focus`, already read), log intent, and leave reading the screen to run().  A read here into an application that does not answer raises `Unresponsive`, and the action does not start. 
 
 ---
 
@@ -172,7 +171,7 @@ Bring a window to the front, and wait until it really is.
 ui.activate(app="Google Chrome")
 ``` 
 
-An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()` on the loop thread, by hand. 
+An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()`, by hand. 
 
 
 
@@ -451,6 +450,11 @@ Wrap a platform element as a node, reading nothing below it.
 
 The escape hatch for an element obtained some other way - through `keymap.focus.element`, or a platform call this API does not cover. 
 
+
+
+**Returns:**
+  The node, or None - also for an element of Keyhac's own windows,  which this API does not see. 
+
 ---
 
 ### <kbd>method</kbd> `UI.on_main_thread`
@@ -461,7 +465,7 @@ on_main_thread(func: 'Callable[[], Any]') → Any
 
 Run `func` on the event-loop thread and return its result. 
 
-Every method here already does this, so an action needs it only to make several reads atomic with respect to a UI that is moving underneath - or to call a platform element method this API does not wrap. 
+Nothing in Keyhac's API needs it: element reads, the verbs and the window calls run on the calling thread, an action's worker included, and the few platform calls that cannot (the clipboard, the macOS work area and input source) take themselves there. It remains for a platform call of your own that has to run on the loop thread. 
 
 ---
 
@@ -648,7 +652,7 @@ For the cases where "the window" is ambiguous - a browser with several windows o
 ## <kbd>class</kbd> `UINode`
 One element, projected onto the facts both platforms agree on. 
 
-Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and the text layer read the live UI each time they are called, dispatching to the event-loop thread themselves; `text`, `all_text`, `children`, `walk` and `dump` are free reads of this snapshot, showing the screen as it was when the node was read. 
+Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and the text layer read the live UI each time they are called, on the thread that calls them; `text`, `all_text`, `children`, `walk` and `dump` are free reads of this snapshot, showing the screen as it was when the node was read. 
 
 
 
@@ -1154,6 +1158,23 @@ So the node has to say when it has gone stale, and say it in a way an action can
 - `FillFailed` / an empty search - *the selector is wrong*. The action was  written against a screen that is not this one, and running it again will  fail the same way. 
 
 Before this existed both arrived as "element supports no press action", because a dead element reports no actions - true, and the least useful true thing to say. 
+
+---
+
+
+## <kbd>class</kbd> `Unresponsive`
+The application did not answer within its time limit. 
+
+Raised by any live read or act on another application's elements when that application is busy or hung - it has stopped answering accessibility requests, so the screen cannot be read right now.  A third answer beside the two `StaleElement` separates: not *the screen moved*, not *the selector is wrong*, but *nobody is answering*. 
+
+Raised rather than read as "no value", because it ends the read it interrupts: a walk, a search or a text read stops at the first one instead of paying the time limit again on every element it had left. 
+
+What to do with it: 
+
+
+- Inside a wait (`ui.wait`, `wait_for`, the `until=` checks) nothing:  waits treat it as "not yet" and ask again, so an application that  recovers is found, and a `WaitTimeout` that follows says how many times  it did not answer. 
+- Anywhere else in `run()`, let it end the action, or catch it to retry  later or report.  The traceback names it, which is the point. 
+- In `starting()` or a plain function bound to a key, it ends that  function and the key is still treated as handled.  Read the screen in  `run()` instead. 
 
 ---
 
