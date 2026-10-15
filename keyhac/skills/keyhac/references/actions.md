@@ -45,6 +45,14 @@ like an application that exposes nothing, and sends you to the content-access
 quirk for a problem you do not have. Raise the budget (`max_nodes=2000` covers
 a page) and look again before concluding anything about the application.
 
+**If raising the budget does not fill it in, search instead of dumping.** A
+browser's web view can come back as a childless leaf that is not marked
+truncated, while the document is there to be found: `find_elements` with
+`role="WebArea"` (or the table's `identifier`) reaches it, and
+`describe_screen(within={"role": "WebArea"})` then reads just the document,
+where the whole budget goes to the page. In code the same move is
+`window.find(role="WebArea").reread()`.
+
 If the state you need does not exist yet - a modal, a later wizard step - ask
 the user to open it and look again. That costs one message and records nothing.
 
@@ -175,13 +183,22 @@ raises `NameError` the moment the module is imported.
 file, and `start_action` addresses it as `module.Class` -
 `open_issues.OpenIssues`. That is the whole test loop. The operator's edit
 comes at the *end*, when the action works and they want it on a key. Hand them
-this then, not before, and keep it to two lines:
+this then, not before, and keep it to two lines **inside the `configure()` they
+already have**:
 
 ```python
 def configure(keymap):
+    ...                                             # their file, unchanged
     import open_issues                              # from extensions/
     kt["Fn-I"] = open_issues.OpenIssues()           # a key of their choosing
 ```
+
+`kt` is the global key table the default `config.py` defines near the top of
+`configure()` (`kt = keymap.define_keytable(focus_path_pattern="*")`). Their
+file may call it something else, or bind it in an application's table instead -
+so read it (`read_config`) and use the name it has; `references/key-tables.md`
+covers choosing the table. The two lines on their own, pasted as a new
+`configure()`, would fail with a `NameError`.
 
 Two consequences worth writing for:
 
@@ -315,12 +332,18 @@ remote system has already accepted - so rollback is usually not available and
   as they were read. An action whose only copy of the work is its return value
   loses all of it to the exception that ends the run - which is rule 7 seen
   from the other end.
-- **Start from the screen you are given.** An action does not navigate back to
-  a start state it did not create - the same instinct as rule 9, since it did
-  not open that page either. That is what makes resuming cheap, and it means a
-  rerun after a *complete* run reads only the last page rather than starting
-  over. Say which page or item you stopped on, so "leave it where it is and
-  press again" is an instruction the operator can act on.
+- **Start from the screen you are given - for a *resume*.** An action does not
+  navigate back to a start state it did not create - the same instinct as rule
+  9, since it did not open that page either. That is what makes resuming cheap,
+  and it means a rerun after a *complete* run reads only the last page rather
+  than starting over. Say which page or item you stopped on, so "leave it where
+  it is and press again" is an instruction the operator can act on.
+- **The task's scope still wins over the starting screen.** If the task asks
+  for *every* row and a first run - nothing recorded yet - finds the screen
+  part-way through (page 2 of 3), skipping page 1 silently is the one wrong
+  answer. Either reach the start through the UI's own control for it (a
+  "First" or "1" link: that is going where the task points, not undoing the
+  operator's work), or stop before reading and say the run began mid-way.
 - Use distinct exception types for "the UI moved on me" (regenerate the action)
   and "my step failed" (retry it). They call for opposite responses.
 - Capture the application's own validation message after a submit. Without it,
@@ -356,7 +379,10 @@ argument with that default - so the operator overrides it on the line that
 binds the key, and the file is somewhere they will find it. Do not stop to ask:
 this is the question every one of these tasks leaves open, and a default they
 can see and change costs them less than a round trip. Say which file you wrote
-in the sentence you hand back. If you find yourself needing
+in the sentence you hand back. **If the file already exists**, append only when
+it is this action's own earlier output - its header is the one you write - and
+skip what is already there; a file with some other header is not yours to mix
+into, so stop and say so. If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 
