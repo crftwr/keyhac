@@ -227,6 +227,15 @@ def _text_range(text: str, start: int | None) -> str:
     return f"{note}\n{text[begin:end]}"
 
 
+def _raisable(nodes: list) -> bool:
+    """Whether a max_* bound did any of the cutting - the only cuts that
+    "raise the bound" advice can fix (PR #167: a walk cut only by the
+    platform's sibling cap was told to raise one in the same breath as
+    being told none would help)."""
+    return any(node.truncated and not getattr(node, "_children_capped", None)
+               for node in nodes)
+
+
 def _portable_role_spelling(pattern: str) -> str | None:
     """The unprefixed spelling of an "AX"-prefixed role pattern, or None.
 
@@ -1030,8 +1039,10 @@ class ToolRegistry:
             # guess, and a measured session guessed twice.
             text += (f"\n\n[truncated: "
                      f"{_truncation_shape(nodes, max_depth, max_nodes)}. "
-                     f"Raise the bound that did the cutting, or narrow with "
-                     f"roles=, before concluding this is the whole screen]")
+                     + ("Raise the bound that did the cutting, or narrow "
+                        "with roles=, "
+                        if _raisable(nodes) else "")
+                     + "before concluding this is the whole screen]")
         return text
 
     def find_elements(self, app=None, title=None, limit=20, offset=0,
@@ -1060,10 +1071,11 @@ class ToolRegistry:
             if any(node.truncated for node in nodes):
                 text += (f"\n\n[the search was cut short, so this does not "
                          f"mean the element is absent - "
-                         f"{_truncation_shape(nodes, max_depth, max_nodes)}. "
-                         f"Raise the bound that did the cutting and search "
-                         f"again; web content can nest controls 30+ levels "
-                         f"down]")
+                         f"{_truncation_shape(nodes, max_depth, max_nodes)}"
+                         + (". Raise the bound that did the cutting and "
+                            "search again; web content can nest controls "
+                            "30+ levels down]"
+                            if _raisable(nodes) else "]"))
             role = criteria.get("role")
             suggested = (_portable_role_spelling(role)
                          if isinstance(role, str) else None)

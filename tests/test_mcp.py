@@ -612,6 +612,7 @@ def test_a_platform_sibling_cap_reads_as_a_cut(registry):
     assert "only the first 3 children" in text
     assert "by max_depth" not in text and "budget" not in text, \
         "counted as its own bound, not as depth or budget"
+    assert "Raise the bound" not in text, "no bound to raise was involved"
 
 
 def test_the_bounds_alone_are_not_a_criterion(registry):
