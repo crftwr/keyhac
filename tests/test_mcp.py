@@ -177,6 +177,31 @@ def test_tools_list_shape(dispatcher):
         assert tool["description"] and tool["inputSchema"]["type"] == "object"
 
 
+def test_every_tool_says_whether_it_writes(dispatcher):
+    """Issue #94: the read/write split is on the protocol, so a client can
+    approve reads and gate writes without parsing descriptions. Pinned as a
+    whole set - a new tool has to be classified, not default into either."""
+    tools = dispatcher.handle({"jsonrpc": "2.0", "id": 3,
+                               "method": "tools/list"})["result"]["tools"]
+    read_only = {t["name"] for t in tools
+                 if t["annotations"]["readOnlyHint"] is True}
+    assert read_only == {
+        "list_windows", "get_focus", "describe_screen", "find_elements",
+        "read_text", "list_actions", "get_action_result", "describe_keymap",
+        "read_config", "list_extensions", "read_extension"}
+    by_name = {t["name"]: t["annotations"] for t in tools}
+    for name, hints in by_name.items():
+        if name not in read_only:
+            assert hints["readOnlyHint"] is False
+            assert isinstance(hints["destructiveHint"], bool), name
+    assert {name for name, hints in by_name.items()
+            if hints.get("destructiveHint")} == {
+        "start_action", "write_config", "write_extension", "delete_extension"}
+    # The spec's default is true; only an action reaches past this desktop.
+    assert {name for name, hints in by_name.items()
+            if hints["openWorldHint"]} == {"start_action"}
+
+
 def test_a_failing_tool_reports_inside_the_result(dispatcher):
     """Not as a JSON-RPC error: the model is meant to read the failure and try
     again, which it cannot do if the transport swallows it."""

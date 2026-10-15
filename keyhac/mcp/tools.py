@@ -189,18 +189,37 @@ def _running_action(name: str):
     return None
 
 
+#: MCP tool annotations (issue #94). The read/write split was already the
+#: shape of the tool list - it is why write_config and write_extension are
+#: separate tools - but it lived only in prose, where a client has to parse
+#: descriptions to act on it. On the protocol, a client can approve reads and
+#: gate writes by itself.
+#:
+#: openWorldHint defaults to true in the spec, so it is said explicitly: these
+#: tools touch this desktop and ~/.keyhac, a closed set. start_action is the
+#: exception - an action is arbitrary code, and may reach anything.
+READ_ONLY = {"readOnlyHint": True, "openWorldHint": False}
+
+
+def _writes(*, destructive: bool, idempotent: bool,
+            open_world: bool = False) -> dict:
+    return {"readOnlyHint": False, "destructiveHint": destructive,
+            "idempotentHint": idempotent, "openWorldHint": open_world}
+
+
 class Tool:
     """One callable, its JSON Schema, and the description the agent reads."""
 
-    def __init__(self, name, description, schema, run):
+    def __init__(self, name, description, schema, run, annotations):
         self.name = name
         self.description = description
         self.schema = schema
         self.run = run
+        self.annotations = annotations
 
     def describe(self) -> dict:
         return {"name": self.name, "description": self.description,
-                "inputSchema": self.schema}
+                "inputSchema": self.schema, "annotations": self.annotations}
 
 
 class ToolRegistry:
@@ -238,13 +257,15 @@ class ToolRegistry:
                  "is the focused one. Start here when you do not know what to "
                  "address.",
                  {"type": "object", "properties": {}},
-                 self.list_windows),
+                 self.list_windows,
+                 READ_ONLY),
             Tool("get_focus",
                  "What currently has keyboard focus: application, window "
                  "title, and the focus path. Cheap, and usually tells you "
                  "which window the operator means.",
                  {"type": "object", "properties": {}},
-                 self.get_focus),
+                 self.get_focus,
+                 READ_ONLY),
             Tool("describe_screen",
                  "Read a window's element tree as indented text - roles, "
                  "names, identifiers and values. **Do this before writing any "
@@ -260,7 +281,8 @@ class ToolRegistry:
                                    f"Node budget (default {DEFAULT_MAX_NODES})."},
                      "roles": {**string, "description": "Only report elements "
                                "whose role matches this pattern."}}},
-                 self.describe_screen),
+                 self.describe_screen,
+                 READ_ONLY),
             Tool("find_elements",
                  "Search a window for elements matching role / name / value / "
                  "identifier / text, and report what each one is, with its "
@@ -293,7 +315,8 @@ class ToolRegistry:
                      "max_nodes": {**integer, "description": "Node budget for "
                                    "the search (default "
                                    f"{uitree.DEFAULT_MAX_NODES})."}}},
-                 self.find_elements),
+                 self.find_elements,
+                 READ_ONLY),
             Tool("read_text",
                  "Read an element's whole text content - a terminal's "
                  "scrollback, an editor buffer, a log block. The control tree "
@@ -307,7 +330,8 @@ class ToolRegistry:
                               "to read, if it has no identifier."},
                      "name": {**string, "description": "Label of the element "
                               "to read."}}},
-                 self.read_text),
+                 self.read_text,
+                 READ_ONLY),
             Tool("enable_content_access",
                  "Ask a Chromium or Electron application (Chrome, Edge, VS "
                  "Code, Slack) to expose its content. On macOS they build no "
@@ -319,7 +343,8 @@ class ToolRegistry:
                      **window_args,
                      "enable": {"type": "boolean", "description":
                                 "False to turn it back off when done."}}},
-                 self.enable_content_access),
+                 self.enable_content_access,
+                 _writes(destructive=False, idempotent=True)),
             Tool("list_actions",
                  "The action classes in ~/.keyhac/extensions/ - addressed as "
                  "module.Class - which are running now, and how the last run "
@@ -328,7 +353,8 @@ class ToolRegistry:
                  "on a key. Found by reading the files, so listing never "
                  "executes them.",
                  {"type": "object", "properties": {}},
-                 self.list_actions),
+                 self.list_actions,
+                 READ_ONLY),
             Tool("start_action",
                  "Start an action class and return immediately. **It is not "
                  "finished when this returns** - call get_action_result for "
@@ -341,7 +367,8 @@ class ToolRegistry:
                      "name": {**string, "description":
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
-                 self.start_action),
+                 self.start_action,
+                 _writes(destructive=True, idempotent=False, open_world=True)),
             Tool("get_action_result",
                  "Wait for an action to finish and return everything it "
                  "logged or printed, with the traceback if it raised. Blocks "
@@ -370,7 +397,8 @@ class ToolRegistry:
                               "Only the last N lines of the output (default: "
                               "all of it)."}},
                   "required": ["name"]},
-                 self.get_action_result),
+                 self.get_action_result,
+                 READ_ONLY),
             Tool("cancel_action",
                  "Stop a running action - the same thing the operator's Esc "
                  "does. It unwinds rather than being killed, so progress it "
@@ -379,7 +407,8 @@ class ToolRegistry:
                      "name": {**string, "description":
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
-                 self.cancel_action),
+                 self.cancel_action,
+                 _writes(destructive=False, idempotent=True)),
             Tool("describe_keymap",
                  "The key tables this configuration defined: their conditions, "
                  "which ones match the current focus, and what each binds. "
@@ -390,13 +419,15 @@ class ToolRegistry:
                  "also reports the live focus path, which is what a "
                  "focus_path_pattern is written against.",
                  {"type": "object", "properties": {}},
-                 self.describe_keymap),
+                 self.describe_keymap,
+                 READ_ONLY),
             Tool("read_config",
                  "Read ~/.keyhac/config.py - the operator's own configuration: "
                  "key tables, bindings, and the lines that wire up actions. "
                  "Read it before proposing any change to it.",
                  {"type": "object", "properties": {}},
-                 self.read_config),
+                 self.read_config,
+                 READ_ONLY),
             Tool("write_config",
                  "Replace ~/.keyhac/config.py, keeping a backup. Separate from "
                  "write_extension because the stakes differ: a module in "
@@ -409,14 +440,16 @@ class ToolRegistry:
                  {"type": "object", "properties": {
                      "source": {**string, "description": "The complete file."}},
                   "required": ["source"]},
-                 self.write_config),
+                 self.write_config,
+                 _writes(destructive=True, idempotent=True)),
             Tool("list_extensions",
                  "The files in ~/.keyhac/extensions/, with what each one "
                  "holds. list_actions shows what can be *run*; this shows what "
                  "is on disk, including helper modules that define no action "
                  "class and so never appear there.",
                  {"type": "object", "properties": {}},
-                 self.list_extensions),
+                 self.list_extensions,
+                 READ_ONLY),
             Tool("read_extension",
                  "Read a module in ~/.keyhac/extensions/ - the whole file, as "
                  "it is on disk right now. **Call this before changing an "
@@ -430,7 +463,8 @@ class ToolRegistry:
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."}},
                   "required": ["name"]},
-                 self.read_extension),
+                 self.read_extension,
+                 READ_ONLY),
             Tool("write_extension",
                  "Save an action module into ~/.keyhac/extensions/ - the whole "
                  "file, replacing whatever is there and keeping a backup. This "
@@ -446,7 +480,8 @@ class ToolRegistry:
                                 "Partial content replaces the whole module, "
                                 "so send all of it every time."}},
                   "required": ["name", "source"]},
-                 self.write_extension),
+                 self.write_extension,
+                 _writes(destructive=True, idempotent=True)),
             Tool("delete_extension",
                  "Remove a module from ~/.keyhac/extensions/ - **renamed to a "
                  "timestamped .bak- beside it rather than unlinked**, so the "
@@ -460,7 +495,8 @@ class ToolRegistry:
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."}},
                   "required": ["name"]},
-                 self.delete_extension),
+                 self.delete_extension,
+                 _writes(destructive=True, idempotent=False)),
             Tool("reload_config",
                  "Reload ~/.keyhac/config.py and report what it said - use it "
                  "**after the operator edits that file**, to check their paste "
@@ -470,7 +506,8 @@ class ToolRegistry:
                  "this between rounds only rebuilds the operator's live key "
                  "bindings for nothing.",
                  {"type": "object", "properties": {}},
-                 self.reload_config),
+                 self.reload_config,
+                 _writes(destructive=False, idempotent=True)),
         ]
 
     # -- implementations -----------------------------------------------------
