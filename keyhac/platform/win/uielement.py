@@ -36,6 +36,23 @@ logger = log.getLogger("WinUIElement")
 #: Sibling bound on UIElement.children() - see its docstring.
 MAX_CHILDREN = 2000
 
+#: Shortest length a Value cut by the MSAA proxy can have: an EDIT's arrives
+#: cut to 4,096 characters and a RichEdit's to 4,095 (one kept for the
+#: terminator - measured on PR #170). A Value at least this long is the cue to
+#: ask the window itself (issue #169); an uncut one this long costs one send
+#: and comes back the same.
+MSAA_VALUE_CUT = 4095
+
+#: Window classes whose whole text WM_GETTEXT returns - the Win32 EDIT and
+#: RichEdit controls, also as WinForms wraps them ("WindowsForms10.EDIT.app.0.
+#: 2bf8098_r6_ad1"). Matched on a dot-separated part, case-insensitively.
+_EDIT_CLASS_PARTS = ("edit", "richedit20w", "richedit20a", "richedit50w")
+
+#: Cap on each WM_GETTEXT* send.  The same 100 ms the IME uses, for the same
+#: reason: get_text runs on the main thread, which also services the keyboard
+#: hook, and a send into a hung window must not hold it past the hook timeout.
+TEXT_SEND_TIMEOUT_MS = 100
+
 #: How far up from the focused element contains_focus() looks.  Bounded so
 #: that a miss costs a handful of cross-process reads rather than a walk to
 #: the desktop; deep enough for a composite control, whose parts are one level
@@ -91,6 +108,18 @@ if sys.platform == "win32":
 
     # Not UIA at all: the display a rectangle landed on, for get_coordinate_scale.
     user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.WPARAM)]
+    user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = wintypes.LONG
+    GWL_STYLE = -16
+    ES_PASSWORD = 0x0020
+    WM_GETTEXT = 0x000D
+    WM_GETTEXTLENGTH = 0x000E
+    SMTO_NORMAL = 0x0000
+    SMTO_ABORTIFHUNG = 0x0002
     user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
     user32.MonitorFromPoint.restype = wintypes.HANDLE
     MONITOR_DEFAULTTONEAREST = 0x2
@@ -143,6 +172,9 @@ class _IUIAutomationElement:
     get_CurrentAutomationId = 29
     get_CurrentClassName = 30
     get_CurrentHelpText = 31
+    # 35 sits between IsContentElement (34) and NativeWindowHandle (36), the
+    # latter verified live; UIAutomationClient.h order.
+    get_CurrentIsPassword = 35
     get_CurrentNativeWindowHandle = 36
     get_CurrentIsOffscreen = 38
     get_CurrentFrameworkId = 40
@@ -531,6 +563,7 @@ class UIElement:
         "NativeWindowHandle": (_IUIAutomationElement.get_CurrentNativeWindowHandle, ctypes.c_void_p),
         "HasKeyboardFocus": (_IUIAutomationElement.get_CurrentHasKeyboardFocus, ctypes.c_int),
         "IsOffscreen": (_IUIAutomationElement.get_CurrentIsOffscreen, ctypes.c_int),
+        "IsPassword": (_IUIAutomationElement.get_CurrentIsPassword, ctypes.c_int),
     }
     _STRING_ATTRS = {
         "Name": _IUIAutomationElement.get_CurrentName,
@@ -600,7 +633,8 @@ class UIElement:
         if name in self._SCALAR_ATTRS:
             slot, ctype = self._SCALAR_ATTRS[name]
             value = _int_out(ctype, self._ptr, slot)
-            if name in ("HasKeyboardFocus", "IsOffscreen") and value is not None:
+            if name in ("HasKeyboardFocus", "IsOffscreen", "IsPassword") \
+                    and value is not None:
                 return bool(value)
             return value
         if name == "ControlTypeId":
@@ -931,7 +965,65 @@ class UIElement:
         text = self._document_text()
         if text:
             return text
-        return self.get_attribute_value("Value")
+        value = self.get_attribute_value("Value")
+        if isinstance(value, str) and len(value) >= MSAA_VALUE_CUT:
+            # A native EDIT has no Text pattern, and its Value comes through
+            # the MSAA proxy cut at 4,096 characters (issue #169): a 33,600-
+            # character WinForms TextBox read as its first 4,096. Only a Value
+            # at the limit asks the window, so every shorter read - and its
+            # line endings, which differ between EDIT and RichEdit - stays
+            # exactly what it was. (A RichEdit past it reads with "\r\n"
+            # where its Value used "\r"; it was cut before, so nothing that
+            # worked changes - doc/dev/next-major.md has the separators.)
+            whole = self._window_text()
+            if whole is not None and len(whole) > len(value):
+                return whole
+        return value
+
+    def _window_text(self) -> str | None:
+        """The whole text of the native EDIT / RichEdit control this element
+        is, by WM_GETTEXT; None for anything else, or on no answer.
+
+        WM_GETTEXT is marshalled across processes by the system, which is
+        what makes it usable on another application's control.
+
+        **A password field is refused here, explicitly.** WM_GETTEXT returns
+        a WinForms password TextBox's plaintext to another process (measured
+        on PR #170: the system's guard does not cover the superclassed
+        "WindowsForms10.EDIT" class), so nothing upstream may be relied on to
+        keep one away - neither the Value gate, which a password field only
+        misses because its Value is empty, nor the system. Both signals are
+        checked, because either can be absent: UIA's IsPassword, and the
+        window's own ES_PASSWORD style, read without messaging the window.
+        """
+        hwnd = self.get_attribute_value("NativeWindowHandle")
+        class_name = self.get_attribute_value("ClassName") or ""
+        if not hwnd or not any(part in _EDIT_CLASS_PARTS
+                               for part in class_name.lower().split(".")):
+            return None
+        if self.get_attribute_value("IsPassword") \
+                or user32.GetWindowLongW(hwnd, GWL_STYLE) & ES_PASSWORD:
+            return None
+        flags = SMTO_NORMAL | SMTO_ABORTIFHUNG
+        length = wintypes.WPARAM()
+        if not user32.SendMessageTimeoutW(hwnd, WM_GETTEXTLENGTH, 0, 0, flags,
+                                          TEXT_SEND_TIMEOUT_MS,
+                                          ctypes.byref(length)):
+            logger.debug(f"WM_GETTEXTLENGTH to {class_name} got no answer "
+                         f"(error {ctypes.get_last_error()}).")
+            return None
+        # WM_GETTEXTLENGTH may overstate (it counts DBCS bytes on some
+        # controls) but never understates; the copy says how much it wrote.
+        buffer = ctypes.create_unicode_buffer(length.value + 1)
+        copied = wintypes.WPARAM()
+        if not user32.SendMessageTimeoutW(
+                hwnd, WM_GETTEXT, len(buffer),
+                ctypes.cast(buffer, ctypes.c_void_p).value or 0, flags,
+                TEXT_SEND_TIMEOUT_MS, ctypes.byref(copied)):
+            logger.debug(f"WM_GETTEXT to {class_name} got no answer "
+                         f"(error {ctypes.get_last_error()}).")
+            return None
+        return buffer[:copied.value]
 
     def _document_text(self) -> str | None:
         """The Text pattern's whole document range, or None without one."""
