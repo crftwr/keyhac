@@ -171,11 +171,16 @@ def _component(role: str | None, name: str | None) -> str:
 
 class WinFocusProvider(FocusProvider):
 
+    _path_cut_short = False
+
     def __init__(self):
         if sys.platform != "win32":
             raise RuntimeError("WinFocusProvider requires Windows")
         self._probe = None      # last cheap Win32 probe
         self._focus = None      # the Focus built for it
+        # Set by _build_path when a UIA timeout cut the path to the window
+        # level - a Focus not to cache (see get_focus).
+        self._path_cut_short = False
 
     def get_focused_element(self):
         """UIA's own answer, asked fresh - no probe cache, no path walk.
@@ -240,8 +245,20 @@ class WinFocusProvider(FocusProvider):
             native=focused,
             element=element,
         )
-        self._probe = probe
-        self._focus = focus
+        # A path a timeout cut short is not cached (issue #175, as on macOS):
+        # the cheap tier would hand it back on every key until the window,
+        # the focused control or the title changed - and in a Chromium or
+        # Electron window none of them do when focus moves inside the page,
+        # so the window-level path could outlive the hang by minutes. Not
+        # caching costs the next key event its one timeout while the
+        # application is still hung, and gives the full path back on the
+        # first key after it answers.
+        if self._path_cut_short:
+            self._probe = None
+            self._focus = None
+        else:
+            self._probe = probe
+            self._focus = focus
         return focus
 
     # ------------------------------------------------------------------
@@ -259,11 +276,13 @@ class WinFocusProvider(FocusProvider):
                                       _component(class_name, title)))
 
         element = None
+        self._path_cut_short = False
         try:
             element = UIElement.from_focus()
         except Unresponsive:
             logger.debug("UIA timed out asking for the focus; using the "
                          "window-level path.")
+            self._path_cut_short = True
         except Exception:
             logger.debug("UIA focus query failed; falling back to window path.",
                          exc_info=True)
@@ -293,6 +312,7 @@ class WinFocusProvider(FocusProvider):
             # half-read chain would be a path that matches nothing.
             logger.debug("UIA timed out building the focus path; using the "
                          "window-level path.")
+            self._path_cut_short = True
             return window_path, None
 
         components = [""] + [_component("Application", app_name)]

@@ -323,6 +323,29 @@ def test_the_focus_path_falls_back_at_the_first_timeout(monkeypatch):
     assert path == "/Application(notepad)/Notepad(Untitled)"
     assert element is None
     assert reads == ["ControlType"], "stopped at the first"
+    # Marked, so get_focus does not cache it: the next key asks again and an
+    # application that has recovered gets its full path back (#175).
+    assert provider._path_cut_short is True
+
+
+def test_a_full_focus_path_is_not_marked_cut_short(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+    from keyhac.platform.win.focus import WinFocusProvider
+
+    class Edit:
+        def get_attribute_value(self, name):
+            return {"ControlType": "Edit", "Name": "Body"}.get(name)
+
+        def parent(self):
+            return None
+
+    monkeypatch.setattr(uielement.UIElement, "from_focus",
+                        staticmethod(lambda: Edit()))
+    provider = WinFocusProvider.__new__(WinFocusProvider)
+    provider._path_cut_short = True             # left over from a hang
+    path, element = provider._build_path("notepad", "Untitled", "Notepad")
+    assert path.endswith("/Edit(Body)") and element is not None
+    assert provider._path_cut_short is False
 
 
 def test_get_text_pays_one_timeout_not_two(monkeypatch):
