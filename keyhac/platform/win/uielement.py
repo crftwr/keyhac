@@ -27,6 +27,7 @@ import contextlib
 import ctypes
 import os
 import sys
+import threading
 from typing import Any
 
 from keyhac.core import log
@@ -87,6 +88,10 @@ if sys.platform == "win32":
     ole32.CoCreateInstance.restype = ctypes.c_long
     ole32.CoUninitialize.argtypes = []
     ole32.CoUninitialize.restype = None
+    # Windows 8+. Absent before it, where get_automation() goes without.
+    if hasattr(ole32, "CoIncrementMTAUsage"):
+        ole32.CoIncrementMTAUsage.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        ole32.CoIncrementMTAUsage.restype = ctypes.c_long
     oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
     oleaut32.SysFreeString.restype = None
     oleaut32.SysAllocString.argtypes = [ctypes.c_wchar_p]
@@ -538,11 +543,17 @@ def get_automation():
         _automation_failed = True
         return None
     try:
-        # UIA needs COM on this thread. S_FALSE means already initialized;
-        # RPC_E_CHANGED_MODE means someone chose MTA, which UIA also accepts.
-        hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-        if hr not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
-            raise OSError(f"CoInitializeEx failed: 0x{hr & 0xFFFFFFFF:08x}")
+        _keep_the_mta()
+        # The main thread is the loop's STA, as it always was. Any other
+        # thread is left alone: it is in the implicit MTA _keep_the_mta()
+        # keeps alive, and initialising it as an STA here would bind the
+        # shared client to a thread with no pump that may exit.
+        if threading.current_thread() is threading.main_thread():
+            # S_FALSE means already initialized; RPC_E_CHANGED_MODE means
+            # someone chose MTA, which UIA also accepts.
+            hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            if hr not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
+                raise OSError(f"CoInitializeEx failed: 0x{hr & 0xFFFFFFFF:08x}")
         ptr = _create_bounded_automation()
         if ptr is None:
             ptr = ctypes.c_void_p()
@@ -560,6 +571,35 @@ def get_automation():
                        f"to the window level and element access is disabled.")
         return None
     return _automation
+
+
+#: The cookie CoIncrementMTAUsage hands back; held for the process's life.
+_mta_cookie = None
+
+
+def _keep_the_mta() -> None:
+    """Keep the process-wide MTA alive, once (issue #173, PR #174).
+
+    Every thread that reads elements now does it on its own - an action's
+    run(), the MCP server's, start_action's - and none of them initialises
+    COM. A thread that has not is in the *implicit* MTA, the apartment the
+    chooser's walks were measured in (#126), but only while some MTA exists;
+    the Windows pass on #174 found these threads reporting
+    CO_E_NOTINITIALIZED, no apartment at all. CoIncrementMTAUsage is the API
+    for exactly that: it keeps the MTA alive without a thread of its own, so
+    every uninitialised thread lands in it rather than each kind of worker
+    being wrapped in com_worker_thread().
+    """
+    global _mta_cookie
+    if _mta_cookie is not None or not hasattr(ole32, "CoIncrementMTAUsage"):
+        return
+    cookie = ctypes.c_void_p()
+    hr = ole32.CoIncrementMTAUsage(ctypes.byref(cookie))
+    if hr == S_OK:
+        _mta_cookie = cookie
+    else:
+        logger.warning(f"CoIncrementMTAUsage failed: 0x{hr & 0xFFFFFFFF:08x}; "
+                       f"worker threads may have no COM apartment.")
 
 
 def _create_bounded_automation():

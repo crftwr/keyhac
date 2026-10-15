@@ -344,3 +344,34 @@ def test_get_text_pays_one_timeout_not_two(monkeypatch):
         element.get_text()
     assert asked == []
 
+
+
+def test_a_worker_thread_lands_in_the_mta():
+    """PR #174's Windows pass: run() threads reported CO_E_NOTINITIALIZED -
+    no apartment at all - since nothing kept an MTA alive. get_automation()
+    now does (CoIncrementMTAUsage), so an uninitialised worker is in the
+    implicit MTA the chooser's walks were measured in."""
+    import ctypes
+    import threading
+
+    from keyhac.platform.win import uielement
+
+    assert uielement.get_automation() is not None
+    ole32 = ctypes.WinDLL("ole32")
+    ole32.CoGetApartmentType.argtypes = [ctypes.POINTER(ctypes.c_int),
+                                         ctypes.POINTER(ctypes.c_int)]
+    ole32.CoGetApartmentType.restype = ctypes.c_long
+    seen = {}
+
+    def worker():
+        kind, qualifier = ctypes.c_int(), ctypes.c_int()
+        seen["hr"] = ole32.CoGetApartmentType(ctypes.byref(kind),
+                                              ctypes.byref(qualifier))
+        seen["kind"], seen["qualifier"] = kind.value, qualifier.value
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=5)
+    APTTYPE_MTA, APTTYPEQUALIFIER_IMPLICIT_MTA = 1, 1
+    assert seen == {"hr": 0, "kind": APTTYPE_MTA,
+                    "qualifier": APTTYPEQUALIFIER_IMPLICIT_MTA}
