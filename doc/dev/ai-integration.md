@@ -926,7 +926,7 @@ of knowledge, with different homes:
 | Trace schema | skill body | Short; always needed |
 | **Generalisation heuristics** | **skill body — the core** | Procedural knowledge; the only part genuinely worth writing |
 
-Ship it in-repo (`keyhac/skills/keyhac-action-authoring/SKILL.md`) so it versions with the API.
+Ship it in-repo (`keyhac/skills/keyhac/`, merged into one skill in issue #164) so it versions with the API.
 Works for both topology A and B.
 
 Rules to encode — the permanent ones, which are hard rules rather than preferences:

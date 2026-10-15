@@ -9,7 +9,7 @@ import sys
 
 SKILL = pathlib.Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
-CHECK = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "check.py"
+CHECK = ROOT / "keyhac" / "skills" / "keyhac" / "evals" / "check.py"
 
 
 def score(room: pathlib.Path) -> int:

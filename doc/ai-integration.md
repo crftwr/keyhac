@@ -155,42 +155,42 @@ page mostly does not guess at it. What follows is what Keyhac knows and you
 cannot — plus, where a host is common enough to be worth naming, what is true
 for it today: Claude Desktop's config file is in
 [The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients), and
-Claude's skill uploader in [Add the skills](#add-the-skills). Both sections are
+Claude's skill uploader in [Add the skill](#add-the-skill). Both sections are
 below this one, and both are for you as much as for the user.
 
 ### 1. The skill
 
-There are two, and which you need depends on what the user asked for:
-
-- **`keyhac-key-table-configuration-skill.zip`** — changing what keys do: remapping,
-  per-application key tables, one-shot and user modifiers, editing `config.py`.
-- **`keyhac-action-authoring-skill.zip`** — writing an *action*: Python that
-  drives another application's UI, for automation with no API behind it.
-
-Most people want the first. Take both if you do not know yet. They are on the
-release matching the running version — the tag is the segment after `blob/` in
-the URL you fetched this page from, and it already carries its own `v`:
+There is one, **`keyhac-<version>-skill.zip`**. It covers both jobs — changing
+what keys do (remapping, per-application key tables, one-shot and user
+modifiers, editing `config.py`) and writing an *action* (Python that drives
+another application's UI) — and sends you to the reference for whichever the
+user asked for. It is on the release matching the running version — the tag is
+the segment after `blob/` in the URL you fetched this page from, and it already
+carries its own `v`:
 
 ```
 https://github.com/crftwr/keyhac/releases/tag/<tag>
 ```
 
-Install them however this host takes a skill — but expect that to be **a step
+Install it however this host takes a skill — but expect that to be **a step
 only the user can take**. On most hosts a skill arrives by uploading a file
 through a settings UI, with no tool behind it, so do not spend the round trying
 to do it yourself. Give them the link and the steps, say what it buys, and go on
-with what you can do. [Add the skills](#add-the-skills) has the path for Claude,
+with what you can do. [Add the skill](#add-the-skill) has the path for Claude,
 including the setting that has to be on first.
 
 **Unless this host keeps its skills as files** — then it is yours to do, and you
 should simply do it rather than handing back instructions. Claude Code reads
-`~/.claude/skills/<name>/SKILL.md`, so unzipping each bundle into a directory of
-its own under there is the entire install. The test is not what the host is
+`~/.claude/skills/<name>/SKILL.md`, so unzipping the bundle into
+`~/.claude/skills/keyhac/` is the entire install. The test is not what the host is
 called but whether you can write where it looks, so check before assuming the
 upload path.
 
-Each bundle documents *that version's* API, so a mismatch is worth mentioning to
-the user rather than working around.
+The bundle documents *that version's* API, so a mismatch is worth mentioning to
+the user rather than working around. **Before Keyhac 2.6 there were two skills**,
+`keyhac-key-table-configuration` and `keyhac-action-authoring`. If either is
+installed, remove it when installing this one: an older skill still triggers on
+the same requests and describes an older API.
 
 ### 2. The connection
 
@@ -471,23 +471,26 @@ Run through a shell, all of them are just a command, and a client that gates
 tools individually can no longer tell reading your screen from rewriting your
 configuration.
 
-## Add the skills
+## Add the skill
 
 The tools tell the agent what your screen contains and what your configuration
-holds. The skills tell it what to do with that — and without them you get
+holds. The skill tells it what to do with that — and without them you get
 plausible-looking work that fails later: actions full of `sleep` and screen
 coordinates, or a key binding written into a table that never activates.
 
-There are two, and they overlap in nothing:
+There is one, **`keyhac-<version>-skill.zip`**, and it covers both jobs:
+changing what keys do — remapping, per-application tables, one-shot and user
+modifiers, editing `config.py` — and writing an *action*, Python that drives
+another application's UI for systems with no API. Its `SKILL.md` is a short
+router; the knowledge for each job is a reference the agent reads only when the
+job calls for it, so having both costs no more than having one.
 
-| | For |
-|---|---|
-| **`keyhac-key-table-configuration-skill.zip`** | changing what keys do — remapping, per-application tables, one-shot and user modifiers, editing `config.py` |
-| **`keyhac-action-authoring-skill.zip`** | writing an *action* — Python that drives another application's UI, for systems with no API |
+**Upgrading from before 2.6?** There used to be two skills,
+`keyhac-key-table-configuration` and `keyhac-action-authoring`. Remove them when
+you add this one — left installed, they still answer the same requests with an
+older API.
 
-Most people want the first. Take both if you are not sure.
-
-**Get them from the release**:
+**Get it from the release**:
 
 ```
 https://github.com/crftwr/keyhac/releases/tag/<tag>
@@ -495,7 +498,7 @@ https://github.com/crftwr/keyhac/releases/tag/<tag>
 
 `<tag>` is `v` followed by the version Keyhac's console prints at startup —
 `v2.2.1`, for instance. Match the version you are running: that release is the
-one whose API the skills describe. Each bundle carries the version stamped
+one whose API the skill describes. The bundle carries the version stamped
 inside, so a mismatch is visible after the fact rather than silent.
 
 The bundle is shaped for Claude's skill uploader, whose two requirements it
@@ -517,8 +520,8 @@ that can be handed documents can be handed these. What that does not buy is the
 *habit* of consulting them unprompted, which is the part a skill mechanism
 provides.
 
-(Building them from a source checkout, if you are working on Keyhac itself:
-`make skill-bundle` writes the same zips into `dist/`.)
+(Building it from a source checkout, if you are working on Keyhac itself:
+`make skill-bundle` writes the same zip into `dist/`.)
 
 **A skill is not the connection, and neither step implies the other.** A skill
 is knowledge — rules and an API reference, with no way to reach your machine;

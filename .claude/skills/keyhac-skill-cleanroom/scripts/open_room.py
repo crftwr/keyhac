@@ -18,7 +18,7 @@ import zipfile
 
 SKILL = pathlib.Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
-CASES = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "cases.md"
+CASES = ROOT / "keyhac" / "skills" / "keyhac" / "evals" / "cases.md"
 
 #: Rooms live in the checkout, gitignored, where the rest of the work is. Not a
 #: temp directory - the first room built was in /var/folders/9k/kmx0.../T/ and
@@ -41,13 +41,12 @@ CASES = ROOT / "keyhac" / "skills" / "keyhac-action-authoring" / "evals" / "case
 ROOMS = ROOT / "cleanroom"
 
 
-#: Both shipped skills go into the room, because that is the machine a user
-#: actually has - both installed, and the model picking between them. It also
-#: makes the last step of an action task answerable: every one of them ends by
-#: handing the operator a `configure()` block to bind a key, and what a key
-#: expression may say is the *other* skill's subject. A room holding one skill
-#: measures a setup nobody runs.
-BUNDLES = ("keyhac-action-authoring", "keyhac-key-table-configuration")
+#: The shipped skill goes into the room, because that is the machine a user
+#: actually has. There used to be two, and both went in: every action task ends
+#: by handing the operator a `configure()` block to bind a key, and what a key
+#: expression may say was the *other* skill's subject. Merged into one in issue
+#: #164, so the room carries the same single bundle a user installs.
+BUNDLES = ("keyhac",)
 
 
 def bundles_for(version: str) -> list[pathlib.Path]:

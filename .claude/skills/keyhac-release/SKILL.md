@@ -72,9 +72,9 @@ make release-macos-dmg    # macOS: build.sh (sign/notarize) + create_dmg.sh,
                           # then attach the DMG to the Release
 make release-whl          # HEAD must sit on the tag; sdist + wheel → PyPI,
                           # both attached to the Release
-make release-skill        # build + attach the skill bundles. NOT optional:
-                          # the bundles are the only way a user obtains the
-                          # skills — tools/ and the Makefile never ship
+make release-skill        # build + attach the skill bundle. NOT optional:
+                          # the bundle is the only way a user obtains the
+                          # skill — tools/ and the Makefile never ship
 make release-status       # read-only: which artifacts have landed
 ```
 

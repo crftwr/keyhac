@@ -1,9 +1,9 @@
 # The rules you are under
 
-You are doing the task in TASK.md using **only** the skills in `./skills`.
-Read the `SKILL.md` of the one it calls for - and know that the other is there,
-because a task that ends "and put it on a key" needs both. Their `references/`
-are the whole of what you know.
+You are doing the task in TASK.md using **only** the skill in `./skills`.
+Read its `SKILL.md`, then the references it sends you to - including the
+key-table one when the task ends "and put it on a key". Its `references/` are
+the whole of what you know.
 
 **Allowed**
 - Everything under `./skills`.

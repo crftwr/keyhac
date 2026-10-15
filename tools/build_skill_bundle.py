@@ -1,14 +1,20 @@
-"""Package the skills for upload to Claude Desktop.
+"""Package the skill for upload to Claude Desktop.
 
 Claude Desktop takes a skill as an uploaded bundle (Settings -> Skills -> Add
--> Upload skill), so each folder in keyhac/skills/ has to be zipped before it
-can be installed. This writes one zip per skill into dist/.
+-> Upload skill), so the folder in keyhac/skills/ has to be zipped before it
+can be installed. This writes one zip per skill folder into dist/ - and there
+is one folder, `keyhac` (issue #164).
 
-**One bundle each, not one bundle holding both.** The uploader takes an archive
-with a SKILL.md at its root, so two skills cannot share one; and they are
-separately useful - somebody configuring key bindings has no use for the rules
-about driving another application's accessibility tree, and carrying them would
-cost context on every conversation that loads it.
+**One skill, not one per job.** There were two, key-table configuration and
+action authoring, kept apart so that a conversation about key bindings would
+not carry the rules for driving another application's accessibility tree. That
+cost was never real: a loaded skill brings its SKILL.md and nothing else, and
+`references/` is read only when SKILL.md sends the model there. So SKILL.md is
+a short router and each job's knowledge is a reference, which keeps the
+context cost where it was while removing what two skills did cost - two
+uploads, one of them easy to forget, and a task that crosses the line
+("automate this and put it on a key") needing both installed and each knowing
+the other existed.
 
 The version is stamped into SKILL.md on the way in. A skill describes one
 version's API - it names methods and reports measured behaviour - and an
@@ -42,24 +48,19 @@ LICENSE = ROOT / "LICENSE"
 #: what cannot be generated: what each mechanism costs, and which of them fail
 #: silently. It also makes the pointer true: practice.md used to cite a path
 #: the uploaded skill did not carry.
-#: Per skill, because they document different halves of the API and neither
-#: reader needs the other's.  The key-table skill also carries the *guide*
-#: rather than restating it: doc/configuration.md is the authoritative
-#: description of key expressions and table conditions, already written and
-#: already maintained, and a skill that paraphrased it would be a second copy
-#: to drift - which is how references/quirks.md came to ship a false rule.
-#: `config-api.md` travels with *both*, which is not duplication for its own
-#: sake: an uploaded skill cannot reach the other one, and telling a model to
-#: fetch a version-tagged URL is what the action skill used to do. It failed in
+#: The skill also carries the *guide* rather than restating it:
+#: doc/configuration.md is the authoritative description of key expressions
+#: and table conditions, already written and already maintained, and a skill
+#: that paraphrased it would be a second copy to drift - which is how
+#: references/quirks.md came to ship a false rule. All three travel in the
+#: bundle rather than as URLs to fetch: telling a model to fetch a
+#: version-tagged URL is what the action skill used to do, and it failed in
 #: measurement - the model shelled out to `pbpaste` rather than use
 #: `keymap.clipboard.get_text()`, because a URL that never entered the
-#: conversation cannot be fetched - measured in a real authoring session.
+#: conversation cannot be fetched.
 GENERATED = {
-    "keyhac-action-authoring": [
+    "keyhac": [
         (ROOT / "doc" / "action-api.md", "references/action-api.md"),
-        (ROOT / "doc" / "config-api.md", "references/config-api.md"),
-    ],
-    "keyhac-key-table-configuration": [
         (ROOT / "doc" / "config-api.md", "references/config-api.md"),
         (ROOT / "doc" / "configuration.md", "references/configuration.md"),
     ],
@@ -68,8 +69,8 @@ GENERATED = {
 #: Not shipped to the model: evals are for this repo's CI, and the fixture is a
 #: deliberately-wrong action that has no business in a skill's context.  A
 #: README.md is addressed to whoever is working on Keyhac - the one under
-#: keyhac-key-table-configuration/references/ exists to explain why that folder
-#: is empty in the source tree, which is a question the model will never have.
+#: references/ explains why three references are missing from the source tree,
+#: which is a question the model will never have.
 EXCLUDE = {"evals", "README.md"}
 
 STAMP = (f"\n\n---\n\nPackaged from Keyhac {keyhac.__version__}. This skill "
