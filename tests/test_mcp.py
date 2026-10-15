@@ -450,7 +450,7 @@ def test_describe_screen_cuts_a_reply_too_large_for_the_client(registry):
     registry.keymap.node.reread = lambda **kw: tree
     text = registry.call("describe_screen", {"max_nodes": 6000})
     body, note = text.split("\n\n[cut at ")
-    assert len(body) <= tools_module.MAX_SCREEN_CHARS
+    assert len(body) <= tools_module.MAX_REPLY_CHARS
     shown = body.splitlines()
     assert shown[0] == "AXWindow 'Docs'"
     assert all(line.endswith("x'") for line in shown[1:]), "whole lines only"
@@ -472,6 +472,43 @@ def test_a_scoped_cut_does_not_count_the_placing_line(registry):
     text = registry.call("describe_screen", {"within": {"role": "Window"}})
     body = text.split("\n\n[cut at ")[0]
     assert f"showing {len(body.splitlines()) - 1} of 501" in text
+
+
+def _scrollback(registry, lines):
+    text = "".join(f"line {i:05d}\n" for i in range(lines))
+    registry.keymap.node.read_text = lambda: text
+    return text
+
+
+def test_read_text_returns_a_short_text_whole(registry):
+    text = _scrollback(registry, 10)
+    assert registry.call("read_text", {}) == text
+
+
+def test_read_text_returns_the_end_of_a_long_text(registry):
+    """A scrollback is as long as its session, and had no bound at all. The
+    newest part is the end, so that is what is kept - on whole lines, with
+    the range said first and how to read the rest."""
+    text = _scrollback(registry, 5000)               # 55,000 characters
+    reply = registry.call("read_text", {})
+    note, body = reply.split("\n", 1)
+    assert len(body) <= tools_module.MAX_REPLY_CHARS
+    assert body.endswith("line 04999\n") and body.startswith("line ")
+    begin = len(text) - len(body)
+    assert note.startswith(f"[characters {begin}-{len(text)} of {len(text)} "
+                           f"(the end)")
+    assert f"start={begin - tools_module.MAX_REPLY_CHARS}" in note
+
+
+def test_read_text_start_pages_through_on_whole_lines(registry):
+    text = _scrollback(registry, 5000)
+    reply = registry.call("read_text", {"start": 0})
+    note, body = reply.split("\n", 1)
+    assert text.startswith(body) and body.endswith("\n")
+    end = len(body)
+    assert note.startswith(f"[characters 0-{end} of {len(text)} (a range)")
+    following = registry.call("read_text", {"start": end}).split("\n", 1)[1]
+    assert text[end:].startswith(following), "the next start follows on"
 
 
 def test_a_missing_window_says_what_to_do_next(registry):

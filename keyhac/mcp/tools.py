@@ -72,9 +72,10 @@ logger = log.getLogger("MCP")
 #: to keep.
 DEFAULT_MAX_NODES = 400
 
-#: Ceiling on a `describe_screen` reply, in characters (issue #67).
+#: Ceiling on the replies that grow with what is on screen, in characters
+#: (issue #67) - a `describe_screen` dump and a `read_text` buffer.
 #:
-#: The node budget bounds how much is *read*, not how much is *returned*: a
+#: For describe_screen, the node budget bounds how much is *read*, not how much is *returned*: a
 #: line's length is the node's name, which is not truncated (web content puts
 #: whole paragraphs there), plus two spaces of indent per level, 60 of them at
 #: depth 30. And max_nodes is the caller's to raise - #67 was max_nodes=6000.
@@ -89,9 +90,11 @@ DEFAULT_MAX_NODES = 400
 #: that default - whatever the screen's language. The same figure as
 #: MAX_CAPTURE, the other reply that grows with what is on screen.
 #:
-#: A backstop, not the working budget: DEFAULT_MAX_NODES keeps an ordinary
-#: read far below it (400 Finder nodes ~1,700 tokens).
-MAX_SCREEN_CHARS = 20_000
+#: For describe_screen a backstop, not the working budget: DEFAULT_MAX_NODES
+#: keeps an ordinary read far below it (400 Finder nodes ~1,700 tokens).
+#: read_text has no other bound at all - a terminal's scrollback is as long
+#: as the session that produced it.
+MAX_REPLY_CHARS = 20_000
 
 #: The selector keys `describe_screen(within=)` takes - find_elements' own,
 #: so a container is named the way any element is (issue #95).
@@ -136,7 +139,7 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
 
 
 def _cut_screen(text: str, total: int, scoped: bool) -> str:
-    """A `describe_screen` reply cut to MAX_SCREEN_CHARS, saying where.
+    """A `describe_screen` reply cut to MAX_REPLY_CHARS, saying where.
 
     Whole lines only, so every node shown is shown intact and can be copied
     into a selector. What is missing is everything after the cut in tree
@@ -145,19 +148,59 @@ def _cut_screen(text: str, total: int, scoped: bool) -> str:
     """
     kept, size = [], 0
     for line in text.splitlines():
-        if size + len(line) + 1 > MAX_SCREEN_CHARS:
+        if size + len(line) + 1 > MAX_REPLY_CHARS:
             break
         kept.append(line)
         size += len(line) + 1
     shown = max(0, len(kept) - (1 if scoped else 0))
     return ("\n".join(kept)
-            + f"\n\n[cut at {MAX_SCREEN_CHARS} characters: showing {shown} of "
+            + f"\n\n[cut at {MAX_REPLY_CHARS} characters: showing {shown} of "
               f"{total} node(s), in tree order - everything after this line "
               f"is missing, not just the bottom of the window. A larger read "
               f"would be too large for the client to accept, so narrow it: "
               f"within= one container from the lines above, roles= for the "
               f"kinds of element you need, or find_elements for a specific "
               f"one]")
+
+
+def _text_range(text: str, start: int | None) -> str:
+    """At most MAX_REPLY_CHARS of `text`, and which characters they are.
+
+    The end when no `start` is given, because that is where a scrollback's
+    or a log's newest lines are - the reason it is usually being read. Cut
+    on line boundaries where the range has any, so a regex written against
+    the reply sees whole lines; the range reported is the one returned, so
+    the next `start` follows on exactly.
+    """
+    total = len(text)
+    if start is None:
+        begin = max(0, total - MAX_REPLY_CHARS)
+        if begin > 0:
+            newline = text.find("\n", begin, total)
+            if newline != -1 and newline + 1 < total:
+                begin = newline + 1
+        end = total
+    else:
+        begin = min(max(0, start), total)
+        end = min(total, begin + MAX_REPLY_CHARS)
+        if end < total:
+            newline = text.rfind("\n", begin, end)
+            if newline > begin:
+                end = newline + 1
+    where = ("the end" if start is None and begin > 0 else
+             "all of it" if begin == 0 and end == total else
+             "a range")
+    advice = []
+    if begin > 0:
+        advice.append(f"start={max(0, begin - MAX_REPLY_CHARS)} reads what "
+                      f"comes before")
+    if end < total:
+        advice.append(f"start={end} reads on")
+    note = (f"[characters {begin}-{end} of {total} ({where}); "
+            f"{' and '.join(advice) or 'nothing is left out'}. An action's "
+            f"own read_text() gets the whole text - the cut is only this "
+            f"reply's]")
+    return f"{note}\n{text[begin:end]}"
 
 
 def _portable_role_spelling(pattern: str) -> str | None:
@@ -475,7 +518,7 @@ class ToolRegistry:
                      "max_nodes": {**integer, "description":
                                    f"Node budget (default {DEFAULT_MAX_NODES}). "
                                    f"However many are read, the reply is cut "
-                                   f"at {MAX_SCREEN_CHARS} characters - past "
+                                   f"at {MAX_REPLY_CHARS} characters - past "
                                    f"that, narrow with within= or roles= "
                                    f"rather than raising this."},
                      "roles": {**string, "description": "Only report elements "
@@ -546,7 +589,13 @@ class ToolRegistry:
                      "role": {**string, "description": "Role of the element "
                               "to read, if it has no identifier."},
                      "name": {**string, "description": "Label of the element "
-                              "to read."}}},
+                              "to read."},
+                     "start": {**integer, "description": "Character offset "
+                               "to read from. Omitted, a text longer than "
+                               f"{MAX_REPLY_CHARS} characters returns its "
+                               "end - the newest part of a scrollback or log; "
+                               "pass an offset to read another part. The "
+                               "reply says which range it holds."}}},
                  self.read_text,
                  READ_ONLY),
             Tool("enable_content_access",
@@ -887,7 +936,7 @@ class ToolRegistry:
                     "page, as long as the page takes to arrive otherwise). "
                     "Calling enable_content_access again changes nothing.]")
 
-        if len(text) > MAX_SCREEN_CHARS:
+        if len(text) > MAX_REPLY_CHARS:
             # Cut on a line boundary and said out loud, ahead of the bound
             # hints below: "raise max_nodes" is the opposite of the advice a
             # reply that is already too large needs.
@@ -969,7 +1018,7 @@ class ToolRegistry:
                 "also match. Raise max_depth / max_nodes to be sure]")
         return "\n".join(lines)
 
-    def read_text(self, app=None, title=None, **criteria) -> str:
+    def read_text(self, app=None, title=None, start=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
         window = self._window(app, title)
         node = window.find(**criteria) if criteria else window
@@ -979,7 +1028,9 @@ class ToolRegistry:
         if not text:
             return (f"{node!r} has no text content "
                     f"(its value is {node.value!r})")
-        return text
+        if start is None and len(text) <= MAX_REPLY_CHARS:
+            return text
+        return _text_range(text, None if start is None else int(start))
 
     def enable_content_access(self, app=None, title=None, enable=True) -> str:
         window = self._window(app, title)
