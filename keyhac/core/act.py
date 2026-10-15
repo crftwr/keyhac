@@ -252,6 +252,16 @@ def _is_at(element, point):
     at_point = getattr(type(element), "element_at_point", None)
     if at_point is None:
         return None
+    # One of Keyhac's own windows over the point covers it, and is not asked
+    # anything: our windows do not exist to the element API (issue #173), and
+    # asking would be AX into our own process from whatever thread this is.
+    ours = getattr(type(element), "keyhac_at_point", None)
+    if ours is not None:
+        try:
+            if ours(point[0], point[1]):
+                return False
+        except Exception:
+            pass
     try:
         found = at_point(point[0], point[1])
     except Exception:

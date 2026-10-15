@@ -14,11 +14,14 @@ inside an action.
         for row in window.find_all(role="AXRow|DataItem"):
             print([cell.all_text for cell in row.children])
 
-Everything here and on `UINode` reads the live UI and therefore dispatches to
-the event-loop thread on its own.  Nothing about that is visible from an action,
-which was the point: element access is main-thread-only, an action's pipeline
-runs on a worker, and the first six actions written against the function-style
-API wrapped nearly every line in a dispatch call.
+Everything here and on `UINode` reads the live UI on the calling thread - an
+action's worker, normally - and goes straight to the other application.  It
+used to dispatch to the event-loop thread, on a rule wider than its reason:
+only AX into *our own* process is main-thread-only, and Keyhac's own windows
+are now not visible to this API at all (issue #173).  Either way nothing about
+threads is visible from an action, which was the point of the first six
+actions written against the function-style API wrapping nearly every line in a
+dispatch call.
 
 CROSS-PLATFORM BY SHAPE, NOT BY DATA.  Every method here exists and behaves the
 same way on Windows and macOS.  What does *not* carry across is the content of
@@ -655,9 +658,11 @@ class UI:
         target.reread()
 
         def act():
-            # AX from a worker goes through the loop thread; the ladder reads
-            # geometry, hit-tests and injects a click, all of which are its.
-            return self.on_main_thread(lambda: act_on(target.element))
+            # On this thread (issue #173): the ladder reads geometry,
+            # hit-tests and injects a click, and none of that needs the loop
+            # - injection is thread-safe on both OSes, and the hit test never
+            # asks one of Keyhac's own windows anything.
+            return act_on(target.element)
 
         return self._until(act, until, timeout, retry_interval,
                            what=f"clicking {locator or target!r}",
@@ -675,7 +680,7 @@ class UI:
         than a wrapper: asking a window to activate is not the same as it
         being in front, and the difference is where a keystroke goes. It was
         also the last thing an action had to reach around this API to do -
-        `keymap.find_window(...).activate()` on the loop thread, by hand.
+        `keymap.find_window(...).activate()`, by hand.
 
         Args:
             app: Application pattern, as `window()` takes it.
@@ -694,10 +699,8 @@ class UI:
             WaitTimeout: It never came to the front.
         """
         def act():
-            def bring():
-                window = self._keymap.find_window(app=app, title=title)
-                return window.activate() if window is not None else False
-            return self.on_main_thread(bring)
+            window = self._keymap.find_window(app=app, title=title)
+            return window.activate() if window is not None else False
 
         return self._until(act, Front(app=app, title=title), timeout,
                            retry_interval, what=f"activating {app or title!r}")
@@ -798,7 +801,7 @@ class UI:
         notches = -abs(amount) if by == "down" else abs(amount)
 
         def act():
-            return self.on_main_thread(lambda: turn(view.element, notches))
+            return turn(view.element, notches)
 
         return self._until(act, until, timeout, retry_interval,
                            what=f"scrolling {by}", given=given) or view
@@ -844,7 +847,7 @@ class UI:
             raise ValueError("menu() needs a menu path")
         item = self.wait(lambda: self._menu_item(path), timeout=timeout,
                          message=f"the menu path {' > '.join(path)}")
-        return self._until(lambda: self.on_main_thread(lambda: act_on(item.element)),
+        return self._until(lambda: act_on(item.element),
                            until, timeout, retry_interval,
                            what=f"the menu command {' > '.join(path)}",
                            given=given) or item
@@ -1140,7 +1143,7 @@ class UI:
             setter(enable)
             return True
 
-        return bool(self.on_main_thread(apply))
+        return bool(apply())
 
     def _content_access_state(self, target: UINode | None = None) -> bool | None:
         """Whether an application needs the content switch, and has had it.
@@ -1177,11 +1180,11 @@ class UI:
     def on_main_thread(self, func: Callable[[], Any]) -> Any:
         """Run `func` on the event-loop thread and return its result.
 
-        Element reads do not need it: they run on the calling thread, an
-        action's worker included. The verbs that inject input or bring a
-        window forward use it themselves. An action needs it only for a
-        platform call that must run on the loop thread and that this API
-        does not wrap.
+        Nothing in Keyhac's API needs it: element reads, the verbs and the
+        window calls run on the calling thread, an action's worker included,
+        and the few platform calls that cannot (the clipboard, the macOS work
+        area and input source) take themselves there. It remains for a
+        platform call of your own that has to run on the loop thread.
         """
         from keyhac.core.wait import evaluate_on_main_thread
         return evaluate_on_main_thread(func)

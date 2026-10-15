@@ -268,30 +268,53 @@ def test_a_worker_evaluates_its_condition_on_its_own_thread(engine):
     assert ran_on == ["worker"] and dispatched == []
 
 
-def test_a_window_lookup_from_a_worker_still_goes_to_the_loop(engine):
-    """The part of the API that is not an element read: window lookups
-    enumerate every application, Keyhac's own included, so they are taken to
-    the loop thread whoever asks."""
+def test_only_the_loop_bound_platform_calls_go_to_the_loop(engine):
+    """Issue #173: window lookups run on the caller's thread like everything
+    else - Keyhac's own windows are not in them, so nothing they ask is our
+    own process. What still goes to the loop is what cannot run anywhere
+    else: the macOS work area (NSScreen) and input source (TIS), which take
+    themselves there so that an action never has to know its thread."""
     fixture = engine(lambda keymap: None)
-    ran_on = []
+    ran_on = {}
 
-    class Provider:
-        def get_active_window(self):
-            ran_on.append(threading.current_thread().name)
+    def record(name, value=None):
+        def call(*args):
+            ran_on[name] = threading.current_thread().name
+            return value
+        return call
 
-        list_windows = find_window = get_active_window
+    class Windows:
+        get_active_window = record("get_active_window")
+        list_windows = record("list_windows", [])
+        screen_work_frames = record("screen_work_frames", [])
+
+    class Ime:
+        get_status = record("get_status")
+        set_status = record("set_status", True)
 
     def dispatcher(callback):
         thread = threading.Thread(target=callback, name="loop")
         thread.start()
         thread.join()
 
-    fixture.keymap.set_main_thread_dispatcher(dispatcher)
-    fixture.keymap.window_provider = Provider()
-    thread = threading.Thread(target=fixture.keymap.get_active_window)
+    keymap = fixture.keymap
+    keymap.set_main_thread_dispatcher(dispatcher)
+    keymap.window_provider = Windows()
+    keymap.ime_provider = Ime()
+
+    def worker():
+        keymap.get_active_window()
+        keymap.list_windows()
+        keymap.screen_work_frames()
+        keymap.get_ime_status()
+        keymap.set_ime_status(True)
+
+    thread = threading.Thread(target=worker, name="worker")
     thread.start()
     thread.join(timeout=5)
-    assert ran_on == ["loop"]
+    assert ran_on == {"get_active_window": "worker", "list_windows": "worker",
+                      "screen_work_frames": "loop", "get_status": "loop",
+                      "set_status": "loop"}
 
 
 def test_element_waits_take_a_caller_supplied_message():

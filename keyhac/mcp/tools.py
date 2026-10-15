@@ -42,9 +42,11 @@ running endpoint grants is short and whole: while it is open, code the operator
 has not read can be written, run and taken back out again, and every window they
 have open can be read. Nothing types text or presses a key.
 
-THREADS. Element access is main-thread-only and these run on the MCP server's
-threads, so every tool that touches the UI goes through `ui.on_main_thread` -
-directly, or through the node methods, which dispatch themselves.
+THREADS. These run on the MCP server's threads, and that is fine for
+everything they touch: elements and windows are read on the calling thread,
+since Keyhac's own windows are not visible to them (issue #173). The
+`ui.on_main_thread` wrappers that remain are harmless - they predate that -
+and keep the reads of `keymap.focus` beside the key dispatch that writes it.
 """
 
 from __future__ import annotations

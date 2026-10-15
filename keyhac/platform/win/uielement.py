@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import functools
+import os
 import sys
 import threading
 from typing import Any
@@ -114,6 +115,11 @@ if sys.platform == "win32":
         wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
         wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.WPARAM)]
     user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+    user32.WindowFromPoint.argtypes = [wintypes.POINT]
+    user32.WindowFromPoint.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.GetWindowLongW.restype = wintypes.LONG
     GWL_STYLE = -16
@@ -1492,6 +1498,9 @@ class UIElement:
         ElementFromPoint's slot (7) comes from the same header ordering that
         ElementFromHandle (6) and GetFocusedElement (8), both verified, sit in.
         """
+        # Keyhac's own windows do not exist to the element API (issue #173).
+        if UIElement.keyhac_at_point(x, y):
+            return None
         automation = get_automation()
         if automation is None:
             return None
@@ -1502,6 +1511,21 @@ class UIElement:
         if hr != S_OK or not out.value:
             return None
         return UIElement(out)
+
+    @staticmethod
+    def keyhac_at_point(x: float, y: float) -> bool:
+        """Whether the window at a screen point is one of Keyhac's own.
+
+        WindowFromPoint and GetWindowThreadProcessId, which message no
+        window - safe from any thread. A click's hit test asks this first: a
+        point under one of our windows is covered (issue #173).
+        """
+        hwnd = user32.WindowFromPoint(wintypes.POINT(int(x), int(y)))
+        if not hwnd:
+            return False
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value == os.getpid()
 
     @staticmethod
     def from_hwnd(hwnd) -> "UIElement | None":

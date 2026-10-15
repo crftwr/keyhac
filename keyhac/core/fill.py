@@ -50,8 +50,7 @@ from typing import Any, Iterable
 
 from keyhac.core import log
 from keyhac.core.uitree import StaleElement, UINode
-from keyhac.core.wait import (WaitTimeout, evaluate_on_main_thread,
-                              on_loop_thread, wait_for)
+from keyhac.core.wait import WaitTimeout, on_loop_thread, wait_for
 
 logger = log.getLogger("Fill")
 
@@ -208,14 +207,14 @@ def focus(target, timeout: float = None) -> bool:
     def ask():
         return _ask_for_focus(element)
 
-    if bool(evaluate_on_main_thread(ask)):
+    if bool(ask()):
         return True
     # Never RuntimeError where this used to answer: reading and asking are
     # both fine on the loop thread, and only the waiting is not.
     if timeout <= 0 or on_loop_thread():
         return False
     try:
-        return bool(wait_for(lambda: evaluate_on_main_thread(ask),
+        return bool(wait_for(ask,
                              timeout=timeout,
                              message="the focus to land on the element"))
     except WaitTimeout:
@@ -277,7 +276,7 @@ def _where_the_focus_went(element) -> str:
                 f"element if it is the one you meant")
 
     try:
-        return str(evaluate_on_main_thread(look))
+        return str(look())
     except Exception:      # a diagnosis must never replace the real failure
         return ""
 
@@ -300,7 +299,7 @@ def _focused_element():
 
 
 def read_value(target) -> Any:
-    """The element's current content, from the loop thread."""
+    """The element's current content."""
     element = _element(target)
 
     def read():
@@ -309,7 +308,7 @@ def read_value(target) -> Any:
             return describe().get("value")
         return None
 
-    return evaluate_on_main_thread(read)
+    return read()
 
 
 # -- text --------------------------------------------------------------------
@@ -401,7 +400,7 @@ def _matches(element, text: str) -> bool:
 
 def _write(element, text: str, method: str, clear: bool) -> None:
     if method == "set_value":
-        evaluate_on_main_thread(lambda: element.set_value(text))
+        element.set_value(text)
         return
     if method == "keys":
         _type(text, clear)
@@ -472,7 +471,7 @@ def set_checked(target, checked: bool) -> bool:
     element = _element(target)
     if _is_checked(element) == bool(checked):
         return False
-    evaluate_on_main_thread(lambda: _press(element))
+    _press(element)
     try:
         wait_for(lambda: _is_checked(element) == bool(checked),
                  timeout=VERIFY_TIMEOUT,
@@ -495,7 +494,7 @@ def _is_checked(element) -> bool:
         if isinstance(value, str):
             return value.strip().lower() in ("1", "true", "on", "checked")
         return bool(value) and value != 2      # 2 is UIA's indeterminate
-    return bool(evaluate_on_main_thread(read))
+    return bool(read())
 
 
 def _press(element) -> None:
@@ -542,4 +541,4 @@ def press(target) -> None:
     in every action.
     """
     element = _element(target)
-    evaluate_on_main_thread(lambda: _press(element))
+    _press(element)

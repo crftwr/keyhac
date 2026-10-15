@@ -78,9 +78,10 @@ class ThreadedAction:
     keyboard hook needs.  run() executes on a worker, and that is where the
     pipeline goes: input contexts, `self.ui` and every element read and wait
     work there, reading the other application directly, so a slow or hung
-    application stalls this action and not the keyboard.  The `Window`
-    objects `keymap.find_window()` and friends return are the exception -
-    their methods are UI-thread only.
+    application stalls this action and not the keyboard.  The same goes for
+    `Window` objects and the geometry and IME calls on `keymap`; the few
+    platform calls that cannot run off the main thread take themselves there.
+    Keyhac's own windows are not visible to any of it.
 
     Actions run concurrently, so a run() that takes minutes no longer holds up
     every other one.  What is still serialized is what has to be: injected
@@ -322,8 +323,8 @@ class ThreadedAction:
     def starting(self) -> None:
         """Called on the event-loop thread the moment the action triggers.
 
-        Main-thread-only APIs (UI, windows, AX) are allowed here; it runs
-        under the engine lock, so keep it light.
+        It runs under the engine lock, so keep it light - capture what the
+        key press names, log intent, and leave the work to run().
         """
 
     def run(self) -> Any:
@@ -335,8 +336,6 @@ class ThreadedAction:
 
     def finished(self, result: Any) -> None:
         """Called on the event-loop thread once run() has returned.
-
-        Main-thread-only APIs are allowed here too.
 
         Args:
             result: Whatever run() returned.

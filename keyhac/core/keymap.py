@@ -730,10 +730,11 @@ class Keymap:
     def call_on_main_thread(self, callback) -> None:
         """Run a callback on the thread that owns the event loop.
 
-        Thread-safe, and the supported way for a worker thread to reach
-        anything main-thread-only: UI, window moves, AX writes.
-        ThreadedAction.run() is the usual caller; finished() already arrives
-        here, so it needs this only for work it defers further.
+        Thread-safe. Keyhac's own API does not need it from a worker -
+        elements, windows and the verbs run on the calling thread, and what
+        cannot takes itself to the loop - so this is for a platform call of
+        your own that must run on the event-loop thread, or for touching
+        Keyhac's own UI.
 
         Args:
             callback: Called with no arguments.
@@ -1300,13 +1301,12 @@ class Keymap:
             window support).
 
         Note:
-            Safe to call from any thread - it is taken to the event-loop
-            thread. What it returns is not: the Window's own methods are
-            UI-thread only.
+            Safe from any thread. Keyhac's own windows do not exist here:
+            with one of them in front, this answers None.
         """
         if self.window_provider is None:
             return None
-        return self._on_loop(self.window_provider.get_active_window)
+        return self.window_provider.get_active_window()
 
     def list_windows(self) -> list:
         """List the visible top-level windows.
@@ -1315,12 +1315,11 @@ class Keymap:
             Window objects, front-most first where the OS says so.
 
         Note:
-            Safe to call from any thread, like get_active_window(); the
-            Windows it returns are UI-thread only.
+            Safe from any thread. Keyhac's own windows are not listed.
         """
         if self.window_provider is None:
             return []
-        return self._on_loop(self.window_provider.list_windows)
+        return self.window_provider.list_windows()
 
     def find_window(self, app: str = None, title: str = None,
                     class_name: str = None):
@@ -1339,26 +1338,13 @@ class Keymap:
             A Window, or None when nothing matches.
 
         Note:
-            Safe to call from any thread, like get_active_window(); the
-            Window it returns is UI-thread only.
+            Safe from any thread. Keyhac's own windows never match.
         """
         if self.window_provider is None:
             return None
-        return self._on_loop(lambda: self.window_provider.find_window(
-            app=app, title=title, class_name=class_name))
+        return self.window_provider.find_window(
+            app=app, title=title, class_name=class_name)
 
-    @staticmethod
-    def _on_loop(func):
-        """Run a window lookup on the event-loop thread (issue #173).
-
-        Element reads now run on the caller's thread, so `ui.window()` and the
-        `Front` condition reach these from an action's worker. A lookup
-        enumerates every application's windows, Keyhac's own included, and
-        AX into our own process off the main thread crashes - so the lookup
-        goes to the loop, the way the clipboard does (`main_thread_only`).
-        """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(func)
 
     def screen_frames(self) -> list:
         """Get the frame of every screen.
@@ -1382,11 +1368,12 @@ class Keymap:
             (Windows), in the same order.
 
         Note:
-            UI-thread only - the macOS implementation is an AppKit query.
+            Safe from any thread. The macOS implementation is an AppKit
+            query, so it is taken to the event-loop thread.
         """
         if self.window_provider is None:
             return []
-        return self.window_provider.screen_work_frames()
+        return self._on_loop(self.window_provider.screen_work_frames)
 
     def window_frames(self) -> list:
         """Get the frames of all normal on-screen windows.
@@ -1396,8 +1383,8 @@ class Keymap:
             screen_frames().
 
         Note:
-            Thread-safe - callable from a ThreadedAction.run().  It is the
-            geometry query to use there, since Window itself is not.
+            Thread-safe, and cheaper than list_windows(): no window is
+            asked anything.
         """
         if self.window_provider is None:
             return []
@@ -1419,14 +1406,16 @@ class Keymap:
             (Windows) a TSF-only IME does not answer the IMM32 query.
 
         Note:
-            UI-thread only.  "Off" is the same answer for two different
+            Safe from any thread; it is taken to the event-loop thread,
+            where macOS's input-source API has to run.  "Off" is the same
+            answer for two different
             situations, on both OSes: an IME that is installed and closed,
             and no IME in the picture at all - a plain keyboard layout on
             Windows, a plain layout or an input method's Roman mode on macOS.
         """
         if self.ime_provider is None:
             return None
-        return self.ime_provider.get_status()
+        return self._on_loop(self.ime_provider.get_status)
 
     def set_ime_status(self, on: bool) -> bool:
         """Turn the IME on or off for whatever holds the input focus.
@@ -1440,7 +1429,8 @@ class Keymap:
             there was none to ask.
 
         Note:
-            UI-thread only, and it takes effect **at once** - unlike key
+            Safe from any thread, like get_ime_status().  It takes effect
+            **at once** - unlike key
             output, which `InputContext` only queues for the application.
             Wrapping a `send_key` batch in "off ... back on" therefore does
             not work: the restore lands before the keys do and they are
@@ -1461,7 +1451,20 @@ class Keymap:
         """
         if self.ime_provider is None:
             return False
-        return self.ime_provider.set_status(on)
+        return self._on_loop(lambda: self.ime_provider.set_status(on))
+
+    @staticmethod
+    def _on_loop(func):
+        """Run `func` on the event-loop thread, from wherever it is called.
+
+        For the few platform calls that cannot run anywhere else - the macOS
+        work area (NSScreen) and input source (TIS). Everything else in the
+        API runs on its caller's thread (issue #173), so with these an
+        action never has to know which thread it is on. The clipboard does
+        the same through `main_thread_only`.
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        return evaluate_on_main_thread(func)
 
     def app_control_running_apps(self):
         """[(app_name, pid)] via the platform (empty when unavailable).

@@ -279,9 +279,9 @@ def configure(keymap):
 
     # --- inspect windows yourself ---------------------------------------
     # get_active_window() / find_window() / list_windows() return portable
-    # Window objects (title, app_name, get_frame(), activate(), ...).  They
-    # are UI-thread only - never touch one from a ThreadedAction.run(); the
-    # thread-safe pair there is keymap.screen_frames() / window_frames().
+    # Window objects (title, app_name, get_frame(), activate(), ...), usable
+    # from any thread, ThreadedAction.run() included.  Keyhac's own windows
+    # are not among them.
     def minimize_window():
         window = keymap.get_active_window()
         if window is not None:

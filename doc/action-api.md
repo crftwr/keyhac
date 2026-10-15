@@ -40,7 +40,7 @@ Base class for time-consuming key actions.
 
 Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
 
-Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The `Window` objects `keymap.find_window()` and friends return are the exception - their methods are UI-thread only. 
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The same goes for `Window` objects and the geometry and IME calls on `keymap`; the few platform calls that cannot run off the main thread take themselves there. Keyhac's own windows are not visible to any of it. 
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
@@ -109,8 +109,6 @@ finished(result: Any) → None
 
 Called on the event-loop thread once run() has returned. 
 
-Main-thread-only APIs are allowed here too. 
-
 
 
 **Args:**
@@ -142,7 +140,7 @@ starting() → None
 
 Called on the event-loop thread the moment the action triggers. 
 
-Main-thread-only APIs (UI, windows, AX) are allowed here; it runs under the engine lock, so keep it light. 
+It runs under the engine lock, so keep it light - capture what the key press names, log intent, and leave the work to run(). 
 
 ---
 
@@ -172,7 +170,7 @@ Bring a window to the front, and wait until it really is.
 ui.activate(app="Google Chrome")
 ``` 
 
-An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()` on the loop thread, by hand. 
+An act with a postcondition, which is what makes it a verb rather than a wrapper: asking a window to activate is not the same as it being in front, and the difference is where a keystroke goes. It was also the last thing an action had to reach around this API to do - `keymap.find_window(...).activate()`, by hand. 
 
 
 
@@ -466,7 +464,7 @@ on_main_thread(func: 'Callable[[], Any]') → Any
 
 Run `func` on the event-loop thread and return its result. 
 
-Element reads do not need it: they run on the calling thread, an action's worker included. The verbs that inject input or bring a window forward use it themselves. An action needs it only for a platform call that must run on the loop thread and that this API does not wrap. 
+Nothing in Keyhac's API needs it: element reads, the verbs and the window calls run on the calling thread, an action's worker included, and the few platform calls that cannot (the clipboard, the macOS work area and input source) take themselves there. It remains for a platform call of your own that has to run on the loop thread. 
 
 ---
 

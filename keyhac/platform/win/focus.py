@@ -226,6 +226,10 @@ class WinFocusProvider(FocusProvider):
         app_name = exe.removesuffix(".exe").removesuffix(".EXE") if exe else None
         class_name = focused.get_class_name()
         path, element = self._build_path(app_name, title, class_name)
+        if top.get_pid() == os.getpid():
+            # Matched on as usual, but no element handed out: Keyhac's own
+            # windows do not exist to the element API (issue #173).
+            element = None
 
         focus = Focus(
             app_name=app_name,
