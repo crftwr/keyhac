@@ -120,6 +120,20 @@ house style for raw-ctypes Win32/COM):
   and a hung target would stall the hook past `LowLevelHooksTimeout` (300 ms) and
   get it silently unhooked. A TSF-only IME may not answer IMM32 at all, which is
   what `None` reports.
+- **UI Automation into a hung application** (issue #171): the shared client is
+  `CUIAutomation8`, with `ConnectionTimeout` and `TransactionTimeout` set to
+  250 ms. Without them, a read into an application that had stopped pumping
+  waited for as long as the application stayed stopped. That was 23 s
+  measured, on the thread that services the hook. The ceiling applies per
+  call, so a compound read gives up after its first timeout: an element that
+  timed out answers "no value" from then on, and the focus walk returns the
+  window-level path. **Accepted, not fixed**: focus moving into a hung
+  application costs the first key one timeout (~270 ms measured, under the
+  300 ms budget). While the application is hung, its focus path stops at the
+  window, so a `focus_path_pattern` that names a control below the window does
+  not match until it answers again. Moving the path walk off the hook thread
+  was considered and rejected as complexity out of proportion to an
+  ill-behaved application.
 - **Caret**: `GetGUIThreadInfo().rcCaret` + `ClientToScreen` (balloon placement).
 - **Mouse**: `WH_MOUSE_LL` for one-shot cancellation on click
   (observation-only; own output recognized by dwExtraInfo); `SendInput` mouse

@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import sys
+import threading
 from typing import Any
 
 from keyhac.core import log
@@ -147,6 +149,11 @@ if sys.platform == "win32":
 
     CLSID_CUIAutomation = "{ff48dba4-60ef-4201-aa87-54103eef594e}"
     IID_IUIAutomation = "{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}"
+    # Windows 8+: the same client, with the call timeouts (issue #171).
+    CLSID_CUIAutomation8 = "{e22ad333-b25f-460c-83d0-0581107395c9}"
+    IID_IUIAutomation2 = "{34723aff-0c9d-49d0-9896-7ab52df8cd8a}"
+    # What a call answers when a timeout below cut it.
+    UIA_E_TIMEOUT = 0x80131505
 
 
 # --------------------------------------------------------------------------
@@ -159,6 +166,11 @@ class _IUIAutomation:
     GetFocusedElement = 8
     get_ControlViewWalker = 14
     get_RawViewWalker = 16
+    # IUIAutomation2 extends it: IUIAutomation ends at 57
+    # (ElementFromIAccessibleBuildCache), then get/put AutoSetFocus 58/59,
+    # ConnectionTimeout 60/61, TransactionTimeout 62/63.
+    put_ConnectionTimeout = 61
+    put_TransactionTimeout = 63
 
 
 class _IUIAutomationElement:
@@ -302,11 +314,55 @@ CONTROL_TYPE_NAMES = {
 }
 
 
+#: Calls on this thread that UIA_TRANSACTION/CONNECTION_TIMEOUT_MS cut short.
+#: Per thread, because a chooser walk on a worker timing out says nothing
+#: about what the main thread is reading. Read through `timeout_count()`.
+_timeouts = threading.local()
+
+
+def timeout_count() -> int:
+    """How many UI Automation calls on this thread have timed out so far.
+
+    Compared before and after a compound read, it says whether any call
+    inside it was cut short - the cue to stop asking (issue #171): the
+    timeout bounds one call, so a read of N calls into a hung application
+    costs N of them unless the caller gives up after the first.
+    """
+    return getattr(_timeouts, "count", 0)
+
+
 def _com_call(ptr, index, restype, argtypes, *args):
     """Invoke vtable slot `index` on the COM interface pointer `ptr`."""
     vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
     prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
-    return prototype(vtable[index])(ptr, *args)
+    result = prototype(vtable[index])(ptr, *args)
+    if isinstance(result, int) and result & 0xFFFFFFFF == UIA_E_TIMEOUT:
+        _timeouts.count = timeout_count() + 1
+    return result
+
+
+def _gives_up_after_timeout(empty):
+    """Make an element read answer `empty` at once once a call on that
+    element has timed out (issue #171).
+
+    A hung application's element costs a full timeout on every read, and a
+    caller reading several attributes of it - a focus walk, an action
+    checking role then name then value - paid each one. One timeout is
+    enough to know; the element is a snapshot handle and is not revived (a
+    fresh one, from a fresh find, asks again).
+    """
+    def decorate(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if self._timed_out:
+                return empty()
+            before = timeout_count()
+            result = method(self, *args, **kwargs)
+            if timeout_count() != before:
+                self._timed_out = True
+            return result
+        return wrapper
+    return decorate
 
 
 def _release(ptr) -> None:
@@ -472,6 +528,20 @@ class _RECT(ctypes.Structure):
 _automation = None
 _automation_failed = False
 
+#: Ceilings on one UI Automation call into a provider (issue #171), set on the
+#: shared client.  Every element read runs on the main thread, which also
+#: services the keyboard hook, and a read into an application that has
+#: stopped pumping used to wait for as long as it stayed stopped - 23 s,
+#: measured - far past LowLevelHooksTimeout (300 ms), past which Windows
+#: drops the hook.  The defaults are 2 s to connect and 20 s per call.
+#:
+#: Both sit under the hook's 300 ms so that one stuck call cannot cost the
+#: hook on its own.  The ceiling is per call, not per walk: a 3,000-node walk
+#: is thousands of calls, each far under this.  A call that times out answers
+#: UIA_E_TIMEOUT, which every caller already reads as "no value".
+UIA_CONNECTION_TIMEOUT_MS = 250
+UIA_TRANSACTION_TIMEOUT_MS = 250
+
 
 def get_automation():
     """The process-wide IUIAutomation instance, created on first use.
@@ -492,12 +562,16 @@ def get_automation():
         hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED)
         if hr not in (S_OK, S_FALSE, RPC_E_CHANGED_MODE):
             raise OSError(f"CoInitializeEx failed: 0x{hr & 0xFFFFFFFF:08x}")
-        ptr = ctypes.c_void_p()
-        hr = ole32.CoCreateInstance(
-            ctypes.byref(GUID(CLSID_CUIAutomation)), None, CLSCTX_INPROC_SERVER,
-            ctypes.byref(GUID(IID_IUIAutomation)), ctypes.byref(ptr))
-        if hr != S_OK or not ptr.value:
-            raise OSError(f"CoCreateInstance(CUIAutomation) failed: 0x{hr & 0xFFFFFFFF:08x}")
+        ptr = _create_bounded_automation()
+        if ptr is None:
+            ptr = ctypes.c_void_p()
+            hr = ole32.CoCreateInstance(
+                ctypes.byref(GUID(CLSID_CUIAutomation)), None,
+                CLSCTX_INPROC_SERVER,
+                ctypes.byref(GUID(IID_IUIAutomation)), ctypes.byref(ptr))
+            if hr != S_OK or not ptr.value:
+                raise OSError(f"CoCreateInstance(CUIAutomation) failed: "
+                              f"0x{hr & 0xFFFFFFFF:08x}")
         _automation = ptr
     except Exception as e:
         _automation_failed = True
@@ -505,6 +579,39 @@ def get_automation():
                        f"to the window level and element access is disabled.")
         return None
     return _automation
+
+
+def _create_bounded_automation():
+    """CUIAutomation8 as IUIAutomation2, with the call timeouts set; None
+    where it is unavailable (before Windows 8) or will not take them.
+
+    IUIAutomation2 extends IUIAutomation, so the pointer serves every slot
+    the rest of this module calls. Falling back to the plain client keeps
+    element access working, unbounded, rather than losing it.
+    """
+    ptr = ctypes.c_void_p()
+    hr = ole32.CoCreateInstance(
+        ctypes.byref(GUID(CLSID_CUIAutomation8)), None, CLSCTX_INPROC_SERVER,
+        ctypes.byref(GUID(IID_IUIAutomation2)), ctypes.byref(ptr))
+    if hr != S_OK or not ptr.value:
+        logger.warning(f"CUIAutomation8 unavailable (0x{hr & 0xFFFFFFFF:08x}); "
+                       f"UI Automation calls into a hung application will "
+                       f"block until it answers.")
+        return None
+    for slot, value, what in (
+            (_IUIAutomation.put_ConnectionTimeout,
+             UIA_CONNECTION_TIMEOUT_MS, "ConnectionTimeout"),
+            (_IUIAutomation.put_TransactionTimeout,
+             UIA_TRANSACTION_TIMEOUT_MS, "TransactionTimeout")):
+        hr = _com_call(ptr, slot, ctypes.c_long, [ctypes.c_ulong],
+                       ctypes.c_ulong(value))
+        if hr != S_OK:
+            logger.warning(f"IUIAutomation2.put_{what} failed "
+                           f"(0x{hr & 0xFFFFFFFF:08x}); using the plain "
+                           f"client.")
+            _release(ptr)
+            return None
+    return ptr
 
 
 @contextlib.contextmanager
@@ -586,6 +693,11 @@ class UIElement:
         "SelectedText": _PatternId.Text,
     }
 
+    #: Set once a call on this element has timed out; see
+    #: _gives_up_after_timeout. A class default, so an element built without
+    #: __init__ (the tests' detached ones) has it too.
+    _timed_out = False
+
     def __init__(self, ptr):
         self._ptr = ptr
 
@@ -625,6 +737,7 @@ class UIElement:
             return None
         return out
 
+    @_gives_up_after_timeout(lambda: None)
     def get_attribute_value(self, name: str) -> Any:
         if not self._ptr:
             return None
@@ -740,6 +853,7 @@ class UIElement:
 
     # -- tree ---------------------------------------------------------------
 
+    @_gives_up_after_timeout(lambda: None)
     def parent(self) -> "UIElement | None":
         walker = _control_view_walker()
         if walker is None or not self._ptr:
@@ -748,6 +862,7 @@ class UIElement:
                            ctypes.c_void_p(self._ptr.value))
         return UIElement(ptr) if ptr else None
 
+    @_gives_up_after_timeout(list)
     def children(self) -> list["UIElement"]:
         """The control-view child elements.
 
@@ -948,6 +1063,7 @@ class UIElement:
         """The selected text inside this element, or None."""
         return self.get_attribute_value("SelectedText")
 
+    @_gives_up_after_timeout(lambda: None)
     def get_text(self) -> str | None:
         """This element's whole text content.
 
@@ -962,9 +1078,15 @@ class UIElement:
         # Value-first returned the short one as if it were whole. An empty
         # document range still falls through to Value, for providers that
         # implement the pattern and leave it blank.
+        before = timeout_count()
         text = self._document_text()
         if text:
             return text
+        if timeout_count() != before:
+            # The Text pattern's call was cut short, so Value would be too:
+            # one timeout, not two (508 ms measured on PR #172 before this).
+            self._timed_out = True
+            return None
         value = self.get_attribute_value("Value")
         if isinstance(value, str) and len(value) >= MSAA_VALUE_CUT:
             # A native EDIT has no Text pattern, and its Value comes through

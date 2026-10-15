@@ -248,7 +248,15 @@ class WinFocusProvider(FocusProvider):
         UI Automation is unavailable."""
         from keyhac.platform.win.uielement import UIElement
 
+        from keyhac.platform.win.uielement import timeout_count
+
+        # Same shape, one level deep - patterns written against the full
+        # path still parse, they just cannot match below the window.
+        window_path = "/" + "/".join((_component("Application", app_name),
+                                      _component(class_name, title)))
+
         element = None
+        before = timeout_count()
         try:
             element = UIElement.from_focus()
         except Exception:
@@ -256,10 +264,7 @@ class WinFocusProvider(FocusProvider):
                          exc_info=True)
 
         if element is None:
-            # Same shape, one level deep - patterns written against the full
-            # path still parse, they just cannot match below the window.
-            return "/" + "/".join((_component("Application", app_name),
-                                   _component(class_name, title))), None
+            return window_path, None
 
         chain = []
         elm = element
@@ -273,7 +278,21 @@ class WinFocusProvider(FocusProvider):
             if control_type == "Pane" and elm.get_attribute_value("ClassName") == "#32769":
                 break
             chain.append((control_type, elm.get_attribute_value("Name")))
+            if timeout_count() != before:
+                # Issue #171: this runs inside the keyboard hook, and the
+                # timeout bounds one call. GetFocusedElement answered and the
+                # application stopped answering after it, so every further
+                # read would cost another 250 ms against a 300 ms hook
+                # budget. Stop at the first, and report the window level -
+                # a half-read chain would be a path that matches nothing.
+                logger.debug("UIA timed out building the focus path; using the "
+                             "window-level path.")
+                return window_path, None
             elm = elm.parent()
+
+        if timeout_count() != before:
+            # The last parent() was the one cut short: same reasoning.
+            return window_path, None
 
         components = [""] + [_component("Application", app_name)]
         for control_type, name in reversed(chain):
