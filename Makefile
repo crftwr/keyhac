@@ -510,7 +510,7 @@ release-status:
 	@# without the skill produces actions full of sleep and screen coordinates
 	@# rather than an error anyone would notice.
 	@attached=$$(gh release view v$(KEYHAC_VERSION) --json assets --jq '.assets[].name' 2>/dev/null \
-		| grep -c '^keyhac-.*-$(KEYHAC_VERSION)-skill\.zip$$'); \
+		| grep -cE '^keyhac-(.*-)?$(KEYHAC_VERSION)-skill\.zip$$'); \
 	expected=$$(ls -d keyhac/skills/*/ | wc -l | tr -d ' '); \
 	if [ "$$attached" = "$$expected" ]; then \
 		echo "  Skill bundles: $$attached of $$expected attached"; \

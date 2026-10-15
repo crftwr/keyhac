@@ -678,7 +678,7 @@ class Extract(ThreadedAction):
 It is deliberately its own namespace and method-style: a config binds keys, an
 action drives somebody else's UI, and only `UINode`, `WaitTimeout` and
 `FillFailed` are importable. **See [Action API](action-api.md)** for the full
-surface, and `keyhac/skills/keyhac-action-authoring/` for how to write one.
+surface, and `keyhac/skills/keyhac/` (`references/actions.md`) for how to write one.
 
 **A `UINode` is a snapshot** — it records what an element was when it was read,
 and the screen moves on without it noticing. `reread()` refreshes one

@@ -9,7 +9,7 @@ ones a config imports. The values the verbs take (`Locator`, `Appears`,
 `ui.Locator(...)`, `ui.Appears(...)`.
 
 Generated from the docstrings. For how to *write* an action, the authoring
-skill in `keyhac/skills/keyhac-action-authoring/` is the procedural half, and
+skill in `keyhac/skills/keyhac/` is the procedural half, and
 `examples/actions/` holds working ones.
 
 > **A `UINode` is a snapshot.** It records what an element was when it was read;

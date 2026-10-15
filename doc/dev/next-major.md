@@ -36,7 +36,7 @@ imprecision does not mislead in practice — and the old name does match the
 authoring vocabulary ("read the screen before you write") used throughout the
 docs and skills.
 
-**Migration.** Rename in `keyhac/mcp/tools.py`; update both skills,
+**Migration.** Rename in `keyhac/mcp/tools.py`; update the skill,
 [ai-integration.md](../ai-integration.md) (§tool table, log examples) and
 `tests/test_mcp.py` in the same commit. Keep the authoring-workflow prose
 ("open the screen the action will work against") — it describes operator
@@ -86,8 +86,8 @@ test is replaced deliberately in the same change.
 
 ## There is no `Action` class — only `ThreadedAction`
 
-Everything user-facing calls the concept an **action**: the authoring skill is
-`keyhac-action-authoring`, the reference is `doc/action-api.md`, the MCP tools
+Everything user-facing calls the concept an **action**: the skill's reference
+for writing one is `references/actions.md`, the API reference is `doc/action-api.md`, the MCP tools
 are `list_actions` / `start_action` / `get_action_result`. The only class is
 `ThreadedAction`, and "action" is otherwise a *role* — whatever a key table
 accepts, which is a string, a sequence of strings, a `KeyTable`, or any
@@ -114,7 +114,7 @@ alias would leave two names for one thing in a vocabulary whose problem is
 already that its names do not line up.
 
 **Migration.** Rename in `keyhac/core/action.py`, re-export both names for one
-release, update the two skills, `doc/configuration.md`, `doc/action-api.md`'s
+release, update the skill (`keyhac/skills/keyhac/`), `doc/configuration.md`, `doc/action-api.md`'s
 generator list and the `_is_action` base-name match in
 `keyhac/mcp/extensions.py`. The AST scan matches on the *trailing* base name,
 so a config that still writes `ThreadedAction` keeps being discovered

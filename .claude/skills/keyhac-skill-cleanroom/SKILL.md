@@ -140,7 +140,7 @@ The mechanical half prints itself. `QUESTIONS.md` is the actual result, and
 measured nothing or broke a rule.
 
 What no script can do is the judgement half: read the case's "must" list in
-`keyhac/skills/keyhac-action-authoring/evals/cases.md` against what came out.
+`keyhac/skills/keyhac/evals/cases.md` against what came out.
 **A "must" missed is a skill defect, not a model defect.** Fix the skill,
 rebuild the bundle, and re-run — all ten cases if the change was to a rule,
 because one new rule is how another gets broken.
