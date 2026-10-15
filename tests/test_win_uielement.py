@@ -224,3 +224,23 @@ def test_window_text_is_only_asked_of_edit_controls(monkeypatch):
     attributes["NativeWindowHandle"] = 0
     attributes["ClassName"] = "WindowsForms10.EDIT.app.0.2bf8098_r6_ad1"
     assert element._window_text() is None, "no window, nothing to ask"
+
+
+def test_the_shared_client_carries_the_call_timeouts():
+    """Issue #171: a UIA call into a hung application waited for as long as
+    it hung - 23 s measured - on the thread that services the keyboard hook.
+    Read back through the get_ slots (60, 62), which also pins the put_
+    slots (61, 63) one past them: a wrong slot would not read back 250."""
+    import ctypes
+
+    from keyhac.platform.win import uielement
+
+    automation = uielement.get_automation()
+    assert automation is not None
+    for slot, expected in ((60, uielement.UIA_CONNECTION_TIMEOUT_MS),
+                           (62, uielement.UIA_TRANSACTION_TIMEOUT_MS)):
+        value = ctypes.c_ulong()
+        hr = uielement._com_call(automation, slot, ctypes.c_long,
+                                 [ctypes.POINTER(ctypes.c_ulong)],
+                                 ctypes.byref(value))
+        assert hr == 0 and value.value == expected
