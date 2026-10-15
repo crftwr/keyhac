@@ -72,6 +72,10 @@ logger = log.getLogger("MCP")
 #: to keep.
 DEFAULT_MAX_NODES = 400
 
+#: The selector keys `describe_screen(within=)` takes - find_elements' own,
+#: so a container is named the way any element is (issue #95).
+WITHIN_KEYS = ("role", "name", "value", "identifier", "text")
+
 #: A window with fewer elements than this has nothing in it at all.
 EMPTY_WINDOW = 5
 
@@ -425,7 +429,22 @@ class ToolRegistry:
                      "max_nodes": {**integer, "description":
                                    f"Node budget (default {DEFAULT_MAX_NODES})."},
                      "roles": {**string, "description": "Only report elements "
-                               "whose role matches this pattern."}}},
+                               "whose role matches this pattern."},
+                     "within": {"type": "object", "description":
+                                "Read only the container this selects - a "
+                                "dialog, a sheet, one panel - instead of the "
+                                "whole window. The same keys as find_elements "
+                                "(role, name, value, identifier, text, and "
+                                "max_depth / max_nodes for finding it); it "
+                                "must match exactly one element. max_depth "
+                                "then counts from the container, so the "
+                                "budget goes further, and two reads of it "
+                                "differ only where it changed.",
+                                "properties": {
+                                    **{key: string for key in WITHIN_KEYS},
+                                    "max_depth": integer,
+                                    "max_nodes": integer},
+                                "additionalProperties": False}}},
                  self.describe_screen,
                  READ_ONLY),
             Tool("find_elements",
@@ -718,14 +737,61 @@ class ToolRegistry:
 
         return self.ui.on_main_thread(read) or "nothing focused"
 
+    def _container(self, window, within) -> tuple:
+        """The one element `within` selects, and the line that places it.
+
+        Exactly one, or an error the caller can act on: a scope that silently
+        took the first of several would be the ambiguity find_elements now
+        reports (issue #93), moved somewhere nobody looks.
+        """
+        if not isinstance(within, dict):
+            raise ValueError("within= takes an object of find_elements keys, "
+                             "such as {\"role\": \"Sheet\"}")
+        unknown = set(within) - set(WITHIN_KEYS) - {"max_depth", "max_nodes"}
+        if unknown:
+            raise ValueError(f"within= does not take {sorted(unknown)}; it "
+                             f"takes {', '.join(WITHIN_KEYS)}, max_depth and "
+                             f"max_nodes")
+        criteria = {k: within[k] for k in WITHIN_KEYS
+                    if within.get(k) is not None}
+        if not criteria:
+            raise ValueError("within= needs at least one of "
+                             + "/".join(WITHIN_KEYS))
+        bounds = {k: int(within[k]) for k in ("max_depth", "max_nodes")
+                  if within.get(k) is not None}
+        matches = window.find_all(**criteria, **bounds)
+        if not matches:
+            raise RuntimeError(
+                f"no container matching within={criteria}. find_elements with "
+                f"the same keys shows what is there; if the container sits "
+                f"deep in web content, put a larger max_depth inside within=")
+        if len(matches) > 1:
+            listed = "\n".join(
+                f"  {node!r} path={_ancestor_path(node) or '(root)'}"
+                for node in matches[:10])
+            raise RuntimeError(
+                f"within={criteria} matches {len(matches)} elements - it has to "
+                f"select one. find_elements with the same keys says what would "
+                f"single each out:\n{listed}")
+        container = matches[0]
+        path = _ancestor_path(container)
+        return container, (f"[within {container!r}"
+                           + (f", path={path}" if path else "") + "]")
+
     def describe_screen(self, app=None, title=None, max_depth=14,
-                        max_nodes=DEFAULT_MAX_NODES, roles=None) -> str:
+                        max_nodes=DEFAULT_MAX_NODES, roles=None,
+                        within=None) -> str:
         max_depth, max_nodes = int(max_depth), int(max_nodes)
         window = self._window(app, title)
+        placed = None
+        if within is not None:
+            window, placed = self._container(window, within)
         tree = window.reread(max_depth=max_depth, max_nodes=max_nodes,
                              roles=roles)
         nodes = list(tree.walk())
         text = tree.dump()
+        if placed is not None:
+            text = f"{placed}\n{text}"
 
         # Order matters, and the first two cases are the ones that would
         # otherwise send a model down a dead end. A Chromium or Electron window
@@ -746,8 +812,13 @@ class ToolRegistry:
         # fired on exactly those: small pages, documents cut off by max_depth
         # (Claude's 537 nodes read as 20 at depth 14), and the 2-node hidden
         # web areas Electron applications carry beside the real one.
+        #
+        # Both are statements about a whole window, so a read scoped with
+        # within= skips them: a small dialog is not an empty window, and a
+        # native panel inside a browser has no business holding a document.
         missing_document = None
-        if not any((area.role or "").endswith("WebArea") for area in nodes):
+        if placed is None and not any((area.role or "").endswith("WebArea")
+                                      for area in nodes):
             asked = self.ui._content_access_state(window)
             if asked is False:
                 missing_document = (
@@ -768,7 +839,7 @@ class ToolRegistry:
 
         if missing_document:
             text += f"\n\n{missing_document}"
-        elif len(nodes) < EMPTY_WINDOW:
+        elif placed is None and len(nodes) < EMPTY_WINDOW:
             text += (f"\n\n[only {len(nodes)} element(s) - this window exposes "
                      f"essentially nothing. Check list_windows for a better "
                      f"target.]")

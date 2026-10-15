@@ -376,6 +376,61 @@ def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 
 
+def _with_container(registry, *containers):
+    window = registry.keymap.node
+    window.find_all = lambda **criteria: (
+        setattr(window, "searched", criteria) or list(containers))
+    return window
+
+
+def test_describe_screen_within_reads_only_the_container(registry):
+    """Issue #95: "just this dialog" is expressible, the container is placed
+    in a first line, and the locating search takes its own bounds."""
+    sheet = FakeNode(name="Export")
+    sheet.role = "AXSheet"
+    sheet.reread = lambda **kw: setattr(sheet, "read_with", kw) or sheet
+    window = _with_container(registry, sheet)
+    text = registry.call("describe_screen", {
+        "within": {"role": "Sheet", "max_depth": 30}, "max_depth": 5})
+    first, *rest = text.splitlines()
+    assert first.startswith("[within ") and rest == ["AXSheet 'Export'"]
+    assert window.searched == {"role": "Sheet", "max_depth": 30}
+    assert sheet.read_with["max_depth"] == 5, "depth counts from the container"
+    # A small container is not an empty window.
+    assert "essentially nothing" not in text
+
+
+def test_describe_screen_within_places_the_container_by_its_path(registry):
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="Main")
+    dialog = UINode(role="AXSheet", identifier="export")
+    dialog._parent = root
+    dialog.reread = lambda **kw: dialog
+    _with_container(registry, dialog)
+    text = registry.call("describe_screen", {"within": {"identifier": "export"}})
+    assert text.splitlines()[0] == (
+        "[within UINode(AXSheet id='export'), path=AXWindow(Main)]")
+
+
+def test_describe_screen_within_must_select_exactly_one(registry):
+    """A scope that took the first of several would be #93's ambiguity
+    moved somewhere nobody looks."""
+    _with_container(registry, FakeNode(name="A"), FakeNode(name="B"))
+    with pytest.raises(RuntimeError, match="matches 2 elements"):
+        registry.call("describe_screen", {"within": {"role": "Window"}})
+    _with_container(registry)
+    with pytest.raises(RuntimeError, match="no container matching"):
+        registry.call("describe_screen", {"within": {"role": "Sheet"}})
+
+
+def test_describe_screen_within_rejects_what_it_cannot_use(registry):
+    with pytest.raises(ValueError, match="does not take"):
+        registry.call("describe_screen", {"within": {"label": "Export"}})
+    with pytest.raises(ValueError, match="at least one"):
+        registry.call("describe_screen", {"within": {"max_depth": 30}})
+
+
 def test_a_missing_window_says_what_to_do_next(registry):
     with pytest.raises(RuntimeError, match="list_windows"):
         registry.call("describe_screen", {"app": "Nope"})
