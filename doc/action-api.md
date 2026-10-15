@@ -40,7 +40,7 @@ Base class for time-consuming key actions.
 
 Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
 
-Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The `Window` objects `keymap.find_window()` and friends return are the exception - their methods are UI-thread only. 
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
@@ -451,6 +451,11 @@ Wrap a platform element as a node, reading nothing below it.
 
 The escape hatch for an element obtained some other way - through `keymap.focus.element`, or a platform call this API does not cover. 
 
+
+
+**Returns:**
+  The node, or None - also for an element of Keyhac's own windows,  which this API does not see. 
+
 ---
 
 ### <kbd>method</kbd> `UI.on_main_thread`
@@ -461,7 +466,7 @@ on_main_thread(func: 'Callable[[], Any]') → Any
 
 Run `func` on the event-loop thread and return its result. 
 
-Every method here already does this, so an action needs it only to make several reads atomic with respect to a UI that is moving underneath - or to call a platform element method this API does not wrap. 
+Element reads do not need it: they run on the calling thread, an action's worker included. The verbs that inject input or bring a window forward use it themselves. An action needs it only for a platform call that must run on the loop thread and that this API does not wrap. 
 
 ---
 
@@ -648,7 +653,7 @@ For the cases where "the window" is ambiguous - a browser with several windows o
 ## <kbd>class</kbd> `UINode`
 One element, projected onto the facts both platforms agree on. 
 
-Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and the text layer read the live UI each time they are called, dispatching to the event-loop thread themselves; `text`, `all_text`, `children`, `walk` and `dump` are free reads of this snapshot, showing the screen as it was when the node was read. 
+Every member is one of two kinds.  `find`, `find_all`, `reread`, the waits and the text layer read the live UI each time they are called, on the thread that calls them; `text`, `all_text`, `children`, `walk` and `dump` are free reads of this snapshot, showing the screen as it was when the node was read. 
 
 
 

@@ -364,10 +364,13 @@ class Window(ABC):
         AX into another application is a different thing entirely and is safe
         from a worker - it is how the candidate window walks a menu bar
         without holding the keyboard (doc/dev/design-notes.md, "Streaming a
-        source").  A ThreadedAction therefore reads windows in
-        starting(), computes in run(), and writes back in finished(); the
-        thread-safe queries a run() may call are keymap.screen_frames() and
-        keymap.window_frames().
+        source"), and how `keymap.ui` and every UINode read from an action's
+        run() (issue #173).  A Window is the exception because a lookup
+        enumerates Keyhac's own windows too: keymap.find_window(),
+        list_windows() and get_active_window() take themselves to the loop
+        thread, but the Window they return is used there, or in starting() /
+        finished().  The thread-safe queries a run() may call are
+        keymap.screen_frames() and keymap.window_frames().
     """
 
     @property

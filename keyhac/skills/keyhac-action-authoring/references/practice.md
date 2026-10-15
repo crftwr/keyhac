@@ -273,11 +273,13 @@ to restore — password fields or nothing.
 value = ui.on_main_thread(lambda: ...)     # rarely needed
 ```
 
-Every method above dispatches to the event-loop thread itself. `on_main_thread`
-is for making several reads atomic against a moving UI, or for calling a
-platform element method this API does not wrap. `starting()` and `finished()`
-already run there; `run()` does not, and must not block it — waiting there
-raises rather than freezing the keyboard.
+Element reads run on the calling thread - in `run()`, the worker - and go
+straight to the other application. The verbs that inject input or bring a
+window forward take themselves to the event-loop thread. `on_main_thread` is
+for a platform call that must run there and that this API does not wrap.
+`starting()` and `finished()` already run there, and must not block it —
+waiting there raises rather than freezing the keyboard. Keyhac's own windows
+are not visible to this API.
 
 ## Saying what happened
 

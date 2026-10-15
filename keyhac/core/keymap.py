@@ -1300,12 +1300,13 @@ class Keymap:
             window support).
 
         Note:
-            UI-thread only, like everything on Window - never call it from a
-            ThreadedAction.run().
+            Safe to call from any thread - it is taken to the event-loop
+            thread. What it returns is not: the Window's own methods are
+            UI-thread only.
         """
         if self.window_provider is None:
             return None
-        return self.window_provider.get_active_window()
+        return self._on_loop(self.window_provider.get_active_window)
 
     def list_windows(self) -> list:
         """List the visible top-level windows.
@@ -1314,11 +1315,12 @@ class Keymap:
             Window objects, front-most first where the OS says so.
 
         Note:
-            UI-thread only.
+            Safe to call from any thread, like get_active_window(); the
+            Windows it returns are UI-thread only.
         """
         if self.window_provider is None:
             return []
-        return self.window_provider.list_windows()
+        return self._on_loop(self.window_provider.list_windows)
 
     def find_window(self, app: str = None, title: str = None,
                     class_name: str = None):
@@ -1337,12 +1339,26 @@ class Keymap:
             A Window, or None when nothing matches.
 
         Note:
-            UI-thread only.
+            Safe to call from any thread, like get_active_window(); the
+            Window it returns is UI-thread only.
         """
         if self.window_provider is None:
             return None
-        return self.window_provider.find_window(
-            app=app, title=title, class_name=class_name)
+        return self._on_loop(lambda: self.window_provider.find_window(
+            app=app, title=title, class_name=class_name))
+
+    @staticmethod
+    def _on_loop(func):
+        """Run a window lookup on the event-loop thread (issue #173).
+
+        Element reads now run on the caller's thread, so `ui.window()` and the
+        `Front` condition reach these from an action's worker. A lookup
+        enumerates every application's windows, Keyhac's own included, and
+        AX into our own process off the main thread crashes - so the lookup
+        goes to the loop, the way the clipboard does (`main_thread_only`).
+        """
+        from keyhac.core.wait import evaluate_on_main_thread
+        return evaluate_on_main_thread(func)
 
     def screen_frames(self) -> list:
         """Get the frame of every screen.

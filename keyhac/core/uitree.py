@@ -77,8 +77,8 @@ class UINode:
     """One element, projected onto the facts both platforms agree on.
 
     Every member is one of two kinds.  `find`, `find_all`, `reread`, the
-    waits and the text layer read the live UI each time they are called,
-    dispatching to the event-loop thread themselves; `text`, `all_text`,
+    waits and the text layer read the live UI each time they are called, on
+    the thread that calls them; `text`, `all_text`,
     `children`, `walk` and `dump` are free reads of this snapshot, showing
     the screen as it was when the node was read.
 
@@ -192,11 +192,14 @@ class UINode:
 
     # -- searching -----------------------------------------------------------
     #
-    # Every method below reads the live UI, so every one dispatches to the
-    # event-loop thread itself.  That is not a convenience: element access is
-    # main-thread-only, an action's pipeline runs on a worker, and making each
-    # call site remember that produced a wrapper around nearly every line of
-    # the first six actions written against this API.
+    # Every method below reads the live UI, on the calling thread (issue
+    # #173).  These used to dispatch to the event-loop thread, on a rule wider
+    # than the reason for it: AX into *our own* process off the main thread
+    # crashes, AX into another application does not (platform/base.py).
+    # Keyhac's own windows never become nodes - `UI.node` refuses them - so
+    # every node here is another application's, and a read from an action's
+    # worker goes straight there. A hung target then stalls that worker and
+    # nothing else, where it used to hold the thread the keyboard hook runs on.
 
     def find(self, max_depth: int = DEFAULT_MAX_DEPTH,
              max_nodes: int = DEFAULT_MAX_NODES, **criteria) -> "UINode | None":
@@ -226,9 +229,8 @@ class UINode:
                 `predicate`; patterns are case-insensitive fnmatch with "|"
                 alternation.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_element(
-            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
+        return find_element(self, max_depth=max_depth, max_nodes=max_nodes,
+                            **criteria)
 
     def find_all(self, max_depth: int = DEFAULT_MAX_DEPTH,
                  max_nodes: int = DEFAULT_MAX_NODES,
@@ -249,9 +251,8 @@ class UINode:
             max_nodes: Node budget for the underlying walk.
             **criteria: As `find`.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: find_elements(
-            self, max_depth=max_depth, max_nodes=max_nodes, **criteria))
+        return find_elements(self, max_depth=max_depth, max_nodes=max_nodes,
+                             **criteria)
 
     def reread(self, max_depth: int = DEFAULT_MAX_DEPTH,
                max_nodes: int = DEFAULT_MAX_NODES,
@@ -260,10 +261,8 @@ class UINode:
 
         A UINode is a snapshot: the screen moves on, and nothing here notices.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
-        return evaluate_on_main_thread(lambda: get_ui_tree(
-            self, max_depth=max_depth, max_nodes=max_nodes, roles=roles,
-            prune=prune))
+        return get_ui_tree(self, max_depth=max_depth, max_nodes=max_nodes,
+                           roles=roles, prune=prune)
 
     def dump(self, max_value: int = 60) -> str:
         """This subtree as indented text - to read, and to hand to an AI agent.
@@ -323,11 +322,10 @@ class UINode:
         time.  This is what `focus()` checks, and the two are worth separating
         when an action wants to know where the focus *is* without moving it.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
         probe = getattr(self.element, "has_focus", None)
         if probe is None:
             return False
-        return bool(evaluate_on_main_thread(probe))
+        return bool(probe())
 
     def contains_focus(self) -> bool:
         """Whether the keyboard focus is on this element *or inside it*.
@@ -346,11 +344,10 @@ class UINode:
         Which of the two it is, the tree says; `UI.focused()` names the
         element that actually has the focus.
         """
-        from keyhac.core.wait import evaluate_on_main_thread
         probe = getattr(self.element, "contains_focus", None)
         if probe is None:
             return False
-        return bool(evaluate_on_main_thread(probe))
+        return bool(probe())
 
     def set_text(self, text: str, **options) -> str:
         """Write `text` into this field and prove it arrived.
@@ -414,11 +411,10 @@ class UINode:
         wait_for_stable(self, quiet=quiet, timeout=timeout, **bounds)
 
     def _on_element(self, method: str):
-        from keyhac.core.wait import evaluate_on_main_thread
         call = getattr(self.element, method, None)
         if call is None:
             return None
-        return evaluate_on_main_thread(call)
+        return call()
 
 
     def walk(self) -> Iterator["UINode"]:

@@ -91,7 +91,9 @@ def on_loop_thread() -> bool:
 def evaluate_on_main_thread(func: Callable[[], Any], timeout: float = 5.0) -> Any:
     """Run `func` on the event-loop thread and return what it returned.
 
-    The supported way to read elements from a worker.  Exceptions raised inside
+    For what genuinely has to run there: input injection, window lookups and
+    activation, the clipboard.  Element reads do not - they run on the
+    calling thread (issue #173).  Exceptions raised inside
     `func` are re-raised here, so a condition that throws is not silently a
     False.
 
@@ -192,7 +194,11 @@ def wait_for(condition: Callable[[], Any],
             raise ActionCancelled(
                 f"cancelled while waiting for {message or 'a condition'}")
 
-        result = evaluate_on_main_thread(condition)
+        # On this thread (issue #173): a condition reads other applications'
+        # elements, and those reads are safe off the loop thread. Evaluating
+        # it there held the thread the keyboard hook runs on for as long as
+        # the target took to answer, on every poll of every wait.
+        result = condition()
         if result:
             return result
         remaining = deadline - time.monotonic()
@@ -305,12 +311,12 @@ def wait_for_stable(root, quiet: float = DEFAULT_QUIET,
         return tuple((n.depth, n.role, n.name, n.value) for n in tree.walk())
 
     deadline = time.monotonic() + timeout
-    previous = evaluate_on_main_thread(signature)
+    previous = signature()
     stable_since = time.monotonic()
 
     while True:
         time.sleep(min(MIN_INTERVAL * 2, max(deadline - time.monotonic(), 0) or 0.01))
-        current = evaluate_on_main_thread(signature)
+        current = signature()
         now = time.monotonic()
         if current != previous:
             previous = current

@@ -239,13 +239,16 @@ def test_refuses_to_block_the_loop_thread(engine, monkeypatch):
         wait_for(lambda: False, timeout=0.2)
 
 
-def test_worker_thread_dispatches_to_the_loop(engine):
-    """The normal path: run() waits, the condition runs on the loop thread."""
+def test_a_worker_evaluates_its_condition_on_its_own_thread(engine):
+    """Issue #173: run() waits, and the condition runs right there on the
+    worker - not on the loop thread, where an element read into a hung
+    application held the keyboard hook for as long as it took."""
     fixture = engine(lambda keymap: None)
     ran_on = []
+    dispatched = []
 
     def dispatcher(callback):
-        # Stand in for the event loop: run it on a dedicated "loop" thread.
+        dispatched.append(callback)
         thread = threading.Thread(target=callback, name="loop")
         thread.start()
         thread.join()
@@ -258,10 +261,36 @@ def test_worker_thread_dispatches_to_the_loop(engine):
             lambda: ran_on.append(threading.current_thread().name) or "done",
             timeout=2)
 
-    thread = threading.Thread(target=worker)
+    thread = threading.Thread(target=worker, name="worker")
     thread.start()
     thread.join(timeout=5)
     assert result["value"] == "done"
+    assert ran_on == ["worker"] and dispatched == []
+
+
+def test_a_window_lookup_from_a_worker_still_goes_to_the_loop(engine):
+    """The part of the API that is not an element read: window lookups
+    enumerate every application, Keyhac's own included, so they are taken to
+    the loop thread whoever asks."""
+    fixture = engine(lambda keymap: None)
+    ran_on = []
+
+    class Provider:
+        def get_active_window(self):
+            ran_on.append(threading.current_thread().name)
+
+        list_windows = find_window = get_active_window
+
+    def dispatcher(callback):
+        thread = threading.Thread(target=callback, name="loop")
+        thread.start()
+        thread.join()
+
+    fixture.keymap.set_main_thread_dispatcher(dispatcher)
+    fixture.keymap.window_provider = Provider()
+    thread = threading.Thread(target=fixture.keymap.get_active_window)
+    thread.start()
+    thread.join(timeout=5)
     assert ran_on == ["loop"]
 
 

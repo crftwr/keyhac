@@ -74,10 +74,13 @@ class ThreadedAction:
 
     Three threads, and which one you are on decides what you may touch.
     starting() and finished() run on the event-loop thread under the engine
-    lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they
-    should stay light-weight because they hold the lock the keyboard hook
-    needs.  run() executes on a worker, where input contexts are allowed but
-    windows and AX elements are not.
+    lock: they should stay light-weight because they hold the lock the
+    keyboard hook needs.  run() executes on a worker, and that is where the
+    pipeline goes: input contexts, `self.ui` and every element read and wait
+    work there, reading the other application directly, so a slow or hung
+    application stalls this action and not the keyboard.  The `Window`
+    objects `keymap.find_window()` and friends return are the exception -
+    their methods are UI-thread only.
 
     Actions run concurrently, so a run() that takes minutes no longer holds up
     every other one.  What is still serialized is what has to be: injected

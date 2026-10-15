@@ -872,8 +872,9 @@ class ToolRegistry:
             node = self.ui.focused()
             if node is None:
                 raise RuntimeError(
-                    "nothing has keyboard focus; pass app= or title=, or call "
-                    "list_windows")
+                    "nothing readable has keyboard focus - nothing at all, or "
+                    "one of Keyhac's own windows, which these tools do not "
+                    "read; pass app= or title=, or call list_windows")
             return node
         window = self.ui.window(app=app, title=title)
         if window is None:

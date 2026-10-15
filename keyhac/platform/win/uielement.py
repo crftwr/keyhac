@@ -693,6 +693,11 @@ class UIElement:
         "SelectedText": _PatternId.Text,
     }
 
+    def process_id(self) -> int | None:
+        """The process this element belongs to. `UI.node` uses it to keep
+        Keyhac's own windows out of the element API (issue #173)."""
+        return self.get_attribute_value("ProcessId")
+
     #: Set once a call on this element has timed out; see
     #: _gives_up_after_timeout. A class default, so an element built without
     #: __init__ (the tests' detached ones) has it too.

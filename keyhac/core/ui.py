@@ -37,6 +37,7 @@ Windows does not, where it returns False and does nothing.
 from __future__ import annotations
 
 import contextlib
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -239,8 +240,10 @@ class Front(Condition):
     def check(self, ui):
         """lazydocs: ignore"""
         from keyhac.core.focus import match_window_fields
-        provider = getattr(ui._keymap, "window_provider", None)
-        active = provider.get_active_window() if provider is not None else None
+        # Through the keymap, which takes window lookups to the loop thread:
+        # a condition is evaluated on the caller's thread (issue #173), and a
+        # window lookup is the one part of it that is not an element read.
+        active = ui._keymap.get_active_window()
         if active is None:
             return None
         if not match_window_fields(active, app=self.app, title=self.title):
@@ -453,8 +456,7 @@ class UI:
             fails every attribute read is not.
         """
         provider = self._keymap._focus_provider
-        return self.on_main_thread(
-            lambda: self.node(provider.get_focused_element()))
+        return self.node(provider.get_focused_element())
 
     def window(self, app: str = None, title: str = None,
                class_name: str = None) -> UINode | None:
@@ -508,12 +510,26 @@ class UI:
 
         The escape hatch for an element obtained some other way - through
         `keymap.focus.element`, or a platform call this API does not cover.
+
+        Returns:
+            The node, or None - also for an element of Keyhac's own windows,
+            which this API does not see.
         """
         if element is None:
             return None
         if isinstance(element, UINode):
             return element
-        return self.on_main_thread(lambda: get_ui_tree(element, max_depth=0))
+        # Every node is another application's (issue #173). Reads run on the
+        # calling thread, and AX into our own process off the main thread
+        # crashes - so our own windows are refused here, at the one door
+        # every root comes through, rather than routed back to the loop on
+        # each read. What this gives up is driving Keyhac's own UI from an
+        # action; screen readers are unaffected, since this is only our API
+        # declining to look at itself.
+        process_id = getattr(element, "process_id", None)
+        if process_id is not None and process_id() == os.getpid():
+            return None
+        return get_ui_tree(element, max_depth=0)
 
     # -- waiting -------------------------------------------------------------
 
@@ -856,7 +872,7 @@ class UI:
                     return None
             return node
 
-        return self.on_main_thread(find)
+        return find()
 
     def _target(self, locator, within, node, timeout):
         """The element a verb is about: the one in hand, or the one found.
@@ -1154,16 +1170,18 @@ class UI:
                 return None
             return application.get_manual_accessibility()
 
-        return self.on_main_thread(read)
+        return read()
 
     # -- threads --------------------------------------------------------------
 
     def on_main_thread(self, func: Callable[[], Any]) -> Any:
         """Run `func` on the event-loop thread and return its result.
 
-        Every method here already does this, so an action needs it only to make
-        several reads atomic with respect to a UI that is moving underneath -
-        or to call a platform element method this API does not wrap.
+        Element reads do not need it: they run on the calling thread, an
+        action's worker included. The verbs that inject input or bring a
+        window forward use it themselves. An action needs it only for a
+        platform call that must run on the loop thread and that this API
+        does not wrap.
         """
         from keyhac.core.wait import evaluate_on_main_thread
         return evaluate_on_main_thread(func)

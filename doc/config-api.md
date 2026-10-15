@@ -225,7 +225,7 @@ Matching is exactly define_keytable's: case-insensitive, fnmatch wildcards, "|" 
 
 **Note:**
 
-> UI-thread only. 
+> Safe to call from any thread, like get_active_window(); the Window it returns is UI-thread only. 
 
 ---
 
@@ -246,7 +246,7 @@ Get the frontmost window.
 
 **Note:**
 
-> UI-thread only, like everything on Window - never call it from a ThreadedAction.run(). 
+> Safe to call from any thread - it is taken to the event-loop thread. What it returns is not: the Window's own methods are UI-thread only. 
 
 ---
 
@@ -331,7 +331,7 @@ List the visible top-level windows.
 
 **Note:**
 
-> UI-thread only. 
+> Safe to call from any thread, like get_active_window(); the Windows it returns are UI-thread only. 
 
 ---
 
@@ -802,7 +802,7 @@ The portable half of keyhac-win's pyauto.Window and keyhac-mac's AXWindow elemen
 
 **Note:**
 
-> Everything on this class is UI-thread only.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP.  Read that narrowly: it is *our own process*. AX into another application is a different thing entirely and is safe from a worker - it is how the candidate window walks a menu bar without holding the keyboard (doc/dev/design-notes.md, "Streaming a source").  A ThreadedAction therefore reads windows in starting(), computes in run(), and writes back in finished(); the thread-safe queries a run() may call are keymap.screen_frames() and keymap.window_frames(). 
+> Everything on this class is UI-thread only.  On macOS these are Accessibility calls, and AX into our own process off the main thread crashes with SIGTRAP.  Read that narrowly: it is *our own process*. AX into another application is a different thing entirely and is safe from a worker - it is how the candidate window walks a menu bar without holding the keyboard (doc/dev/design-notes.md, "Streaming a source"), and how `keymap.ui` and every UINode read from an action's run() (issue #173).  A Window is the exception because a lookup enumerates Keyhac's own windows too: keymap.find_window(), list_windows() and get_active_window() take themselves to the loop thread, but the Window they return is used there, or in starting() / finished().  The thread-safe queries a run() may call are keymap.screen_frames() and keymap.window_frames(). 
 
 
 ---
@@ -1046,7 +1046,7 @@ Base class for time-consuming key actions.
 
 Anything slow - network, subprocess, sleeping, heavy computation - must not run inline, because a bound function executes inside the keyboard hook's deadline.  Derive from this and implement starting(), run() and finished() instead. 
 
-Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: main-thread-only APIs (UI, windows, AX) are allowed there, and they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, where input contexts are allowed but windows and AX elements are not. 
+Three threads, and which one you are on decides what you may touch. starting() and finished() run on the event-loop thread under the engine lock: they should stay light-weight because they hold the lock the keyboard hook needs.  run() executes on a worker, and that is where the pipeline goes: input contexts, `self.ui` and every element read and wait work there, reading the other application directly, so a slow or hung application stalls this action and not the keyboard.  The `Window` objects `keymap.find_window()` and friends return are the exception - their methods are UI-thread only. 
 
 Actions run concurrently, so a run() that takes minutes no longer holds up every other one.  What is still serialized is what has to be: injected keystrokes (one `with ctx:` batch at a time) and the clipboard save and restore around a paste. 
 
