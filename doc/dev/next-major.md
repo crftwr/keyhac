@@ -138,6 +138,12 @@ against a Windows EDIT may already split on `\r\n`, or match it. #169's fix
 was kept to texts that were being cut anyway (a Value at the 4,096-character
 MSAA limit), so every shorter read, separators included, is unchanged.
 
+One inconsistency already exists inside a single control. A RichEdit's Value
+uses `\r`, but since #170 a RichEdit longer than the MSAA cut (4,095
+characters) is read through WM_GETTEXT, which uses `\r\n`. A long RichEdit
+was cut before #170, so nothing that worked changed, but it is the case
+normalising would settle.
+
 **Migration.** Actions that split on `\r\n` or `\r` switch to
 `splitlines()` or to `\n`. The release note should list the controls whose
 output changes.

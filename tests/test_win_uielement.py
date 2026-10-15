@@ -164,12 +164,39 @@ def _edit_with_value(monkeypatch, value, window_text):
 def test_get_text_asks_the_window_when_value_hits_the_msaa_limit(monkeypatch):
     """Issue #169: a native EDIT's Value is cut at 4,096 by the MSAA proxy
     and there is no Text pattern; WM_GETTEXT has the whole text."""
-    from keyhac.platform.win.uielement import MSAA_VALUE_LIMIT
+    from keyhac.platform.win.uielement import MSAA_VALUE_CUT
 
     whole = "line\r\n" * 5600                       # 33,600 characters
     element, asked = _edit_with_value(
-        monkeypatch, whole[:MSAA_VALUE_LIMIT], whole)
+        monkeypatch, whole[:MSAA_VALUE_CUT], whole)
     assert element.get_text() == whole and asked
+
+
+def test_a_richedit_cut_one_shorter_also_asks_the_window(monkeypatch):
+    """PR #170 Windows pass: RichEdit's Value is cut at 4,095, not 4,096."""
+    whole = "rich line\r\n" * 1200
+    element, asked = _edit_with_value(monkeypatch, whole[:4095], whole)
+    assert element.get_text() == whole and asked
+
+
+def test_window_text_never_reads_a_password_field(monkeypatch):
+    """PR #170 Windows pass: WM_GETTEXT handed a WinForms password TextBox's
+    plaintext to another process. Refused before any message is sent."""
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    attributes = {"NativeWindowHandle": 0x1234, "IsPassword": True,
+                  "ClassName": "WindowsForms10.EDIT.app.0.2bf8098_r6_ad1"}
+    monkeypatch.setattr(element, "get_attribute_value", attributes.get)
+    sent = []
+    monkeypatch.setattr(uielement.user32, "SendMessageTimeoutW",
+                        lambda *args: sent.append(args) or 1)
+    assert element._window_text() is None and not sent
+    # And by the window style alone, when UIA does not say.
+    attributes["IsPassword"] = False
+    monkeypatch.setattr(uielement.user32, "GetWindowLongW",
+                        lambda hwnd, index: uielement.ES_PASSWORD)
+    assert element._window_text() is None and not sent
 
 
 def test_get_text_below_the_limit_never_asks_the_window(monkeypatch):
@@ -181,9 +208,9 @@ def test_get_text_below_the_limit_never_asks_the_window(monkeypatch):
 
 def test_get_text_keeps_the_value_when_the_window_has_no_more(monkeypatch):
     """A password EDIT answers WM_GETTEXT from outside with nothing."""
-    from keyhac.platform.win.uielement import MSAA_VALUE_LIMIT
+    from keyhac.platform.win.uielement import MSAA_VALUE_CUT
 
-    value = "x" * MSAA_VALUE_LIMIT
+    value = "x" * MSAA_VALUE_CUT
     for answer in (None, "", value):
         element, _asked = _edit_with_value(monkeypatch, value, answer)
         assert element.get_text() == value
