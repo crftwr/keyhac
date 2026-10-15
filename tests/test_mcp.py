@@ -10,6 +10,7 @@ the result so the model can read it.
 import json
 import logging
 import pathlib
+import re
 import sys
 import os
 import shutil
@@ -175,6 +176,31 @@ def test_tools_list_shape(dispatcher):
             "cancel_action", "list_windows"} <= {t["name"] for t in tools}
     for tool in tools:
         assert tool["description"] and tool["inputSchema"]["type"] == "object"
+
+
+def test_every_tool_says_whether_it_writes(dispatcher):
+    """Issue #94: the read/write split is on the protocol, so a client can
+    approve reads and gate writes without parsing descriptions. Pinned as a
+    whole set - a new tool has to be classified, not default into either."""
+    tools = dispatcher.handle({"jsonrpc": "2.0", "id": 3,
+                               "method": "tools/list"})["result"]["tools"]
+    read_only = {t["name"] for t in tools
+                 if t["annotations"]["readOnlyHint"] is True}
+    assert read_only == {
+        "list_windows", "get_focus", "describe_screen", "find_elements",
+        "read_text", "list_actions", "get_action_result", "describe_keymap",
+        "read_config", "list_extensions", "read_extension"}
+    by_name = {t["name"]: t["annotations"] for t in tools}
+    for name, hints in by_name.items():
+        if name not in read_only:
+            assert hints["readOnlyHint"] is False
+            assert isinstance(hints["destructiveHint"], bool), name
+    assert {name for name, hints in by_name.items()
+            if hints.get("destructiveHint")} == {
+        "start_action", "write_config", "write_extension", "delete_extension"}
+    # The spec's default is true; only an action reaches past this desktop.
+    assert {name for name, hints in by_name.items()
+            if hints["openWorldHint"]} == {"start_action"}
 
 
 def test_a_failing_tool_reports_inside_the_result(dispatcher):
@@ -351,6 +377,147 @@ def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 
 
+def _with_container(registry, *containers):
+    window = registry.keymap.node
+    window.find_all = lambda **criteria: (
+        setattr(window, "searched", criteria) or list(containers))
+    return window
+
+
+def test_describe_screen_within_reads_only_the_container(registry):
+    """Issue #95: "just this dialog" is expressible, the container is placed
+    in a first line, and the locating search takes its own bounds."""
+    sheet = FakeNode(name="Export")
+    sheet.role = "AXSheet"
+    sheet.reread = lambda **kw: setattr(sheet, "read_with", kw) or sheet
+    window = _with_container(registry, sheet)
+    text = registry.call("describe_screen", {
+        "within": {"role": "Sheet", "max_depth": 30}, "max_depth": 5})
+    first, *rest = text.splitlines()
+    assert first.startswith("[within ") and rest == ["AXSheet 'Export'"]
+    assert window.searched == {"role": "Sheet", "max_depth": 30}
+    assert sheet.read_with["max_depth"] == 5, "depth counts from the container"
+    # A small container is not an empty window.
+    assert "essentially nothing" not in text
+
+
+def test_describe_screen_within_places_the_container_by_its_path(registry):
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="Main")
+    dialog = UINode(role="AXSheet", identifier="export")
+    dialog._parent = root
+    dialog.reread = lambda **kw: dialog
+    _with_container(registry, dialog)
+    text = registry.call("describe_screen", {"within": {"identifier": "export"}})
+    assert text.splitlines()[0] == (
+        "[within UINode(AXSheet id='export'), path=AXWindow(Main)]")
+
+
+def test_describe_screen_within_must_select_exactly_one(registry):
+    """A scope that took the first of several would be #93's ambiguity
+    moved somewhere nobody looks."""
+    _with_container(registry, FakeNode(name="A"), FakeNode(name="B"))
+    with pytest.raises(RuntimeError, match="matches 2 elements"):
+        registry.call("describe_screen", {"within": {"role": "Window"}})
+    _with_container(registry)
+    with pytest.raises(RuntimeError, match="no container matching"):
+        registry.call("describe_screen", {"within": {"role": "Sheet"}})
+
+
+def test_describe_screen_within_rejects_what_it_cannot_use(registry):
+    with pytest.raises(ValueError, match="does not take"):
+        registry.call("describe_screen", {"within": {"label": "Export"}})
+    with pytest.raises(ValueError, match="at least one"):
+        registry.call("describe_screen", {"within": {"max_depth": 30}})
+
+
+def _wide_tree(count, name_chars):
+    from keyhac.core.uitree import UINode
+
+    root = UINode(role="AXWindow", name="Docs")
+    root.children = [UINode(role="AXLink", name=f"{i:04d} " + "x" * name_chars,
+                            depth=1)
+                     for i in range(count)]
+    return root
+
+
+def test_describe_screen_cuts_a_reply_too_large_for_the_client(registry):
+    """Issue #67: the node budget bounds what is read, not what is returned -
+    long names (web content) and a raised max_nodes produced a reply the
+    client refused, losing the whole turn. Cut on whole lines, with the
+    count and the advice to narrow rather than to raise a bound."""
+    tree = _wide_tree(500, 100)
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {"max_nodes": 6000})
+    body, note = text.split("\n\n[cut at ")
+    assert len(text) <= tools_module.MAX_REPLY_CHARS, "the note included"
+    shown = body.splitlines()
+    assert shown[0] == "AXWindow 'Docs'"
+    assert all(line.endswith("x'") for line in shown[1:]), "whole lines only"
+    assert f"showing {len(shown)} of 501 node(s)" in note
+    assert "within=" in note and "Raise the bound" not in note
+
+
+def test_describe_screen_within_the_ceiling_is_untouched(registry):
+    tree = _wide_tree(50, 100)
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {})
+    assert "[cut at" not in text and len(text.splitlines()) == 51
+
+
+def test_a_scoped_cut_does_not_count_the_placing_line(registry):
+    tree = _wide_tree(500, 100)
+    tree.reread = lambda **kw: tree
+    _with_container(registry, tree)
+    text = registry.call("describe_screen", {"within": {"role": "Window"}})
+    body = text.split("\n\n[cut at ")[0]
+    assert f"showing {len(body.splitlines()) - 1} of 501" in text
+
+
+def _scrollback(registry, lines):
+    text = "".join(f"line {i:05d}\n" for i in range(lines))
+    registry.keymap.node.read_text = lambda: text
+    return text
+
+
+def test_read_text_returns_a_short_text_whole(registry):
+    text = _scrollback(registry, 10)
+    assert registry.call("read_text", {}) == text
+
+
+def test_read_text_returns_the_end_of_a_long_text(registry):
+    """A scrollback is as long as its session, and had no bound at all. The
+    newest part is the end, so that is what is kept - on whole lines, with
+    the range said first and how to read the rest."""
+    text = _scrollback(registry, 5000)               # 55,000 characters
+    reply = registry.call("read_text", {})
+    note, body = reply.split("\n", 1)
+    assert len(reply) <= tools_module.MAX_REPLY_CHARS, "the note included"
+    assert body.endswith("line 04999\n") and body.startswith("line ")
+    begin = len(text) - len(body)
+    assert note.startswith(f"[characters {begin}-{len(text)} of {len(text)} "
+                           f"(the end)")
+    # Going back starts on a line boundary too (PR #165 Windows pass), and
+    # reaches the range already read - no gap.
+    before = int(re.search(r"start=(\d+) reads what comes before",
+                           note).group(1))
+    assert text[before - 1] == "\n"
+    previous = registry.call("read_text", {"start": before}).split("\n", 1)[1]
+    assert before + len(previous) >= begin
+
+
+def test_read_text_start_pages_through_on_whole_lines(registry):
+    text = _scrollback(registry, 5000)
+    reply = registry.call("read_text", {"start": 0})
+    note, body = reply.split("\n", 1)
+    assert text.startswith(body) and body.endswith("\n")
+    end = len(body)
+    assert note.startswith(f"[characters 0-{end} of {len(text)} (a range)")
+    following = registry.call("read_text", {"start": end}).split("\n", 1)[1]
+    assert text[end:].startswith(following), "the next start follows on"
+
+
 def test_a_missing_window_says_what_to_do_next(registry):
     with pytest.raises(RuntimeError, match="list_windows"):
         registry.call("describe_screen", {"app": "Nope"})
@@ -453,9 +620,131 @@ def test_a_match_that_is_the_searched_root_carries_no_path(registry):
     window = UINode(role="AXWindow", name="Main", rect=(0, 0, 100, 100))
     registry.keymap.node.find_all = lambda **criteria: [window]
     text = registry.call("find_elements", {"role": "Window"})
-    assert text == ("1 match(es):\n"
+    assert text == ("1 match - unique: find() with these criteria gets this "
+                    "element.\n"
                     "  UINode(AXWindow name='Main') value=None "
                     "rect=(0, 0, 100, 100)")
+
+
+def _translate_window():
+    """Two tab groups, each with an "English" button; the left group also
+    holds a uniquely named one. Built as a walk would build it, so the
+    `_parent` chains lead back to a root."""
+    from keyhac.core.uitree import UINode
+
+    def adopt(parent, *children):
+        for child in children:
+            child._parent = parent
+        parent.children = list(children)
+        return parent
+
+    english_l = UINode(role="AXButton", name="English")
+    english_r = UINode(role="AXButton", name="English")
+    swap = UINode(role="AXButton", name="Swap", identifier="swap-languages")
+    left = adopt(UINode(role="AXTabGroup", identifier="source"),
+                 english_l, swap)
+    right = adopt(UINode(role="AXTabGroup", name="Target"), english_r)
+    root = adopt(UINode(role="AXWindow", name="Translate"), left, right)
+    return root, english_l, english_r, swap
+
+
+def _verdicts(registry, matches):
+    registry.keymap.node.find_all = lambda **criteria: matches
+    text = registry.call("find_elements", {"role": "Button"})
+    return text, [line.strip()[3:] for line in text.splitlines()
+                  if line.strip().startswith("->")]
+
+
+def test_an_ambiguous_match_names_what_would_single_it_out(registry):
+    """Issue #93: "N matches" is a prediction that find() grabs the wrong one,
+    so the reply says so and measures, per match, the narrowing that would
+    make it unique - identifier first, then name, then a container."""
+    _root, english_l, english_r, swap = _translate_window()
+    text, verdicts = _verdicts(registry, [english_l, swap, english_r])
+    assert text.startswith("3 matches - ambiguous")
+    assert verdicts == [
+        "unique within role='TabGroup', identifier='source', "
+        "with name='English'",
+        "unique with identifier='swap-languages'",
+        "unique within role='TabGroup', name='Target'"]
+
+
+def test_a_unique_name_is_offered_before_a_container(registry):
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = None
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_a_generated_identifier_is_not_offered(registry):
+    """An id the framework numbered (React's useId here) is unique today and
+    renumbered next render - the advice would break the action later."""
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = ":r1f:"
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_a_container_that_is_not_itself_unique_is_not_offered(registry):
+    """A scoped search is two finds; the container's must be unique too."""
+    root, english_l, english_r, _swap = _translate_window()
+    left, right = root.children
+    right.name, right.identifier = None, None
+    left.identifier = None
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts == ["nothing separates it but its position - no "
+                        "identifier, name or container is its alone"] * 2
+
+
+def test_a_chromium_views_identifier_is_not_offered(registry):
+    """Found on Windows (PR #165): Edge's title-bar buttons carry Views'
+    "view_7" - a runtime counter, on every Chromium window's chrome."""
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = "view_7"
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_long_names_differing_past_the_prefix_are_still_separated(registry):
+    """Found on Windows (PR #165): the prefix pattern matched both twins and
+    the verdict claimed nothing separated them, when the whole name did."""
+    _root, english_l, english_r, _swap = _translate_window()
+    stem = "This is a deliberately very long button label that goes well " \
+           "past sixty characters "
+    english_l.name, english_r.name = stem + "A", stem + "B"
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts == [f"unique with name={stem + 'A'!r}",
+                        f"unique with name={stem + 'B'!r}"]
+
+
+def test_a_long_name_that_differs_early_keeps_the_short_pattern(registry):
+    _root, english_l, english_r, _swap = _translate_window()
+    english_l.name = "A " + "x" * 80
+    english_r.name = "B " + "x" * 80
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts[0].startswith("unique with name='A x") \
+        and verdicts[0].endswith("*'")
+
+
+def test_a_narrowing_pattern_matches_only_its_own_text(registry):
+    """Names carrying fnmatch metacharacters are bracketed, so the offered
+    pattern is literal - "Save*" would also match "Save As"."""
+    from keyhac.core.uitree import match_pattern
+
+    root, english_l, english_r, _swap = _translate_window()
+    english_l.name = "Save*"
+    english_r.name = "Save As"
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts[0] == "unique with name='Save[*]'"
+    assert match_pattern("Save*", "Save[*]")
+    assert not match_pattern("Save As", "Save[*]")
+
+
+def test_a_cut_walk_qualifies_the_verdict(registry):
+    root, english_l, english_r, _swap = _translate_window()
+    root.children[1].truncated = True
+    text, _verdicts_ = _verdicts(registry, [english_l, english_r])
+    assert "within what was read" in text
 
 
 def test_an_action_reports_what_it_logged(writable):

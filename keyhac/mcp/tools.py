@@ -72,6 +72,40 @@ logger = log.getLogger("MCP")
 #: to keep.
 DEFAULT_MAX_NODES = 400
 
+#: Ceiling on the replies that grow with what is on screen, in characters
+#: (issue #67) - a `describe_screen` dump and a `read_text` buffer.
+#:
+#: For describe_screen, the node budget bounds how much is *read*, not how much is *returned*: a
+#: line's length is the node's name, which is not truncated (web content puts
+#: whole paragraphs there), plus two spaces of indent per level, 60 of them at
+#: depth 30. And max_nodes is the caller's to raise - #67 was max_nodes=6000.
+#:
+#: The real ceiling is the MCP client's, and the protocol has no way to learn
+#: it, so this sits under the smallest one known. Claude Code's tool-output
+#: default is 25,000 tokens; Claude Desktop publishes none, and answers an
+#: over-size reply with a generic error that loses the turn - which is what
+#: #67 hit. Sized for the worst ratio rather than the usual one: English tree
+#: text runs ~3-4 characters per token, but CJK names approach one token per
+#: character, so 20,000 characters stays at or under ~20,000 tokens - 80% of
+#: that default - whatever the screen's language. The same figure as
+#: MAX_CAPTURE, the other reply that grows with what is on screen.
+#:
+#: For describe_screen a backstop, not the working budget: DEFAULT_MAX_NODES
+#: keeps an ordinary read far below it (400 Finder nodes ~1,700 tokens).
+#: read_text has no other bound at all - a terminal's scrollback is as long
+#: as the session that produced it.
+MAX_REPLY_CHARS = 20_000
+
+#: What the content of a cut reply may use: the ceiling above, less room for
+#: the note that says where the cut is - so the whole reply, note included,
+#: stays under MAX_REPLY_CHARS. The longest note is describe_screen's, ~430
+#: characters.
+MAX_CUT_BODY = MAX_REPLY_CHARS - 500
+
+#: The selector keys `describe_screen(within=)` takes - find_elements' own,
+#: so a container is named the way any element is (issue #95).
+WITHIN_KEYS = ("role", "name", "value", "identifier", "text")
+
 #: A window with fewer elements than this has nothing in it at all.
 EMPTY_WINDOW = 5
 
@@ -108,6 +142,79 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
     return (f"reported {len(nodes)} node(s), cut off at {len(cut)} point(s) "
             f"({', '.join(bounds)}); deepest level reached: "
             f"{max(node.depth for node in nodes)}")
+
+
+def _cut_screen(text: str, total: int, scoped: bool) -> str:
+    """A `describe_screen` reply cut to MAX_REPLY_CHARS, saying where - the
+    body to MAX_CUT_BODY, so the note fits under the ceiling as well.
+
+    Whole lines only, so every node shown is shown intact and can be copied
+    into a selector. What is missing is everything after the cut in tree
+    order - whole panels, not just the bottom of one - which is why the
+    advice is to narrow rather than to page through it.
+    """
+    kept, size = [], 0
+    for line in text.splitlines():
+        if size + len(line) + 1 > MAX_CUT_BODY:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    shown = max(0, len(kept) - (1 if scoped else 0))
+    return ("\n".join(kept)
+            + f"\n\n[cut at {MAX_REPLY_CHARS} characters: showing {shown} of "
+              f"{total} node(s), in tree order - everything after this line "
+              f"is missing, not just the bottom of the window. A larger read "
+              f"would be too large for the client to accept, so narrow it: "
+              f"within= one container from the lines above, roles= for the "
+              f"kinds of element you need, or find_elements for a specific "
+              f"one]")
+
+
+def _line_start(text: str, offset: int, limit: int) -> int:
+    """The first line start at or after `offset`, if one comes before
+    `limit`; otherwise `offset` itself (a range inside one long line)."""
+    if offset == 0 or text[offset - 1] == "\n":
+        return offset
+    newline = text.find("\n", offset, limit)
+    return newline + 1 if newline != -1 and newline + 1 < limit else offset
+
+
+def _text_range(text: str, start: int | None) -> str:
+    """At most MAX_REPLY_CHARS of `text`, and which characters they are.
+
+    The end when no `start` is given, because that is where a scrollback's
+    or a log's newest lines are - the reason it is usually being read. Cut
+    on line boundaries where the range has any, so a regex written against
+    the reply sees whole lines; the range reported is the one returned, so
+    the next `start` follows on exactly. The `start` offered for going back
+    is on a line boundary too, which costs an overlap of under one line with
+    the range already read - a gap would be the alternative.
+    """
+    total = len(text)
+    if start is None:
+        begin = _line_start(text, max(0, total - MAX_CUT_BODY), total)
+        end = total
+    else:
+        begin = min(max(0, start), total)
+        end = min(total, begin + MAX_CUT_BODY)
+        if end < total:
+            newline = text.rfind("\n", begin, end)
+            if newline > begin:
+                end = newline + 1
+    where = ("the end" if start is None and begin > 0 else
+             "all of it" if begin == 0 and end == total else
+             "a range")
+    advice = []
+    if begin > 0:
+        before = _line_start(text, max(0, begin - MAX_CUT_BODY), begin)
+        advice.append(f"start={before} reads what comes before")
+    if end < total:
+        advice.append(f"start={end} reads on")
+    note = (f"[characters {begin}-{end} of {total} ({where}); "
+            f"{' and '.join(advice) or 'nothing is left out'}. An action's "
+            f"own read_text() gets the whole text - the cut is only this "
+            f"reply's]")
+    return f"{note}\n{text[begin:end]}"
 
 
 def _portable_role_spelling(pattern: str) -> str | None:
@@ -170,6 +277,163 @@ def _ancestor_path(node) -> str:
     return "/".join(reversed(segments))
 
 
+#: Identifier shapes a framework generates rather than a person names: React's
+#: useId (":r1:", "«r1»"), AppKit's "_NS:123", Ember's "ember123", Chromium
+#: Views' "view_7" (a runtime counter, on every control in the title bar and
+#: toolbar of Chrome, Edge and Electron applications on Windows), anything
+#: carrying a long run of digits, hex/UUID runs, and ids with no letters at
+#: all. They are unique today and renumbered on the next render, so offering
+#: one as the narrowing would be advice that breaks the action later. A
+#: heuristic, and deliberately one-sided: a real name it rejects only costs
+#: the suggestion falling through to name or scope.
+_GENERATED_ID = re.compile(
+    r"^(:r\w*:|«r\w*»|_NS:\d+|ember\d+|view_\d+|.*\d{4,}.*|[0-9a-f-]{8,}"
+    r"|[\W\d_]+)$",
+    re.IGNORECASE)
+
+#: Longest name offered verbatim as a narrowing; past it, a prefix pattern.
+NARROWING_NAME_CHARS = 60
+
+
+def _literal(text) -> str | None:
+    """`text` as a pattern matching only itself, or None if it cannot be one.
+
+    fnmatch metacharacters are bracketed; "|" is the alternation separator
+    and has no escape, and the matcher strips each branch, so text carrying
+    either cannot be written as an exact pattern.
+    """
+    text = str(text)
+    if not text or "|" in text or text != text.strip():
+        return None
+    return re.sub(r"([*?\[])", r"[\1]", text)
+
+
+def _name_patterns(name) -> list[str]:
+    """Patterns for `name`, shortest first: a long name's prefix, then the
+    whole name - which is longer to read but still separates two names that
+    differ only past the prefix."""
+    name = str(name)
+    patterns = []
+    if len(name) > NARROWING_NAME_CHARS:
+        prefix = _literal(name[:NARROWING_NAME_CHARS].rstrip())
+        if prefix:
+            patterns.append(prefix + "*")
+    whole = _literal(name)
+    if whole:
+        patterns.append(whole)
+    return patterns
+
+
+def _portable_role(role: str) -> str:
+    return role[2:] if role.startswith("AX") and len(role) > 2 else role
+
+
+def _selects(node, selector: dict) -> bool:
+    """Whether `node` matches `selector`, the way find_elements matches."""
+    for field_name, pattern in selector.items():
+        value = getattr(node, field_name)
+        if field_name == "role":
+            if not uitree.match_role(value, pattern):
+                return False
+        elif not uitree.match_pattern(value, pattern):
+            return False
+    return True
+
+
+def _container_selectors(node) -> list[dict]:
+    """Role plus the one fact that best names a container, as selectors to
+    try in order."""
+    if not node.role:
+        return []
+    role = {"role": _portable_role(node.role)}
+    if node.identifier and not _GENERATED_ID.match(str(node.identifier)):
+        pattern = _literal(node.identifier)
+        if pattern:
+            return [{**role, "identifier": pattern}]
+    if node.name:
+        patterns = _name_patterns(node.name)
+        if patterns:
+            return [{**role, "name": pattern} for pattern in patterns]
+    return [role]
+
+
+def _keywords(selector: dict) -> str:
+    return ", ".join(f"{key}={value!r}" for key, value in selector.items())
+
+
+class _Uniqueness:
+    """Whether each match of a search is the only one, and if not, what
+    would make it so (issue #93).
+
+    Computed from the snapshot the search walked - the matches' `_parent`
+    chains lead back to its root - so the verdict is a measurement of the
+    tree that was actually read rather than guidance about which selectors
+    tend to be stable (the lesson of #58). Adding a criterion can only
+    shrink a match set, so a narrowing is checked against the other matches
+    alone; a container is checked twice, since a scoped search is two finds
+    and the first one has to be unique as well.
+    """
+
+    def __init__(self, matches: list):
+        self.matches = matches
+        self.match_ids = {id(match) for match in matches}
+        root = matches[0]
+        while getattr(root, "_parent", None) is not None:
+            root = root._parent
+        self.nodes = list(root.walk())
+        self.cut = any(node.truncated for node in self.nodes)
+        self._selected: dict = {}
+
+    def _only(self, selector: dict):
+        """The one node in the walk `selector` matches, or None."""
+        key = tuple(sorted(selector.items()))
+        if key not in self._selected:
+            hits = [n for n in self.nodes if _selects(n, selector)]
+            self._selected[key] = hits[0] if len(hits) == 1 else None
+        return self._selected[key]
+
+    def narrowing(self, match) -> str:
+        others = [m for m in self.matches if m is not match]
+
+        def separates(field_name, pattern):
+            return pattern is not None and not any(
+                uitree.match_pattern(getattr(other, field_name), pattern)
+                for other in others)
+
+        identifier = match.identifier
+        if identifier and not _GENERATED_ID.match(str(identifier)):
+            pattern = _literal(identifier)
+            if separates("identifier", pattern):
+                return f"unique with identifier={pattern!r}"
+        names = _name_patterns(match.name) if match.name else []
+        for pattern in names:
+            if separates("name", pattern):
+                return f"unique with name={pattern!r}"
+        # Nearest container first: the smallest scope is the one least
+        # likely to move. The walk's root is skipped - it is the window the
+        # search already ran in. Within a container the match's own name may
+        # still be needed, when a sibling in the same container matches too.
+        ancestor = getattr(match, "_parent", None)
+        while ancestor is not None and getattr(ancestor, "_parent", None) \
+                is not None:
+            for selector in _container_selectors(ancestor):
+                if self._only(selector) is not ancestor:
+                    continue
+                inside = [node for node in ancestor.walk()
+                          if id(node) in self.match_ids]
+                if len(inside) == 1:
+                    return f"unique within {_keywords(selector)}"
+                for name in names:
+                    if sum(uitree.match_pattern(node.name, name)
+                           for node in inside) == 1:
+                        return (f"unique within {_keywords(selector)}, "
+                                f"with name={name!r}")
+                break
+            ancestor = ancestor._parent
+        return ("nothing separates it but its position - no identifier, "
+                "name or container is its alone")
+
+
 def _running_action(name: str):
     """A running action filed under `name`, whoever started it.
 
@@ -189,18 +453,37 @@ def _running_action(name: str):
     return None
 
 
+#: MCP tool annotations (issue #94). The read/write split was already the
+#: shape of the tool list - it is why write_config and write_extension are
+#: separate tools - but it lived only in prose, where a client has to parse
+#: descriptions to act on it. On the protocol, a client can approve reads and
+#: gate writes by itself.
+#:
+#: openWorldHint defaults to true in the spec, so it is said explicitly: these
+#: tools touch this desktop and ~/.keyhac, a closed set. start_action is the
+#: exception - an action is arbitrary code, and may reach anything.
+READ_ONLY = {"readOnlyHint": True, "openWorldHint": False}
+
+
+def _writes(*, destructive: bool, idempotent: bool,
+            open_world: bool = False) -> dict:
+    return {"readOnlyHint": False, "destructiveHint": destructive,
+            "idempotentHint": idempotent, "openWorldHint": open_world}
+
+
 class Tool:
     """One callable, its JSON Schema, and the description the agent reads."""
 
-    def __init__(self, name, description, schema, run):
+    def __init__(self, name, description, schema, run, annotations):
         self.name = name
         self.description = description
         self.schema = schema
         self.run = run
+        self.annotations = annotations
 
     def describe(self) -> dict:
         return {"name": self.name, "description": self.description,
-                "inputSchema": self.schema}
+                "inputSchema": self.schema, "annotations": self.annotations}
 
 
 class ToolRegistry:
@@ -238,13 +521,15 @@ class ToolRegistry:
                  "is the focused one. Start here when you do not know what to "
                  "address.",
                  {"type": "object", "properties": {}},
-                 self.list_windows),
+                 self.list_windows,
+                 READ_ONLY),
             Tool("get_focus",
                  "What currently has keyboard focus: application, window "
                  "title, and the focus path. Cheap, and usually tells you "
                  "which window the operator means.",
                  {"type": "object", "properties": {}},
-                 self.get_focus),
+                 self.get_focus,
+                 READ_ONLY),
             Tool("describe_screen",
                  "Read a window's element tree as indented text - roles, "
                  "names, identifiers and values. **Do this before writing any "
@@ -257,17 +542,44 @@ class ToolRegistry:
                      "max_depth": {**integer, "description": "How deep to "
                                    "walk (default 14)."},
                      "max_nodes": {**integer, "description":
-                                   f"Node budget (default {DEFAULT_MAX_NODES})."},
+                                   f"Node budget (default {DEFAULT_MAX_NODES}). "
+                                   f"However many are read, the reply is cut "
+                                   f"at {MAX_REPLY_CHARS} characters - past "
+                                   f"that, narrow with within= or roles= "
+                                   f"rather than raising this."},
                      "roles": {**string, "description": "Only report elements "
-                               "whose role matches this pattern."}}},
-                 self.describe_screen),
+                               "whose role matches this pattern."},
+                     "within": {"type": "object", "description":
+                                "Read only the container this selects - a "
+                                "dialog, a sheet, one panel - instead of the "
+                                "whole window. The same keys as find_elements "
+                                "(role, name, value, identifier, text, and "
+                                "max_depth / max_nodes for finding it); it "
+                                "must match exactly one element. max_depth "
+                                "then counts from the container, so the "
+                                "budget goes further, and two reads of it "
+                                "differ only where it changed. A container's "
+                                "role is the platform's: a web dialog is a "
+                                "Window on Windows, so a role found on one "
+                                "OS may need an alternative ('Dialog|Window') "
+                                "on the other.",
+                                "properties": {
+                                    **{key: string for key in WITHIN_KEYS},
+                                    "max_depth": integer,
+                                    "max_nodes": integer},
+                                "additionalProperties": False}}},
+                 self.describe_screen,
+                 READ_ONLY),
             Tool("find_elements",
                  "Search a window for elements matching role / name / value / "
                  "identifier / text, and report what each one is, with its "
                  "ancestor path - which is how to tell two same-role "
                  "containers apart. Use when a full tree is more than you "
                  "need, or to check that a selector you are about to write "
-                 "actually matches.",
+                 "actually matches. Says whether the match is unique; when "
+                 "it is not, find() would take the first, so each match "
+                 "comes with the identifier, name or container that would "
+                 "make it the only one.",
                  {"type": "object", "properties": {
                      **window_args,
                      "role": {**string, "description": "Role pattern. The AX "
@@ -293,7 +605,8 @@ class ToolRegistry:
                      "max_nodes": {**integer, "description": "Node budget for "
                                    "the search (default "
                                    f"{uitree.DEFAULT_MAX_NODES})."}}},
-                 self.find_elements),
+                 self.find_elements,
+                 READ_ONLY),
             Tool("read_text",
                  "Read an element's whole text content - a terminal's "
                  "scrollback, an editor buffer, a log block. The control tree "
@@ -306,8 +619,15 @@ class ToolRegistry:
                      "role": {**string, "description": "Role of the element "
                               "to read, if it has no identifier."},
                      "name": {**string, "description": "Label of the element "
-                              "to read."}}},
-                 self.read_text),
+                              "to read."},
+                     "start": {**integer, "description": "Character offset "
+                               "to read from. Omitted, a text longer than "
+                               f"{MAX_REPLY_CHARS} characters returns its "
+                               "end - the newest part of a scrollback or log; "
+                               "pass an offset to read another part. The "
+                               "reply says which range it holds."}}},
+                 self.read_text,
+                 READ_ONLY),
             Tool("enable_content_access",
                  "Ask a Chromium or Electron application (Chrome, Edge, VS "
                  "Code, Slack) to expose its content. On macOS they build no "
@@ -319,7 +639,8 @@ class ToolRegistry:
                      **window_args,
                      "enable": {"type": "boolean", "description":
                                 "False to turn it back off when done."}}},
-                 self.enable_content_access),
+                 self.enable_content_access,
+                 _writes(destructive=False, idempotent=True)),
             Tool("list_actions",
                  "The action classes in ~/.keyhac/extensions/ - addressed as "
                  "module.Class - which are running now, and how the last run "
@@ -328,7 +649,8 @@ class ToolRegistry:
                  "on a key. Found by reading the files, so listing never "
                  "executes them.",
                  {"type": "object", "properties": {}},
-                 self.list_actions),
+                 self.list_actions,
+                 READ_ONLY),
             Tool("start_action",
                  "Start an action class and return immediately. **It is not "
                  "finished when this returns** - call get_action_result for "
@@ -341,7 +663,8 @@ class ToolRegistry:
                      "name": {**string, "description":
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
-                 self.start_action),
+                 self.start_action,
+                 _writes(destructive=True, idempotent=False, open_world=True)),
             Tool("get_action_result",
                  "Wait for an action to finish and return everything it "
                  "logged or printed, with the traceback if it raised. Blocks "
@@ -370,7 +693,8 @@ class ToolRegistry:
                               "Only the last N lines of the output (default: "
                               "all of it)."}},
                   "required": ["name"]},
-                 self.get_action_result),
+                 self.get_action_result,
+                 READ_ONLY),
             Tool("cancel_action",
                  "Stop a running action - the same thing the operator's Esc "
                  "does. It unwinds rather than being killed, so progress it "
@@ -379,7 +703,8 @@ class ToolRegistry:
                      "name": {**string, "description":
                               "module.Class, from list_actions."}},
                   "required": ["name"]},
-                 self.cancel_action),
+                 self.cancel_action,
+                 _writes(destructive=False, idempotent=True)),
             Tool("describe_keymap",
                  "The key tables this configuration defined: their conditions, "
                  "which ones match the current focus, and what each binds. "
@@ -390,13 +715,15 @@ class ToolRegistry:
                  "also reports the live focus path, which is what a "
                  "focus_path_pattern is written against.",
                  {"type": "object", "properties": {}},
-                 self.describe_keymap),
+                 self.describe_keymap,
+                 READ_ONLY),
             Tool("read_config",
                  "Read ~/.keyhac/config.py - the operator's own configuration: "
                  "key tables, bindings, and the lines that wire up actions. "
                  "Read it before proposing any change to it.",
                  {"type": "object", "properties": {}},
-                 self.read_config),
+                 self.read_config,
+                 READ_ONLY),
             Tool("write_config",
                  "Replace ~/.keyhac/config.py, keeping a backup. Separate from "
                  "write_extension because the stakes differ: a module in "
@@ -409,14 +736,16 @@ class ToolRegistry:
                  {"type": "object", "properties": {
                      "source": {**string, "description": "The complete file."}},
                   "required": ["source"]},
-                 self.write_config),
+                 self.write_config,
+                 _writes(destructive=True, idempotent=True)),
             Tool("list_extensions",
                  "The files in ~/.keyhac/extensions/, with what each one "
                  "holds. list_actions shows what can be *run*; this shows what "
                  "is on disk, including helper modules that define no action "
                  "class and so never appear there.",
                  {"type": "object", "properties": {}},
-                 self.list_extensions),
+                 self.list_extensions,
+                 READ_ONLY),
             Tool("read_extension",
                  "Read a module in ~/.keyhac/extensions/ - the whole file, as "
                  "it is on disk right now. **Call this before changing an "
@@ -430,7 +759,8 @@ class ToolRegistry:
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."}},
                   "required": ["name"]},
-                 self.read_extension),
+                 self.read_extension,
+                 READ_ONLY),
             Tool("write_extension",
                  "Save an action module into ~/.keyhac/extensions/ - the whole "
                  "file, replacing whatever is there and keeping a backup. This "
@@ -446,7 +776,8 @@ class ToolRegistry:
                                 "Partial content replaces the whole module, "
                                 "so send all of it every time."}},
                   "required": ["name", "source"]},
-                 self.write_extension),
+                 self.write_extension,
+                 _writes(destructive=True, idempotent=True)),
             Tool("delete_extension",
                  "Remove a module from ~/.keyhac/extensions/ - **renamed to a "
                  "timestamped .bak- beside it rather than unlinked**, so the "
@@ -460,7 +791,8 @@ class ToolRegistry:
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."}},
                   "required": ["name"]},
-                 self.delete_extension),
+                 self.delete_extension,
+                 _writes(destructive=True, idempotent=False)),
             Tool("reload_config",
                  "Reload ~/.keyhac/config.py and report what it said - use it "
                  "**after the operator edits that file**, to check their paste "
@@ -470,7 +802,8 @@ class ToolRegistry:
                  "this between rounds only rebuilds the operator's live key "
                  "bindings for nothing.",
                  {"type": "object", "properties": {}},
-                 self.reload_config),
+                 self.reload_config,
+                 _writes(destructive=False, idempotent=True)),
         ]
 
     # -- implementations -----------------------------------------------------
@@ -533,14 +866,63 @@ class ToolRegistry:
 
         return self.ui.on_main_thread(read) or "nothing focused"
 
+    def _container(self, window, within) -> tuple:
+        """The one element `within` selects, and the line that places it.
+
+        Exactly one, or an error the caller can act on: a scope that silently
+        took the first of several would be the ambiguity find_elements now
+        reports (issue #93), moved somewhere nobody looks.
+        """
+        if not isinstance(within, dict):
+            raise ValueError("within= takes an object of find_elements keys, "
+                             "such as {\"role\": \"Sheet\"}")
+        unknown = set(within) - set(WITHIN_KEYS) - {"max_depth", "max_nodes"}
+        if unknown:
+            raise ValueError(f"within= does not take {sorted(unknown)}; it "
+                             f"takes {', '.join(WITHIN_KEYS)}, max_depth and "
+                             f"max_nodes")
+        criteria = {k: within[k] for k in WITHIN_KEYS
+                    if within.get(k) is not None}
+        if not criteria:
+            raise ValueError("within= needs at least one of "
+                             + "/".join(WITHIN_KEYS))
+        bounds = {k: int(within[k]) for k in ("max_depth", "max_nodes")
+                  if within.get(k) is not None}
+        matches = window.find_all(**criteria, **bounds)
+        if not matches:
+            raise RuntimeError(
+                f"no container matching within={criteria}. find_elements with "
+                f"the same keys shows what is there; if the container sits "
+                f"deep in web content, put a larger max_depth inside within=. "
+                f"A role written on one OS may be named differently on the "
+                f"other - a web dialog is a Window on Windows")
+        if len(matches) > 1:
+            listed = "\n".join(
+                f"  {node!r} path={_ancestor_path(node) or '(root)'}"
+                for node in matches[:10])
+            raise RuntimeError(
+                f"within={criteria} matches {len(matches)} elements - it has to "
+                f"select one. find_elements with the same keys says what would "
+                f"single each out:\n{listed}")
+        container = matches[0]
+        path = _ancestor_path(container)
+        return container, (f"[within {container!r}"
+                           + (f", path={path}" if path else "") + "]")
+
     def describe_screen(self, app=None, title=None, max_depth=14,
-                        max_nodes=DEFAULT_MAX_NODES, roles=None) -> str:
+                        max_nodes=DEFAULT_MAX_NODES, roles=None,
+                        within=None) -> str:
         max_depth, max_nodes = int(max_depth), int(max_nodes)
         window = self._window(app, title)
+        placed = None
+        if within is not None:
+            window, placed = self._container(window, within)
         tree = window.reread(max_depth=max_depth, max_nodes=max_nodes,
                              roles=roles)
         nodes = list(tree.walk())
         text = tree.dump()
+        if placed is not None:
+            text = f"{placed}\n{text}"
 
         # Order matters, and the first two cases are the ones that would
         # otherwise send a model down a dead end. A Chromium or Electron window
@@ -561,8 +943,13 @@ class ToolRegistry:
         # fired on exactly those: small pages, documents cut off by max_depth
         # (Claude's 537 nodes read as 20 at depth 14), and the 2-node hidden
         # web areas Electron applications carry beside the real one.
+        #
+        # Both are statements about a whole window, so a read scoped with
+        # within= skips them: a small dialog is not an empty window, and a
+        # native panel inside a browser has no business holding a document.
         missing_document = None
-        if not any((area.role or "").endswith("WebArea") for area in nodes):
+        if placed is None and not any((area.role or "").endswith("WebArea")
+                                      for area in nodes):
             asked = self.ui._content_access_state(window)
             if asked is False:
                 missing_document = (
@@ -581,9 +968,14 @@ class ToolRegistry:
                     "page, as long as the page takes to arrive otherwise). "
                     "Calling enable_content_access again changes nothing.]")
 
+        if len(text) > MAX_REPLY_CHARS:
+            # Cut on a line boundary and said out loud, ahead of the bound
+            # hints below: "raise max_nodes" is the opposite of the advice a
+            # reply that is already too large needs.
+            return _cut_screen(text, len(nodes), placed is not None)
         if missing_document:
             text += f"\n\n{missing_document}"
-        elif len(nodes) < EMPTY_WINDOW:
+        elif placed is None and len(nodes) < EMPTY_WINDOW:
             text += (f"\n\n[only {len(nodes)} element(s) - this window exposes "
                      f"essentially nothing. Check list_windows for a better "
                      f"target.]")
@@ -629,18 +1021,36 @@ class ToolRegistry:
                          f'role="{suggested}". On macOS, also raise max_depth '
                          f'before concluding the element is not there]')
             return text
-        lines = [f"{len(matches)} match(es):"]
+        # A count is not neutral (issue #93): a selector matching more than
+        # one element is a prediction that find() will grab whichever comes
+        # first at run time. So the verdict comes first, and each ambiguous
+        # match says what would single it out.
+        uniqueness = _Uniqueness(matches)
+        if len(matches) == 1:
+            lines = ["1 match - unique: find() with these criteria gets this "
+                     "element."]
+        else:
+            lines = [f"{len(matches)} matches - ambiguous: find() with these "
+                     f"criteria gets only the first in tree order. Under each, "
+                     f"what would make it the only match:"]
         for node in matches[:int(limit)]:
             line = f"  {node!r} value={node.value!r} rect={node.rect}"
             path = _ancestor_path(node)
             if path:
                 line += f" path={path}"
             lines.append(line)
+            if len(matches) > 1:
+                lines.append(f"    -> {uniqueness.narrowing(node)}")
         if len(matches) > int(limit):
             lines.append(f"  ... and {len(matches) - int(limit)} more")
+        if uniqueness.cut:
+            lines.append(
+                "\n[the walk was cut off by its bounds, so this is unique / "
+                "ambiguous within what was read: an element past the cut could "
+                "also match. Raise max_depth / max_nodes to be sure]")
         return "\n".join(lines)
 
-    def read_text(self, app=None, title=None, **criteria) -> str:
+    def read_text(self, app=None, title=None, start=None, **criteria) -> str:
         criteria = {k: v for k, v in criteria.items() if v is not None}
         window = self._window(app, title)
         node = window.find(**criteria) if criteria else window
@@ -650,7 +1060,9 @@ class ToolRegistry:
         if not text:
             return (f"{node!r} has no text content "
                     f"(its value is {node.value!r})")
-        return text
+        if start is None and len(text) <= MAX_REPLY_CHARS:
+            return text
+        return _text_range(text, None if start is None else int(start))
 
     def enable_content_access(self, app=None, title=None, enable=True) -> str:
         window = self._window(app, title)
