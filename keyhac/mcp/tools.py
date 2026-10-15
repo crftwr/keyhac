@@ -264,14 +264,17 @@ def _ancestor_path(node) -> str:
 
 
 #: Identifier shapes a framework generates rather than a person names: React's
-#: useId (":r1:", "«r1»"), AppKit's "_NS:123", Ember's "ember123", anything
+#: useId (":r1:", "«r1»"), AppKit's "_NS:123", Ember's "ember123", Chromium
+#: Views' "view_7" (a runtime counter, on every control in the title bar and
+#: toolbar of Chrome, Edge and Electron applications on Windows), anything
 #: carrying a long run of digits, hex/UUID runs, and ids with no letters at
 #: all. They are unique today and renumbered on the next render, so offering
 #: one as the narrowing would be advice that breaks the action later. A
 #: heuristic, and deliberately one-sided: a real name it rejects only costs
 #: the suggestion falling through to name or scope.
 _GENERATED_ID = re.compile(
-    r"^(:r\w*:|«r\w*»|_NS:\d+|ember\d+|.*\d{4,}.*|[0-9a-f-]{8,}|[\W\d_]+)$",
+    r"^(:r\w*:|«r\w*»|_NS:\d+|ember\d+|view_\d+|.*\d{4,}.*|[0-9a-f-]{8,}"
+    r"|[\W\d_]+)$",
     re.IGNORECASE)
 
 #: Longest name offered verbatim as a narrowing; past it, a prefix pattern.
@@ -291,12 +294,20 @@ def _literal(text) -> str | None:
     return re.sub(r"([*?\[])", r"[\1]", text)
 
 
-def _name_pattern(name) -> str | None:
+def _name_patterns(name) -> list[str]:
+    """Patterns for `name`, shortest first: a long name's prefix, then the
+    whole name - which is longer to read but still separates two names that
+    differ only past the prefix."""
     name = str(name)
-    if len(name) <= NARROWING_NAME_CHARS:
-        return _literal(name)
-    prefix = _literal(name[:NARROWING_NAME_CHARS].rstrip())
-    return prefix + "*" if prefix else None
+    patterns = []
+    if len(name) > NARROWING_NAME_CHARS:
+        prefix = _literal(name[:NARROWING_NAME_CHARS].rstrip())
+        if prefix:
+            patterns.append(prefix + "*")
+    whole = _literal(name)
+    if whole:
+        patterns.append(whole)
+    return patterns
 
 
 def _portable_role(role: str) -> str:
@@ -315,21 +326,21 @@ def _selects(node, selector: dict) -> bool:
     return True
 
 
-def _container_selector(node) -> dict | None:
-    """Role plus the one fact that best names a container, as a selector."""
+def _container_selectors(node) -> list[dict]:
+    """Role plus the one fact that best names a container, as selectors to
+    try in order."""
     if not node.role:
-        return None
-    selector = {"role": _portable_role(node.role)}
+        return []
+    role = {"role": _portable_role(node.role)}
     if node.identifier and not _GENERATED_ID.match(str(node.identifier)):
         pattern = _literal(node.identifier)
         if pattern:
-            selector["identifier"] = pattern
-            return selector
+            return [{**role, "identifier": pattern}]
     if node.name:
-        pattern = _name_pattern(node.name)
-        if pattern:
-            selector["name"] = pattern
-    return selector
+        patterns = _name_patterns(node.name)
+        if patterns:
+            return [{**role, "name": pattern} for pattern in patterns]
+    return [role]
 
 
 def _keywords(selector: dict) -> str:
@@ -380,29 +391,30 @@ class _Uniqueness:
             pattern = _literal(identifier)
             if separates("identifier", pattern):
                 return f"unique with identifier={pattern!r}"
-        if match.name:
-            pattern = _name_pattern(match.name)
+        names = _name_patterns(match.name) if match.name else []
+        for pattern in names:
             if separates("name", pattern):
                 return f"unique with name={pattern!r}"
         # Nearest container first: the smallest scope is the one least
         # likely to move. The walk's root is skipped - it is the window the
         # search already ran in. Within a container the match's own name may
         # still be needed, when a sibling in the same container matches too.
-        name = _name_pattern(match.name) if match.name else None
         ancestor = getattr(match, "_parent", None)
         while ancestor is not None and getattr(ancestor, "_parent", None) \
                 is not None:
-            selector = _container_selector(ancestor)
-            if selector and self._only(selector) is ancestor:
+            for selector in _container_selectors(ancestor):
+                if self._only(selector) is not ancestor:
+                    continue
                 inside = [node for node in ancestor.walk()
                           if id(node) in self.match_ids]
                 if len(inside) == 1:
                     return f"unique within {_keywords(selector)}"
-                if name is not None and sum(
-                        uitree.match_pattern(node.name, name)
-                        for node in inside) == 1:
-                    return (f"unique within {_keywords(selector)}, "
-                            f"with name={name!r}")
+                for name in names:
+                    if sum(uitree.match_pattern(node.name, name)
+                           for node in inside) == 1:
+                        return (f"unique within {_keywords(selector)}, "
+                                f"with name={name!r}")
+                break
             ancestor = ancestor._parent
         return ("nothing separates it but its position - no identifier, "
                 "name or container is its alone")
@@ -532,7 +544,11 @@ class ToolRegistry:
                                 "must match exactly one element. max_depth "
                                 "then counts from the container, so the "
                                 "budget goes further, and two reads of it "
-                                "differ only where it changed.",
+                                "differ only where it changed. A container's "
+                                "role is the platform's: a web dialog is a "
+                                "Window on Windows, so a role found on one "
+                                "OS may need an alternative ('Dialog|Window') "
+                                "on the other.",
                                 "properties": {
                                     **{key: string for key in WITHIN_KEYS},
                                     "max_depth": integer,
@@ -863,7 +879,9 @@ class ToolRegistry:
             raise RuntimeError(
                 f"no container matching within={criteria}. find_elements with "
                 f"the same keys shows what is there; if the container sits "
-                f"deep in web content, put a larger max_depth inside within=")
+                f"deep in web content, put a larger max_depth inside within=. "
+                f"A role written on one OS may be named differently on the "
+                f"other - a web dialog is a Window on Windows")
         if len(matches) > 1:
             listed = "\n".join(
                 f"  {node!r} path={_ancestor_path(node) or '(root)'}"

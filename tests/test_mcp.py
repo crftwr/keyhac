@@ -689,6 +689,36 @@ def test_a_container_that_is_not_itself_unique_is_not_offered(registry):
                         "identifier, name or container is its alone"] * 2
 
 
+def test_a_chromium_views_identifier_is_not_offered(registry):
+    """Found on Windows (PR #165): Edge's title-bar buttons carry Views'
+    "view_7" - a runtime counter, on every Chromium window's chrome."""
+    _root, english_l, _english_r, swap = _translate_window()
+    swap.identifier = "view_7"
+    _text, verdicts = _verdicts(registry, [english_l, swap])
+    assert verdicts[1] == "unique with name='Swap'"
+
+
+def test_long_names_differing_past_the_prefix_are_still_separated(registry):
+    """Found on Windows (PR #165): the prefix pattern matched both twins and
+    the verdict claimed nothing separated them, when the whole name did."""
+    _root, english_l, english_r, _swap = _translate_window()
+    stem = "This is a deliberately very long button label that goes well " \
+           "past sixty characters "
+    english_l.name, english_r.name = stem + "A", stem + "B"
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts == [f"unique with name={stem + 'A'!r}",
+                        f"unique with name={stem + 'B'!r}"]
+
+
+def test_a_long_name_that_differs_early_keeps_the_short_pattern(registry):
+    _root, english_l, english_r, _swap = _translate_window()
+    english_l.name = "A " + "x" * 80
+    english_r.name = "B " + "x" * 80
+    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    assert verdicts[0].startswith("unique with name='A x") \
+        and verdicts[0].endswith("*'")
+
+
 def test_a_narrowing_pattern_matches_only_its_own_text(registry):
     """Names carrying fnmatch metacharacters are bracketed, so the offered
     pattern is literal - "Save*" would also match "Save As"."""
