@@ -1051,9 +1051,42 @@ found.
 
   Not measured here: section D (`--only-watch --watch N`) follows real
   applications and counts probe changes no notification explains. It needs
-  someone using the machine, and the unattended run saw nothing. The Windows
-  half of the issue's first question is `tools/win_focus_push_pass.py`, not
-  yet run.
+  someone using the machine, and the unattended run saw nothing.
+- **Could focus changes be pushed instead of polled, on Windows?** (2026-10-16,
+  `tools/win_focus_push_pass.py`, 6/7, Windows 11 Home 10.0.26200; issue
+  #150.) The layer question the issue turned on came out **yes**: WinUI/XAML
+  (Notepad) raised the legacy `EVENT_OBJECT_FOCUS` for 20/20 UIA `SetFocus`
+  moves, classic Win32 and Chromium for 20/20 Tabs each. Chromium did so on
+  the cold pass too, before anything had asked Edge a UIA question; a machine
+  where nothing has ever turned Chromium's accessibility on may differ.
+  Registering three system-wide hooks costs 0.24 ms and does not wait for a
+  hung foreground window. Latency, injection to first event (median / p95):
+  classic 9.0 / 27.5 ms, Chromium 3.6–4.1 / 10–11 ms, WinUI 10.3 / 42.7 ms.
+
+  Ordering, on the classic window only (`GUITHREADINFO` is ground truth there
+  and nowhere else): 26 of 120 F13s saw a moved focus with no event
+  delivered. Unlike macOS, the drain works here. `PeekMessage(PM_NOREMOVE)`
+  at the top of the hook callback delivered the queued event for 25 of the 26.
+  The one left was at a 2 ms gap.
+
+  **What was decided from the two passes: no push on either OS.** On macOS
+  the notification trails the focus by 10–50 ms, and nothing on our side can
+  fetch it early. On Windows the event source is good, but it would only
+  decide *when* to re-read, and an event that arrived recently is no proof
+  that a re-read can be skipped. Combining an event with a poll is the
+  complexity without the guarantee. The question #145 asked, whether
+  `GetFocusedElement` is affordable per key, is open again for a reason #145
+  did not have. Its decisive row was the hung window that **never returned**,
+  and since #171 every UIA call is capped at 250 ms, with the same
+  cut-short reuse macOS has. What is left is the median (1.6–3.5 ms) and
+  applications that are slow but under the cap, which are accepted as the
+  application's fault. So Windows reads the focused element on every key
+  event, as macOS does.
+
+  Side effect worth knowing before a run: starting `notepad.exe` restores
+  Notepad's previous session, so a tab of an existing file reappeared. The
+  pass only moves UIA focus in it, never types, and the file was left
+  unmodified.
 
 
 ## The interactive pass before a release

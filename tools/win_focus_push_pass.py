@@ -33,7 +33,9 @@ measure, before any design:
      again with a hung application in front, where it must not care.
 
 WHAT IT DRIVES.  Its own throwaway windows and its own disposable Edge and
-Notepad windows (win_probe_cost_pass.py's).  Keys are injected only after
+Notepad windows (win_probe_cost_pass.py's).  Notepad restores its previous
+session when started, so the operator's own tabs may reappear in it; the pass
+moves focus there and never types.  Keys are injected only after
 checking that one of those is the foreground window.  Quit Keyhac for a clean
 run: it would see the injected Tab and F13 as well.
 
@@ -559,6 +561,10 @@ def main():
             note("Edge did not give a window; skipped.")
 
         section("A3. WinUI/XAML (Notepad, UIA SetFocus between two elements)")
+        # Notepad restores its previous session on start, so tabs of the
+        # operator's files may reappear (seen on the first run).  Nothing here
+        # types into it - section A3 only moves UIA focus between a document
+        # and the new-tab button.
         notepad = AppProbe("WinUI", ["notepad.exe"])
         probes.append(notepad)
         if notepad.hwnd:
