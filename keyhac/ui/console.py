@@ -68,10 +68,10 @@ class UnreadErrors:
         self.count = 0
         self._last = None
 
-    def line(self, level: int, visible: bool, now: float) -> None:
+    def line(self, level: int, seen: bool, now: float) -> None:
         # 100 is print() output, which is above ERROR numerically and is not
-        # an error.
-        if level < logging.ERROR or level == 100 or visible:
+        # an error. `seen`: the console is the window in use as it arrives.
+        if level < logging.ERROR or level == 100 or seen:
             return
         if self._last is None or now - self._last > _ERROR_BURST:
             self.count += 1
@@ -280,14 +280,21 @@ class ConsoleWindow:
         refresh the inspector fields, run the hook health check."""
         changed = False
 
-        visible_now = (self.backend.is_main_window_visible()
-                       if self._visibility_api else True)
+        # Seen means the console is the window in use - shown *and* active.
+        # Merely visible is not enough: an open console covered by other
+        # windows has not been read. A PuiKit without is_main_window_active
+        # falls back to visibility.
+        active = getattr(self.backend, "is_main_window_active", None)
+        if active is not None:
+            seen_now = active()
+        else:
+            seen_now = (self.backend.is_main_window_visible()
+                        if self._visibility_api else True)
         for text, level in self._console.pull_lines():
             self._append_line(text, level)
             changed = True
-            self._unread.line(level, visible_now, time.monotonic())
-        if visible_now:
-            # Seen: the console window is what reading them means.
+            self._unread.line(level, seen_now, time.monotonic())
+        if seen_now:
             self._unread.clear()
         if self.state_listeners:
             running = _running_action_names()
