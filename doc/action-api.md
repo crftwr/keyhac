@@ -161,7 +161,8 @@ activate(
     app: 'str' = None,
     title: 'str' = None,
     timeout: 'float' = 10.0,
-    retry_interval: 'float' = 2.0
+    retry_interval: 'float' = 2.0,
+    node: 'UINode' = None
 )
 ```
 
@@ -181,6 +182,7 @@ An act with a postcondition, which is what makes it a verb rather than a wrapper
  - <b>`title`</b>:  Window title pattern. 
  - <b>`timeout`</b>:  Seconds before giving up. 
  - <b>`retry_interval`</b>:  Seconds to watch before asking again - an  application starting up can take more than one ask. 
+ - <b>`node`</b>:  A window node to bring forward instead - the one an action  chose out of `windows()`. Matched by identity, so neither a  same-titled twin nor a title that has since changed confuses  it (issue #180). 
 
 
 
@@ -1043,12 +1045,21 @@ Satisfied when the front window is this one.
 
 The precondition that is not about the target, and the one a verb cannot fold without a name for it: an action sends Cmd-P to *the browser*, and after a save the application's own download popup owns the front for a few seconds and swallows it. Waiting for the right window to be in front is the difference between a retry that converges and one that types into whatever is there. 
 
+Name the window by pattern, or by the node itself. `node=` is the one to use once an action has *chosen* a window - out of `ui.windows()`, say: it is compared by identity, so it is not fooled by another window with the same title, and it keeps matching while that window's title changes from page to page (issue #180). 
+
+```python
+window = pick(ui.windows(app="Safari"))
+ui.activate(node=window)
+ui.click(NEXT, within=window, given=ui.Front(node=window))
+``` 
+
 
 
 **Attributes:**
  
  - <b>`app`</b>:  Application pattern. 
  - <b>`title`</b>:  Window title pattern. 
+ - <b>`node`</b>:  A window node; satisfied only when that very window is in  front.  Takes the place of `app` and `title`. 
 
 ---
 

@@ -666,6 +666,48 @@ class TestVerbs:
         with pytest.raises(WaitTimeout):
             api.activate(app="Nothing There", timeout=0.3, retry_interval=0.05)
 
+    def test_front_by_node_tells_same_titled_windows_apart(self, ui):
+        """Issue #180: Front by pattern cannot tell two windows with the same
+        title apart; Front(node=) compares the window itself, so it also
+        keeps matching after that window's title changes."""
+        api, element = ui
+        provider = api._keymap.window_provider
+        mine = provider.list_windows()[0]
+        twin_element = FakeElement("Window", name="Main", key="twin")
+        twin = FakeWindow(twin_element)
+        for el in (element, twin_element):
+            el.same_element = lambda other, me=el: other is me
+        chosen = api.node(element)
+
+        assert api.Front(node=chosen).check(api)           # mine in front
+        provider.get_active_window = lambda: twin          # the twin in front
+        assert api.Front(app="TestApp", title="Main").check(api), \
+            "the pattern cannot tell them apart"
+        assert not api.Front(node=chosen).check(api)
+        provider.get_active_window = lambda: mine
+        mine.title = "Main - page 2"                       # the title moved on
+        assert api.Front(node=chosen).check(api)
+
+    def test_activate_by_node_brings_that_window_forward(self, ui):
+        api, element = ui
+        provider = api._keymap.window_provider
+        mine = provider.list_windows()[0]
+        twin_element = FakeElement("Window", name="Main", key="twin")
+        twin = FakeWindow(twin_element)
+        for el in (element, twin_element):
+            el.same_element = lambda other, me=el: other is me
+        provider.list_windows = lambda: [twin, mine]
+        provider.get_active_window = lambda: mine
+        assert api.activate(node=api.node(element), timeout=1.0) is not None
+        assert (twin.activated, mine.activated) == (0, 1)
+
+    def test_front_by_node_refuses_when_the_platform_cannot_say(self, ui):
+        """None from the comparison is not a yes: the press would go to
+        whatever is in front."""
+        api, element = ui
+        element.same_element = lambda other: None
+        assert not api.Front(node=api.node(element)).check(api)
+
     def test_the_three_slots_take_the_same_two_types(self, ui):
         """One vocabulary: a callable or a value, in wait, given and until.
         Which slot it goes in is what says whether you cause it."""

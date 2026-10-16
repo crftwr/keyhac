@@ -212,10 +212,11 @@ same site open that is a coin toss. Use `ui.windows(...)` - each node's `name`
 is its title - and pick by something the task decides: the one showing the
 start the task needs, the one whose title names the record. If nothing decides
 it, stop and say there were several rather than driving one at random; the
-other may be the operator's work. And pin the choice for the rest of the run:
-activate by that window's own title, and make `given=ui.Front(app=...,
-title=...)` name it too - `Front` matches by pattern, so two windows sharing a
-title would both satisfy it.
+other may be the operator's work. And pin the choice for the rest of the run
+by the node itself - `ui.activate(node=window)` and `given=ui.Front(node=window)`.
+Those compare the window, not its title, so a same-titled twin never satisfies
+them and a title that changes from page to page does not break them; a
+`title=` pattern does both wrong.
 
 ## Locators are values
 

@@ -917,6 +917,20 @@ class UIElement:
             self._children_capped = MAX_CHILDREN
         return out
 
+    def same_element(self, other) -> bool | None:
+        """Whether `other` is this same element, by UIA's CompareElements -
+        which survives the element's name changing and tells two same-named
+        windows apart (issue #180). None when UI Automation could not say.
+
+        Use this, not `==`. Two reads of one element are two Python objects,
+        so `==` - plain object identity - answers False for the same element;
+        it is not redefined because it could not say "cannot tell" (None),
+        has no hash to match on Windows, and would have to ask the
+        application, which `==` should never do.
+        """
+        ptr = getattr(other, "_ptr", None)
+        return _same_element(self._ptr, ptr) if ptr else None
+
     def identity_key(self):
         """None - UI Automation's control view is a real tree.
 

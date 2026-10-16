@@ -42,7 +42,7 @@ from __future__ import annotations
 import contextlib
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from keyhac.core import log
@@ -232,28 +232,53 @@ class Front(Condition):
     the difference between a retry that converges and one that types into
     whatever is there.
 
+    Name the window by pattern, or by the node itself. `node=` is the one to
+    use once an action has *chosen* a window - out of `ui.windows()`, say:
+    it is compared by identity, so it is not fooled by another window with
+    the same title, and it keeps matching while that window's title changes
+    from page to page (issue #180).
+
+    ```python
+    window = pick(ui.windows(app="Safari"))
+    ui.activate(node=window)
+    ui.click(NEXT, within=window, given=ui.Front(node=window))
+    ```
+
     Attributes:
         app: Application pattern.
         title: Window title pattern.
+        node: A window node; satisfied only when that very window is in
+            front.  Takes the place of `app` and `title`.
     """
 
     app: str = None
     title: str = None
+    # Compared, not hashed: a UINode is a mutable dataclass with no hash, and
+    # a frozen condition must still be hashable.
+    node: Any = field(default=None, hash=False)
 
     def check(self, ui):
         """lazydocs: ignore"""
         from keyhac.core.focus import match_window_fields
-        # Through the keymap, which takes window lookups to the loop thread:
-        # a condition is evaluated on the caller's thread (issue #173), and a
-        # window lookup is the one part of it that is not an element read.
         active = ui._keymap.get_active_window()
         if active is None:
             return None
+        element = getattr(active, "element", None)
+        if self.node is not None:
+            wanted = getattr(self.node, "element", self.node)
+            same = getattr(element, "same_element", None)
+            # None - the platform could not say - is not a yes: a press
+            # guarded by this would otherwise go to whatever is in front.
+            if same is None or not same(wanted):
+                return None
+            return ui.node(element)
         if not match_window_fields(active, app=self.app, title=self.title):
             return None
-        return ui.node(getattr(active, "element", None))
+        return ui.node(element)
 
     def __str__(self):
+        if self.node is not None:
+            return f"the front window to be {self.node!r}"
         return f"the front window to be {self.app or ''} {self.title or ''}".strip()
 
 
@@ -672,7 +697,8 @@ class UI:
                            given=given) or target
 
     def activate(self, app: str = None, title: str = None,
-                 timeout: float = 10.0, retry_interval: float = 2.0):
+                 timeout: float = 10.0, retry_interval: float = 2.0,
+                 node: UINode = None):
         """Bring a window to the front, and wait until it really is.
 
         ```python
@@ -691,6 +717,10 @@ class UI:
             timeout: Seconds before giving up.
             retry_interval: Seconds to watch before asking again - an
                 application starting up can take more than one ask.
+            node: A window node to bring forward instead - the one an action
+                chose out of `windows()`. Matched by identity, so neither a
+                same-titled twin nor a title that has since changed confuses
+                it (issue #180).
 
         Returns:
             The front window's node.  The wait is what makes that the window
@@ -701,6 +731,20 @@ class UI:
         Raises:
             WaitTimeout: It never came to the front.
         """
+        if node is not None:
+            wanted = getattr(node, "element", node)
+
+            def act():
+                for window in self._keymap.list_windows():
+                    same = getattr(getattr(window, "element", None),
+                                   "same_element", None)
+                    if same is not None and same(wanted):
+                        return window.activate()
+                return False
+
+            return self._until(act, Front(node=node), timeout,
+                               retry_interval, what=f"activating {node!r}")
+
         def act():
             window = self._keymap.find_window(app=app, title=title)
             return window.activate() if window is not None else False
