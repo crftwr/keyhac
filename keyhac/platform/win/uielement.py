@@ -917,6 +917,14 @@ class UIElement:
             self._children_capped = MAX_CHILDREN
         return out
 
+    def same_element(self, other) -> bool | None:
+        """Whether `other` is this same element, by UIA's CompareElements -
+        which survives the element's name changing and tells two same-named
+        windows apart (issue #180). None when UI Automation could not say.
+        """
+        ptr = getattr(other, "_ptr", None)
+        return _same_element(self._ptr, ptr) if ptr else None
+
     def identity_key(self):
         """None - UI Automation's control view is a real tree.
 

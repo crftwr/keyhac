@@ -753,6 +753,19 @@ class UIElement:
             return []
         return [c for c in children if isinstance(c, UIElement)]
 
+    def same_element(self, other) -> bool | None:
+        """Whether `other` is this same element - by CFEqual, which survives
+        the element's title changing and tells two same-titled windows apart
+        (issue #180). A local comparison: the application is asked nothing.
+        """
+        ref = getattr(other, "_ref", None)
+        if ref is None:
+            return None
+        try:
+            return bool(AS.CFEqual(self._ref, ref))
+        except Exception:
+            return None
+
     def identity_key(self):
         """A hashable identity, for the DAG dedupe in keyhac.core.uitree.
 
