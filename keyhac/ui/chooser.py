@@ -133,6 +133,11 @@ _BATCH_SECONDS = 0.030
 _POINTER_STYLE = Style(fg=(255, 90, 90))
 _POINTER_WIDTH = 3.0
 _POINTER_RADIUS = 4.0
+#: How far outside the control the outline is drawn, in points (#122). Drawn
+#: exactly on the control, a toolbar icon's outline is a ring the size of the
+#: icon and sits on its edges; set out a little it frames the control and
+#: stays visible against it.
+_POINTER_OUTSET = 4.0
 
 #: Keys that address the *query* rather than the list: they edit it or move
 #: its caret, so pressing one in the list means the field, exactly as typing
@@ -663,6 +668,8 @@ class ChooserWindow:
         if rect is None:
             return
         x, y, w, h = rect
+        x, y = x - _POINTER_OUTSET, y - _POINTER_OUTSET
+        w, h = w + 2 * _POINTER_OUTSET, h + 2 * _POINTER_OUTSET
         try:
             self._pointer = self._backend.mark_screen(
                 x, y, w, h, style=_POINTER_STYLE,

@@ -1441,6 +1441,43 @@ class TestWindowControlsSource:
             _FakeControl("AXButton", "Save", name_source="label")])
         assert [c.display for c in self._rows(root)] == ["Save"]
 
+    def test_a_control_that_is_not_on_screen_is_not_offered(self):
+        """Issue #122: VS Code reports every chat message's hover toolbar -
+        scrolled out of view or not - as a 20x1 strip, and 251 of 306 rows
+        were such; their outline was a one-pixel line nobody could find. A
+        control outside the window is skipped too; one with no rectangle is
+        kept, since it may still be pressable."""
+        root = _FakeControl("AXWindow", rect=(0, 0, 800, 600), kids=[
+            _FakeControl("AXButton", "Copy", rect=(500, 250, 20, 1)),
+            _FakeControl("AXButton", "Below", rect=(10, 900, 40, 20)),
+            _FakeControl("AXButton", "Unplaced", rect=None),
+            _FakeControl("AXButton", "Save", rect=(10, 10, 40, 20)),
+        ])
+        assert [c.display for c in self._rows(root)] == ["Unplaced", "Save"]
+
+    def test_windows_offscreen_flag_is_honoured(self):
+        hidden = _FakeControl("Button", "Scrolled away", rect=(10, 10, 40, 20))
+        hidden.is_offscreen = lambda: True
+        root = _FakeControl("Window", rect=(0, 0, 800, 600), kids=[
+            hidden, _FakeControl("Button", "Here", rect=(10, 40, 40, 20))])
+        assert [c.display for c in self._rows(root)] == ["Here"]
+
+    def test_same_named_controls_are_numbered(self):
+        """Rows that read alike are told apart by their place in the list,
+        and the outline confirms which one is which."""
+        root = _FakeControl("AXWindow", rect=(0, 0, 800, 600), kids=[
+            _FakeControl("AXButton", "More Actions...", rect=(10, 10, 20, 20)),
+            _FakeControl("AXButton", "Save", rect=(40, 10, 20, 20)),
+            _FakeControl("AXButton", "More Actions...", rect=(10, 40, 20, 20)),
+            _FakeControl("AXButton", "More Actions...", rect=(10, 70, 20, 20)),
+        ])
+        rows = self._rows(root)
+        assert [c.display for c in rows] == [
+            "More Actions...", "Save", "More Actions... #2",
+            "More Actions... #3"]
+        assert rows[2].match_text.startswith("More Actions... "), \
+            "filtering still matches the name as it is"
+
     def test_content_is_not_a_control(self):
         """The measured tree of a heavy application is overwhelmingly groups
         and static text - the page, not the buttons on it."""
@@ -1793,6 +1830,9 @@ class TestCallableShape:
 
 
 
+from keyhac.ui.chooser import _POINTER_OUTSET  # noqa: E402
+
+
 class TestPointingAtTheSelection:
     """Discussion #112's argument for `node.highlight()`: a row that cannot
     describe itself - an icon-only control listed by its tooltip - is a row
@@ -1824,7 +1864,10 @@ class TestPointingAtTheSelection:
     def test_stepping_into_the_list_points_at_the_first_row(self, ui_backend):
         chooser, marks = self._chooser(ui_backend, self._rows())
         chooser._navigate("down")
-        assert [(m.x, m.y, m.w, m.h) for m in marks.made] == [(10, 20, 30, 40)]
+        # Set out from the control so a small one stays visible (#122).
+        o = _POINTER_OUTSET
+        assert [(m.x, m.y, m.w, m.h) for m in marks.made] == [
+            (10 - o, 20 - o, 30 + 2 * o, 40 + 2 * o)]
         assert not marks.made[0].closed
         chooser.dismiss()
 
@@ -1834,7 +1877,8 @@ class TestPointingAtTheSelection:
         chooser._navigate("down")
         assert len(marks.made) == 2
         assert marks.made[0].closed, "the previous outline should be gone"
-        assert (marks.made[1].x, marks.made[1].y) == (50, 60)
+        assert (marks.made[1].x, marks.made[1].y) == (50 - _POINTER_OUTSET,
+                                                      60 - _POINTER_OUTSET)
         chooser.dismiss()
 
     def test_jumping_to_the_last_row_moves_the_mark_with_it(self, ui_backend):
@@ -1847,7 +1891,8 @@ class TestPointingAtTheSelection:
         chooser._navigate("down")
         chooser._on_event(Event(type=EventType.KEY, key="end"))
         assert chooser._list.selected == 1
-        assert (marks.made[-1].x, marks.made[-1].y) == (50, 60)
+        assert (marks.made[-1].x, marks.made[-1].y) == (50 - _POINTER_OUTSET,
+                                                       60 - _POINTER_OUTSET)
         chooser.dismiss()
 
     def test_leaving_the_list_stops_pointing(self, ui_backend):

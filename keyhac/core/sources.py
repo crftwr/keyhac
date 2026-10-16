@@ -735,6 +735,30 @@ _CONTROLS_MAX_NODES = 4000
 _CONTROLS_MAX_DEPTH = 40
 
 
+def _on_screen(rect, frame) -> bool:
+    """Whether a control's rectangle is something the user can see.
+
+    Not a hidden flag - macOS answers AXHidden=False for all of these - but
+    the shape the platform reports for a control that is not there to look
+    at (issue #122): VS Code's chat reports every message's hover toolbar,
+    scrolled out of view or not, as a 20x1 strip at the top edge of the
+    list, so 251 of its 306 controls had a side of one pixel or less, and 95
+    rows of "Copy response to clipboard" shared one rectangle. A control
+    with no rectangle at all is kept - it may still be pressable - and so is
+    one that cannot be compared against the window.
+    """
+    if rect is None:
+        return True
+    _x, _y, width, height = rect
+    if width <= 1 or height <= 1:
+        return False
+    if frame is None:
+        return True
+    x, y = rect[0], rect[1]
+    fx, fy, fw, fh = frame
+    return x < fx + fw and x + width > fx and y < fy + fh and y + height > fy
+
+
 class WindowControlsSource(CandidateSource):
     """Everything you could click in the front window, reachable by name.
 
@@ -853,6 +877,20 @@ def _walk_controls(root):
     """
     seen = set()
     budget = [_CONTROLS_MAX_NODES]
+    # The window's own rectangle, read once: a control outside it is
+    # scrolled out of view or parked off-screen, not something to point at.
+    try:
+        frame = root.describe().get("rect")
+    except Exception:
+        frame = None
+    # How many rows have carried each name so far, so the second "More
+    # Actions..." reads as "More Actions... #2" - with the on-screen outline,
+    # the way to tell same-named controls apart. In tree order, which is
+    # close to reading order; a streamed list cannot know the total. "#n"
+    # rather than "(n)": names already end in parentheses - VS Code's
+    # "Toggle Panel (⌘J)" - and a count in the same brackets reads as part
+    # of the name.
+    named = {}
 
     def walk(element, depth):
         if budget[0] <= 0 or depth > _CONTROLS_MAX_DEPTH:
@@ -878,11 +916,17 @@ def _walk_controls(root):
             except Exception:
                 described = {}
             name = described.get("name")
-            if name:
+            rect = described.get("rect")
+            # Windows says so outright for a control scrolled out of view.
+            offscreen = getattr(element, "is_offscreen", None)
+            if name and _on_screen(rect, frame) and not (
+                    offscreen is not None and offscreen()):
+                named[name] = named.get(name, 0) + 1
+                shown = name if named[name] == 1 else f"{name} #{named[name]}"
                 yield Candidate(
-                    icon="⌖", display=name, payload=element,
+                    icon="⌖", display=shown, payload=element,
                     match_text=f"{name} {role}",
-                    rect=described.get("rect"),
+                    rect=rect,
                     provenance=described.get("name_source"),
                     extras={"role": role})
         try:
