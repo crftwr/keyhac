@@ -54,7 +54,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 # pyproject.toml changes.
 VENV_STAMP := $(VENV)/.installed
 
-.PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass icons icons-check \
+.PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
         api-reference api-reference-check skill-bundle cleanroom \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
@@ -82,6 +82,9 @@ help:
 	@echo "                     API's answers for which app is in front, side by side"
 	@echo "                     (issue #45). Samples for a minute; switch apps while"
 	@echo "                     it runs - the finding is in the transitions."
+	@echo "  make mac-focus-push-pass - (on macOS) whether AXObserver notifications could"
+	@echo "                     replace the per-key focus probe (issue #150). Drives a"
+	@echo "                     throwaway window and posts Tab/F13 into it for ~2 min."
 	@echo "  make icons       - regenerate the committed icon assets from art/*.svg"
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make banner      - render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
@@ -203,6 +206,12 @@ caret-probe: $(VENV_STAMP)
 # after a switch.
 mac-focus-pass: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/mac_focus_pass.py $(ARGS)
+
+# Issue #150: could focus changes be pushed (AXObserver) instead of polled?
+# Takes the focus and posts keys into its own throwaway window; ARGS='--watch
+# 120 --only-watch' instead follows real applications while you use them.
+mac-focus-push-pass: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/mac_focus_push_pass.py $(ARGS)
 
 # GitHub Pages banner.  doc/images/banner.svg is the source; link previews
 # ignore SVG in og:image, so the site serves JPEGs rendered from it (headless
