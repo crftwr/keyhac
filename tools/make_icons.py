@@ -26,6 +26,12 @@ Raster targets (all checked in; re-run only when the artwork changes):
   extra at 19x18 pt (the 19x18 canvas at exact 1x/2x scale; puikit's
   tray loader pairs the @2x sibling and applies the AppKit "…Template"
   naming convention).
+- ``keyhac/ui/assets/MenuExtraBusyTemplate.png`` + ``@2x`` and
+  ``keyhac/ui/assets/keyhac-busy.ico`` — the tray while an action runs
+  (issue #141). *Derived* from the two masters above rather than kept as
+  SVGs of their own, so the busy keycap cannot drift from the normal one:
+  the menu bar extra gets its key top filled with ink (a template is shape
+  only), the tray icon its key top recolored amber.
 - ``windows_app/resources/Assets/*.png`` — the MSIX / Microsoft Store
   tiles (``windows_app/build_msix.ps1`` copies the directory into the
   package payload): the scale-100 sizes the AppxManifest references,
@@ -205,6 +211,30 @@ def wide_tile(logo, width, height):
     ]
 
 
+#: The key top of the keycap, as both masters draw it.
+_KEY_TOP = "M240 312.4 L470 312.4 L490 512.4 L220 512.4 Z"
+
+#: The busy icon's key top: amber, the one face that changes, so the keycap
+#: still reads as Keyhac's at 16 px while saying something is running.
+_BUSY_TOP = "#f2a33a"
+
+
+def _busy_template(template: str) -> str:
+    """The menu bar extra with its key top filled - shape, not color, since a
+    template image is recolored by the system."""
+    marker = '<path d="M240 312.4 L470 312.4 L544 364'
+    assert marker in template, "MenuExtraTemplate.svg changed shape"
+    return template.replace(
+        marker, f'<path d="{_KEY_TOP}" fill="#000"/>\n    ' + marker, 1)
+
+
+def _busy_icon(source: str) -> str:
+    """The color keycap with its key top recolored."""
+    face = f'<path d="{_KEY_TOP}" fill="#afafde"/>'
+    assert face in source, "icon.svg changed its key top"
+    return source.replace(face, f'<path d="{_KEY_TOP}" fill="{_BUSY_TOP}"/>', 1)
+
+
 def build():
     """Render every raster target into memory: {path: bytes}."""
     source = (ART / "icon.svg").read_text(encoding="utf-8")
@@ -224,6 +254,10 @@ def build():
     # macOS menu bar extra: the 19x18 canvas renders at exactly scale 1
     # (38x36 at exactly 2).
     template = (ART / "MenuExtraTemplate.svg").read_text(encoding="utf-8")
+    busy_template = _busy_template(template)
+    busy = _busy_icon(source)
+    busy_ico = ico_bytes(
+        bmp_images=[svgrender.render(busy, s) for s in (16, 20, 24, 32, 40, 48)])
 
     return {
         ASSETS / "keyhac.ico": ico,
@@ -232,6 +266,11 @@ def build():
             png_bytes(svgrender.render(template, 19, 18)),
         ASSETS / "MenuExtraTemplate@2x.png":
             png_bytes(svgrender.render(template, 38, 36)),
+        ASSETS / "MenuExtraBusyTemplate.png":
+            png_bytes(svgrender.render(busy_template, 19, 18)),
+        ASSETS / "MenuExtraBusyTemplate@2x.png":
+            png_bytes(svgrender.render(busy_template, 38, 36)),
+        ASSETS / "keyhac-busy.ico": busy_ico,
         # MSIX / Microsoft Store tiles (referenced by the AppxManifest that
         # windows_app/build_msix.ps1 emits).
         STORE_ASSETS / "StoreLogo.png": png_bytes(render(50)),
