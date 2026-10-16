@@ -54,6 +54,45 @@ _LEVELS = [
 
 _HEALTH_TICK_INTERVAL = 0.1
 
+#: Error lines this close together are one error: a traceback arrives as many
+#: ERROR lines, and the tray counts what the user would call errors.
+_ERROR_BURST = 1.0
+
+
+class UnreadErrors:
+    """Errors the console showed while it was not on screen, counted as
+    the user would count them: a traceback is many ERROR lines and one
+    error, so lines closer together than _ERROR_BURST are one."""
+
+    def __init__(self):
+        self.count = 0
+        self._last = None
+
+    def line(self, level: int, seen: bool, now: float) -> None:
+        # 100 is print() output, which is above ERROR numerically and is not
+        # an error. `seen`: the console is the window in use as it arrives.
+        if level < logging.ERROR or level == 100 or seen:
+            return
+        if self._last is None or now - self._last > _ERROR_BURST:
+            self.count += 1
+        self._last = now
+
+    def clear(self) -> None:
+        self.count = 0
+
+
+def _running_action_names() -> tuple:
+    """The names of the actions running now, sorted - what the tray shows."""
+    from keyhac.core.action import ThreadedAction
+
+    with ThreadedAction._running_lock:
+        running = tuple(ThreadedAction._running)
+    names = []
+    for action in running:
+        record = getattr(action, "_run_record", None)
+        names.append(getattr(record, "name", None) or type(action).__name__)
+    return tuple(sorted(names))
+
 
 class ConsoleWindow:
     """Owns the PuiKit backend/panel; main() runs its event loop."""
@@ -72,6 +111,11 @@ class ConsoleWindow:
         # keyhac-win [CONSOLE] visible behavior. None (tests) = always show.
         self._settings = settings
         self._last_visible = None
+        #: Errors the console has shown while it was not on screen (#111).
+        self._unread = UnreadErrors()
+        #: Called with (running action names, unread error count) on every
+        #: tick; the tray compares and redraws only on a change (#141, #111).
+        self.state_listeners = []
 
         # start_hidden / is_main_window_visible shipped together in puikit
         # (PR #84); on an older puikit the console simply always starts
@@ -236,9 +280,30 @@ class ConsoleWindow:
         refresh the inspector fields, run the hook health check."""
         changed = False
 
+        # Seen means the console is the window in use - shown *and* active.
+        # Merely visible is not enough: an open console covered by other
+        # windows has not been read. A PuiKit without is_main_window_active
+        # falls back to visibility.
+        active = getattr(self.backend, "is_main_window_active", None)
+        if active is not None:
+            seen_now = active()
+        else:
+            seen_now = (self.backend.is_main_window_visible()
+                        if self._visibility_api else True)
         for text, level in self._console.pull_lines():
             self._append_line(text, level)
             changed = True
+            self._unread.line(level, seen_now, time.monotonic())
+        if seen_now:
+            self._unread.clear()
+        if self.state_listeners:
+            running = _running_action_names()
+            for listener in self.state_listeners:
+                try:
+                    listener(running, self._unread.count)
+                except Exception:
+                    logging.getLogger("keyhac.Console").debug(
+                        "A console state listener failed.", exc_info=True)
 
         last_key = self._console.get_text("lastKey")
         if last_key != self._last_key_label.text:
