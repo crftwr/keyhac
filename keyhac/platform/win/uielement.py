@@ -917,6 +917,14 @@ class UIElement:
             self._children_capped = MAX_CHILDREN
         return out
 
+    def is_offscreen(self) -> bool:
+        """UIA's IsOffscreen - True for a control scrolled out of view or
+        otherwise not on the screen. The controls source skips these (#122)."""
+        try:
+            return bool(self.get_attribute_value("IsOffscreen"))
+        except Exception:
+            return False
+
     def same_element(self, other) -> bool | None:
         """Whether `other` is this same element, by UIA's CompareElements -
         which survives the element's name changing and tells two same-named
