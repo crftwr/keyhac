@@ -667,14 +667,11 @@ class Keymap:
             fnmatch wildcards (*, ?, []) and "|" alternation, and all the
             conditions given must match.
 
-            On Windows, focus_path_pattern is best-effort: the path is
-            re-read when the window, the focused child window or the title
-            changes, so focus moving *inside* one window - an item in a list,
-            a tab, anything on a Chromium / Electron / WPF / WinUI page -
-            does not re-evaluate it. Reading it on every key event was
-            measured at 1.6-3.5 ms against a responsive application and
-            unbounded against a hung one, which the key path cannot spend.
-            app, title and class_name are exact.
+            focus_path_pattern is re-evaluated on every key event, so focus
+            moving *inside* one window - an item in a list, a tab, a field
+            on a Chromium / Electron / WPF / WinUI page - selects the table
+            it should. While the application in front is not responding, the
+            path is the window-level one until it answers again.
 
             While a chooser popup is open (`ShowClipboardHistory`,
             `ShowCandidates`, ...), the conditions are checked against the

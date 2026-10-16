@@ -9,6 +9,7 @@ struct mismatch.)
 """
 
 import ctypes
+import os
 import sys
 
 import pytest
@@ -219,6 +220,35 @@ class TestFocusPath:
             pytest.skip("no foreground window")
         provider._probe = (0, 0, "something else")
         assert provider.get_focus() is not first
+
+    @staticmethod
+    def _foreign_focus(provider):
+        focus = provider.get_focus()
+        if focus is None:
+            pytest.skip("no foreground window")
+        if focus.pid == os.getpid():
+            pytest.skip("this process is in front; its windows keep the old rule")
+        return focus
+
+    def test_focus_moving_inside_one_window_rebuilds(self, monkeypatch):
+        # Issue #150: the three handles stay put while the focused element
+        # changes - a Chromium page, a WinUI pane - and that alone must
+        # rebuild the Focus.
+        provider = WinFocusProvider()
+        first = self._foreign_focus(provider)
+        monkeypatch.setattr(provider, "_same_focused", lambda element: False)
+        assert provider.get_focus() is not first
+
+    def test_the_focused_element_is_read_on_every_key_event(self, monkeypatch):
+        provider = WinFocusProvider()
+        self._foreign_focus(provider)
+        reads = []
+        original = provider._read_focused_element
+        monkeypatch.setattr(provider, "_read_focused_element",
+                            lambda: reads.append(1) or original())
+        provider.get_focus()
+        provider.get_focus()
+        assert len(reads) == 2
 
 
 class TestUIAPatterns:
