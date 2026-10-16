@@ -374,6 +374,37 @@ def test_the_mark_survives_a_title_the_focus_path_escaped():
     assert "* Finder" not in out
 
 
+def _safari_window(with_document):
+    from keyhac.core.uitree import UINode
+
+    view = UINode(role="AXGroup",
+                  identifier="BrowserView?IsPageLoaded=true&WebViewProcessID=1",
+                  depth=4)
+    if with_document:
+        view.children = [UINode(role="AXWebArea", name="SystemA", depth=5)]
+    window = UINode(role="AXWindow", name="SystemA", depth=0)
+    window.children = [UINode(role="AXButton", depth=1) for _ in range(5)] \
+        + [view]
+    return window
+
+
+def test_an_empty_safari_web_view_says_what_to_do(registry):
+    """Issue #178: Safari's web view with no document under it read as a
+    window with nothing in it, and said nothing - Chromium's hints are keyed
+    on the content-access switch, which Safari does not have."""
+    tree = _safari_window(with_document=False)
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {})
+    assert "no document in this Safari window" in text
+    assert 'find_elements(role="WebArea")' in text
+
+
+def test_a_safari_window_with_its_document_gets_no_hint(registry):
+    tree = _safari_window(with_document=True)
+    registry.keymap.node.reread = lambda **kw: tree
+    assert "no document" not in registry.call("describe_screen", {})
+
+
 def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 

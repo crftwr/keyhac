@@ -1024,6 +1024,23 @@ class ToolRegistry:
                     "again in a moment (measured: under a second on a loaded "
                     "page, as long as the page takes to arrive otherwise). "
                     "Calling enable_content_access again changes nothing.]")
+            elif any(str(node.identifier or "").startswith("BrowserView")
+                     for node in nodes):
+                # Safari (issue #178): no switch to ask, but the same empty
+                # state - a BrowserView with no web area under it. Measured on
+                # a fresh load: 24 nodes and no document 0.03 s after the
+                # title appears, the document 0.15 s later; and a clean-room
+                # read once met it long after loading, without a cause found.
+                # Either way it read as a window with nothing in it, and said
+                # nothing; the move that worked there was a search.
+                missing_document = (
+                    "[no document in this Safari window - its web view "
+                    "(#BrowserView) has nothing under it yet. Safari builds "
+                    "the page's tree a moment after the page appears, so read "
+                    "again; if it is still empty, find the document with "
+                    "find_elements(role=\"WebArea\") and read it with "
+                    "within={\"role\": \"WebArea\"}. Raising max_nodes "
+                    "will not help.]")
 
         if len(text) > MAX_REPLY_CHARS:
             # Cut on a line boundary and said out loud, ahead of the bound
