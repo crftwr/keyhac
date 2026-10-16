@@ -2,6 +2,7 @@
 
 import inspect
 import sys
+import time
 from pathlib import Path
 
 from puikit import Menu, MenuItem, SEPARATOR
@@ -16,6 +17,12 @@ _ASSETS = Path(__file__).with_name("assets")
 #: The unread-error badge: a red dot on the tray icon (#111). Drawn by PuiKit
 #: over the image, so the macOS menu bar extra stays a template.
 _ERROR_BADGE = (230, 50, 50)
+
+#: Seconds per frame of the running animation (#141): the key top fills and
+#: empties, a key being pressed. A static busy keycap was too close to the
+#: plain one in a single-color menu bar; movement is what a glance catches,
+#: and it never competes with the error dot's color.
+_FRAME_SECONDS = 0.5
 
 
 def _tray_image(busy: bool = False) -> str | None:
@@ -129,12 +136,27 @@ class _TrayIndicator:
         # icon (Windows); no badge means the menu entry is the only sign.
         self._has_image = "image" in parameters
         self._has_badge = "badge" in parameters
+        # Animation swaps the image alone; on a PuiKit without that, the
+        # busy keycap stays still rather than rebuilding the menu per frame.
+        self._can_animate = self._has_image and hasattr(
+            console.backend, "set_tray_image")
+        self._frame = None
 
-    def show(self, running: tuple, unread: int) -> None:
+    def show(self, running: tuple, unread: int, now: float = None) -> None:
         state = (running, unread)
-        if state == self._shown:
-            return
-        self._shown = state
+        if state != self._shown:
+            self._shown = state
+            self._redraw(running, unread)
+            self._frame = 1 if running else None
+        if running and self._can_animate:
+            now = time.monotonic() if now is None else now
+            frame = int(now / _FRAME_SECONDS) % 2
+            if frame != self._frame:
+                self._frame = frame
+                self._console.backend.set_tray_image(
+                    _tray_image(busy=frame == 1))
+
+    def _redraw(self, running: tuple, unread: int) -> None:
 
         top = [MenuItem(f"Running: {name} — Stop",
                         on_select=lambda n=name: _cancel(n))

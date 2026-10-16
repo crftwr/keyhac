@@ -100,3 +100,24 @@ def test_unread_errors_count_bursts_not_lines():
     assert unread.count == 2
     unread.clear()
     assert unread.count == 0
+
+
+def test_a_running_action_animates_the_key_top():
+    """The busy keycap alone was too close to the plain one in a single-color
+    menu bar: while an action runs the key top fills and empties every
+    _FRAME_SECONDS, swapping only the image - the menu is not rebuilt."""
+    console, indicator = _indicator()
+    period = tray._FRAME_SECONDS
+    for tick in range(0, 8):                      # 10 Hz ticks over 0.8 s
+        indicator.show(("a.A",), 0, now=100.0 + tick * 0.1)
+    plain, busy = tray._tray_image(busy=False), tray._tray_image(busy=True)
+    # set_tray showed the busy frame; t=100.0 is an even half-second (plain),
+    # t=100.5 the next one (busy).
+    assert console.backend.tray_images == [plain, busy]
+    assert len(console.backend.tray_calls) == 1, "the menu was built once"
+    # Stopped: back to the plain keycap, no more frames.
+    frames = len(console.backend.tray_images)
+    indicator.show((), 0, now=200.0)
+    indicator.show((), 0, now=200.0 + period)
+    assert console.backend.tray_calls[-1][3] == plain
+    assert len(console.backend.tray_images) == frames
