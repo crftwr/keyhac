@@ -757,6 +757,12 @@ class UIElement:
         """Whether `other` is this same element - by CFEqual, which survives
         the element's title changing and tells two same-titled windows apart
         (issue #180). A local comparison: the application is asked nothing.
+
+        Use this, not `==`. Two reads of one element are two Python objects,
+        so `==` - plain object identity - answers False for the same element;
+        it is not redefined because it could not say "cannot tell" (None),
+        has no hash to match on Windows, and would have to ask the
+        application, which `==` should never do.
         """
         ref = getattr(other, "_ref", None)
         if ref is None:
