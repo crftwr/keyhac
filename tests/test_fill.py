@@ -366,6 +366,31 @@ def test_checkbox_accepts_the_platforms_various_truths(wired):
         assert fill._is_checked(box) is checked, value
 
 
+class ChromiumCheckBox(FakeField):
+    """Edge's checkbox under UIA: Value is implemented and always "", and the
+    state is in ToggleState - measured on Windows 11 (PR #188)."""
+
+    def __init__(self, toggle_state=0):
+        super().__init__(value="", role="CheckBox", actions=("Toggle",))
+        self.toggle_state = toggle_state
+
+    def get_attribute_value(self, name):
+        return self.toggle_state if name == "ToggleState" else None
+
+    def perform_action(self, name):
+        self.presses += 1
+        self.toggle_state = 1 - self.toggle_state
+
+
+def test_an_empty_value_falls_through_to_the_toggle_state(wired):
+    """Reading "" as unchecked made every press look like it failed."""
+    assert fill._is_checked(ChromiumCheckBox(toggle_state=1)) is True
+    box = ChromiumCheckBox(toggle_state=0)
+    assert set_checked(box, True) is True
+    assert box.toggle_state == 1 and box.presses == 1
+    assert set_checked(box, True) is False
+
+
 # -- press -------------------------------------------------------------------
 
 def test_press_uses_whichever_action_the_platform_offers(wired):

@@ -22,12 +22,15 @@
     $('submit').onclick = () => {
       const ref = $('ref').value.trim();
       const amount = $('amount').value.trim();
-      // Server-side validation, the kind an action has to read back.
+      // Server-side validation, the kind an action has to read back. Every
+      // answer names the record it is about: the line is rewritten in place,
+      // so two rows refused for the same reason would otherwise leave an
+      // action reading the previous row's answer as this one's.
       if (!ref) { $('result').textContent = "error: Reference is required"; return; }
       if (!/^\d+$/.test(amount)) {
-        $('result').textContent = "error: Amount must be a number"; return; }
+        $('result').textContent = "error: " + ref + ": Amount must be a number"; return; }
       if (seen.has(ref)) {
-        $('result').textContent = "error: " + ref + " already submitted"; return; }
+        $('result').textContent = "error: " + ref + ": already submitted"; return; }
       seen.add(ref);
       const li = document.createElement('li');
       li.textContent = ref + " | " + $('title').value + " | " + amount +

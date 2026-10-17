@@ -256,9 +256,8 @@ Two separate things bite here.
 `role="Button"` matches a macOS `AXButton` and a Windows `Button` alike, while
 `role="AXButton"` matches **only** macOS - `AXTable` will not find a Windows
 `Table` even though that role exists. Write patterns *without* the prefix and
-they work on both. Every example under the repository's `examples/actions/mac/`
-breaks this, having been written on macOS - which is also why they live in a
-`mac/` folder rather than looking like the general case.
+they work on both. The repository's first examples broke this, having been
+written on macOS, and were rewritten without the prefix.
 
 **And where the names have no pair, no rule saves you.** Windows has
 `Table`, `DataGrid`, `DataItem`, `Header` and `HeaderItem` - and no `Cell` or
@@ -270,6 +269,23 @@ Measured on Notepad: the editor is a `Document`, the Find field an `Edit`,
 "Match case" a `MenuItem`, toolbar controls `Button`. Use alternation when an
 action is meant to be portable (`role="Document|Edit|TextArea"`), and look at
 the tree on both platforms rather than trusting the mapping.
+
+## Windows: what a web page becomes in Edge
+
+Measured on Edge, Windows 11, 2026-10-17, against pages whose macOS tree was
+already known - and four confident guesses about it were wrong:
+
+| HTML | Edge (UI Automation) | so |
+|---|---|---|
+| `<tr>` and `<td>` | both `DataItem` | tell a row from a cell by position: a row is the table's child, a cell the row's |
+| `<h1>`–`<h6>` | `Text` | there is no heading control type; `role="Heading"` finds nothing |
+| an open `<dialog>` | `Window` | scope the search to the page's `Document`, or the browser window matches |
+| `id` on a control or heading | an AutomationId | `identifier=` works |
+| `id` on a `<p>` or `<span>` | **nothing** | address it by what it says, or by position |
+
+The last row is the one that costs a run: `find(identifier="result")` answers
+on Safari and is None on Edge, and an action waiting on it waits out its
+timeout.
 
 ## Windows: WinUI text controls drop and reorder injected input
 
