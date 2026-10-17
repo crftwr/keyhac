@@ -60,6 +60,7 @@ import sys
 import threading
 import time
 
+import keyhac
 from keyhac.core import capture, log, permissions, uitree
 from keyhac.core.focus import FOCUS_PATH_TRANS_TABLE
 from keyhac.mcp import extensions
@@ -581,7 +582,8 @@ class ToolRegistry:
             Tool("get_focus",
                  "What currently has keyboard focus: application, window "
                  "title, and the focus path. Cheap, and usually tells you "
-                 "which window the operator means.",
+                 "which window the operator means. Its last line is the "
+                 "running Keyhac's version.",
                  {"type": "object", "properties": {}},
                  self.get_focus,
                  READ_ONLY),
@@ -769,7 +771,8 @@ class ToolRegistry:
                  "table you meant and that the table applies where the operator "
                  "is; only whether pressing it feels right is left to them. It "
                  "also reports the live focus path, which is what a "
-                 "focus_path_pattern is written against.",
+                 "focus_path_pattern is written against, and its first line "
+                 "is the running Keyhac's version.",
                  {"type": "object", "properties": {}},
                  self.describe_keymap,
                  READ_ONLY),
@@ -850,7 +853,10 @@ class ToolRegistry:
                  self.delete_extension,
                  _writes(destructive=True, idempotent=False)),
             Tool("reload_config",
-                 "Reload ~/.keyhac/config.py and report what it said - use it "
+                 "Reload ~/.keyhac/config.py and report whether it loaded: the "
+                 "first line is `loaded`, or `FAILED to load` with the "
+                 "traceback below it, and the previous key tables stay active "
+                 "until it loads. Use it "
                  "**after the operator edits that file**, to check their paste "
                  "still loads and to hand back the error if it does not. "
                  "**Not part of the authoring loop**: an action class in "
@@ -896,7 +902,7 @@ class ToolRegistry:
             return title.translate(FOCUS_PATH_TRANS_TABLE) if title else title
 
         def read():
-            focus = self.keymap.focus
+            focus = self.keymap.read_focus()
             focused = ((focus.app_name, normalize(focus.window_title))
                        if focus else (None, None))
             lines = []
@@ -913,15 +919,21 @@ class ToolRegistry:
         return "\n".join(["('*' marks the focused window)"] + lines)
 
     def get_focus(self) -> str:
+        # read_focus rather than the snapshot: the snapshot is empty from a
+        # config reload until the next key event, and an agent has just
+        # reloaded and cannot press one (issue #196).
         def read():
-            focus = self.keymap.focus
+            focus = self.keymap.read_focus()
             if focus is None:
                 return None
             return (f"application: {focus.app_name}\n"
                     f"window: {focus.window_title}\n"
                     f"path: {focus.path}")
 
-        return self.ui.on_main_thread(read) or "nothing focused"
+        # The version closes it because this is the cheapest call either of
+        # the skill's jobs makes, and the skill checks it here (issue #191).
+        focused = self.ui.on_main_thread(read) or "nothing focused"
+        return f"{focused}\nkeyhac: {keyhac.__version__}"
 
     def _container(self, window, within) -> tuple:
         """The one element `within` selects, and the line that places it.
@@ -1340,7 +1352,13 @@ class ToolRegistry:
                 f"get_action_result for how far it got.")
 
     def describe_keymap(self) -> str:
-        return self.keymap.describe_keymap()
+        # The version heads it because the skill checks it there (issue
+        # #191): an uploaded skill is a snapshot of one version's API, and
+        # this is the first call either of its jobs makes that is cheap,
+        # read-only and carries no token. On the main thread because it may
+        # fill the focus snapshot the key dispatch reads (issue #196).
+        described = self.ui.on_main_thread(self.keymap.describe_keymap)
+        return f"Keyhac {keyhac.__version__}\n\n{described}"
 
     def read_config(self) -> str:
         """The operator's whole `config.py`."""
@@ -1594,14 +1612,28 @@ class ToolRegistry:
         # write_extension - and dropping them would take a *running* action out
         # of cancel_action's reach, since that reaches it by looking the name up
         # again. A reload should not cost the operator the stop button.
-        def reload():
-            self.keymap.configure()
-            return "reloaded"
+        #
+        # The verdict comes first (issue #197). A reload that loaded and one
+        # that did not used to differ only in whether a traceback appeared
+        # somewhere in the log, so every reader had to infer success from the
+        # absence of an error line. The log stays below it as the detail,
+        # without the DEBUG lines - the modifier release configure() sends
+        # first, every time - which stay in the console.
+        with _captured_log(level=logging.INFO) as captured:
+            loaded = self.ui.on_main_thread(self.keymap.configure)
+        said = [line for line in captured.getvalue().strip().splitlines()
+                if line.strip() and line != _LOADING]
+        if loaded is False:
+            verdict = ("FAILED to load - the previous key tables are still "
+                       "active. Fix the error below and reload again.")
+        else:
+            verdict = "loaded"
+        return "\n".join([verdict] + (["", *said] if said else []))
 
-        with _captured_log() as captured:
-            self.ui.on_main_thread(reload)
-        output = captured.getvalue().strip()
-        return output or "config reloaded"
+
+#: What configure() logs on every reload, as _captured_log formats it - the
+#: one line of the log that says nothing about this reload in particular.
+_LOADING = "INFO [keyhac.Keymap] Loading configuration script."
 
 
 #: Timestamped backups kept per module.  Enough to walk back through a fix loop
@@ -1750,9 +1782,13 @@ class _captured_log:
       `keyhac.core.capture.subprocess_detail` surfaces it from the exception.
     """
 
+    def __init__(self, level: int = logging.NOTSET):
+        self.level = level
+
     def __enter__(self) -> "_Bounded":
         self.buffer = _Bounded()
         self.handler = _Capture(self.buffer)
+        self.handler.setLevel(self.level)
         self.handler.setFormatter(
             logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
 

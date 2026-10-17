@@ -11,6 +11,24 @@ Keyhac sits between the keyboard and every application. The user's
 `~/.keyhac/extensions/` - *actions* - drive other applications through their
 accessibility trees. You reach the running Keyhac through its MCP tools.
 
+## Check the version before anything else
+
+This skill was packaged from **Keyhac {VERSION}** and describes that version's
+API. An uploaded skill does not update itself when Keyhac does, so call
+`get_focus` first: its last line, `keyhac: X.Y.Z`, is the Keyhac that is
+running. Compare the two:
+
+- **Same major and minor version** (`2.5.0` and `2.5.3`) — carry on. Patch
+  releases do not change the API this skill describes.
+- **Major or minor differs** — tell the user once, in one sentence, that this
+  skill is for Keyhac {VERSION} while they run X.Y.Z, and that they should
+  upload the skill bundle released with their version. Then carry on, but
+  treat what this skill says about the API as unconfirmed: if a call it names
+  fails with `AttributeError` or `TypeError`, say the version mismatch is the
+  likely cause rather than working around it.
+- **No answer** — the MCP tools are off; the last rule below covers that, and
+  the version check waits until they are back.
+
 ## Read the reference for the task before doing anything
 
 This file only routes. The working knowledge is in `references/`, and it is

@@ -13,9 +13,10 @@ every app.
 MUST = """\
 - Ctrl-X then Ctrl-S sends the platform's own save shortcut (Cmd-S on
   macOS, Ctrl-S on Windows) in any application.
-- Ctrl-X becomes a prefix in a multi-stroke table; the config's own
-  MOD2-style constant (or keymap.platform) picks the save key, so one file
-  works on both machines.
+- Ctrl-X becomes a prefix in a multi-stroke table; the save key is picked
+  per platform the way the config already does it (the template's MOD2, a
+  constant of its own, or keymap.platform), so one file works on both
+  machines.
 - It says Ctrl-X is Cut in most Windows applications and that this takes it
   away, before or as it makes the change.
 Must not: bind a plain Ctrl-S; leave Ctrl-X doing nothing when another key
@@ -48,13 +49,11 @@ def check(o):
 
 
 def reference(o):
-    o.config_after = o.config_before.replace(
-        "    # --- balloon messages of your own",
+    o.config_after = o.config.insert(o.config_before,
         "    # Ctrl-X Ctrl-S saves, as in Emacs.\n"
         "    kt_cx = keymap.define_keytable(name=\"Ctrl-X\")\n"
-        "    kt[\"Ctrl-X\"] = kt_cx\n"
-        "    kt_cx[\"Ctrl-S\"] = f\"{MOD2}-S\"\n\n"
-        "    # --- balloon messages of your own", 1)
+        f"    {o.config.table}[\"Ctrl-X\"] = kt_cx\n"
+        f"    kt_cx[\"Ctrl-S\"] = {o.config.save}\n")
     o.calls = [outcome.ToolCall("mcp__keyhac__write_config", {}),
                outcome.ToolCall("mcp__keyhac__reload_config", {}, result="config reloaded")]
     o.reply = ("Ctrl-X is now a prefix: Ctrl-X then Ctrl-S saves. On Windows "

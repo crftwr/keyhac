@@ -44,6 +44,7 @@
       if (index >= items.length) {
         // Every third run, show the *other* dialog, so a handler that does
         // not check its preconditions is caught doing the wrong thing.
+        report('danger-shown');
         $('danger').showModal();
         return;
       }

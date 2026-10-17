@@ -252,11 +252,15 @@ class Keymap:
     # ------------------------------------------------------------------
     # Configuration
 
-    def configure(self) -> None:
+    def configure(self) -> bool:
         """Load (or reload) the configuration file and rebuild the keymap.
 
         A configuration that fails to load leaves the previous keymap active
         and reports the traceback to the console.
+
+        Returns:
+            True when the configuration loaded, False when it failed and the
+            previous keymap was kept.
         """
 
         with self._lock:
@@ -272,6 +276,15 @@ class Keymap:
                 self._release_modifier_all()
 
             init_key_names(self.platform, self._hook.keyboard_layout())
+
+            # What the configuration script builds, kept so a script that
+            # fails half way can be undone. Emptied before it runs because the
+            # script adds to these; without the copy a failed reload left the
+            # tables defined above the failing line and dropped the rest, and
+            # a syntax error left none - while the console said the previous
+            # keymap was still active.
+            previous = (self._keytable_list, self._all_keytables,
+                        self._vk_vk_map, self._vk_mod_map, self.editor)
 
             self._keytable_list = []
             self._all_keytables = []
@@ -308,7 +321,15 @@ class Keymap:
             except Exception:
                 print()
                 logger.error(f"Loading configuration script failed:\n{traceback.format_exc()}")
-                return
+                (self._keytable_list, self._all_keytables, self._vk_vk_map,
+                 previous_mod_map, self.editor) = previous
+                # Empty only before any configuration has run, and then the
+                # layout's own modifiers set above are the ones to keep.
+                if previous_mod_map:
+                    self._vk_mod_map = previous_mod_map
+                logger.error("The previous key tables stay active until the "
+                             "configuration loads.")
+                return False
             finally:
                 # In `finally` because a config that raised half way through
                 # still imported everything above the line that raised, and
@@ -316,6 +337,7 @@ class Keymap:
                 self._stamp_extensions(extensions_dir)
 
             self._warn_unreachable_modifiers()
+            return True
 
     @staticmethod
     def _prepare_extensions(extensions_dir: str) -> None:
@@ -585,6 +607,7 @@ class Keymap:
         lazydocs: ignore
         """
         with self._lock:
+            self.read_focus()
             focus = self._table_focus()
             conditioned = list(self._keytable_list)
             all_tables = list(self._all_keytables)
@@ -596,7 +619,8 @@ class Keymap:
             # one nothing else in the tool set reports in a form you can paste.
             lines.append(f"focus path: {focus.path}")
         else:
-            lines.append("focus now: unknown (no window has been focused yet)")
+            lines.append("focus now: unknown (nothing reports having the "
+                         "keyboard focus)")
         lines.append("")
         lines.append("Key tables, in definition order. Every table whose "
                      "condition matches is active at")
@@ -1308,6 +1332,32 @@ class Keymap:
         stays the application underneath - the one a paste, a window move or
         an IME change acts on."""
         return self._focus
+
+    def read_focus(self) -> Focus | None:
+        """`focus`, read from the platform when no key event has filled it.
+
+        configure() empties the snapshot and only a key event fills it again,
+        so right after a reload `focus` is None with a window plainly in
+        front - exactly when an agent that has just written a key table asks
+        whether it applies there, and an agent cannot press a key to find out
+        (issue #196). This is the read the next key event would have made, so
+        it fills the snapshot and re-merges the tables for it, and that key
+        no longer has to make it.
+
+        Call it on the main thread, beside the key dispatch that also writes
+        the snapshot.
+
+        lazydocs: ignore
+        """
+        with self._lock:
+            if self._focus is None:
+                with one_timeout_per_key_event():
+                    try:
+                        self._check_focus_change()
+                    except Exception:
+                        logger.error(f"Reading the focus failed:\n"
+                                     f"{traceback.format_exc()}")
+            return self._focus
 
     # ------------------------------------------------------------------
     # Window access (config-facing; see keyhac.platform.base.Window)

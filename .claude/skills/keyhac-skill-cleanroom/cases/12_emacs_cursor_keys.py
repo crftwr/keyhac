@@ -12,8 +12,9 @@ keys have to keep doing what they do now.
 MUST = """\
 - In an ordinary application Ctrl-F/B/N/P send Right/Left/Down/Up; in the
   terminal they arrive unchanged.
-- The exception uses the config's own idea of a terminal (its is_terminal,
-  or a condition the same shape), and the result is checked with
+- The exception uses the config's own idea of a terminal where it has one
+  (the template's is_terminal, or the app list of a terminal table it
+  already has), otherwise application names; and the result is checked with
   describe_keymap: which tables are active, and whether a later one
   overrides the new keys.
 - It says what the user loses: on Windows, Ctrl-F, Ctrl-N and Ctrl-P are
@@ -47,16 +48,14 @@ def check(o):
 
 
 def reference(o):
-    o.config_after = o.config_before.replace(
-        "    # ---- An action written for you by an agent",
+    o.config_after = o.config.insert(o.config_before,
         "    # Emacs cursor keys, except in a terminal.\n"
         "    kt_emacs = keymap.define_keytable(\n"
-        "        custom_condition_func=lambda focus: not is_terminal(focus))\n"
+        f"        custom_condition_func={o.config.not_terminal})\n"
         "    kt_emacs[\"Ctrl-F\"] = \"Right\"\n"
         "    kt_emacs[\"Ctrl-B\"] = \"Left\"\n"
         "    kt_emacs[\"Ctrl-N\"] = \"Down\"\n"
-        "    kt_emacs[\"Ctrl-P\"] = \"Up\"\n\n"
-        "    # ---- An action written for you by an agent", 1)
+        "    kt_emacs[\"Ctrl-P\"] = \"Up\"\n")
     o.calls = [outcome.ToolCall("mcp__keyhac__write_config", {}),
                outcome.ToolCall("mcp__keyhac__reload_config", {}, result="config reloaded")]
     return o

@@ -53,18 +53,19 @@ the pattern the template uses throughout:
 
 ```python
 mac = keymap.platform == "mac"
-LEADER = "Fn" if mac else "User0"    # the modifier your bindings hang off
-MOD = "Cmd" if mac else "Ctrl"       # the OS's primary shortcut modifier
+MOD1 = "Fn" if mac else "User0"     # the modifier your bindings hang off
+MOD2 = "Cmd" if mac else "Ctrl"     # the OS's primary shortcut modifier
 
-kt[f"{LEADER}-C"] = f"{MOD}-C"
+kt[f"{MOD1}-C"] = f"{MOD2}-C"
 ```
 
 A plain Python constant is the answer here, not a built-in name: there is no `Mod-`
 modifier in the key expression language. Modifier names mean the same thing on both
 OSes, and one that quietly changed meaning per OS would not survive the round trip —
 the console reports what actually fired, `Cmd-C` or `Ctrl-C`. The constant also scales
-to whatever else your config wants to vary by OS, which is why `LEADER` above works the
-same way.
+to whatever else your config wants to vary by OS, which is why `MOD1` above works the
+same way. The names are the template's; a config that spells its constants
+differently, or writes `keymap.platform` checks inline, is doing the same thing.
 
 Config diagnostics are cross-platform aware: a key name that exists only on the other
 OS says so in the error, and after loading, Keyhac warns once about bindings whose
@@ -119,11 +120,67 @@ Matching:
   application in front stops responding, the path falls back to the window
   level (`/Application(…)/…(title)`) until it answers again.
 - `custom_condition_func(focus)` — your own test; receives the [Focus
-  object](#the-focus-object).
+  object](#the-focus-object). It is never called without a focus: while nothing
+  reports one, the table is simply inactive.
+
+**What an application is called.** `app=` is matched against `Focus.app_name`, and it
+is one value everywhere you meet it: what a `custom_condition_func` receives as
+`focus.app_name`, the application column of `list_windows`, and the `focus now:` line
+of `describe_keymap` (the MCP tools), and the console's focus path.
+
+| | `Focus.app_name` is | for example |
+|---|---|---|
+| Windows | the executable's name, **without** ".exe" | `Code`, `WindowsTerminal`, `notepad`, `msedge`, `cmd` |
+| macOS | the application's localized display name | `Code`, `Terminal` (`ターミナル` on a Japanese system), `Safari`, `Google Chrome` |
+
+`app=` is forgiving — case-insensitive, wildcards and `|`, and on Windows the ".exe" is
+optional in the pattern. Your own function is plain Python, so it compares exact
+strings: `focus.app_name == "WindowsTerminal"`, never `"WindowsTerminal.exe"`. When in
+doubt, focus the application and read the name off any of the places above rather
+than guessing it.
 
 **Every matching table is active at once**, merged in definition order — later tables
 win per key. Define your global table first and app-specific tables after it, and the
 specific ones override exactly the keys they bind.
+
+### Everywhere except one application
+
+There is no negated `app=`. Say "everywhere but here" with `custom_condition_func`,
+and give the exception a name so it reads as what it means:
+
+```python
+def is_terminal(focus):
+    return focus.app_name in ("Terminal", "ターミナル", "iTerm2", "WindowsTerminal",
+                              "cmd", "powershell", "pwsh")
+
+kt_emacs = keymap.define_keytable(
+    custom_condition_func=lambda focus: not is_terminal(focus))
+kt_emacs["Ctrl-F"] = "Right"
+kt_emacs["Ctrl-B"] = "Left"
+```
+
+If your config already has such a function (the template's `is_terminal` is one),
+reuse it, so "a terminal" means one thing throughout the file. If what it has is a
+table for the terminals instead — `define_keytable(app="Terminal|iTerm2|…")` — the
+names in that pattern are the list to write the function from; there is no way to
+negate the pattern itself. A localized name is a separate name, so list every
+spelling the machines you use report (`Terminal` and `ターミナル`).
+
+The other route is to bind the keys in a table that applies everywhere and give them
+back in a later table for the exception, with `None` — which passes the key through
+untouched (see [Assignments](#assignments)):
+
+```python
+kt["Ctrl-F"] = "Right"                  # everywhere ...
+kt_terminal["Ctrl-F"] = None            # ... except here, where Ctrl-F is Ctrl-F
+```
+
+Both work. Prefer the first when the exception covers the whole set of keys: it lives
+in one place, and a key added to the set later is excepted without a second line. The
+second fits when a table that is otherwise right everywhere needs one or two keys
+handed back in one application. Do **not** give a key back by binding it to itself
+(`kt_terminal["Ctrl-F"] = "Ctrl-F"`): that is not a pass-through but a key Keyhac
+consumes and sends again, as described below.
 
 ## Key expressions
 
@@ -149,6 +206,18 @@ specific ones override exactly the keys they bind.
   `Home`/`End`/`PageUp`/`PageDown` in hardware (the `Fn` modifier itself still
   arrives). A `Fn-…-Left` binding can therefore never fire — bind `Fn-…-Home`
   instead. The template's MoveWindow samples show the per-OS spelling.
+- **macOS function-key row**: with the top row on its media functions (the
+  macOS default; "Use F1, F2, etc. keys as standard function keys" off), a key
+  reaches applications as F1 only with Fn held, and Keyhac sees `Fn-F1`, not
+  `F1` — the console's last-key field shows `LFn-F1`. A binding for "the key
+  the application gets as F1" is then `Fn-F1`. Bind both to cover either
+  setting:
+
+  ```python
+  kt_vscode["F1"] = lambda: None
+  if keymap.platform == "mac":
+      kt_vscode["Fn-F1"] = lambda: None   # top row on media keys: Fn+F1 is F1
+  ```
 
 ## Assignments
 
@@ -164,10 +233,59 @@ Anything callable can be bound: a plain function, a lambda, or one of the action
 objects below (`MoveWindow(...)`, `ShowClipboardHistory()`, … — they are all
 callables).
 
+**Making a key do nothing.** Bind it to a function that does nothing:
+
+```python
+kt_vscode = keymap.define_keytable(app="Code")
+kt_vscode["F1"] = lambda: None          # F1 never reaches VS Code
+```
+
+The key is consumed and nothing is sent. Scope it with the table's condition, as
+above, and every other application still gets the key. For a function key on a
+Mac, bind `Fn-F1` as well — see the [function-key row](#key-expressions). The values that look as if
+they might mean "nothing" mean something else:
+
+| Bound to | What the key does |
+|---|---|
+| `lambda: None` | **nothing** — consumed, nothing sent. The spelling to use. |
+| `()` | also nothing, but on Windows a held Alt or Win released afterwards can then open the menu bar or the Start menu; the function form prevents that |
+| `None` | **passes through untouched**, as if no table bound it — the way to give a key back in a later table |
+| `""` | an error, logged to the console each time it is pressed, and the key passes through |
+
+**A key that a binding sends goes straight to the application.** It is never matched
+against your tables again, so a table cannot loop on its own output:
+`kt_cx["Ctrl-X"] = "Ctrl-X"` sends Ctrl-X (Cut), it does not re-arm the prefix. The
+same holds for a key bound to itself (`kt["Ctrl-F"] = "Ctrl-F"`): it is consumed and
+sent again rather than passed through, which the application mostly cannot tell apart
+— but auto-repeat arrives as a series of fresh presses, and anything that notices
+synthetic input (games, remote-desktop clients, some password fields) sees Keyhac's
+key rather than yours. To leave a key alone, bind it to `None`, or do not bind it.
+(Keyboard macros are the exception: playback re-enters the tables, so a recorded key
+does what it does when you press it.)
+
 **Multi-stroke tables**: assigning a named table arms it as a prefix — press
 `Ctrl-X`, then a key bound in `kt_ctrlx`. While armed, a balloon shows the table's
 name. A key that is not bound in the armed table cancels it (and is swallowed, so a
 typo does not leak a stray keystroke into your app).
+
+The second stroke is matched with its modifiers, exactly like any other key. A user
+who types Emacs-style holds Ctrl through both strokes, so the second key is
+`Ctrl-S`, not `S`; bind both if both should work:
+
+```python
+kt_cx = keymap.define_keytable(name="Ctrl-X")
+kt["Ctrl-X"] = kt_cx
+kt_cx["Ctrl-S"] = f"{MOD2}-S"      # Ctrl held through: Ctrl-X Ctrl-S
+kt_cx["S"] = f"{MOD2}-S"           # Ctrl let go: Ctrl-X S
+```
+
+The prefix key itself no longer does what it did — here Ctrl-X stops being Cut in
+every application the table applies to. To keep it reachable, give it a second stroke
+of its own; pressing the prefix twice is the usual choice:
+
+```python
+kt_cx["Ctrl-X"] = "Ctrl-X"         # Ctrl-X Ctrl-X: Cut, as before
+```
 
 ## Remapping and user modifiers
 

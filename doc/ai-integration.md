@@ -187,7 +187,11 @@ called but whether you can write where it looks, so check before assuming the
 upload path.
 
 The bundle documents *that version's* API, so a mismatch is worth mentioning to
-the user rather than working around. **Before Keyhac 2.6 there were two skills**,
+the user rather than working around. The skill checks for one itself: its
+`SKILL.md` names the version it was packaged from, and `get_focus` ends with the
+running one (`keyhac: X.Y.Z`; `describe_keymap` opens with it too). A major or
+minor difference means telling the user to upload the matching bundle; a patch
+difference is ignored. **Before Keyhac 2.6 there were two skills**,
 `keyhac-key-table-configuration` and `keyhac-action-authoring`. If either is
 installed, remove it when installing this one: an older skill still triggers on
 the same requests and describes an older API.
@@ -498,8 +502,15 @@ https://github.com/crftwr/keyhac/releases/tag/<tag>
 
 `<tag>` is `v` followed by the version Keyhac's console prints at startup —
 `v2.2.1`, for instance. Match the version you are running: that release is the
-one whose API the skill describes. The bundle carries the version stamped
-inside, so a mismatch is visible after the fact rather than silent.
+one whose API the skill describes.
+
+**After upgrading Keyhac, upload the new release's skill too.** An uploaded skill
+is a snapshot and does not follow Keyhac's version. It notices when the two
+differ: the first thing it does is compare the version it was packaged from
+with the one Keyhac reports, and if the major or minor version differs it tells
+you to re-upload before it goes on. (Scripts that are not an agent can read the
+running version from the `version` key of `~/.keyhac/mcp.json` while the
+endpoint is on.)
 
 The bundle is shaped for Claude's skill uploader, whose two requirements it
 meets — a `SKILL.md` at the archive root, carrying its name and description as
