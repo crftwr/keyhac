@@ -32,9 +32,22 @@ CASES = outcome.load_cases()
 PLATFORMS = ("mac", "windows")
 
 
+FIXTURES = tuple(outcome.FIXTURE_CONFIGS)
+
+
 def _both(cases):
     return [pytest.param(case, platform, id=f"{case.NAME}-{platform}")
             for case in cases for platform in PLATFORMS]
+
+
+def _every_config(cases):
+    """Each case on each platform, and a key-table case on every fixture
+    config too - its reference has to work on a config that is not the
+    template (issue #202)."""
+    return [pytest.param(case, platform, fixture,
+                         id=f"{case.NAME}-{platform}-{fixture}")
+            for case in cases for platform in PLATFORMS
+            for fixture in (FIXTURES if case.EDITS_CONFIG else ("template",))]
 
 
 # --- the cases -------------------------------------------------------------------
@@ -87,23 +100,36 @@ def test_every_screen_and_staged_file_exists(case):
 
 
 @pytest.mark.parametrize("platform", PLATFORMS)
-def test_the_fixture_config_loads_and_carries_the_user_s_edits(platform):
-    config = outcome.fixture_config()
+@pytest.mark.parametrize("fixture", FIXTURES)
+def test_the_fixture_config_loads_and_carries_the_user_s_edits(platform, fixture):
+    config = outcome.fixture_config(fixture)
     assert outcome.replay(config, platform).errors == []
-    assert config.count(outcome.KEEP) == 5
-    untouched = outcome.Outcome.untouched(CASES[0], platform)
+    assert config.count(outcome.KEEP) >= 4
+    assert config.count(outcome.FIXTURE_CONFIGS[fixture].anchor + "\n") == 1
+    untouched = outcome.Outcome.untouched(CASES[0], platform, fixture)
     assert outcome.common_failures(untouched, CASES[0]) == []
 
 
-@pytest.mark.parametrize("case,platform", _both(CASES))
-def test_doing_nothing_fails(case, platform):
-    found = outcome.failures(case, outcome.Outcome.untouched(case, platform))
+def test_the_other_fixtures_do_not_have_the_template_s_shape():
+    """The point of them (issue #202): a room that assumed the template finds
+    none of its names."""
+    for fixture in FIXTURES:
+        if fixture == "template":
+            continue
+        config = outcome.fixture_config(fixture)
+        for name in ("MOD1", "MOD2", "is_terminal", "kt_x", "kt_browser", "kt["):
+            assert name not in config, (fixture, name)
+
+
+@pytest.mark.parametrize("case,platform,fixture", _every_config(CASES))
+def test_doing_nothing_fails(case, platform, fixture):
+    found = outcome.failures(case, outcome.Outcome.untouched(case, platform, fixture))
     assert found, "a run that did nothing would pass this check"
 
 
-@pytest.mark.parametrize("case,platform", _both(CASES))
-def test_the_reference_passes(case, platform):
-    done = case.reference(outcome.Outcome.untouched(case, platform))
+@pytest.mark.parametrize("case,platform,fixture", _every_config(CASES))
+def test_the_reference_passes(case, platform, fixture):
+    done = case.reference(outcome.Outcome.untouched(case, platform, fixture))
     assert outcome.failures(case, done) == []
 
 
@@ -237,6 +263,24 @@ def test_an_outcome_reads_back_from_the_room(tmp_path):
 
 
 # --- the runner ------------------------------------------------------------------
+
+def test_only_a_key_table_case_runs_on_more_than_one_fixture():
+    pairs = run_room.runs([_case(1), _case(11)], ["template", "short"])
+    assert [(c.NUMBER, f) for c, f in pairs] == [
+        (1, "template"), (11, "template"), (11, "short")]
+    assert run_room.room_name(_case(11), "template") == _case(11).NAME
+    assert run_room.room_name(_case(11), "short") == f"{_case(11).NAME}.short"
+
+
+def test_an_outcome_remembers_its_fixture(tmp_path):
+    room = tmp_path / "room"
+    evidence = room / outcome.EVIDENCE
+    evidence.mkdir(parents=True)
+    (evidence / "run.json").write_text(json.dumps(
+        {"case": "x", "platform": "mac", "fixture": "grown"}))
+    (evidence / "config.before.py").write_text("before\n")
+    assert outcome.Outcome.from_room(room).config.name == "grown"
+
 
 def test_the_session_is_restricted_refuses_the_rest_and_is_not_kept(monkeypatch):
     monkeypatch.setattr(run_room, "find_claude", lambda: "claude")
@@ -564,3 +608,82 @@ def test_the_init_event_is_found_wherever_it_is(tmp_path):
          "mcp_servers": [{"name": "keyhac", "status": "connected"}]},
     ]), encoding="utf-8")
     assert list(run_room._isolation_held(transcript)) == []
+
+
+# --- the room cannot read this repository's history (issue #203) ---------------
+
+def test_git_in_a_room_finds_no_repository():
+    """The room is inside the checkout; with the ceiling, git stops at it."""
+    import subprocess
+    room = run_room.ROOMS / "test-git-ceiling" / "room"
+    room.mkdir(parents=True, exist_ok=True)
+    try:
+        asked = subprocess.run(["git", "log", "--oneline", "-1"], cwd=room,
+                               env=run_room.session_env(room), capture_output=True,
+                               text=True, stdin=subprocess.DEVNULL)
+    finally:
+        room.rmdir()
+        room.parent.rmdir()
+    assert asked.returncode != 0
+    assert run_room._NOT_A_REPOSITORY in asked.stderr
+
+
+def test_the_session_starts_with_stdin_closed_and_the_ceiling_set(tmp_path, monkeypatch):
+    """A `-p` session with stdin open waits 3s and writes a warning at the top
+    of the transcript (crftwr/xefm#650)."""
+    started = {}
+
+    class Session:
+        stdout = iter(())
+        def __init__(self, command, **kwargs):
+            started.update(kwargs)
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def poll(self):
+            return 0
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(run_room, "find_claude", lambda: "claude")
+    monkeypatch.setattr(run_room.subprocess, "Popen", Session)
+    monkeypatch.setattr(run_room.tempfile, "gettempdir", lambda: str(tmp_path))
+    room = tmp_path / "rooms" / "room"
+    room.mkdir(parents=True)
+    run_room.run_session(room, "bridge", None, 1)
+    assert started["stdin"] is run_room.subprocess.DEVNULL
+    assert started["env"]["GIT_CEILING_DIRECTORIES"] == str(room.resolve().parent)
+
+
+@pytest.mark.parametrize("answer,verdict", [
+    ("fatal: not a git repository (or any of the parent directories): .git", "refused"),
+    ("2384065 Merge pull request #195", "breach"),
+])
+def test_the_audit_reports_every_git_call(answer, verdict):
+    room = run_room.ROOMS / "test-audit-git"
+    events = [
+        {"type": "system", "subtype": "init", "tools": [], "slash_commands": [],
+         "mcp_servers": [{"name": "keyhac", "status": "connected"}]},
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "g", "name": "Bash",
+             "input": {"command": "cat RULES.md; git log --oneline | head"}},
+            {"type": "tool_use", "id": "d", "name": "Bash",
+             "input": {"command": "echo digit"}},
+        ]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "g", "content": answer}]}},
+    ]
+    room.mkdir(parents=True, exist_ok=True)
+    try:
+        (room / "transcript.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+        breaches, refused = run_room.audit(room, set())
+    finally:
+        for path in room.iterdir():
+            path.unlink()
+        room.rmdir()
+    ran = [line for line in (breaches if verdict == "breach" else refused)
+           if "ran git" in line]
+    assert len(ran) == 1 and "git log" in ran[0]
+    other = refused if verdict == "breach" else breaches
+    assert not [line for line in other if "ran git" in line]

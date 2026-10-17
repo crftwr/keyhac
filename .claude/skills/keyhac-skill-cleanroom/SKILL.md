@@ -24,6 +24,7 @@ make cleanroom                              # every case that needs no screen of
 make cleanroom CASE=3                       # one case from cases/
 make cleanroom TASK="Save every tab ..."    # a job of your own, intent only
 make cleanroom ARGS=--list                  # what there is, and what each needs
+make cleanroom FIXTURE=all                  # the key-table cases on every fixture config
 ```
 
 It rebuilds the bundle, starts Keyhac if it is not running, and for each
@@ -58,9 +59,9 @@ skill's own first checklist line and looks like a skill defect.
 
 **What a run does to your machine, and undoes.** For the length of each room:
 
-- **Your `config.py` is set aside** in `~/.keyhac/cleanroom-stand-in/` and the
-  fixture — the shipped template with a few user edits on it, each marked
-  `# keep:` — takes its place and is reloaded, so the room reads and edits a
+- **Your `config.py` is set aside** in `~/.keyhac/cleanroom-stand-in/` and a
+  fixture — by default the shipped template with a few user edits on it, each
+  marked `# keep:` — takes its place and is reloaded, so the room reads and edits a
   known file through Keyhac's tools. Copies of your `config.py.bak-*` wait
   there too, because `write_config` prunes old backups. Yours come back, and
   are reloaded, on the way out of every room — an exception, Ctrl-C and
@@ -81,6 +82,27 @@ everything is the key-table cases, and a screen case named with `CASE=` is
 refused rather than run against whatever is in front. `--list` says which.
 Cases that need a screen only you can put up — Slack, a mail app — are left
 out of a run of everything and run when named.
+
+### The configs a room finds
+
+With only the template, a room that *read* the config and adapted to it looks
+exactly like one that *assumed* the template — every room found `MOD1` /
+`MOD2` and `is_terminal` — and a skill line that names the template's own
+constants passes every run (#202). So `scripts/outcome.py` has more than one:
+
+| `FIXTURE=` | What it is |
+|---|---|
+| `template` (default) | the shipped template, with a user's edits |
+| `short` | `fixtures/configs/short.py` — a dozen hand-written lines, no constants, its own variable names |
+| `grown` | `fixtures/configs/grown.py` — an older keyhac-mac-style config: platform checks inline, a terminal table by `app=` |
+
+Each carries `# keep:` lines, and a `Fixture` entry naming where an edit goes
+(`anchor`) and the config's own idiom — its global table, how it spells the
+save key, what "not a terminal" is. A case's `reference()` is written against
+those, never against a line only the template has. `FIXTURE=all` runs every
+key-table case on every config (an action case is run once, on the template:
+it reads the config at most); rooms on a fixture other than the template are
+named `<case>.<fixture>`, and `FINDINGS.md` says which config each ran on.
 
 ### The cases
 
@@ -112,8 +134,8 @@ lines survive, nothing was rewritten, an edited config was reloaded, and an
 action task left `config.py` alone.
 
 **`tests/test_skill_cleanroom.py` keeps the checks honest without a run.** On
-both platforms, every check must fail on the untouched starting state and pass
-on its `reference`, so a check that can never fail — or never pass — is caught
+both platforms, and for a key-table case on every fixture config, every check
+must fail on the untouched starting state and pass on its `reference`, so a check that can never fail — or never pass — is caught
 for free. Change a case, run that test.
 
 `scripts/check.py` is the other half: the rules every action shares, read off
@@ -189,7 +211,7 @@ room writes its action through `--add-dir ~/.keyhac/extensions` and reads its
 output through `--add-dir ~/Desktop`, and reaches `config.py` only through
 Keyhac's own tools.
 
-Three things guard the bargain, because a guarantee that rests on a flag is
+Four things guard the bargain, because a guarantee that rests on a flag is
 worth exactly what checking it costs:
 
 - **The room's own `CLAUDE.md` is a canary.** Under `--restricted` nothing
@@ -204,6 +226,15 @@ worth exactly what checking it costs:
   the bundle names that path, so what disqualifies a run is a path under the
   checkout and *outside* the room — in either spelling, `/Users/...` or
   `C:\Users\...`.
+
+- **git stops at the room.** The session is started with
+  `GIT_CEILING_DIRECTORIES` at the room's parent, so a `git log` from the room
+  answers "not a git repository" instead of reading this checkout's history,
+  whose commit titles say what every skill change was for. No room can run
+  git today — there is no Bash — but that is one flag, and XeFM's clean room,
+  built on this one, had a room try it (crftwr/xefm#650, #203). `audit()`
+  reports any call that runs git: refused when the ceiling held, a breach
+  otherwise.
 
 One thing the arrangement cannot hide: the room knows its own working
 directory, so it can see it sits under a `keyhac` project. It cannot read a
@@ -233,9 +264,9 @@ for every case in one place:
 
 **Friction with no matching question is the most valuable kind**: it is the
 gap the room worked around without seeing it. The first key-table runs are the
-example — all three met `describe_keymap` answering "focus now: unknown", and
-it took the friction list to show that it was every run rather than one
-room's aside. And **zero questions is not a pass** — a run with nothing to
+example — all three met `describe_keymap` answering "focus now: unknown" after
+a reload, and it took the friction list to show that it was every run rather
+than one room's aside (#196, since fixed). And **zero questions is not a pass** — a run with nothing to
 guess at either measured nothing or broke a rule.
 
 **Not every item is a skill gap.** Sort each one before acting on it:

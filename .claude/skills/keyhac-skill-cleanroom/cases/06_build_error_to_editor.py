@@ -65,11 +65,9 @@ class JumpToError(ThreadedAction):
 
 def reference(o):
     o.extensions["jump_to_error.py"] = ACTION
-    o.config_after = o.config_before.replace(
-        "    # ---- An action written for you by an agent",
+    o.config_after = o.config.insert(o.config_before,
         "    import jump_to_error\n"
-        "    kt[f\"{MOD1}-E\"] = jump_to_error.JumpToError()\n\n"
-        "    # ---- An action written for you by an agent", 1)
+        f"    {o.config.table}[\"Ctrl-Alt-E\"] = jump_to_error.JumpToError()\n")
     o.calls = [
         outcome.ToolCall("mcp__keyhac__start_action", {"name": "JumpToError"}),
         outcome.ToolCall("mcp__keyhac__get_action_result", {},

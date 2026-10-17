@@ -43,12 +43,10 @@ def check(o):
 
 
 def reference(o):
-    o.config_after = o.config_before.replace(
-        "    # ---- An action written for you by an agent",
+    o.config_after = o.config.insert(o.config_before,
         "    # F1 opens the command palette in VS Code, and I hit it by accident.\n"
         "    kt_vscode = keymap.define_keytable(app=\"Code|Visual Studio Code\")\n"
-        "    kt_vscode[\"F1\"] = lambda: None\n\n"
-        "    # ---- An action written for you by an agent", 1)
+        "    kt_vscode[\"F1\"] = lambda: None\n")
     o.calls = [outcome.ToolCall("mcp__keyhac__write_config", {}),
                outcome.ToolCall("mcp__keyhac__reload_config", {}, result="config reloaded")]
     return o

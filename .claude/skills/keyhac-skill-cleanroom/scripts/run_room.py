@@ -335,12 +335,14 @@ class Stage:
     leaves a test action in the chooser.
     """
 
-    def __init__(self, room: pathlib.Path, case, keep: bool = False):
+    def __init__(self, room: pathlib.Path, case, keep: bool = False,
+                 fixture: str = outcome.DEFAULT_FIXTURE):
         self.room = room
         self.case = case
         self.keep = keep
         self.evidence = room / EVIDENCE
-        self.fixture = outcome.fixture_config()
+        self.fixture_name = fixture
+        self.fixture = outcome.fixture_config(fixture)
         self.foreign: set[str] = set()
 
     def __enter__(self):
@@ -372,12 +374,15 @@ class Stage:
         # The live keymap follows the file, so describe_keymap and read_config
         # tell the room about the same configuration.
         said = _reload_quietly()
-        # What a reload says is Keyhac's log for it - DEBUG lines included - so
-        # it is shown only when something in it went wrong.
-        trouble = [line for line in said.splitlines()
-                   if line.startswith(("ERROR", "could not reload"))]
+        # reload_config's first line is its verdict (issue #197); the log
+        # under it is shown only when the verdict is not "loaded".
+        verdict = said.splitlines()[0] if said else ""
+        trouble = [] if verdict == "loaded" else [
+            next((line for line in said.splitlines() if line.startswith("ERROR")),
+                 verdict)]
         print(f"  config:  your config.py is aside in {STAND_IN.name}/; the "
-              f"fixture is loaded" + (f" - {trouble[0]}" if trouble else ""))
+              f"{self.fixture_name} fixture is loaded"
+              + (f" - {trouble[0]}" if trouble else ""))
         return self
 
     def __exit__(self, *exc):
@@ -702,6 +707,24 @@ def session_command(bridge: str, interactive: bool = False) -> list[str]:
     return command + ["-p", PROMPT, "--no-session-persistence"]
 
 
+def session_env(room: pathlib.Path) -> dict:
+    """The operator's environment, with git stopped at the room.
+
+    The room sits inside this checkout, so a `git log` from it reads the
+    repository's history - and the commit titles say what every skill change
+    was for. Nothing in the room can run git today (`--restricted` removes
+    Bash), but that is one flag, and XeFM's clean room, built on this one, had
+    a room open with `git log` on 2026-10-17 (crftwr/xefm#650, issue #203).
+    With the ceiling at the room's parent, git answers "not a git repository"
+    instead; `audit()` reports any call that tries.
+
+    Not `stdin`: the session's stdin is closed where it is started, because a
+    `-p` session with an open one waits three seconds for piped input and
+    writes a warning to the top of the transcript.
+    """
+    return dict(os.environ, GIT_CEILING_DIRECTORIES=str(room.resolve().parent))
+
+
 def printable_command(room: pathlib.Path, bridge: str) -> str:
     """The same session, for a person to paste - flags and all.
 
@@ -719,7 +742,10 @@ def printable_command(room: pathlib.Path, bridge: str) -> str:
         else:
             lines.append(flag)
             index += 1
-    return f"cd {shlex.quote(str(room))} && \\\n        " + " \\\n        ".join(lines)
+    ceiling = shlex.quote(str(room.parent))
+    return (f"cd {shlex.quote(str(room))} && \\\n        "
+            f"GIT_CEILING_DIRECTORIES={ceiling} \\\n        "
+            + " \\\n        ".join(lines))
 
 
 def run_session(room: pathlib.Path, bridge: str, model: str | None,
@@ -742,9 +768,10 @@ def run_session(room: pathlib.Path, bridge: str, model: str | None,
     global _started, _last_event
     _started = _last_event = time.monotonic()
     try:
-        with subprocess.Popen(command, cwd=room, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                              bufsize=1) as session, \
+        with subprocess.Popen(command, cwd=room, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, encoding="utf-8", bufsize=1,
+                              env=session_env(room)) as session, \
                 transcript.open("w", encoding="utf-8") as log:
             heartbeat = threading.Thread(target=_heartbeat, args=(session,), daemon=True)
             heartbeat.start()
@@ -874,6 +901,13 @@ def _report(line: str, room: pathlib.Path = pathlib.Path()) -> None:
 #: - a file's contents, a note, a message - is what it said, not where it went.
 AIMED_AT = ("file_path", "path", "notebook_path", "pattern", "command", "glob")
 
+#: A shell command that runs git: at the start, or after a separator.
+_RUNS_GIT = re.compile(r"(?:^|[;&|(`]|\$\()\s*(?:\S*/)?git(?:\.exe)?\b")
+
+#: What git answers once GIT_CEILING_DIRECTORIES has stopped it at the room.
+_NOT_A_REPOSITORY = "not a git repository"
+
+
 #: An absolute path in either spelling: /Users/... or C:\Users\... (or C:/...),
 #: and \Users\... - rooted on the current drive, which Windows accepts too.
 _ABSOLUTE = re.compile(r"(?:[A-Za-z]:[\\/]|[\\/])[^\s\"'`;|&)]+")
@@ -976,6 +1010,10 @@ def audit(room: pathlib.Path, foreign: set[str]) -> tuple[list[str], list[str]]:
                    for event in events if event.get("type") == "user"
                    for part in event.get("message", {}).get("content", [])
                    if part.get("type") == "tool_result" and part.get("is_error")}
+    answers = {part["tool_use_id"]: outcome._result_text(part.get("content"))
+               for event in events if event.get("type") == "user"
+               for part in event.get("message", {}).get("content", [])
+               if part.get("type") == "tool_result"}
     breaches = list(_isolation_held(transcript))
     refused = []
     forbidden = {
@@ -992,6 +1030,14 @@ def audit(room: pathlib.Path, foreign: set[str]) -> tuple[list[str], list[str]]:
             if part.get("type") != "tool_use":
                 continue
             landed = breaches if part.get("id") not in refused_ids else refused
+            command = part.get("input", {}).get("command")
+            if isinstance(command, str) and _RUNS_GIT.search(command):
+                # Refused when git found no repository - the ceiling held -
+                # and a breach otherwise: it read this checkout's history.
+                answered = answers.get(part.get("id"), "")
+                (refused if part.get("id") in refused_ids
+                 or _NOT_A_REPOSITORY in answered else breaches).append(
+                    f"{part['name']} ran git: {command[:80]}")
             for aimed in _paths_in(part.get("input", {})):
                 spelled = _norm(aimed)
                 for path, what in forbidden.items():
@@ -1025,16 +1071,32 @@ def _own_task(task: str):
         EDITS_CONFIG=True, check=lambda o: [])
 
 
-def run_case(case, parent: pathlib.Path, args, bridge: str) -> dict:
+def room_name(case, fixture: str) -> str:
+    """A room's directory: the case, and the config it was given unless that
+    was the default - two fixtures of one case are two rooms."""
+    return case.NAME if fixture == outcome.DEFAULT_FIXTURE else f"{case.NAME}.{fixture}"
+
+
+def runs(cases: list, fixtures: list[str]) -> list[tuple]:
+    """``(case, fixture)`` pairs to run. Only a case that edits config.py is
+    run on more than one fixture: an action case reads the config at most,
+    and a second room for it would measure the same thing again."""
+    return [(case, name) for case in cases
+            for name in (fixtures if case.EDITS_CONFIG else [outcome.DEFAULT_FIXTURE])]
+
+
+def run_case(case, parent: pathlib.Path, args, bridge: str,
+             fixture: str = outcome.DEFAULT_FIXTURE) -> dict:
     """Build, drive, collect, audit and check one room."""
     global _endpoint_died
     _endpoint_died = False
-    print(f"== {case.NAME}: {case.TITLE}")
-    room = build_room(case.PROMPT, parent / case.NAME)
+    shown = "" if fixture == outcome.DEFAULT_FIXTURE else f" [config: {fixture}]"
+    print(f"== {case.NAME}: {case.TITLE}{shown}")
+    room = build_room(case.PROMPT, parent / room_name(case, fixture))
     print(f"  room:    {room}")
     events: list = []
     exit_code = None
-    with Stage(room, case, keep=args.keep) as stage:
+    with Stage(room, case, keep=args.keep, fixture=fixture) as stage:
         try:
             open_screen(case, events)
             exit_code = run_session(room, bridge, args.model, args.max_turns)
@@ -1044,7 +1106,8 @@ def run_case(case, parent: pathlib.Path, args, bridge: str) -> dict:
             (stage.evidence / "screen-events.jsonl").write_text(
                 "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
             (stage.evidence / "run.json").write_text(json.dumps(
-                {"case": case.NAME, "platform": outcome.this_platform()}),
+                {"case": case.NAME, "platform": outcome.this_platform(),
+                 "fixture": fixture}),
                 encoding="utf-8")
     if exit_code:
         print(f"  ! the room session exited {exit_code}")
@@ -1068,7 +1131,8 @@ def run_case(case, parent: pathlib.Path, args, bridge: str) -> dict:
     stumbles = friction.incidents(room / "transcript.jsonl")
     (room / "FRICTION.md").write_text(friction.report(room, failures), encoding="utf-8")
     questions = score(room, case)
-    return {"name": case.NAME, "title": case.TITLE, "room": room,
+    return {"name": room_name(case, fixture), "title": case.TITLE, "room": room,
+            "fixture": fixture,
             "breaches": breaches, "failures": failures, "questions": questions,
             "friction": stumbles, "inconclusive": inconclusive,
             "scored": bool(getattr(case, "MUST", ""))}
@@ -1102,7 +1166,10 @@ def write_findings(parent: pathlib.Path, results: list[dict]) -> pathlib.Path:
              "is the gap nobody noticed.", ""]
     for r in results:
         room = r["room"]
-        lines += [f"## {r['name']} - {_verdict(r)}", "", f"{r['title']}. Room: `{room}`", ""]
+        config = outcome.fixture(r.get("fixture", outcome.DEFAULT_FIXTURE))
+        lines += [f"## {r['name']} - {_verdict(r)}", "",
+                  f"{r['title']}. Config: {config.name} ({config.describe}). "
+                  f"Room: `{room}`", ""]
         for breach in r["breaches"]:
             lines.append(f"- **disqualified** - {breach}")
         for failure in r["failures"]:
@@ -1161,6 +1228,11 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--list", action="store_true", help="list the cases")
     source.add_argument("--restore", action="store_true",
                         help="put back a config.py a run could not")
+    parser.add_argument("--fixture", action="append",
+                        help="the config.py a key-table case finds - "
+                             + ", ".join(outcome.FIXTURE_CONFIGS)
+                             + ", or 'all'; repeatable. Default: template. "
+                               "Action cases always get the template")
     parser.add_argument("--model", help="model for the room sessions")
     parser.add_argument("--max-turns", type=int, default=150)
     parser.add_argument("--keep", action="store_true",
@@ -1176,12 +1248,21 @@ def main(argv: list[str] | None = None) -> int:
         cases = [_own_task(args.task)]
     else:
         cases = outcome.load_cases(args.case)
+    fixtures = args.fixture or [outcome.DEFAULT_FIXTURE]
+    if "all" in fixtures:
+        fixtures = list(outcome.FIXTURE_CONFIGS)
+    for name in fixtures:
+        outcome.fixture(name)          # refuses a name that is not one
     if args.list:
         for case in cases:
             why = (f"needs {case.NEEDS}" if case.NEEDS
                    else "macOS screen" if case.SCREEN and not SCREENS_SUPPORTED
                    else "")
             print(f"  {case.NAME:<32} {case.TITLE}" + (f"   [{why}]" if why else ""))
+        print()
+        print("  configs a key-table case can be given (--fixture):")
+        for config in outcome.FIXTURE_CONFIGS.values():
+            print(f"  {config.name:<32} {config.describe}")
         return 0
     if not args.case and not args.task:
         # Every case, in order - except those that need a screen only the
@@ -1198,8 +1279,8 @@ def main(argv: list[str] | None = None) -> int:
         # A room driven by hand is driven against whatever Keyhac you have up:
         # nothing here starts one, because nothing here would stop it again.
         bridge = mcp_endpoint()["bridge"]
-        for case in cases:
-            print(f"  room:    {build_room(case.PROMPT, parent / case.NAME)}")
+        for case, fixture in runs(cases, fixtures):
+            print(f"  room:    {build_room(case.PROMPT, parent / room_name(case, fixture))}")
         print()
         print(f"    {printable_command(parent / '<room>', bridge)}")
         print()
@@ -1222,8 +1303,8 @@ def main(argv: list[str] | None = None) -> int:
         with KeyhacSession(parent / "keyhac.log"):
             bridge = mcp_endpoint()["bridge"]
             print()
-            for case in cases:
-                results.append(run_case(case, parent, args, bridge))
+            for case, fixture in runs(cases, fixtures):
+                results.append(run_case(case, parent, args, bridge, fixture))
     except KeyboardInterrupt:
         print("\n  interrupted - the room in progress was collected, your "
               "config.py put back, and a Keyhac this run started quit")

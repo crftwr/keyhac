@@ -68,9 +68,9 @@ _USER_EDITS = (
 )
 
 
-def fixture_config() -> str:
-    """What the room finds in ``~/.keyhac/config.py``: the shipped template
-    with a user's edits on it, each marked with :data:`KEEP`."""
+def _template_config() -> str:
+    """The shipped template with a user's edits on it, each marked with
+    :data:`KEEP`."""
     text = TEMPLATE.read_text(encoding="utf-8")
     lines = text.split("\n")
     for anchor, replacement in _USER_EDITS:
@@ -80,6 +80,79 @@ def fixture_config() -> str:
                                f"{anchor!r}")
         lines[hits[0]] = replacement
     return "\n".join(lines).rstrip("\n") + "\n# keep: a note of mine at the very end\n"
+
+
+@dataclasses.dataclass(frozen=True)
+class Fixture:
+    """A config a room can find, and what a correct edit of it looks like.
+
+    The template alone could not tell a room that read the config and adapted
+    to it from one that assumed the template (issue #202): every room found
+    ``MOD1`` / ``MOD2`` and ``is_terminal`` because every room got the same
+    file. The others have none of those names. A case's ``reference()`` reads
+    these fields rather than a line only the template has, so each check is
+    proved against every fixture.
+    """
+    name: str
+    describe: str           # one line, for --list and FINDINGS.md
+    anchor: str             # a whole line inside configure(); edits go above it
+    table: str              # the variable holding the table active everywhere
+    save: str               # an expression for the platform's save shortcut
+    not_terminal: str       # a custom_condition_func: everything but a terminal
+    source: pathlib.Path | None = None   # None: the template, built above
+
+    def text(self) -> str:
+        if self.source is None:
+            return _template_config()
+        return self.source.read_text(encoding="utf-8")
+
+    def insert(self, config: str, lines: str) -> str:
+        """``config`` with ``lines`` (already indented) above the anchor."""
+        if config.count(self.anchor + "\n") != 1:
+            raise RuntimeError(f"{self.name}: anchor not found once: {self.anchor!r}")
+        return config.replace(self.anchor + "\n", lines + "\n" + self.anchor + "\n", 1)
+
+
+CONFIGS = SKILL / "fixtures" / "configs"
+
+#: Every config a key-table case is run against. The template comes first and
+#: is the default: it is what a new user has.
+FIXTURE_CONFIGS = {f.name: f for f in (
+    Fixture("template", "the shipped template, with a user's edits",
+            anchor="    # ---- An action written for you by an agent ------------------------",
+            table="kt", save='f"{MOD2}-S"',
+            not_terminal="lambda focus: not is_terminal(focus)"),
+    Fixture("short", "a short hand-written config: no constants, its own names",
+            anchor='    chat = keymap.define_keytable(app="Slack")',
+            table="keys", save='f"{primary}-S"',
+            not_terminal='lambda focus: focus.app_name not in '
+                         '("Terminal", "iTerm2", "WindowsTerminal", "cmd")',
+            source=CONFIGS / "short.py"),
+    Fixture("grown", "an older keyhac-mac-style config: inline platform checks, "
+            "a terminal table by app=",
+            anchor="    # (new tables go here)",
+            table="keytable_global",
+            save='("Cmd-S" if keymap.platform == "mac" else "Ctrl-S")',
+            not_terminal='lambda focus: focus.app_name not in '
+                         '("Terminal", "iTerm2", "WindowsTerminal", "cmd", '
+                         '"powershell", "pwsh")',
+            source=CONFIGS / "grown.py"),
+)}
+
+DEFAULT_FIXTURE = "template"
+
+
+def fixture(name: str = DEFAULT_FIXTURE) -> Fixture:
+    try:
+        return FIXTURE_CONFIGS[name]
+    except KeyError:
+        raise SystemExit(f"no fixture config {name!r}; have: "
+                         + ", ".join(FIXTURE_CONFIGS)) from None
+
+
+def fixture_config(name: str = DEFAULT_FIXTURE) -> str:
+    """What the room finds in ``~/.keyhac/config.py``."""
+    return fixture(name).text()
 
 
 def this_platform() -> str:
@@ -150,6 +223,12 @@ class Outcome:
     events: list = dataclasses.field(default_factory=list)      # what the screen recorded
     calls: list = dataclasses.field(default_factory=list)       # ToolCall, in order
     room: pathlib.Path | None = None
+    fixture: str = DEFAULT_FIXTURE        # which config the room was given
+
+    @property
+    def config(self) -> Fixture:
+        """The fixture config the room started from."""
+        return fixture(self.fixture)
 
     @property
     def config_changed(self) -> bool:
@@ -193,11 +272,12 @@ class Outcome:
         return [event for event in self.events if event.get("what") == what]
 
     @classmethod
-    def untouched(cls, case, platform: str | None = None) -> "Outcome":
+    def untouched(cls, case, platform: str | None = None,
+                  fixture: str = DEFAULT_FIXTURE) -> "Outcome":
         """What a run that did nothing at all would leave: the starting state."""
-        config = fixture_config()
+        config = fixture_config(fixture)
         return cls(platform=platform or this_platform(), config_before=config,
-                   config_after=config,
+                   config_after=config, fixture=fixture,
                    outputs={name: (FIXTURES / fixture).read_text(encoding="utf-8")
                             for fixture, name in case.STAGED})
 
@@ -216,7 +296,8 @@ class Outcome:
             extensions=_texts(evidence / "extensions"),
             events=_jsonl(evidence / "screen-events.jsonl"),
             calls=tool_calls(room / "transcript.jsonl"),
-            room=room)
+            room=room,
+            fixture=meta.get("fixture", DEFAULT_FIXTURE))
 
 
 def _texts(directory: pathlib.Path) -> dict:
