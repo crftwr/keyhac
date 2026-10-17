@@ -13,6 +13,7 @@ whatever ended the run. No session is started here.
 """
 
 import json
+import os
 import pathlib
 import sys
 import urllib.request
@@ -395,3 +396,171 @@ def test_the_screen_server_records_what_a_page_reports(tmp_path):
 def test_run_all_leaves_out_what_only_the_operator_can_put_up():
     needs = {case.NAME for case in CASES if case.NEEDS}
     assert needs == {"09_slack_unread", "10_click_badge_coordinates"}
+
+
+# --- friction: what the room stumbled on, noticed or not ---------------------------
+
+import friction  # noqa: E402
+
+
+def _transcript(path, calls, texts=(), result="Done.", subtype="success"):
+    """A stream-json transcript: ``calls`` are (name, input, result, is_error)."""
+    events = [{"type": "system", "subtype": "init"}]
+    for n, (name, given, answer, error) in enumerate(calls):
+        events.append({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": f"t{n}", "name": name, "input": given}]}})
+        events.append({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": f"t{n}", "content": answer,
+             "is_error": error}]}})
+    for text in texts:
+        events.append({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": text}]}})
+    events.append({"type": "result", "subtype": subtype, "result": result})
+    path.write_text("\n".join(json.dumps(e) for e in events), encoding="utf-8")
+    return path
+
+
+def test_friction_finds_what_went_wrong_and_not_what_the_screen_said(tmp_path):
+    transcript = _transcript(tmp_path / "t.jsonl", [
+        ("Read", {"file_path": "/elsewhere/x.py"}, "outside the working directories", True),
+        ("mcp__keyhac__read_config", {}, '"""config"""\n# the call failed to go out', False),
+        ("mcp__keyhac__describe_keymap", {}, "focus now: unknown (no window)", False),
+        ("Grep", {"pattern": "swallow"}, "No matches found", False),
+        ("mcp__keyhac__write_extension", {"name": "act"}, "wrote act.py", False),
+        ("mcp__keyhac__start_action", {"name": "Act"}, "started", False),
+        ("mcp__keyhac__get_action_result", {}, "Act raised WaitTimeout: no dialog", False),
+        ("mcp__keyhac__write_extension", {"name": "act"}, "wrote act.py", False),
+        ("mcp__keyhac__start_action", {"name": "Act"}, "started", False),
+    ], texts=["The skill does not say which value disables a key, so I guessed."],
+        result="Stopped.", subtype="error_max_turns")
+    kinds = [incident.kind for incident in friction.incidents(transcript)]
+    assert kinds.count("tool error") == 1
+    assert kinds.count("keyhac trouble") == 2, "read_config's own comment is not trouble"
+    assert kinds.count("searched, found nothing") == 1
+    assert kinds.count("rework") == 2          # act.py twice, Act started twice
+    assert kinds.count("said so") == 1
+    assert kinds.count("session") == 1
+
+
+def test_a_clean_run_has_no_friction_and_says_so(tmp_path):
+    room = tmp_path / "room"
+    room.mkdir()
+    _transcript(room / "transcript.jsonl", [
+        ("mcp__keyhac__reload_config", {}, "DEBUG [keyhac.Input] SEND\nconfig reloaded", False)],
+        result="Added it. It is not verified until you press F1.")
+    assert friction.incidents(room / "transcript.jsonl") == []
+    assert "Nothing:" in friction.report(room)
+
+
+def test_findings_gather_failures_friction_and_questions(tmp_path):
+    room = tmp_path / "11_case"
+    room.mkdir()
+    (room / "QUESTIONS.md").write_text("# What\n\n## How to make a key do nothing\n",
+                                       encoding="utf-8")
+    result = {"name": "11_case", "title": "A case", "room": room, "breaches": [],
+              "failures": ["F1 still reaches VS Code"], "questions": 1,
+              "friction": [friction.Incident("keyhac trouble", 3, "describe_keymap answered",
+                                             "focus now: unknown")],
+              "inconclusive": False, "scored": True}
+    text = run_room.write_findings(tmp_path, [result]).read_text(encoding="utf-8")
+    assert "## 11_case - FAIL" in text
+    assert "F1 still reaches VS Code" in text
+    assert "focus now: unknown" in text
+    assert "How to make a key do nothing" in text
+
+
+# --- starting and quitting Keyhac --------------------------------------------------
+
+#: Stands in for keyhac_daemon.py: publishes an endpoint the way Keyhac does,
+#: and goes - taking mcp.json with it - when its stdin closes.
+FAKE_DAEMON = '''
+import json, os, pathlib, socket, sys
+home = pathlib.Path(os.environ["FAKE_KEYHAC_HOME"])
+server = socket.socket()
+server.bind(("127.0.0.1", 0))
+server.listen()
+(home / "mcp.json").write_text(json.dumps(
+    {"port": server.getsockname()[1], "token": "t", "pid": os.getpid(), "bridge": "b"}))
+sys.stdin.read()
+(home / "mcp.json").unlink()
+'''
+
+
+@pytest.fixture
+def no_keyhac(tmp_path, monkeypatch):
+    home = tmp_path / "keyhac"
+    home.mkdir()
+    daemon = tmp_path / "fake_daemon.py"
+    daemon.write_text(FAKE_DAEMON, encoding="utf-8")
+    monkeypatch.setattr(run_room, "KEYHAC_HOME", home)
+    monkeypatch.setattr(run_room, "DAEMON", daemon)
+    monkeypatch.setenv("FAKE_KEYHAC_HOME", str(home))
+    return home
+
+
+def test_keyhac_is_started_with_its_endpoint_and_quit_afterwards(no_keyhac, tmp_path):
+    with run_room.KeyhacSession(tmp_path / "keyhac.log", patience=30) as session:
+        assert session.process is not None
+        assert run_room._endpoint_alive()
+    assert session.process.returncode == 0, "it quit when told, rather than being killed"
+    assert not (no_keyhac / "mcp.json").exists()
+
+
+def test_a_keyhac_already_answering_is_used_and_left_running(no_keyhac, tmp_path):
+    with run_room.KeyhacSession(tmp_path / "first.log", patience=30) as first:
+        with run_room.KeyhacSession(tmp_path / "second.log") as second:
+            assert second.process is None
+        assert first.process.poll() is None, "the inner session did not stop it"
+
+
+def test_a_keyhac_that_dies_at_start_refuses_the_run(no_keyhac, tmp_path, monkeypatch):
+    dying = tmp_path / "dying.py"
+    dying.write_text("import sys\nprint('Keyhac is already running.')\nsys.exit(1)\n",
+                     encoding="utf-8")
+    monkeypatch.setattr(run_room, "DAEMON", dying)
+    with pytest.raises(SystemExit, match="MCP server off"):
+        run_room.KeyhacSession(tmp_path / "keyhac.log", patience=30).__enter__()
+
+
+def test_the_daemon_arms_the_endpoint_with_no_timeout_once_the_tray_is_up(monkeypatch):
+    """keyhac_daemon.py's whole contract, without starting Keyhac."""
+    import keyhac_daemon
+    started = []
+
+    class Keymap:
+        def start_mcp_server(self, timeout="default"):
+            started.append(timeout)
+
+    import threading
+    quit_asked = threading.Event()
+
+    class Backend:
+        capabilities = type("Caps", (), {"supports": lambda self, name: True})()
+
+        def call_on_main_thread(self, func):
+            func()
+
+    class Console:
+        backend = Backend()
+
+        def quit(self):
+            quit_asked.set()
+
+    keymap = Keymap()
+    keymap.stop_mcp_server = lambda: started.append("stopped")
+    # An empty pipe: the runner has already let go, so the quit follows at once.
+    monkeypatch.setattr(keyhac_daemon, "_RUNNER", os.open(os.devnull, os.O_RDONLY))
+    keyhac_daemon._arm(Console(), keymap)
+    assert quit_asked.wait(5), "closing stdin did not quit Keyhac"
+    assert started == [None, "stopped"], "endpoint on with no timeout, and off before quitting"
+
+
+def test_the_init_event_is_found_wherever_it_is(tmp_path):
+    """A rate_limit_event can come first; line one is not the init event."""
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(json.dumps(e) for e in [
+        {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}},
+        {"type": "system", "subtype": "init", "tools": ["Read"], "slash_commands": [],
+         "mcp_servers": [{"name": "keyhac", "status": "connected"}]},
+    ]), encoding="utf-8")
+    assert list(run_room._isolation_held(transcript)) == []

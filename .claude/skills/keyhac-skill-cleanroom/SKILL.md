@@ -26,24 +26,35 @@ make cleanroom TASK="Save every tab ..."    # a job of your own, intent only
 make cleanroom ARGS=--list                  # what there is, and what each needs
 ```
 
-It rebuilds the bundle, and for each case: unpacks *this version's* bundle
-into a fresh room under `cleanroom/<version>-<time>/<case>/` (gitignored),
-stands a fixture in for your `config.py`, opens the case's screen, drives the
-room to completion, collects what it made, puts your files back, audits the
-transcript, runs the case's outcome check and prints `QUESTIONS.md`. It ends
-with one line per case — verdict, question count, room — and exits non-zero
-on a FAIL or a disqualified run.
+It rebuilds the bundle, starts Keyhac if it is not running, and for each
+case: unpacks *this version's* bundle into a fresh room under
+`cleanroom/<version>-<time>/<case>/` (gitignored), stands a fixture in for
+your `config.py`, opens the case's screen, drives the room to completion,
+collects what it made, puts your files back, audits the transcript, runs the
+case's outcome check and reads its friction. It ends with one line per case —
+verdict, friction, questions, room — writes `FINDINGS.md` beside the rooms,
+quits the Keyhac it started, and exits non-zero on a FAIL or a disqualified
+run.
 
 **The bundle goes in under `skills/`**, the same single skill a user installs
 (two were merged into one in #164). An action task often ends by putting the
 action on a key, and the key-table half of the skill is what says how.
 
-**One precondition it cannot supply for itself:** Keyhac's MCP server switch
-(**AI Integration > MCP Server**) must be on, or the room can write an action
-and never run it — which fails the skill's own first checklist line and looks
-like a skill defect. The run checks the endpoint before it opens a room and
-refuses by name if it is off. It is off by default and turns itself off 60
-minutes after being ticked, so this is usually the switch.
+**Keyhac is started for you.** With no Keyhac answering, the run starts this
+checkout's (`scripts/keyhac_daemon.py`: `python -m keyhac`, as `make run`
+does) with the MCP endpoint on and **no timeout**, and quits it at the end —
+gracefully, by closing its stdin, and killed only if it has not gone within 15
+seconds. Its log is `keyhac.log` beside the rooms. Keyhac itself never opens
+the endpoint at start-up, on purpose (`main.py` says why); a clean-room run is
+the one start-up that *is* somebody arming it, so the switch is thrown in the
+development tool and the product keeps its rule.
+
+A Keyhac that is already answering is used as it is and **left running** —
+it is yours. One that is running with the switch off makes the run refuse,
+because two Keyhacs cannot both hold the keyboard: tick **AI Integration >
+MCP Server** in it, or quit it and let the run start its own. Without an
+endpoint the room could write an action and never run it, which fails the
+skill's own first checklist line and looks like a skill defect.
 
 **What a run does to your machine, and undoes.** For the length of each room:
 
@@ -206,11 +217,28 @@ protects.
 ## Score it
 
 The checks print themselves: `FAIL:` lines from the case's `check()`, and
-`scripts/check.py`'s advisory findings on each action. `QUESTIONS.md` is the
-actual result, and **zero questions is not a pass** — a run with nothing to
+`scripts/check.py`'s advisory findings on each action. The improvement points
+are three lists, and **`FINDINGS.md`**, beside the rooms, gathers all of them
+for every case in one place:
+
+- **outcome-check failures** — what the run did not get done;
+- **friction** (`FRICTION.md` in each room, from `scripts/friction.py`) —
+  where the record shows the room stumbling, *whether or not it noticed*: a
+  tool call that failed or was refused, an answer from Keyhac that was an
+  error or a blank ("focus now: unknown"), a search of the skill that came
+  back empty, a file written or an action run more than once, a session that
+  ran out of turns, and the sentences where the room said it was unsure or
+  had it wrong. Read off the transcript, not the room's account;
+- **questions** (`QUESTIONS.md`) — what the room noticed it had to guess.
+
+**Friction with no matching question is the most valuable kind**: it is the
+gap the room worked around without seeing it. The first key-table runs are the
+example — all three met `describe_keymap` answering "focus now: unknown", and
+it took the friction list to show that it was every run rather than one
+room's aside. And **zero questions is not a pass** — a run with nothing to
 guess at either measured nothing or broke a rule.
 
-**Not every question is a skill gap.** Sort each one before acting on it:
+**Not every item is a skill gap.** Sort each one before acting on it:
 
 - **skill gap** — the skill should have said it, and a user's agent would hit
   it too. Fix the skill.

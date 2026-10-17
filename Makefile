@@ -253,7 +253,8 @@ skill-bundle: $(VENV_STAMP)
 #
 # Rooms are built in cleanroom/ (gitignored) and driven with --restricted, which
 # is what keeps this repository's CLAUDE.md and skills out of a session running
-# inside it. A fixture stands in for ~/.keyhac/config.py during each room. The
+# inside it. Keyhac is started (MCP on, no timeout) if none is running, and quit
+# afterwards; a fixture stands in for ~/.keyhac/config.py during each room. The
 # screen has to be up for a TASK of your own; a CASE opens its fixture.
 CLEANROOM := .claude/skills/keyhac-skill-cleanroom/scripts/run_room.py
 cleanroom: skill-bundle

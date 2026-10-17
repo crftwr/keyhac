@@ -71,9 +71,15 @@ def main(argv: list[str]) -> int:
         raise SystemExit(__doc__)
     room = pathlib.Path(argv[0])
     case = outcome.load_cases([argv[1]])[0] if len(argv) == 2 else None
+    failures = []
     if case is not None and (room / outcome.EVIDENCE / "run.json").exists():
-        for failure in outcome.failures(case, outcome.Outcome.from_room(room)):
+        failures = outcome.failures(case, outcome.Outcome.from_room(room))
+        for failure in failures:
             print(f"  FAIL: {failure}")
+    # A room driven by hand has a transcript only if it was saved as one;
+    # friction.py says so when there is none.
+    import friction
+    print(friction.report(room, failures))
     score(room, case)
     return 0
 

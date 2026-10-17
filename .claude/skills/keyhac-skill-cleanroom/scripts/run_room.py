@@ -49,6 +49,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import friction  # noqa: E402
 import outcome  # noqa: E402
 from open_room import ROOMS, build_room  # noqa: E402
 from outcome import EVIDENCE, FIXTURES, ROOT  # noqa: E402
@@ -160,6 +161,105 @@ def mcp_endpoint() -> dict:
         if probe.connect_ex(("127.0.0.1", port)) != 0:
             raise SystemExit(MCP_IS_OFF)
     return info
+
+
+#: Started when no Keyhac is answering: this checkout's Keyhac with the
+#: endpoint on and no timeout, quitting when its stdin closes.
+DAEMON = pathlib.Path(__file__).resolve().with_name("keyhac_daemon.py")
+
+
+class KeyhacSession:
+    """A Keyhac with its MCP endpoint on, for the length of a ``with`` block.
+
+    One that is already answering is used as it is and left running - it is
+    the operator's. Otherwise this checkout's Keyhac is started with the
+    endpoint on and no timeout (keyhac_daemon.py), and quit on the way out:
+    gracefully, by closing its stdin, and killed only if it has not gone
+    within the grace period. Its log goes beside the rooms.
+    """
+
+    def __init__(self, log: pathlib.Path, patience: float = 60.0, grace: float = 15.0):
+        self.log = log
+        self.patience = patience
+        self.grace = grace
+        self.process: subprocess.Popen | None = None
+
+    def __enter__(self):
+        if _endpoint_alive():
+            print("keyhac:  using the Keyhac already running, and leaving it running")
+            return self
+        self.log.parent.mkdir(parents=True, exist_ok=True)
+        output = self.log.open("w", encoding="utf-8")
+        self._started = time.time()
+        self.process = subprocess.Popen(
+            [sys.executable, str(DAEMON)], cwd=ROOT, stdin=subprocess.PIPE,
+            stdout=output, stderr=subprocess.STDOUT,
+            env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+        output.close()
+        print(f"keyhac:  started this checkout's Keyhac (pid {self.process.pid}, "
+              f"log {self.log})")
+        deadline = time.monotonic() + self.patience
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                said = self.log.read_text(encoding="utf-8", errors="replace")
+                running = "already running" in said
+                raise SystemExit(
+                    "Keyhac is already running with its MCP server off. Tick "
+                    "AI Integration > MCP Server in it, or quit it so the run "
+                    "can start its own." if running else
+                    f"Keyhac exited ({self.process.returncode}) before its MCP "
+                    f"server came up:\n{said[-1500:]}")
+            if self._ours_is_answering():
+                print("keyhac:  MCP server on, no timeout")
+                return self
+            time.sleep(0.5)
+        self._stop()
+        raise SystemExit(
+            f"Keyhac did not open its MCP server within {self.patience:.0f}s "
+            f"(log: {self.log}). On macOS the first start from a terminal asks "
+            f"for the Accessibility permission - grant it and run again.")
+
+    def _ours_is_answering(self) -> bool:
+        """The endpoint answers from an mcp.json written since this Keyhac was
+        started - not the stale file one killed earlier left behind.
+
+        By time rather than by pid: a venv's python.exe on Windows is a stub
+        that runs the real interpreter as its child, so the pid Keyhac
+        publishes is never the one this process holds.
+        """
+        try:
+            written = (KEYHAC_HOME / "mcp.json").stat().st_mtime
+        except OSError:
+            return False
+        return written >= self._started - 1.0 and _endpoint_alive()
+
+    def __exit__(self, *exc):
+        self._stop()
+        return False
+
+    def _stop(self) -> None:
+        if self.process is None or self.process.poll() is not None:
+            return
+        try:
+            self.process.stdin.close()      # keyhac_daemon.py quits on EOF
+        except OSError:
+            pass
+        try:
+            self.process.wait(self.grace)
+            print("keyhac:  quit")
+        except subprocess.TimeoutExpired:
+            # The pid Keyhac published as well as the one held here: on
+            # Windows the venv's python.exe is a stub whose child is the real
+            # Keyhac, and killing only the stub would orphan it, hook and all.
+            try:
+                published = json.loads((KEYHAC_HOME / "mcp.json").read_text(encoding="utf-8"))
+                if published.get("pid") not in (None, self.process.pid):
+                    os.kill(published["pid"], signal.SIGTERM)
+            except (OSError, ValueError):
+                pass
+            self.process.kill()
+            self.process.wait()
+            print(f"keyhac:  did not quit within {self.grace:.0f}s - killed")
 
 
 def keyhac_call(tool: str, arguments: dict | None = None) -> str:
@@ -807,14 +907,17 @@ def _isolation_held(transcript: pathlib.Path):
     stayed hidden, and a connected server means the room could really drive
     Keyhac rather than quietly reporting that it could not.
     """
-    first = transcript.read_text(encoding="utf-8").splitlines()[:1]
-    if not first:
+    events = list(outcome.transcript_events(transcript))
+    if not events:
         yield "the session produced no output at all"
         return
-    try:
-        init = json.loads(first[0])
-    except ValueError:
-        yield "the session's first line was not an init event"
+    # Looked for, not assumed to be first: a rate_limit_event can come ahead
+    # of it, and reading line one as the init event disqualified a clean run
+    # (2026-10-17) for an MCP server that was in fact connected.
+    init = next((e for e in events if e.get("type") == "system"
+                 and e.get("subtype") == "init"), None)
+    if init is None:
+        yield "the session produced no init event"
         return
     if "Bash" in init.get("tools", []):
         yield ("the session had Bash: it was not started with --restricted, so "
@@ -961,29 +1064,80 @@ def run_case(case, parent: pathlib.Path, args, bridge: str) -> dict:
         print("  INCONCLUSIVE: Keyhac stopped answering during the run, so what the")
         print("  room reported past that point is about the outage.")
     print()
+    stumbles = friction.incidents(room / "transcript.jsonl")
+    (room / "FRICTION.md").write_text(friction.report(room, failures), encoding="utf-8")
     questions = score(room, case)
-    return {"name": case.NAME, "room": room, "breaches": breaches,
-            "failures": failures, "questions": questions,
-            "inconclusive": inconclusive, "scored": bool(getattr(case, "MUST", ""))}
+    return {"name": case.NAME, "title": case.TITLE, "room": room,
+            "breaches": breaches, "failures": failures, "questions": questions,
+            "friction": stumbles, "inconclusive": inconclusive,
+            "scored": bool(getattr(case, "MUST", ""))}
+
+
+def _verdict(r: dict) -> str:
+    if r["breaches"]:
+        return "DISQUALIFIED"
+    if r["inconclusive"]:
+        return "INCONCLUSIVE"
+    if r["failures"]:
+        return "FAIL"
+    return "pass" if r["scored"] else "unscored"
+
+
+def write_findings(parent: pathlib.Path, results: list[dict]) -> pathlib.Path:
+    """FINDINGS.md: every improvement point of the run, one section per case.
+
+    What a run is *for* is this list - the outcome check's failures, where the
+    room stumbled (friction.py, read off the record), and what it noticed it
+    had to guess (QUESTIONS.md) - and it used to be spread across one terminal
+    log and a QUESTIONS.md per room. Gathered here, in the run's directory,
+    so it can be triaged in one pass and kept: `git add -f` it when it is
+    worth keeping, as a room's QUESTIONS.md is.
+    """
+    lines = [f"# Clean-room findings: {parent.name}", "",
+             "Each case's outcome-check failures, the friction read off its "
+             "transcript, and the questions it wrote. Triage every item as a "
+             "skill gap, out of scope, or tooling (SKILL.md, Score it); only "
+             "skill gaps change the skill. Friction that no question mentions "
+             "is the gap nobody noticed.", ""]
+    for r in results:
+        room = r["room"]
+        lines += [f"## {r['name']} - {_verdict(r)}", "", f"{r['title']}. Room: `{room}`", ""]
+        for breach in r["breaches"]:
+            lines.append(f"- **disqualified** - {breach}")
+        for failure in r["failures"]:
+            lines.append(f"- **outcome check** - {failure}")
+        lines += [incident.line() for incident in r["friction"]]
+        asked = [line[3:].strip() for line in
+                 _read(room / "QUESTIONS.md").splitlines() if line.startswith("## ")]
+        lines += [f"- **question** - {q}" for q in asked]
+        if not (r["breaches"] or r["failures"] or r["friction"] or asked):
+            lines.append("- nothing recorded - zero is not a pass; read the transcript")
+        lines.append("")
+    findings = parent / "FINDINGS.md"
+    findings.write_text("\n".join(lines), encoding="utf-8")
+    return findings
+
+
+def _read(path: pathlib.Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def summary(results: list[dict]) -> int:
-    """One line per room - verdict, questions, where it is - and the exit code."""
+    """One line per room - verdict, friction, questions, where it is - and the
+    exit code."""
     print("== summary")
     worst = 0
     for r in results:
-        if r["breaches"]:
-            verdict, worst = "DISQUALIFIED", 2
-        elif r["inconclusive"]:
-            verdict, worst = "INCONCLUSIVE", 2
-        elif r["failures"]:
-            verdict, worst = "FAIL", max(worst, 1)
-        else:
-            verdict = "pass" if r["scored"] else "unscored"
-        print(f"  {verdict:<12} {r['name']:<30} {r['questions']:>2} question(s)  {r['room']}")
+        verdict = _verdict(r)
+        if verdict in ("DISQUALIFIED", "INCONCLUSIVE"):
+            worst = 2
+        elif verdict == "FAIL":
+            worst = max(worst, 1)
+        print(f"  {verdict:<12} {r['name']:<30} {len(r['friction']):>2} friction "
+              f"{r['questions']:>2} question(s)  {r['room']}")
     print()
-    print("  QUESTIONS.md in each room is the finding: zero questions is not a")
-    print("  pass. Triage each one before acting on it - see SKILL.md, Score it.")
+    print("  FINDINGS.md beside the rooms is the result: zero questions is not")
+    print("  a pass. Triage each item before acting on it - see SKILL.md, Score it.")
     return worst
 
 
@@ -1039,8 +1193,10 @@ def main(argv: list[str] | None = None) -> int:
 
     import keyhac
     parent = ROOMS / f"{keyhac.__version__}-{datetime.datetime.now():%Y%m%d-%H%M%S}"
-    bridge = mcp_endpoint()["bridge"]
     if args.dry_run:
+        # A room driven by hand is driven against whatever Keyhac you have up:
+        # nothing here starts one, because nothing here would stop it again.
+        bridge = mcp_endpoint()["bridge"]
         for case in cases:
             print(f"  room:    {build_room(case.PROMPT, parent / case.NAME)}")
         print()
@@ -1055,19 +1211,26 @@ def main(argv: list[str] | None = None) -> int:
 
     refuse_stale_stand_in()
     find_claude()
-    # SIGTERM unwinds like Ctrl-C, so Stage puts the operator's config back
-    # and collects what the room made, rather than dying with both undone.
+    # SIGTERM unwinds like Ctrl-C, so Stage puts the operator's config back,
+    # collects what the room made and quits the Keyhac this run started,
+    # rather than dying with all three undone.
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     print(f"rooms:   {parent}")
-    print()
     results = []
     try:
-        for case in cases:
-            results.append(run_case(case, parent, args, bridge))
+        with KeyhacSession(parent / "keyhac.log"):
+            bridge = mcp_endpoint()["bridge"]
+            print()
+            for case in cases:
+                results.append(run_case(case, parent, args, bridge))
     except KeyboardInterrupt:
-        print("\n  interrupted - the room in progress was collected and your "
-              "config.py put back")
-    return summary(results) if results else 130
+        print("\n  interrupted - the room in progress was collected, your "
+              "config.py put back, and a Keyhac this run started quit")
+    if not results:
+        return 130
+    findings = write_findings(parent, results)
+    print(f"  findings: {findings}")
+    return summary(results)
 
 
 if __name__ == "__main__":
