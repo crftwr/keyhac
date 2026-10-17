@@ -729,3 +729,15 @@ def test_a_session_that_lost_the_model_is_inconclusive(tmp_path):
     (room / "transcript.jsonl").write_text(json.dumps(
         {"type": "result", "subtype": "success", "is_error": False, "result": "done"}))
     assert not run_room._lost_the_model(room)
+
+
+def test_a_terminal_screen_is_taken_down_too(monkeypatch):
+    """2026-10-17: a run of everything left five fixture terminals open."""
+    closed = []
+    monkeypatch.setattr(run_room, "SCREENS_SUPPORTED", True)
+    monkeypatch.setattr(run_room, "close_fixture_terminals", lambda: closed.append("t"))
+    monkeypatch.setattr(run_room, "close_fixture_windows", lambda: closed.append("w"))
+    run_room.close_screen(_case(6))
+    run_room.close_screen(_case(1))
+    assert closed == ["t", "w"]
+    assert sorted(run_room._terminal_titles()) == ["build - acme", "deploy - acme"]

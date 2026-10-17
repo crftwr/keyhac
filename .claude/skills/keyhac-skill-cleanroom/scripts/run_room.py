@@ -475,6 +475,10 @@ def open_screen(case, events: list) -> None:
         raise SystemExit(f"{case.NAME} needs its screen put up, and only the "
                          f"macOS runner can open one (Safari / Terminal).")
     if terminal := screen.get("terminal"):
+        # The same reason as the pages below: a window left by an earlier
+        # room is a second screen of the same name for this one.
+        if closed := close_fixture_terminals():
+            print(f"  closed:  {closed} fixture terminal(s) left by an earlier run")
         _open_terminal(*terminal)
         return
     # A run that ended early leaves its fixture windows up - and the next room
@@ -495,9 +499,68 @@ def open_screen(case, events: list) -> None:
 
 def close_screen(case) -> None:
     """The room's screen is the runner's to take down, as it was the runner's
-    to put up: left open, it is the next room's second window."""
-    if SCREENS_SUPPORTED and (case.SCREEN or {}).get("pages"):
+    to put up: left open, it is the next room's second window.
+
+    Terminals included. Only Safari's were closed until 2026-10-17, when one
+    run of everything left five Terminal windows on the operator's desktop.
+    """
+    if not SCREENS_SUPPORTED:
+        return
+    screen = case.SCREEN or {}
+    if screen.get("pages"):
         close_fixture_windows()
+    if screen.get("terminal"):
+        close_fixture_terminals()
+
+
+def _terminal_titles() -> list[str]:
+    """The window titles the fixture scripts give their Terminal windows."""
+    titles = []
+    for case in outcome.load_cases():
+        if terminal := (case.SCREEN or {}).get("terminal"):
+            titles.append(terminal[1])
+    return titles
+
+
+def close_fixture_terminals() -> int:
+    """Close the Terminal windows a fixture script opened; how many it closed.
+
+    Matched by the exact title a fixture script sets ("build - acme"), and
+    only a window whose tabs are idle: each script ends in an interactive
+    shell, so an idle one is a finished screen, and a busy one is running
+    something - more likely the operator's than ours - and is left alone.
+    """
+    titles = ", ".join(f'"{title}"' for title in _terminal_titles())
+    if not titles:
+        return 0
+    script = f'''set fixtures to {{{titles}}}
+    set closed to 0
+    if application "Terminal" is running then
+        tell application "Terminal"
+            repeat with i from (count of windows) to 1 by -1
+                set w to window i
+                try
+                    if fixtures contains (name of w) then
+                        set quiet to true
+                        repeat with t in tabs of w
+                            if busy of t then set quiet to false
+                        end repeat
+                        if quiet then
+                            close w
+                            set closed to closed + 1
+                        end if
+                    end if
+                end try
+            end repeat
+        end tell
+    end if
+    return closed'''
+    asked = subprocess.run(["osascript", "-e", script], capture_output=True,
+                           text=True, check=False)
+    try:
+        return int(asked.stdout.strip() or 0)
+    except ValueError:
+        return 0
 
 
 def close_fixture_windows() -> int:
