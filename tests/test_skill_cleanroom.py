@@ -151,6 +151,17 @@ def test_f1_off_everywhere_fails_the_vscode_case(platform):
     assert any("no longer reaches" in f for f in outcome.failures(case, done))
 
 
+def test_f1_without_fn_f1_fails_on_the_mac_only():
+    """The top row on media keys types F1 as Fn+F1, seen as Fn-F1."""
+    for platform, fails in (("mac", True), ("windows", False)):
+        case, done = _reference(11, platform)
+        done.config_after = done.config_after.replace(
+            '    if keymap.platform == "mac":\n'
+            '        kt_vscode["Fn-F1"] = lambda: None\n', "")
+        found = outcome.failures(case, done)
+        assert any("Fn-F1 still reaches" in f for f in found) is fails, platform
+
+
 def test_emacs_keys_left_on_in_the_terminal_fail():
     case, done = _reference(12)
     done.config_after = done.config_before.replace(

@@ -114,6 +114,11 @@ produce bindings that are *silently* dead.
   modifier per platform: if the config defines constants for it (the
   template's `MOD1` / `MOD2`), use them; otherwise branch on
   `keymap.platform`.
+- **macOS function keys.** With the top row on its media functions (the
+  macOS default), F1 reaches an application only as Fn+F1, which Keyhac sees
+  as `Fn-F1` — a `"F1"` binding never fires for that user. You cannot tell
+  which setting they have, so bind both, the `Fn-` one under
+  `keymap.platform == "mac"`.
 - **macOS Fn-arrow.** Apple keyboards turn `Fn-Left/Right/Up/Down` into
   `Home`/`End`/`PageUp`/`PageDown` **in hardware**, so a `Fn-…-Left` binding can
   never fire. Bind `Fn-…-Home` instead. This one looks like a Keyhac bug and is
@@ -127,6 +132,7 @@ several that look right:
 
 - **"Make this key do nothing"** — `kt["F1"] = lambda: None`, in a table
   scoped to the application. `None` is *not* that: it passes the key through.
+  For a function key, on a Mac bind `Fn-F1` too (below).
   (Assignments, "Making a key do nothing".)
 - **"Everywhere except this application"** — a table with
   `custom_condition_func=lambda focus: not is_terminal(focus)`; there is no

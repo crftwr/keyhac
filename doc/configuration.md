@@ -206,6 +206,18 @@ consumes and sends again, as described below.
   `Home`/`End`/`PageUp`/`PageDown` in hardware (the `Fn` modifier itself still
   arrives). A `Fn-…-Left` binding can therefore never fire — bind `Fn-…-Home`
   instead. The template's MoveWindow samples show the per-OS spelling.
+- **macOS function-key row**: with the top row on its media functions (the
+  macOS default; "Use F1, F2, etc. keys as standard function keys" off), a key
+  reaches applications as F1 only with Fn held, and Keyhac sees `Fn-F1`, not
+  `F1` — the console's last-key field shows `LFn-F1`. A binding for "the key
+  the application gets as F1" is then `Fn-F1`. Bind both to cover either
+  setting:
+
+  ```python
+  kt_vscode["F1"] = lambda: None
+  if keymap.platform == "mac":
+      kt_vscode["Fn-F1"] = lambda: None   # top row on media keys: Fn+F1 is F1
+  ```
 
 ## Assignments
 
@@ -229,7 +241,8 @@ kt_vscode["F1"] = lambda: None          # F1 never reaches VS Code
 ```
 
 The key is consumed and nothing is sent. Scope it with the table's condition, as
-above, and every other application still gets the key. The values that look as if
+above, and every other application still gets the key. For a function key on a
+Mac, bind `Fn-F1` as well — see the [function-key row](#key-expressions). The values that look as if
 they might mean "nothing" mean something else:
 
 | Bound to | What the key does |
