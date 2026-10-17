@@ -1213,10 +1213,17 @@ is now the thing to confirm rather than the thing to fix.
   for its first ~90 ms** and only then settles on the named constant — so
   `is_stale()` said False during the one moment it is asked, and `_press`
   blamed the operator's selector for a dialog that had closed. A destroyed
-  *top-level window* is a separate matter and deliberately only reported, not
-  checked: UIA sometimes keeps answering S_OK for one with its ControlType
-  degraded Window→Pane, and sometimes fails, so an assertion either way is a
-  coin flip.
+  *top-level window* was once only reported, as a coin flip: UIA sometimes
+  kept answering S_OK with its ControlType degraded Window→Pane, and
+  sometimes failed. It was never random — it is the **window class**. A
+  dialog (`#32770`) destroyed while its process lives on degrades to Pane
+  every time; a private-class window, or one whose process exits, fails the
+  read. The degrading case is what made `Gone(node)` time out on a dialog's
+  Cancel (issue #189, fixed by PR #192, which checks the window's own handle
+  with `IsWindow`). The pass now spawns that dialog, destroys it on its own
+  thread, and checks `is_stale()` and `Gone(node)` both see it go. A
+  `note:` line shows whether UIA really answered S_OK/Pane on that run — if it
+  ever stops doing so, the checks still pass but no longer exercise the fix.
 - **The chooser filter box with a Japanese input method selected** *(rewritten
   2026-08-26; the previous version of this check asserted the opposite and
   would now fail by design)* — the chooser stopped taking keyboard focus, and

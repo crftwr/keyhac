@@ -82,6 +82,10 @@ user32.GetForegroundWindow.restype = ctypes.c_void_p
 user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
 user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
 user32.IsWindow.argtypes = [ctypes.c_void_p]
+user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+user32.PostThreadMessageW.argtypes = [ctypes.c_ulong, ctypes.c_uint,
+                                      ctypes.c_size_t, ctypes.c_ssize_t]
 
 WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 user32.EnumWindows.argtypes = [WNDENUMPROC, ctypes.c_void_p]
@@ -142,6 +146,13 @@ def notepad_window():
 # It needs a window it is allowed to *destroy*, which Notepad is not, so it
 # spawns its own - inline rather than as a second file in tools/, since the
 # whole of it is one window and one button.
+#
+# argv[2] picks the window class. "#32770", the dialog class, is the one that
+# matters for windows (issue #189): destroyed while its process lives on, a
+# dialog keeps answering UIA with S_OK as a Pane, while a window of a private
+# class fails the read like a control does. A WM_APP thread message destroys
+# the window on its own thread - the dialog-closes-but-the-app-stays case -
+# where terminating the child would take the whole process.
 
 CHILD_WINDOW_SOURCE = r"""
 import ctypes, sys
@@ -168,22 +179,29 @@ user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
                                   wintypes.WPARAM, wintypes.LPARAM]
 user32.DefWindowProcW.restype = ctypes.c_ssize_t
+user32.DestroyWindow.argtypes = [wintypes.HWND]
+user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                               wintypes.UINT, wintypes.UINT]
 proc = WNDPROC(lambda h, m, w, l: user32.DefWindowProcW(h, m, w, l))
 wc = WNDCLASSW()
 wc.lpfnWndProc = proc
 wc.hInstance = kernel32.GetModuleHandleW(None)
 wc.lpszClassName = "KeyhacStaleProbe"
 user32.RegisterClassW(ctypes.byref(wc))
-hwnd = user32.CreateWindowExW(0, "KeyhacStaleProbe", sys.argv[1], 0x00CF0000,
+class_name = sys.argv[2] if len(sys.argv) > 2 else "KeyhacStaleProbe"
+hwnd = user32.CreateWindowExW(0, class_name, sys.argv[1], 0x00CF0000,
                               80, 80, 420, 160, None, None, wc.hInstance, None)
 button = user32.CreateWindowExW(0, "BUTTON", "Probe Button", 0x50000000,
                                 20, 20, 160, 40, hwnd, None, wc.hInstance, None)
 user32.ShowWindow(hwnd, 5)
 print(int(hwnd), int(button), flush=True)
-msg = ctypes.create_string_buffer(48)
-while user32.GetMessageW(msg, None, 0, 0) > 0:
-    user32.TranslateMessage(msg)
-    user32.DispatchMessageW(msg)
+msg = wintypes.MSG()
+while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+    if msg.hWnd is None and msg.message == 0x8000:  # WM_APP: close, stay alive
+        user32.DestroyWindow(hwnd)
+        continue
+    user32.TranslateMessage(ctypes.byref(msg))
+    user32.DispatchMessageW(ctypes.byref(msg))
 """
 
 
@@ -261,14 +279,63 @@ def stale_section():
               and button.perform_action("Invoke") is False,
               f"actions={button.get_action_names()}")
 
-        # Reported, not asserted: this one is genuinely unstable between runs
-        # (S_OK with ControlType degraded Window->Pane, or the failure), so a
-        # check either way would be a coin flip. is_stale()'s docstring says
-        # window-level staleness must not be relied on; this is the evidence.
+        # Once reported rather than asserted, as a coin flip. It was not one:
+        # the flip was the window class (see window_stale_section), and since
+        # issue #189 the window's own handle settles it whatever UIA says.
         hr_win, ct_win = _control_type_hr(window)
-        print(f"       note: destroyed top-level window -> hr=0x{hr_win:08X} "
-              f"control_type={ct_win} is_stale()={window.is_stale()} "
-              f"(unstable between runs; 50032=Window, 50033=Pane)")
+        check("a destroyed top-level window reads as stale",
+              window.is_stale() is True,
+              f"UIA said hr=0x{hr_win:08X} control_type={ct_win}")
+    finally:
+        if child.poll() is None:
+            child.kill()
+
+
+def window_stale_section():
+    """A dialog closed while its application runs on (issue #189).
+
+    The case `Gone(node)` waits on after a Cancel: the window is destroyed,
+    the process is not. UIA keeps answering the dead dialog's element with
+    S_OK and ControlType Pane, so only the window handle tells - checked here
+    through the node `ui.window()` hands out, which is what an action holds.
+    """
+    section("is_stale(): a dialog destroyed while its process lives (#189)")
+    from keyhac.core.ui import Gone
+    title = f"keyhac-stale-dialog-{os.getpid()}"
+    child = subprocess.Popen(
+        [sys.executable, "-c", CHILD_WINDOW_SOURCE, title, "#32770"],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        hwnd, button_hwnd = (int(v) for v in child.stdout.readline().split())
+        node = get_ui_tree(UIElement.from_hwnd(hwnd), max_depth=0)
+        button = UIElement.from_hwnd(button_hwnd)
+        check("the probe dialog and its button both yield elements",
+              node is not None and node.role == "Window" and button is not None,
+              f"role={getattr(node, 'role', None)}")
+        if node is None or button is None:
+            return
+        check("a live dialog is not gone", Gone(node).check(None) is False)
+
+        thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+        user32.PostThreadMessageW(thread_id, 0x8000, 0, 0)  # WM_APP
+        deadline = time.monotonic() + 10
+        while user32.IsWindow(hwnd) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        check("the dialog was destroyed and its process kept running",
+              not user32.IsWindow(hwnd) and child.poll() is None)
+
+        # Whether this run reproduced the bug at all. Reported, not checked:
+        # it is UIA's behaviour, not ours, and the checks below hold either
+        # way - but a run where UIA fails the read did not exercise the fix.
+        hr, control_type = _control_type_hr(node.element)
+        print(f"       note: UIA answered hr=0x{hr:08X} control_type="
+              f"{control_type} (S_OK with 50033=Pane is the #189 case)")
+
+        check("the destroyed dialog reads as stale",
+              node.element.is_stale() is True)
+        check("Gone(node) sees the dialog go", Gone(node).check(None) is True)
+        check("a control of the destroyed dialog reads as stale",
+              button.is_stale() is True)
     finally:
         if child.poll() is None:
             child.kill()
@@ -347,6 +414,7 @@ def main():
     # own window and needs nothing of the operator's, so it still runs when
     # the Notepad half cannot.
     stale_section()
+    window_stale_section()
 
     # Our own document, opened by name. Notepad 11 puts it in a new tab of the
     # window that is already running, which is fine - what matters is that the
