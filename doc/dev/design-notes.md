@@ -28,6 +28,15 @@ rich clipboard formats).
   costs the application in front 2–3 ms of CPU. The one up that does read is
   the first event after `configure()` has emptied the tables (the up of the key
   that reloaded the config), which would otherwise meet an empty table.
+- On Windows the focused element is read on every key down, and its first read
+  into a Chromium process can be answered at the window level. That first
+  `GetFocusedElement` is what switches Chromium's accessibility on, and until its
+  tree is built Chromium answers with the root `Pane()`. So the first key after
+  that can be matched at window level, once per Chromium process. The next key
+  reads the real element, compares it as different, and rebuilds the path.
+  This is a race that usually loses: PR #187's runs scored 11/12 on most and
+  12/12 on one. Accepted rather than worked around. Waiting for the tree inside
+  the hook would cost the first key far more than a miss does.
 - Three upstream keyhac-mac hook bugs are intentionally *fixed* in the mac hook port —
   see the module docstring of `keyhac/platform/mac/hook.py`. The third (fresh real
   input overtaking re-posted deferred reals during the flush window) was found by the
