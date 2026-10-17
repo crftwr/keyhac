@@ -67,10 +67,10 @@ on the repository's copy.
 | Task | Exercises | macOS | Windows |
 |---|---|---|---|
 | `extract_records.py` ([mac](mac/extract_records.py), [win](win/extract_records.py)) | pagination with a postcondition naming the next page, cross-system normalisation, partial failure, idempotent CSV | 17 rows from 5 pages across 2 systems; re-running leaves 17 | Edge: the same 17 rows, and a rerun leaves 17 |
-| `handle_queue.py` ([mac](mac/handle_queue.py), [win](win/handle_queue.py)) | the three beats of a modal as `click(until=Appears)` / `click(given=Reads, until=Gone)`, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops | Edge: the same, after findings 26–28; checked on a local copy of the fix, this exact file not re-run |
-| `submit_from_csv.py` ([mac](mac/submit_from_csv.py), [win](win/submit_from_csv.py)) | the write side: `ui.fill`, read-before-toggle, a submit that is never retried, an answer that must name its row, per-row checkpointing | 3 accepted, 1 rejected with the form's own reason written into the row; rerunning submits only the failure | Edge: the same, after findings 28–29; checked on a local copy of the fix, this exact file not re-run |
+| `handle_queue.py` ([mac](mac/handle_queue.py), [win](win/handle_queue.py)) | the three beats of a modal as `click(until=Appears)` / `click(given=Reads, until=Gone)`, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops | Edge: the same, after findings 26–28 |
+| `submit_from_csv.py` ([mac](mac/submit_from_csv.py), [win](win/submit_from_csv.py)) | the write side: `ui.fill`, read-before-toggle, a submit that is never retried, an answer that must name its row, per-row checkpointing | 3 accepted, 1 rejected with the form's own reason written into the row; rerunning submits only the failure | Edge: the same, after findings 28–29 |
 | `jump_to_error.py` ([mac](mac/jump_to_error.py), [win](win/jump_to_error.py)) | the text layer and its cheapest-rung-first ladder; finding the buffer by capability on Windows | finds `parser.py:42` in Terminal via the whole-buffer read | Windows Terminal: finds `…\acme\src\parser.py:42` via the whole-buffer read |
-| `snapshot_settings.py` ([mac](mac/snapshot_settings.py), [win](win/snapshot_settings.py)) | tab navigation on a native pane, label association, opening and closing only what it opened | 59 values from Terminal's six settings tabs, into JSON; opened from the menu bar and closed when it was not already open | Mouse Properties: 14 values from five tabs when already open; opening it itself is finding 30, not re-run |
+| `snapshot_settings.py` ([mac](mac/snapshot_settings.py), [win](win/snapshot_settings.py)) | tab navigation on a native pane, label association, opening and closing only what it opened | 59 values from Terminal's six settings tabs, into JSON; opened from the menu bar and closed when it was not already open | Mouse Properties: 14 values from five tabs, open or closed; closing what it opened is finding 31 |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -352,3 +352,12 @@ it.
 The old README said the Windows port read **15** values from Mouse Properties;
 the old file and the new one both read **14** on this machine, tab for tab. The
 count depends on the machine's mouse and driver, not on the code.
+31. **`Gone(node)` cannot see a Windows dialog close.** The re-run's Cancel
+    closed Mouse Properties at 4.1 s - a foreground log showed it go - and
+    `until=ui.Gone(window)` watched the held node for 10 s anyway and reported
+    the Cancel as a failure. UI Automation keeps answering for a destroyed
+    top-level window, degrading it from `Window` to `Pane` rather than
+    failing, which `WinUIElement.is_stale()` documents. The described form,
+    `Gone(Appears(title=…))`, goes through window enumeration and sees it;
+    `Gone`'s own docstring already says to prefer it, and the example did
+    not.

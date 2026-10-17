@@ -111,11 +111,14 @@ class SnapshotSettings(ThreadedAction):
 
         if opened_here:
             # Ours to close, identified as ours: the dialog this run opened.
-            # The front is taken again first rather than required: something
-            # took it during the walk on the first Windows run, and Cancel on a
-            # dialog this run opened is safe to aim at wherever it sits.
+            # The postcondition is described - "no window with this title" -
+            # rather than the held node: UIA keeps answering for a destroyed
+            # top-level window, so Gone(window) watched a closed dialog for
+            # 10 s and called the Cancel a failure. Win32 enumeration, which
+            # the window lookup uses, sees it go.
             ui.activate(node=window)
-            ui.click(self.CANCEL, within=window, until=ui.Gone(window))
+            ui.click(self.CANCEL, within=window,
+                     until=ui.Gone(ui.Appears(title=self.title)))
         elif originally:
             self._select(window, originally)     # leave it as it was found
         return snapshot
