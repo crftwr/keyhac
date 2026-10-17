@@ -6,13 +6,21 @@ principles. Doing this before attempting any generation was deliberate, and the
 reasoning is in
 [`doc/dev/ai-integration.md`](../../doc/dev/ai-integration.md).
 
-Each action targets one OS, and says so in its docstring. Five are macOS; the
-sixth is `win/snapshot_settings.py`, the same task as `mac/snapshot_settings.py`
-written against Windows. **They are two files rather than one with branches in
-it on purpose** — an action is generated for one screen, and carrying selectors
-for a tree it will never meet buys nothing. The framework underneath is
-portable; the selectors are not, and pretending otherwise would teach the wrong
-thing to anyone reading these as a template.
+Five tasks, each written twice: once for macOS in `mac/`, once for Windows in
+`win/`, against the same fixture pages where the task is a web page. **They
+are two files rather than one with branches in it on purpose** — an action is
+generated for one screen, and carrying selectors for a tree it will never meet
+buys nothing. The framework underneath is portable; the selectors are not, and
+pretending otherwise would teach the wrong thing to anyone reading these as a
+template. Read a pair side by side for what a change of platform costs: the
+shape survives line for line, and the selectors do not.
+
+All ten are written on the verb layer — `ui.click` / `ui.fill` /
+`ui.activate` / `ui.menu` with `until=` and `given=`, selectors as
+`ui.Locator` values, postconditions as `ui.Appears` / `ui.Gone` / `ui.Reads` /
+`ui.Front` — which is what the authoring skill teaches. The first six were
+written before that layer existed, and were rewritten on it (issue #63); what
+the rewrite turned up is at the end of this file.
 
 These files are actions and nothing else — no `__main__` block, no `sys.path`
 preamble — because that is what a registered action is, and an example that
@@ -22,12 +30,19 @@ supplies the launching, from the repository root:
 ```bash
 RUN="python tools/run_action_file.py"
 
+# macOS
 $RUN examples/actions/mac/extract_records.py output_path=~/records.csv  # Safari
 $RUN examples/actions/mac/handle_queue.py                               # Safari
-$RUN examples/actions/mac/jump_to_error.py dry_run=true                 # Terminal
 $RUN examples/actions/mac/submit_from_csv.py                            # Safari
+$RUN examples/actions/mac/jump_to_error.py dry_run=true    # Terminal, after fixtures/build_failure.sh
 $RUN examples/actions/mac/snapshot_settings.py             # Terminal > Settings
-$RUN examples/actions/win/snapshot_settings.py             # control main.cpl
+
+# Windows
+$RUN examples/actions/win/extract_records.py                            # Edge
+$RUN examples/actions/win/handle_queue.py                               # Edge
+$RUN examples/actions/win/submit_from_csv.py                            # Edge
+$RUN examples/actions/win/jump_to_error.py dry_run=true    # Windows Terminal, after fixtures/build_failure.ps1
+$RUN examples/actions/win/snapshot_settings.py             # Mouse Properties
 ```
 
 Arguments are `key=value` and become constructor keyword arguments, because that
@@ -43,17 +58,19 @@ permission granted to Keyhac.app, so it borrows the one held by your terminal
 instead. That file's docstring has the full reasoning; an agent should be
 reaching the daemon over MCP, where the permission already lives.
 
-`mac/submit_from_csv.py` types, so running it installs a keyboard tap for as long
-as it runs — that is what puts the modifier flags on injected keystrokes.
+`submit_from_csv.py` types, so running it installs a keyboard hook for as long
+as it runs — that is what puts the modifier flags on injected keystrokes. It
+updates the CSV it reads in place, so by default it works on
+`~/Desktop/to_submit.csv`, seeded from the fixture the first time, rather than
+on the repository's copy.
 
-| Action | Exercises | Verified |
-|---|---|---|
-| [`mac/extract_records.py`](mac/extract_records.py) | pagination, cross-system normalisation, partial failure, CSV output, idempotent re-run | 17 rows from 5 pages across 2 systems; re-running leaves 17 |
-| [`mac/handle_queue.py`](mac/handle_queue.py) | per-item branching, the three-beat modal cycle, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops |
-| [`mac/jump_to_error.py`](mac/jump_to_error.py) | the text layer, and §6's cheapest-rung-first ladder | finds `path:line` in Terminal via the whole-buffer read |
-| [`mac/submit_from_csv.py`](mac/submit_from_csv.py) | the write side: form filling, validation read-back, per-row checkpointing | 3 accepted, 1 rejected with the form's own error written into the row; rerunning submits only the failure |
-| [`mac/snapshot_settings.py`](mac/snapshot_settings.py) | tab navigation on a *native* pane, label association, leaving the UI as found | 57 values from Terminal's six settings tabs, into JSON |
-| [`win/snapshot_settings.py`](win/snapshot_settings.py) | the same task on Windows: `SelectionItem` for tabs, state read from three patterns | 15 values from Mouse Properties' five tabs, into JSON |
+| Task | Exercises | macOS | Windows |
+|---|---|---|---|
+| `extract_records.py` ([mac](mac/extract_records.py), [win](win/extract_records.py)) | pagination with a postcondition naming the next page, cross-system normalisation, partial failure, idempotent CSV | 17 rows from 5 pages across 2 systems; re-running leaves 17 | not yet run |
+| `handle_queue.py` ([mac](mac/handle_queue.py), [win](win/handle_queue.py)) | the three beats of a modal as `click(until=Appears)` / `click(given=Reads, until=Gone)`, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops | not yet run |
+| `submit_from_csv.py` ([mac](mac/submit_from_csv.py), [win](win/submit_from_csv.py)) | the write side: `ui.fill`, read-before-toggle, a submit that is never retried, an answer that must name its row, per-row checkpointing | 3 accepted, 1 rejected with the form's own reason written into the row; rerunning submits only the failure | not yet run |
+| `jump_to_error.py` ([mac](mac/jump_to_error.py), [win](win/jump_to_error.py)) | the text layer and its cheapest-rung-first ladder; finding the buffer by capability on Windows | finds `parser.py:42` in Terminal via the whole-buffer read | not yet run |
+| `snapshot_settings.py` ([mac](mac/snapshot_settings.py), [win](win/snapshot_settings.py)) | tab navigation on a native pane, label association, opening and closing only what it opened | 59 values from Terminal's six settings tabs, into JSON; opened from the menu bar and closed when it was not already open | not yet run |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -247,3 +264,55 @@ Known imperfection, recorded rather than hidden: the Wheel tab reports three
 values where four are on screen. The unnamed lines-per-notch Edit has no static
 text within the pairing window, so it is dropped — the same failure mode finding
 16 describes, at a distance the heuristic does not cover.
+
+---
+
+## The rewrite on the verb layer (issue #63)
+
+The first six examples predated `ui.click(until=…)`, `ui.Locator` and the
+condition values, so they waited and pressed by hand, wrote `AX`-prefixed role
+patterns that cannot match on Windows, and dispatched reads to the main thread
+that no longer need it - in other words, they broke rules the skill now states,
+while the skill pointed readers at them. Rewriting the macOS five, and writing
+four new Windows ones beside the existing port, found six more things. Two of
+them were the harness again, which makes finding 10 the most-repeated lesson in
+this file.
+
+20. **The runner took the front from the application it was driving.** A bare
+    interpreter is a regular macOS application, and AppKit activates it a
+    moment after launch - so `ui.activate(node=window)` succeeded and the very
+    next `given=ui.Front(node=window)` failed, on the first system only.
+    Keyhac.app is `LSUIElement` and never does this; the runner now sets the
+    same accessory policy.
+21. **The runner had a fake focus provider.** `ui.focused()` answered None, and
+    `ui.menu()`, which reaches the menu bar through the focused element,
+    reported that the platform had no menu bar. The old examples never asked
+    for the focus, so nothing had noticed.
+22. **`find()` hands back a subtree cut at its own `max_depth`.** A locator
+    bounded to `max_depth=1` found the dialog's detail paragraph and read it as
+    `""`, because the text is in a child one level further down. Bound a
+    locator for what you will *read* off the node, not only for where it is.
+23. **A postcondition can only name a state the screen can show.** The form
+    fixture answered "error: Amount must be a number" without saying for which
+    record, so two rows refused for the same reason were indistinguishable and
+    "wait for this row's answer" was unwritable - a clean-room run had already
+    hit it and fallen back to `Stable`. Every answer now names its record. When
+    an action cannot say what it is waiting for, look at whether the
+    application ever says it.
+24. **A run can start in the middle of an item.** A dialog left open by an
+    earlier run makes the page behind it inert, so "press Review next item"
+    times out. `handle_queue` reads a dialog that is already up exactly as it
+    reads one it opened, which is what "start from the screen you are given"
+    means for a modal.
+25. **`shutil.move` is not an atomic replace on Windows.** It cannot rename
+    over an existing file there and quietly falls back to copy-then-delete -
+    the half-written checkpoint the temp file existed to prevent. Both
+    `submit_from_csv` files use `os.replace`.
+
+The Windows four (`extract_records`, `handle_queue`, `submit_from_csv`,
+`jump_to_error`) were written from the quirks and Chromium's documented UI
+Automation mapping, not against a tree anyone had looked at, and the table above
+says so. Each file names the assumption it rests on - rows and cells both
+reported as `DataItem`, an open `<dialog>` as a `Pane`, the terminal buffer
+found by its Text pattern - so a first run that fails says which guess was
+wrong.

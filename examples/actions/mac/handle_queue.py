@@ -1,21 +1,17 @@
 """Work a queue of confirmation dialogs - and refuse the one that is wrong.
 
-The third of the hand-written actions in this directory.  Queue
-processing with per-item branching (§2) plus the three-beat modal cycle (§7.2),
-but what it is really here to demonstrate is **preconditions** (§3.7):
+macOS, Safari. Queue processing with per-item branching, the three beats of a
+modal (it appears, you read and act, it is gone), and above all
+**preconditions**: if the UI is not what this action was written against, it
+stops and hands back to a human. It does not guess, because an action that
+silently does the wrong thing is worse than one that refuses to run.
 
-    If the UI changed, an action stops and hands back to a human.  It does not
-    guess, and it does not repair itself, because an action that silently does
-    the wrong thing is worse than one that refuses to run.
-
-The fixture makes that concrete.  After the real items are gone, the page shows
-a *different* dialog - "Delete all records?" - with the same shape and a
-first button that destroys everything.  A handler that presses "the first
-button in the dialog", or that trusts the dialog it saw last time to be the
-dialog on screen now, deletes the records and reports success.  This one checks
-what it is looking at before every press, and stops.
-
-Run it (macOS, Safari):
+The fixture makes that concrete. After the real items are gone, the page shows
+a *different* dialog - "Delete all records?" - with the same shape and a first
+button that destroys everything. A handler that presses "the first button in
+the dialog", or trusts the dialog it saw last time to be the one on screen now,
+deletes the records and reports success. This one reads what appeared before
+every press, and stops.
 
     python tools/run_action_file.py examples/actions/mac/handle_queue.py
 """
@@ -35,18 +31,25 @@ class PreconditionFailed(RuntimeError):
     """The screen is not what this action was written against.
 
     Its own type so the caller can tell "the UI moved on me" from "the thing I
-    was doing failed" - the first means regenerate the action, the second means
-    retry it.
+    was doing failed" - the first means regenerate the action, the second
+    means retry it.
     """
+
+
+def is_dialog(node) -> bool:
+    """An HTML <dialog> opened modally: WebKit reports an AXGroup with the
+    AXApplicationDialog subrole, and hides the rest of the page while it is
+    up. The subrole is outside UINode's projection, so it is read from the
+    platform element."""
+    return node.element.get_attribute_value("AXSubrole") == "AXApplicationDialog"
 
 
 class HandleQueue(ThreadedAction):
     """Approve every item in the queue, one dialog at a time."""
 
-    #: What the dialog this action is allowed to touch must look like.  Both
-    #: are checked before anything is pressed; either missing means stop.
+    #: What the one dialog this action may touch says. Read before anything
+    #: is pressed; anything else on screen means stop.
     EXPECTED_TITLE = "Approve this item?"
-    EXPECTED_BUTTON = "Approve"
 
     def __init__(self, app_name="Safari", url=FIXTURE, limit=10):
         self.app_name = app_name
@@ -59,83 +62,75 @@ class HandleQueue(ThreadedAction):
         logger.info("working the approval queue")
 
     def run(self):
-        subprocess.run(["open", "-a", self.app_name, self.url], check=True)
-        window = self.ui.wait(lambda: self.ui.window(app=self.app_name),
-                              timeout=20,
-                              message=f"{self.app_name} to open a window")
-        window.wait_for(identifier="next-item", timeout=20,
-                        message="the queue page to load")
+        ui = self.ui
+        self.OPEN_NEXT = ui.Locator(identifier="next-item")
+        self.DIALOG = ui.Locator(role="Group", predicate=is_dialog)
+        self.HEADING = ui.Locator(role="Heading", max_depth=1)
+        self.DETAIL = ui.Locator(identifier="confirm-detail", max_depth=2)
+        self.APPROVE = ui.Locator(role="Button", name="Approve", max_depth=1)
+
+        subprocess.run(["open", "-a", self.app_name, self.url],
+                       check=True, capture_output=True, text=True)
+        window = ui.wait(ui.Appears(app=self.app_name, title="Queue*"),
+                         timeout=20, message="the queue page to open")
+        ui.activate(node=window)
+        self.front = ui.Front(node=window)
 
         for _ in range(self.limit):
             try:
                 self._one_item(window)
             except PreconditionFailed as error:
                 # Not an error in the run - it is the run correctly declining
-                # to continue.  Everything already done stays done.
+                # to continue. Everything already done stays done.
                 self.stopped_because = str(error)
                 break
             except WaitTimeout as error:
                 self.stopped_because = f"gave up waiting: {error}"
                 break
-        return {"handled": self.handled, "stopped": self.stopped_because}
+        return {"handled": self.handled, "stopped": self.stopped_because,
+                "page_says": self._log_line(window)}
 
     def finished(self, result):
         logger.info(f"approved {len(result['handled'])}: {result['handled']}")
         if result["stopped"]:
             logger.error(f"stopped: {result['stopped']}")
-        # The one thing this example must never print on a clean run.
-        state = self._log_line()
-        if state and "DESTROYED" in state:
-            logger.error(f"page says: {state}")
+        # The one thing this example must never print.
+        if "DESTROYED" in (result["page_says"] or ""):
+            logger.error(f"page says: {result['page_says']}")
 
-    # -- one item -----------------------------------------------------------
+    # -- one item ------------------------------------------------------------
 
     def _one_item(self, window) -> None:
-        opener = window.find(identifier="next-item")
-        if opener is None:
-            raise PreconditionFailed("the queue page no longer has its button")
-        opener.press()
+        ui = self.ui
+        # Beat 1: open the next item, and wait for *a* dialog - deliberately
+        # not for the one we want. What appeared has to be read before
+        # anything is decided, and that reading is beat 2's first job. A
+        # dialog already up - a run stopped mid-item - is read the same way
+        # instead of being opened again: the page behind it is inert.
+        dialog = (window.find(**self.DIALOG.criteria())
+                  or ui.click(self.OPEN_NEXT, within=window, given=self.front,
+                              until=ui.Appears(self.DIALOG, within=window)))
 
-        # Beat 1: wait for *a* dialog. Deliberately not for the one we want -
-        # we have to look at what actually appeared before deciding.
-        title = window.wait_for(role="AXHeading", timeout=10,
-                                message="a dialog to open")
-        self._check(window, title)
-
-        approve = window.find(role="AXButton", text=self.EXPECTED_BUTTON)
-        detail = window.find(identifier="confirm-detail")
+        heading = dialog.find(**self.HEADING.criteria())
+        # .name, not .all_text: a heading has its own label, and WebKit puts
+        # the heading level in its AXValue.
+        title = heading.name.strip() if heading and heading.name else None
+        if title != self.EXPECTED_TITLE:
+            raise PreconditionFailed(
+                f"a dialog says {title!r}, expected {self.EXPECTED_TITLE!r} - "
+                f"the queue is done or the page changed; pressed nothing")
+        detail = dialog.find(**self.DETAIL.criteria())
         item = detail.all_text.strip() if detail else "?"
 
-        # Beat 2: act.
-        approve.press()
+        # Beat 2 acts, and beat 3 is its postcondition: the dialog going away
+        # is what an accepted Approve looks like. `given=` re-reads the heading
+        # before every attempt, so a retry can never land on a dialog that
+        # replaced this one in the meantime.
+        ui.click(self.APPROVE, within=dialog,
+                 given=ui.Reads(heading, name=self.EXPECTED_TITLE),
+                 until=ui.Gone(self.DIALOG, within=window))
         self.handled.append(item)
 
-        # Beat 3: wait for it to go before the next iteration starts.  Leaving
-        # this out is what makes the next cycle press into a closing dialog.
-        window.wait_until_gone(role="AXButton", text=self.EXPECTED_BUTTON,
-                               timeout=10, message="the dialog to close")
-
-    def _check(self, window, title) -> None:
-        """Every precondition, before any press.
-
-        Per step, not per action (§2.1): the screen can change between item 2
-        and item 3, and usually does - that is what the fixture's second dialog
-        is imitating.
-        """
-        # .name, not .all_text: a heading has its own label, and reaching for
-        # all_text here is what surfaced two bugs at once - WebKit reports a
-        # heading's level in AXValue, and its child restates the heading.
-        heading = (title.name or title.all_text).strip()
-        if heading != self.EXPECTED_TITLE:
-            raise PreconditionFailed(
-                f"dialog says {heading!r}, expected {self.EXPECTED_TITLE!r} - "
-                f"the queue is done or the page changed; not pressing anything")
-        button = window.find(role="AXButton", text=self.EXPECTED_BUTTON)
-        if button is None:
-            raise PreconditionFailed(
-                f"no {self.EXPECTED_BUTTON!r} button in the dialog")
-
-    def _log_line(self):
-        window = self.ui.window(app=self.app_name)
-        node = window.find(identifier="log") if window else None
+    def _log_line(self, window) -> str | None:
+        node = window.find(identifier="log")
         return node.all_text.strip() if node else None

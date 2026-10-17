@@ -59,17 +59,22 @@ sys.path.insert(0, str(_REPO))
 
 
 def _platform_parts():
-    """(name, EventLoop, InputHook, Clipboard) for this OS, or None."""
+    """(name, EventLoop, InputHook, FocusProvider, Clipboard) for this OS,
+    or None."""
     if sys.platform == "darwin":
         from keyhac.platform.mac.clipboard import MacClipboardProvider
+        from keyhac.platform.mac.focus import MacFocusProvider
         from keyhac.platform.mac.hook import MacInputHook
         from keyhac.platform.mac.loop import MacEventLoop
-        return "mac", MacEventLoop, MacInputHook, MacClipboardProvider
+        return ("mac", MacEventLoop, MacInputHook, MacFocusProvider,
+                MacClipboardProvider)
     if sys.platform == "win32":
         from keyhac.platform.win.clipboard import WinClipboardProvider
+        from keyhac.platform.win.focus import WinFocusProvider
         from keyhac.platform.win.hook import WinInputHook
         from keyhac.platform.win.loop import WinEventLoop
-        return "windows", WinEventLoop, WinInputHook, WinClipboardProvider
+        return ("windows", WinEventLoop, WinInputHook, WinFocusProvider,
+                WinClipboardProvider)
     return None
 
 
@@ -124,12 +129,11 @@ def run_action(action) -> int:
     if parts is None:
         print(f"These examples run on macOS and Windows; this is {sys.platform}.")
         return 1
-    platform, EventLoop, InputHook, Clipboard = parts
+    platform, EventLoop, InputHook, FocusProvider, Clipboard = parts
 
     from keyhac.core.clipboard_history import ClipboardHistory
     from keyhac.core.keymap import Keymap
     from keyhac.core.vk import init_key_names
-    from keyhac.platform.fake import FakeFocusProvider
 
     with tempfile.TemporaryDirectory() as scratch:
         config = pathlib.Path(scratch) / "config.py"
@@ -137,8 +141,21 @@ def run_action(action) -> int:
 
         init_key_names(platform, "ansi")
         loop = EventLoop()
+        if platform == "mac":
+            # Keyhac.app is LSUIElement, so it never takes the front. A bare
+            # interpreter is a regular application, and AppKit activates it a
+            # moment after launch - which took the front back from Safari
+            # straight after the action's own activate(), and failed every
+            # given=ui.Front(...) in the first system extract_records read.
+            from AppKit import (NSApplication,
+                                NSApplicationActivationPolicyAccessory)
+            NSApplication.sharedApplication().setActivationPolicy_(
+                NSApplicationActivationPolicyAccessory)
         hook = InputHook()
-        keymap = Keymap(hook, FakeFocusProvider(), platform,
+        # The real focus provider, not a fake: ui.focused() reads through it,
+        # and so does ui.menu(), which finds the menu bar from the focused
+        # element - with a fake it answered "this platform has no menu bar".
+        keymap = Keymap(hook, FocusProvider(), platform,
                         config_path=str(config), template_path=str(config))
         # configure() is what fills in the modifier map, and without it
         # send_key() emits the key without its modifiers - "Cmd-V" arrives as a
