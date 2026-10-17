@@ -1060,6 +1060,26 @@ def _lost_the_endpoint(room: pathlib.Path) -> bool:
                for call in outcome.tool_calls(transcript))
 
 
+def _lost_the_model(room: pathlib.Path) -> bool:
+    """Whether the session ended because it could not reach the model.
+
+    Case 7 on 2026-10-17: the machine slept with the room open, woke with no
+    network, and the session's last word was "API Error: Can't reach the API
+    server". Its result event still says `success` - with `is_error` set - and
+    the outcome check, which reads only what the run left behind, passed it.
+    A run the model never finished measured the network, not the skill.
+    """
+    transcript = room / "transcript.jsonl"
+    if not transcript.exists():
+        return False
+    for event in outcome.transcript_events(transcript):
+        if event.get("type") == "assistant" and event.get("error"):
+            return True
+        if event.get("type") == "result" and event.get("is_error"):
+            return True
+    return False
+
+
 # --- one case, and all of them ---------------------------------------------------
 
 def _own_task(task: str):
@@ -1112,7 +1132,8 @@ def run_case(case, parent: pathlib.Path, args, bridge: str,
     if exit_code:
         print(f"  ! the room session exited {exit_code}")
 
-    inconclusive = _endpoint_died or _lost_the_endpoint(room)
+    lost_the_model = _lost_the_model(room)
+    inconclusive = _endpoint_died or _lost_the_endpoint(room) or lost_the_model
     breaches, refused = audit(room, stage.foreign)
     for turned_down in refused:
         print(f"  refused (the confinement held): {turned_down}")
@@ -1125,7 +1146,8 @@ def run_case(case, parent: pathlib.Path, args, bridge: str,
     if not breaches and not failures:
         print("  checks: pass")
     if inconclusive:
-        print("  INCONCLUSIVE: Keyhac stopped answering during the run, so what the")
+        what = "the model's API" if lost_the_model else "Keyhac"
+        print(f"  INCONCLUSIVE: {what} stopped answering during the run, so what the")
         print("  room reported past that point is about the outage.")
     print()
     stumbles = friction.incidents(room / "transcript.jsonl")

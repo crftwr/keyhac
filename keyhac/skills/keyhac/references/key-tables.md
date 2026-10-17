@@ -52,7 +52,11 @@ what you did not.
    fix it and reload until it says `loaded`.
 5. **`describe_keymap`** again — confirm the binding is where you meant it,
    and that its table is marked `*` (active) for the window in front, or
-   not, as you intended.
+   not, as you intended. The mark is judged against the window in front
+   *only*. When the application the table is for is not the one in front,
+   that half is not checked: say so, give the condition and the name it
+   matches (from `list_windows`), and ask the user to focus that application
+   when they press the key.
 6. **Ask the user to press the key**, naming it and what should happen.
 
 ## Editing someone's config.py

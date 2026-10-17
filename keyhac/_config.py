@@ -382,9 +382,9 @@ def configure(keymap):
     # here for a while and is wrong in both directions - a chat box is an
     # AXTextArea too, and VS Code's own terminal is an AXTextField.
     def is_terminal(focus):
-        return focus.app_name in ("Terminal", "iTerm2", "WezTerm", "Alacritty",
-                                  "kitty", "WindowsTerminal", "cmd",
-                                  "powershell", "pwsh")
+        return focus.app_name in ("Terminal", "ターミナル", "iTerm2", "WezTerm",
+                                  "Alacritty", "kitty", "WindowsTerminal",
+                                  "cmd", "powershell", "pwsh")
 
     kt_terminal = keymap.define_keytable(custom_condition_func=is_terminal)
     kt_terminal[f"{MOD1}-K"] = "Ctrl-K"     # clear, rather than "Down"

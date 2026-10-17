@@ -131,7 +131,7 @@ of `describe_keymap` (the MCP tools), and the console's focus path.
 | | `Focus.app_name` is | for example |
 |---|---|---|
 | Windows | the executable's name, **without** ".exe" | `Code`, `WindowsTerminal`, `notepad`, `msedge`, `cmd` |
-| macOS | the application's localized display name | `Code`, `Terminal`, `Safari`, `Google Chrome` |
+| macOS | the application's localized display name | `Code`, `Terminal` (`ターミナル` on a Japanese system), `Safari`, `Google Chrome` |
 
 `app=` is forgiving — case-insensitive, wildcards and `|`, and on Windows the ".exe" is
 optional in the pattern. Your own function is plain Python, so it compares exact
@@ -150,8 +150,8 @@ and give the exception a name so it reads as what it means:
 
 ```python
 def is_terminal(focus):
-    return focus.app_name in ("Terminal", "iTerm2", "WindowsTerminal", "cmd",
-                              "powershell", "pwsh")
+    return focus.app_name in ("Terminal", "ターミナル", "iTerm2", "WindowsTerminal",
+                              "cmd", "powershell", "pwsh")
 
 kt_emacs = keymap.define_keytable(
     custom_condition_func=lambda focus: not is_terminal(focus))
@@ -160,7 +160,11 @@ kt_emacs["Ctrl-B"] = "Left"
 ```
 
 If your config already has such a function (the template's `is_terminal` is one),
-reuse it, so "a terminal" means one thing throughout the file.
+reuse it, so "a terminal" means one thing throughout the file. If what it has is a
+table for the terminals instead — `define_keytable(app="Terminal|iTerm2|…")` — the
+names in that pattern are the list to write the function from; there is no way to
+negate the pattern itself. A localized name is a separate name, so list every
+spelling the machines you use report (`Terminal` and `ターミナル`).
 
 The other route is to bind the keys in a table that applies everywhere and give them
 back in a later table for the exception, with `None` — which passes the key through
