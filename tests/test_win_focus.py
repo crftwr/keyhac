@@ -160,6 +160,7 @@ class TestUIElementAgainstWin32:
         hwnd = user32.GetDesktopWindow()
         element = UIElement.from_hwnd(hwnd)
         assert element.get_attribute_value("NativeWindowHandle") == int(hwnd)
+        assert element._native_hwnd == int(hwnd)
 
     def test_bounding_rectangle_matches_getwindowrect(self, automation):
         # RECT of LONGs, not UiaRect of doubles - reading the wrong struct
