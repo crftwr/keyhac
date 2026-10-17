@@ -19,7 +19,79 @@ def _detached_element():
     """A UIElement with no COM pointer, for a method that dereferences none."""
     element = UIElement.__new__(UIElement)
     element._ptr = None
+    element._native_hwnd = None
+    element._window_control_type_id = None
     return element
+
+
+def _report_control_type(monkeypatch, control_type_id):
+    import ctypes
+
+    import keyhac.platform.win.uielement as uielement
+
+    def call(_ptr, _slot, _restype, _argtypes, out):
+        ctypes.cast(out, ctypes.POINTER(ctypes.c_int)).contents.value = control_type_id
+        return uielement.S_OK
+
+    monkeypatch.setattr(uielement, "_com_call", call)
+
+
+def test_describe_remembers_the_native_handle_of_a_window(monkeypatch):
+    element = _detached_element()
+    attributes = {"ControlType": "Window", "NativeWindowHandle": 0x1234}
+    monkeypatch.setattr(element, "get_attribute_value", attributes.get)
+
+    assert element.describe()["role"] == "Window"
+    assert element._native_hwnd == 0x1234
+    assert element._window_control_type_id == 50032
+
+
+def test_a_destroyed_window_handle_is_stale_before_ui_automation_is_asked(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    element._native_hwnd = 0x1234
+    element._window_control_type_id = uielement.WINDOW_CONTROL_TYPE_ID
+    monkeypatch.setattr(uielement.user32, "IsWindow", lambda _hwnd: False)
+    monkeypatch.setattr(uielement, "_com_call",
+                        lambda *_args: pytest.fail("UIA read after HWND died"))
+
+    assert element.is_stale()
+
+
+def test_a_recycled_window_handle_does_not_revive_a_degraded_element(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    element._native_hwnd = 0x1234
+    element._window_control_type_id = uielement.WINDOW_CONTROL_TYPE_ID
+    monkeypatch.setattr(uielement.user32, "IsWindow", lambda _hwnd: True)
+    _report_control_type(monkeypatch, 50033)  # stale UIA Window now reports Pane
+
+    assert element.is_stale()
+
+
+def test_a_live_window_handle_with_its_original_role_is_not_stale(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    element._native_hwnd = 0x1234
+    element._window_control_type_id = uielement.WINDOW_CONTROL_TYPE_ID
+    monkeypatch.setattr(uielement.user32, "IsWindow", lambda _hwnd: True)
+    _report_control_type(monkeypatch, uielement.WINDOW_CONTROL_TYPE_ID)
+
+    assert not element.is_stale()
+
+
+def test_non_window_elements_keep_the_existing_uia_staleness_check(monkeypatch):
+    import keyhac.platform.win.uielement as uielement
+
+    element = _detached_element()
+    monkeypatch.setattr(uielement.user32, "IsWindow",
+                        lambda _hwnd: pytest.fail("not a tracked window"))
+    _report_control_type(monkeypatch, 50000)  # Button
+
+    assert not element.is_stale()
 
 
 def test_there_is_no_application_menu_bar_to_offer():

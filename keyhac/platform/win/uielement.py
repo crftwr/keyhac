@@ -115,6 +115,8 @@ if sys.platform == "win32":
 
     # Not UIA at all: the display a rectangle landed on, for get_coordinate_scale.
     user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.IsWindow.restype = wintypes.BOOL
     user32.SendMessageTimeoutW.argtypes = [
         wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
         wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.WPARAM)]
@@ -309,6 +311,7 @@ _ACTIONS = {
 #: UIA_ControlTypeIds -> the short role name used in focus paths.  Chosen to
 #: read like the AX roles on macOS (which drop their "AX" prefix badly), so a
 #: path is scannable: /Window(Untitled - Notepad)/Document().
+WINDOW_CONTROL_TYPE_ID = 50032
 CONTROL_TYPE_NAMES = {
     50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox",
     50004: "Edit", 50005: "Hyperlink", 50006: "Image", 50007: "ListItem",
@@ -318,7 +321,8 @@ CONTROL_TYPE_NAMES = {
     50019: "TabItem", 50020: "Text", 50021: "ToolBar", 50022: "ToolTip",
     50023: "Tree", 50024: "TreeItem", 50025: "Custom", 50026: "Group",
     50027: "Thumb", 50028: "DataGrid", 50029: "DataItem", 50030: "Document",
-    50031: "SplitButton", 50032: "Window", 50033: "Pane", 50034: "Header",
+    50031: "SplitButton", WINDOW_CONTROL_TYPE_ID: "Window",
+    50033: "Pane", 50034: "Header",
     50035: "HeaderItem", 50036: "Table", 50037: "TitleBar", 50038: "Separator",
     50039: "SemanticZoom", 50040: "AppBar",
 }
@@ -719,8 +723,13 @@ class UIElement:
         Keyhac's own windows out of the element API (issue #173)."""
         return self.get_attribute_value("ProcessId")
 
-    def __init__(self, ptr):
+    def __init__(self, ptr, native_hwnd=None):
         self._ptr = ptr
+        # `from_hwnd` already knows the HWND it asked UIA to wrap. Elements
+        # reached through the UIA tree fill this in when describe() sees that
+        # the original element is a Window.
+        self._native_hwnd = int(native_hwnd) if native_hwnd else None
+        self._window_control_type_id = None
 
     def __del__(self):
         try:
@@ -988,12 +997,24 @@ class UIElement:
         # Name is the label; HelpText is the tooltip, which is where an
         # icon-only toolbar button often puts the only words it has.  Which
         # one answered travels as `name_source` - see the macOS twin.
+        role = self.get_attribute_value("ControlType")
+        if role == "Window":
+            # UIA can keep a destroyed window's COM element answering S_OK,
+            # change its ControlType to Pane, and keep returning its old HWND.
+            # Preserve both facts while the element is still alive: IsWindow
+            # detects destruction, and the original role still detects a
+            # recycled HWND when the stale UIA element has degraded to Pane.
+            if self._native_hwnd is None:
+                hwnd = self.get_attribute_value("NativeWindowHandle")
+                if hwnd:
+                    self._native_hwnd = int(hwnd)
+            self._window_control_type_id = WINDOW_CONTROL_TYPE_ID
         name, name_source = _first_name(
             ("label", self.get_attribute_value("Name")),
             ("help", self.get_attribute_value("HelpText")),
         )
         return {
-            "role": self.get_attribute_value("ControlType"),
+            "role": role,
             "name": name,
             "name_source": name_source,
             "value": self.get_attribute_value("Value"),
@@ -1055,19 +1076,28 @@ class UIElement:
         as `StaleElement`, whose documented remedy is to re-find and carry on -
         a better answer to be wrong with than blaming the operator's selector.
 
-        LIMITATION: a destroyed *top-level window* is not reliably detected.
-        UIA commonly keeps answering S_OK for one, degrading its ControlType
-        from Window (50032) to Pane (50033) rather than failing - seen to
-        persist for a full 10 s with the handle confirmed unrecycled, though
-        not on every run. So this answers "this control is gone" dependably and
-        "this window is gone" only sometimes; a caller holding a window-level
-        element (`from_hwnd`, `element_at_point`) must not rely on it.
+        A top-level Window needs a second source of truth: UIA can keep
+        answering S_OK after its HWND is destroyed, while leaving the old
+        NativeWindowHandle readable. `describe()` snapshots that handle and
+        Window role; IsWindow detects destruction, and the saved role catches
+        the Window-to-Pane degradation even if Windows has already recycled
+        the handle. Other controls continue to use UIA's HRESULT as before.
         """
+        if self._native_hwnd and not user32.IsWindow(self._native_hwnd):
+            return True
+
         control_type = ctypes.c_int()
         hr = _com_call(self._ptr, _IUIAutomationElement.get_CurrentControlType,
                        ctypes.c_long, [ctypes.POINTER(ctypes.c_int)],
                        ctypes.byref(control_type))
-        return (hr & 0xFFFFFFFF) != S_OK
+        if (hr & 0xFFFFFFFF) != S_OK:
+            return True
+        # A stale Window reference can remain callable after the native HWND
+        # is destroyed, with UIA degrading its type to Pane. Check against
+        # the role captured by describe() even when IsWindow now sees a new
+        # window that reused the old handle.
+        return (self._window_control_type_id == WINDOW_CONTROL_TYPE_ID
+                and control_type.value != WINDOW_CONTROL_TYPE_ID)
 
     def set_value(self, value: str) -> bool:
         """Write through the Value pattern (the editable-control setter)."""
@@ -1559,7 +1589,7 @@ class UIElement:
             return None
         ptr = _element_out(automation, _IUIAutomation.ElementFromHandle,
                            ctypes.c_void_p(int(hwnd)))
-        return UIElement(ptr) if ptr else None
+        return UIElement(ptr, native_hwnd=hwnd) if ptr else None
 
 
 _walker = None
