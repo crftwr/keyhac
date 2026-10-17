@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check skill-bundle cleanroom \
+        api-reference api-reference-check skill-bundle cleanroom qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -93,6 +93,8 @@ help:
 	@echo "                             own, driven, audited and checked (CASE=n for one,"
 	@echo "                             TASK=\"...\" for your own, FIXTURE=short|grown|all"
 	@echo "                             for the config a key-table case finds)"
+	@echo "  make qa                  - quality-loop: every scenario in qa/scenarios against the"
+	@echo "                             skill bundle, reported by an operator agent (CASE=n)"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -268,6 +270,20 @@ else ifdef TASK
 else
 	$(VENV_PYTHON) $(CLEANROOM) $(CLEANROOM_FIXTURE) $(ARGS)
 endif
+
+# --- quality-loop: the scenarios in qa/, run against the skill bundle ---------------
+#
+#   make qa                          every scenario that needs no screen of yours
+#   make qa CASE=11                  one scenario (CASE="11 12" for several)
+#   make qa CASE=11 CONFIGS=short    only these fixture configs
+#   make qa ARGS=--restore           put back a config.py a run could not
+#
+# Needs quality-loop in the venv (`pip install -e ../quality-loop` until it is
+# on PyPI). Rooms are built in cleanroom/ (gitignored); FINDINGS.md beside them
+# is the result. See qa/run.py.
+QA := qa/run.py
+qa: $(VENV_STAMP)
+	$(VENV_PYTHON) $(QA) $(foreach c,$(CASE),--case $(c)) $(if $(CONFIGS),--configs $(CONFIGS)) $(ARGS)
 
 api-reference: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs

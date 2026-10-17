@@ -17,42 +17,46 @@ live on each OS.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 
-## Clean-room skill testing
+## Testing the skill: quality-loop (`qa/`)
 
 A packaged skill is a snapshot with no repository behind it, and this
 repository is full of the answers. So "is the skill self-contained?" cannot be
-asked from a session that has read `doc/`, `examples/actions/` or the source —
-it cannot unsee them. `.claude/skills/keyhac-skill-cleanroom/` is the
-procedure: build the versioned bundle, unpack it outside the checkout, hand a
-**fresh session** the bundle and a task, and forbid everything else.
+asked from a session that has read `doc/`, `examples/actions/` or the source.
+That session cannot unsee them. `make qa` asks it properly, through
+[quality-loop](https://github.com/crftwr/quality-loop) (a dev dependency; the
+design is #205):
 
-The distinction that makes it workable: **the MCP endpoint is allowed, the
-checkout is not.** Reading the screen through Keyhac's own tools is what the
-skill tells an author to do — it is the product's public interface. Reading the
-package's source, or another action somebody wrote with the repository open,
-is inside information.
+- Each scenario in `qa/scenarios/` is Markdown: the prompt a user would type,
+  the screen it needs, and its Must / Must not lists.
+  `qa/scenarios/_always.md` holds what every room is held to.
+- A **room** gets this version's bundle and the prompt, and nothing else. It
+  runs `--restricted`, with Keyhac's MCP and no shell, and may reach
+  `extensions/` and the Desktop. **The MCP endpoint is allowed and the
+  checkout is not**: reading the screen through Keyhac's own tools is what the
+  skill tells an author to do.
+- For the length of a room your `config.py` is set aside, and one of
+  `qa/configs.py`'s fixtures (template, short, grown) stands in for it. It
+  comes back whatever ends the run.
+- An **operator** agent puts the scenario's screen up by name
+  (`qa/run.py` `SCREENS`) and afterwards writes `REPORT.md`: problems with
+  a severity and a kind, cited from evidence. `qa/evidence.py` gives it that
+  evidence. `replay` loads the room's config in Keyhac's own engine and
+  presses keys through the fake hook. The other tools read the fixture page's
+  record, Keyhac's tool calls and the CSVs against the screens' ground truth.
+- **No verdict.** `FINDINGS.md` beside the rooms (`cleanroom/`, gitignored)
+  gathers every report, most severe first. What to act on is yours to decide.
+  A problem's id, *where it would be fixed* and *how a fix is confirmed* are
+  what the next run is compared against.
 
-**The output is `QUESTIONS.md`, not the action.** Every point where the clean
-room had to guess is a line the skill should have carried; a run that produces
-a working action and no questions has measured nothing. Two rules follow from
-that and are easy to get wrong: the operator must not answer questions during
-the run (an answered question is a destroyed finding), and the case's "must"
-list stays out of the room, because it is the scoring key.
+Runs are started by a person (`make qa`, `CASE=`, `CONFIGS=`). They cost
+model time, they swap your config.py, and screen scenarios open windows.
+`tests/test_qa.py` checks, without a room, that every scenario parses and names
+declared screens, that every fixture config loads on both platforms, and that
+the evidence tools answer correctly on rooms whose outcome is known.
 
-The cases live with the procedure, in `cases/` — one module each, holding the
-prompt a user would type, the MUST list a person scores, and a `check()` that
-judges what the run produced: a `config.py` loaded by Keyhac's own engine and
-keys pressed through the fake hook, the fixture page's own record of what was
-submitted or approved, and what Keyhac's tools answered. They moved out of the
-shipped skill tree in issue #190 (the wheel had been carrying them by
-accident), and the checks were added in issue #193. `make cleanroom` runs every
-case in order; `tests/test_skill_cleanroom.py` runs every check against a run
-that did nothing (it must fail) and against a reference outcome (it must pass),
-on both platforms, so a broken check costs a test run rather than a room.
-
-`scripts/check.py` holds the rules every action shares, and stays advisory in a
-room's score. The rule from the old cases file stands: a MUST missed is a
-skill defect, not a model defect.
+`.claude/skills/keyhac-skill-cleanroom/` is the harness this replaced, with
+Python cases and pass/fail checks. It stays until a full `make qa` run has
+been read, and then it goes.
 
 ## Cross-cutting patterns
 
