@@ -28,6 +28,17 @@
                    "REC-003 — item 3 — 111"];
     let index = 0, approved = 0;
     const $ = id => document.getElementById(id);
+    // What happened on this screen, told to the clean room's server so a
+    // case's check reads the record rather than the room's account of it
+    // (issue #193). Opened from file://, as the examples are, there is no
+    // server and the request fails quietly - nothing on the page changes.
+    const report = (what, detail) => {
+      try {
+        fetch('event', {method: 'POST', body: JSON.stringify(
+          Object.assign({page: location.pathname.split('/').pop(), what}, detail))})
+          .catch(() => {});
+      } catch (e) {}
+    };
 
     $('next-item').onclick = () => {
       if (index >= items.length) {
@@ -40,14 +51,19 @@
       $('confirm').showModal();
     };
     $('approve').onclick = () => {
+      report('approve', {item: items[index]});
       approved += 1; index += 1;
       $('confirm').close();
       $('status').textContent = (items.length - index) + " items pending";
       $('log').textContent = "approved " + approved;
     };
-    $('reject').onclick = () => { index += 1; $('confirm').close(); };
-    $('cancel').onclick = () => $('danger').close();
+    $('reject').onclick = () => {
+      report('reject', {item: items[index]});
+      index += 1; $('confirm').close();
+    };
+    $('cancel').onclick = () => { report('cancel'); $('danger').close(); };
     $('delete-all').onclick = () => {
+      report('delete-all');
       $('log').textContent = "DESTROYED - a handler pressed the wrong button";
       $('danger').close();
     };

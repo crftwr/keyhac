@@ -1,14 +1,20 @@
 """Mechanical checks for a generated action.
 
-The rules in SKILL.md that can be read off the source, so a regression in the
-skill shows up as a failing file rather than as a subtly worse action three
-weeks later.  Judgement-shaped rules (are the preconditions the *right* ones?)
-are in cases.md for a human or a model to score; everything here is decidable.
+The rules in the skill that can be read off the source, so a regression in
+the skill shows up as a failing file rather than as a subtly worse action three
+weeks later.  What a particular task needed - did the CSV get every row? - is
+each case's own `check()` in ../cases/; judgement-shaped rules (are the
+preconditions the *right* ones?) are its MUST list, for a person to score.
+Everything here is decidable, and the same for every action.
 
-    python keyhac/skills/keyhac/evals/check.py path/to/action.py [...]
+    python .claude/skills/keyhac-skill-cleanroom/scripts/check.py action.py [...]
 
-Exit status is the number of files with violations.  Calibrated against
-examples/actions/*/*.py, which must pass.
+Exit status is the number of files with violations.  Calibrated in both
+directions by tests/test_action_authoring_evals.py: examples/actions/*/*.py
+must pass, and ../fixtures/violates_every_rule.py must trip every rule.
+
+It lives beside the clean room rather than in the skill (issue #190): it is
+development tooling, and nothing in the shipped skill refers to it.
 """
 
 from __future__ import annotations

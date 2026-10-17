@@ -1,9 +1,8 @@
 # The rules you are under
 
 You are doing the task in TASK.md using **only** the skill in `./skills`.
-Read its `SKILL.md`, then the references it sends you to - including the
-key-table one when the task ends "and put it on a key". Its `references/` are
-the whole of what you know.
+Read its `SKILL.md`, then the references it sends you to for this task. Its
+`references/` are the whole of what you know.
 
 **Allowed**
 - Everything under `./skills`.
@@ -12,6 +11,8 @@ the whole of what you know.
   what the skill tells you to do.
 - Writing your action to `~/.keyhac/extensions/`, running it, reading its
   result and its logs.
+- Reading and changing `config.py` through Keyhac's own tools, when the task
+  calls for it. It is the operator's file; treat it that way.
 
 **Forbidden**
 - The Keyhac checkout, anywhere on this machine: its source, its `doc/`, its
@@ -29,7 +30,8 @@ the whole of what you know.
   measured nothing.
 
 **When the skill does not tell you something, write it down and guess.**
-Append to `./QUESTIONS.md`:
+Append to `./QUESTIONS.md` - it already exists, so add to it with an edit and
+never write it from scratch, which would replace what is there:
 
 ```
 ## <what you needed to know>
@@ -42,6 +44,6 @@ This file is the point of the exercise. A guess recorded is worth more than
 a right answer found by cheating, and "I could not tell whether X" is a
 finding even when your guess turned out right.
 
-Finish by leaving three things in **this directory** - the one you started
-in: the action's source, a short note
-on whether it ran and what it produced, and `QUESTIONS.md`.
+Finish by leaving these in **this directory** - the one you started in: the
+action's source, if the task called for one; a short note on what you did,
+whether it ran and what it produced; and `QUESTIONS.md`.
