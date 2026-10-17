@@ -32,7 +32,11 @@ def check():
 #: was written when there were four; snapshot_settings.py was added and never
 #: joined it, and neither did the Windows one - so two examples sat unchecked
 #: while the suite reported the rules as enforced. A glob cannot drift.
-ACTIONS = sorted(p for p in EXAMPLES.rglob("*.py") if not p.name.startswith("_"))
+#: fixtures/ is left out: what is there is the *screen* an action is tried
+#: against - a deploy that sleeps between steps, a build that prints its
+#: failure - and none of it is an action.
+ACTIONS = sorted(p for p in EXAMPLES.rglob("*.py")
+                 if not p.name.startswith("_") and "fixtures" not in p.relative_to(EXAMPLES).parts)
 
 
 def test_the_examples_were_found_at_all():
