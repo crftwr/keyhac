@@ -990,6 +990,103 @@ found.
   reproduction that mattered was a local server that withheld a page body for
   six seconds, which turned a 50 ms race into a state that could be read at
   leisure.
+- **Could focus changes be pushed instead of polled, on macOS?** (2026-10-17,
+  `tools/mac_focus_push_pass.py`, macOS 27.0.1; issue #150.) An `AXObserver`
+  on the front application covers every component of the cheap probe, but it
+  is **late often enough to be wrong**, and draining it does not close the gap.
+
+  *Coverage.* Registered on the application element, each change the probe
+  sees raised its own notification, and none went unannounced: a focus move
+  inside one window → `AXFocusedUIElementChanged`; a window rename →
+  `AXTitleChanged` (so registering it on the application does deliver its
+  windows'); a second window taking focus, and closing →
+  `AXFocusedUIElementChanged` + `AXFocusedWindowChanged` +
+  `AXMainWindowChanged`.
+
+  *Registration* is the switch-path cost the issue predicted: 20–43 ms per
+  application (four `AXObserverAddNotification`s, median 25 ms over the 11
+  running regular applications), paid on every application switch. Against an
+  application that has stopped pumping it is four messaging timeouts — 1004 ms
+  at 250 ms each — and then **it has not taken**: every add answered
+  `kAXErrorCannotComplete`, and once the application recovered, focus moves in
+  it raised nothing. A push design needs a retry, with polling in the
+  meantime.
+
+  *Ordering*, the one that decides it. Tab into the pass's own two-field
+  window, then F13 once the Tab has passed a session tap and a gap has
+  elapsed; each F13 the tap sees is classified against an AX poll taken in the
+  same callback. 30 rounds per gap:
+
+  | gap after Tab | idle: stale / 30 | busy: stale / 30 | busy: left stale after the drain |
+  |---|---|---|---|
+  | 2 ms | 10–15 | 11–12 | 11–12 |
+  | 5 ms | 8–11 | 15–17 | 7–8 |
+  | 10 ms | 3 | 18–19 | 6–7 |
+  | 20 ms | 3–8 | 30 | 5 |
+  | 50 ms | 0 | 30 | 0 |
+
+  "Stale" is a key that the poll says landed on the *new* focus and the
+  observer had not yet reported, so push would dispatch it against the old
+  one, and today's probe gets it right. (At 0 ms, and for the rest of each row,
+  the application had not processed the Tab yet, and a poll is as wrong as
+  push.) Tab passing the tap → first notification: median 13–15 ms, p95
+  35–42 ms, max ~50 ms. **Idle** is Keyhac between keys, run loop free.
+  **Busy** services only the tap, so notifications queue. The drain the issue
+  proposed (run the observer's source alone, in a private run loop mode, at
+  the top of the tap callback) delivers what has been *queued*, which fixes
+  most of the busy column. It does nothing for idle, because there is nothing
+  to deliver yet: the application moves its focus first and sends the
+  notification later. A key typed within ~50 ms of a focus-moving key can be
+  dispatched against the wrong focus, which is inside the range of key
+  rollover. Roman input and the operator's Japanese IME gave the same table.
+
+  Three harness lessons, each of which produced a clean-looking wrong answer
+  first. A throwaway application that spins `NSRunLoop` services sources but
+  dispatches no `NSEvent`, so posted keys never reach its fields (`app.run()`
+  does). The follow-up key must not be a printing one: once an `x` had been
+  typed into a field, later Tabs stopped moving focus and every row read 100%
+  "early". And the gap must be pumped, not spun: a listen-only tap still holds
+  the event until its callback has run, so busy-waiting held the Tab back from
+  the application for the whole gap.
+
+  Not measured here: section D (`--only-watch --watch N`) follows real
+  applications and counts probe changes no notification explains. It needs
+  someone using the machine, and the unattended run saw nothing.
+- **Could focus changes be pushed instead of polled, on Windows?** (2026-10-16,
+  `tools/win_focus_push_pass.py`, 6/7, Windows 11 Home 10.0.26200; issue
+  #150.) The layer question the issue turned on came out **yes**: WinUI/XAML
+  (Notepad) raised the legacy `EVENT_OBJECT_FOCUS` for 20/20 UIA `SetFocus`
+  moves, classic Win32 and Chromium for 20/20 Tabs each. Chromium did so on
+  the cold pass too, before anything had asked Edge a UIA question; a machine
+  where nothing has ever turned Chromium's accessibility on may differ.
+  Registering three system-wide hooks costs 0.24 ms and does not wait for a
+  hung foreground window. Latency, injection to first event (median / p95):
+  classic 9.0 / 27.5 ms, Chromium 3.6–4.1 / 10–11 ms, WinUI 10.3 / 42.7 ms.
+
+  Ordering, on the classic window only (`GUITHREADINFO` is ground truth there
+  and nowhere else): 26 of 120 F13s saw a moved focus with no event
+  delivered. Unlike macOS, the drain works here. `PeekMessage(PM_NOREMOVE)`
+  at the top of the hook callback delivered the queued event for 25 of the 26.
+  The one left was at a 2 ms gap.
+
+  **What was decided from the two passes: no push on either OS.** On macOS
+  the notification trails the focus by 10–50 ms, and nothing on our side can
+  fetch it early. On Windows the event source is good, but it would only
+  decide *when* to re-read, and an event that arrived recently is no proof
+  that a re-read can be skipped. Combining an event with a poll is the
+  complexity without the guarantee. The question #145 asked, whether
+  `GetFocusedElement` is affordable per key, is open again for a reason #145
+  did not have. Its decisive row was the hung window that **never returned**,
+  and since #171 every UIA call is capped at 250 ms, with the same
+  cut-short reuse macOS has. What is left is the median (1.6–3.5 ms) and
+  applications that are slow but under the cap, which are accepted as the
+  application's fault. So Windows reads the focused element on every key
+  event, as macOS does.
+
+  Side effect worth knowing before a run: starting `notepad.exe` restores
+  Notepad's previous session, so a tab of an existing file reappeared. The
+  pass only moves UIA focus in it, never types, and the file was left
+  unmodified.
 
 
 ## The interactive pass before a release
