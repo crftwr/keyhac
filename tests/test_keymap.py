@@ -451,6 +451,63 @@ class TestFocusChangeKey:
         assert merges == []
 
 
+class TestKeyUpUsesItsKeyDownsTables:
+    """A key up is matched by the tables its key down chose (issue #150).
+
+    Re-reading the focus on the up let a Tab whose own down moved the focus
+    have its up matched by the next field's tables, and on Windows each read
+    costs the application in front CPU of its own.
+    """
+
+    def _configure(self, keymap):
+        kt_a = keymap.define_keytable(app="alpha")
+        kt_a["U-F2"] = "A"
+        kt_b = keymap.define_keytable(app="beta")
+        kt_b["U-F2"] = "B"
+
+    @staticmethod
+    def _focus(app, pid):
+        return Focus(app_name=app, pid=pid, window_title=app,
+                     path=f"/{app}/{app}")
+
+    def test_the_up_is_matched_by_the_down_s_tables(self, engine):
+        e = engine(self._configure)
+        e.focus_provider.focus = self._focus("alpha", 1)
+        e.down("F2")
+        e.focus_provider.focus = self._focus("beta", 2)  # the down moved it
+        e.up("F2")
+        assert e.sent_names() == ["D-A", "U-A"]
+
+    def test_the_next_down_sees_the_new_focus(self, engine):
+        e = engine(self._configure)
+        e.focus_provider.focus = self._focus("alpha", 1)
+        e.down("F2")
+        e.focus_provider.focus = self._focus("beta", 2)
+        e.up("F2")
+        e.hook.clear()
+        e.stroke("F2")
+        assert e.sent_names() == ["D-B", "U-B"]
+
+    def test_the_up_does_not_ask_for_the_focus(self, engine):
+        e = engine(self._configure)
+        e.focus_provider.focus = self._focus("alpha", 1)
+        asked = []
+        original = e.focus_provider.get_focus
+        e.focus_provider.get_focus = lambda: asked.append(1) or original()
+        e.stroke("F2")
+        assert asked == [1]
+
+    def test_an_up_before_any_down_still_reads_the_focus(self, engine):
+        # configure() empties the tables and forgets the focus, and the
+        # first event after a reload is often the up of the key that ran
+        # it: that up must not meet an empty table.
+        e = engine(self._configure)
+        e.focus_provider.focus = self._focus("beta", 2)
+        assert e.keymap.focus is None
+        e.up("F2")
+        assert e.sent_names() == ["D-B", "U-B"]
+
+
 class TestWindowsPlatform:
 
     def test_class_name_condition(self, engine):

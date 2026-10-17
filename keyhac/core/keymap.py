@@ -913,7 +913,16 @@ class Keymap:
 
     def _on_key_up(self, vk):
 
-        self._check_focus_change()
+        # A key up is dispatched against the tables its key down chose, not
+        # re-read here: one key's down and up are then matched by the same
+        # table, where re-reading let a Tab whose down moved the focus have
+        # its up matched by the next field's (issue #150). It also halves
+        # the focused-element reads, which on Windows cost the application
+        # in front 2-3 ms of CPU each. The exception is no focus read since
+        # configure() emptied the tables - the up of the key that reloaded
+        # the config - which would otherwise meet an empty table.
+        if self._focus is None:
+            self._check_focus_change()
 
         if self.replay_buffer.recording:
             self.replay_buffer.record(vk, False)
