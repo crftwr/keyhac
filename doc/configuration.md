@@ -113,14 +113,11 @@ Matching:
   `Role(Name)`, and many controls carry a name, so `*/Edit()` matches only
   unnamed ones — usually you want `*/Edit(*)`.
 
-  **On Windows this one is best-effort.** The path is re-read when the window, the
-  focused child window or the title changes — so focus moving *inside* one window
-  (an item in a list, a tab, anything on a Chromium / Electron / WPF / WinUI page)
-  does not re-evaluate the condition. Asking Windows for the focused element costs
-  a cross-process call on every key event, and an unbounded one when the
-  application in front has stopped responding, which the key path cannot spend.
-  `app`, `title` and `class_name` are exact on both platforms; prefer them on
-  Windows where they will do.
+  The focused element is read on every key event, so focus moving *inside* one
+  window — an item in a list, a tab, a field on a Chromium / Electron / WPF /
+  WinUI page — re-evaluates the condition, on both platforms. When the
+  application in front stops responding, the path falls back to the window
+  level (`/Application(…)/…(title)`) until it answers again.
 - `custom_condition_func(focus)` — your own test; receives the [Focus
   object](#the-focus-object).
 

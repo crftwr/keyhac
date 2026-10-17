@@ -316,10 +316,9 @@ def test_the_focus_path_falls_back_at_the_first_timeout(monkeypatch):
             reads.append("parent")
             return Hung()
 
-    monkeypatch.setattr(uielement.UIElement, "from_focus",
-                        staticmethod(lambda: Hung()))
     provider = WinFocusProvider.__new__(WinFocusProvider)
-    path, element = provider._build_path("notepad", "Untitled", "Notepad")
+    path, element = provider._build_path("notepad", "Untitled", "Notepad",
+                                         Hung(), False)
     assert path == "/Application(notepad)/Notepad(Untitled)"
     assert element is None
     assert reads == ["ControlType"], "stopped at the first"
@@ -339,11 +338,10 @@ def test_a_full_focus_path_is_not_marked_cut_short(monkeypatch):
         def parent(self):
             return None
 
-    monkeypatch.setattr(uielement.UIElement, "from_focus",
-                        staticmethod(lambda: Edit()))
     provider = WinFocusProvider.__new__(WinFocusProvider)
     provider._path_cut_short = True             # left over from a hang
-    path, element = provider._build_path("notepad", "Untitled", "Notepad")
+    path, element = provider._build_path("notepad", "Untitled", "Notepad",
+                                         Edit(), False)
     assert path.endswith("/Edit(Body)") and element is not None
     assert provider._path_cut_short is False
 
@@ -431,12 +429,14 @@ def test_a_cut_short_focus_is_reused_for_a_second_only(monkeypatch):
     monkeypatch.setattr(wf.time, "monotonic", lambda: clock[0])
     builds = []
 
-    def build(self, app_name, title, class_name):
+    def build(self, app_name, title, class_name, element, cut_short):
         builds.append(1)
         self._path_cut_short = True
         return "/Application(hung)/Edit(Hung)", None
 
     monkeypatch.setattr(wf.WinFocusProvider, "_build_path", build)
+    monkeypatch.setattr(wf.WinFocusProvider, "_read_focused_element",
+                        staticmethod(lambda: (None, False)))
     provider = wf.WinFocusProvider()
     first = provider.get_focus()
     clock[0] += 0.5
@@ -444,3 +444,102 @@ def test_a_cut_short_focus_is_reused_for_a_second_only(monkeypatch):
     clock[0] += 1.0
     provider.get_focus()
     assert builds == [1, 1], "asked again after the second"
+
+
+def _scripted_focus_provider(monkeypatch, pid=4242):
+    """A WinFocusProvider over one unchanging window, whose focused-element
+    read answers from `reads` - the list the test pushes onto."""
+    import keyhac.platform.win.focus as wf
+
+    class Native:
+        def __init__(self, hwnd):
+            self.hwnd = hwnd
+
+        def get_text(self):
+            return "Page"
+
+        def get_process_name(self):
+            return "msedge.exe"
+
+        def get_class_name(self):
+            return "Chrome_WidgetWin_1"
+
+        def get_pid(self):
+            return pid
+
+    class Element:
+        def __init__(self, name):
+            self.name = name
+            self._ptr = name
+
+        def get_attribute_value(self, attribute):
+            return {"ControlType": "Edit", "Name": self.name}.get(attribute)
+
+        def parent(self):
+            return None
+
+    monkeypatch.setattr(wf.user32, "GetForegroundWindow", lambda: 1)
+    monkeypatch.setattr(wf.user32, "GetWindowThreadProcessId", lambda *a: 7)
+    monkeypatch.setattr(wf.user32, "GetGUIThreadInfo", lambda *a: 0)
+    monkeypatch.setattr(wf, "NativeWindow", Native)
+    import keyhac.platform.win.uielement as uielement
+    monkeypatch.setattr(uielement, "_same_element", lambda a, b: a == b)
+    reads = []
+    asked = []
+
+    def read():
+        asked.append(1)
+        return reads[-1]
+
+    monkeypatch.setattr(wf.WinFocusProvider, "_read_focused_element",
+                        staticmethod(read))
+    return wf.WinFocusProvider(), reads, asked, Element
+
+
+def test_focus_moving_inside_one_window_changes_the_path(monkeypatch):
+    """Issue #150: one HWND, one title, and the focus moves from one page
+    field to another - the case the Win32 probe alone cannot see."""
+    provider, reads, asked, Element = _scripted_focus_provider(monkeypatch)
+    reads.append((Element("first"), False))
+    first = provider.get_focus()
+    assert first.path.endswith("/Edit(first)")
+    assert provider.get_focus() is first, "same element: cached"
+    reads.append((Element("second"), False))
+    second = provider.get_focus()
+    assert second is not first and second.path.endswith("/Edit(second)")
+    assert len(asked) == 3, "the element is read on every key event"
+
+
+def test_an_uncomparable_element_is_a_change(monkeypatch):
+    # CompareElements answering "cannot say" - a cached element whose
+    # process exited - rebuilds rather than reusing.
+    import keyhac.platform.win.uielement as uielement
+    provider, reads, asked, Element = _scripted_focus_provider(monkeypatch)
+    reads.append((Element("first"), False))
+    first = provider.get_focus()
+    monkeypatch.setattr(uielement, "_same_element", lambda a, b: None)
+    assert provider.get_focus() is not first
+
+
+def test_a_timed_out_focus_read_is_cut_short_and_not_asked_again(monkeypatch):
+    """#175's rule, kept: the read that timed out is served by the
+    application in front, so it is not repeated on the next key event."""
+    provider, reads, asked, Element = _scripted_focus_provider(monkeypatch)
+    reads.append((None, True))
+    cut_short = provider.get_focus()
+    assert cut_short.path == "/Application(msedge)/Chrome_WidgetWin_1(Page)"
+    assert provider.get_focus() is cut_short
+    assert len(asked) == 1
+
+
+def test_keyhacs_own_windows_are_not_asked_on_every_key(monkeypatch):
+    import os
+    provider, reads, asked, Element = _scripted_focus_provider(
+        monkeypatch, pid=os.getpid())
+    reads.append((Element("console"), False))
+    first = provider.get_focus()
+    assert first.element is None, "#173: no element for our own windows"
+    reads.append((Element("elsewhere"), False))
+    assert provider.get_focus() is first
+    assert len(asked) == 1
+

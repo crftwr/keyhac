@@ -19,6 +19,24 @@ rich clipboard formats).
   config.
 - A lone held Win/Alt is fenced with a Ctrl tap on Windows, so the OS does not read
   it as a tap on the key itself — see below.
+- A key **up** does not re-read the focus. It is matched by the tables its key
+  down chose, `U-`, `O-` and user-modifier ups included, and `keymap.focus`
+  stays the key down's snapshot until the next down *(decided 2026-10-17, issue
+  #150)*. Re-reading used to let a key whose own down moved the focus (Tab, or
+  Alt+Tab's Tab before the Alt up) have its up matched by the destination's
+  tables. It also doubled the focused-element reads, and on Windows each one
+  costs the application in front 2–3 ms of CPU. The one up that does read is
+  the first event after `configure()` has emptied the tables (the up of the key
+  that reloaded the config), which would otherwise meet an empty table.
+- On Windows the focused element is read on every key down, and its first read
+  into a Chromium process can be answered at the window level. That first
+  `GetFocusedElement` is what switches Chromium's accessibility on, and until its
+  tree is built Chromium answers with the root `Pane()`. So the first key after
+  that can be matched at window level, once per Chromium process. The next key
+  reads the real element, compares it as different, and rebuilds the path.
+  This is a race that usually loses: PR #187's runs scored 11/12 on most and
+  12/12 on one. Accepted rather than worked around. Waiting for the tree inside
+  the hook would cost the first key far more than a miss does.
 - Three upstream keyhac-mac hook bugs are intentionally *fixed* in the mac hook port —
   see the module docstring of `keyhac/platform/mac/hook.py`. The third (fresh real
   input overtaking re-posted deferred reals during the flush window) was found by the

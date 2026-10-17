@@ -111,8 +111,8 @@ class MacFocusProvider(FocusProvider):
 
         **Why these three components.** The pid catches an application switch.
         The focused element catches focus moving *inside* one application -
-        the thing `GUITHREADINFO.hwndFocus` cannot see on Windows, so this is
-        the more accurate of the two probes, not a weaker port (#145). The
+        the thing `GUITHREADINFO.hwndFocus` cannot see, which is why Windows
+        now reads its focused element on every key event as well (#150). The
         window title catches a document or tab change under a focus that never
         moved, which `title=` matches on.
 

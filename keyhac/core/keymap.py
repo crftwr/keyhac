@@ -667,14 +667,11 @@ class Keymap:
             fnmatch wildcards (*, ?, []) and "|" alternation, and all the
             conditions given must match.
 
-            On Windows, focus_path_pattern is best-effort: the path is
-            re-read when the window, the focused child window or the title
-            changes, so focus moving *inside* one window - an item in a list,
-            a tab, anything on a Chromium / Electron / WPF / WinUI page -
-            does not re-evaluate it. Reading it on every key event was
-            measured at 1.6-3.5 ms against a responsive application and
-            unbounded against a hung one, which the key path cannot spend.
-            app, title and class_name are exact.
+            focus_path_pattern is re-evaluated on every key event, so focus
+            moving *inside* one window - an item in a list, a tab, a field
+            on a Chromium / Electron / WPF / WinUI page - selects the table
+            it should. While the application in front is not responding, the
+            path is the window-level one until it answers again.
 
             While a chooser popup is open (`ShowClipboardHistory`,
             `ShowCandidates`, ...), the conditions are checked against the
@@ -916,7 +913,16 @@ class Keymap:
 
     def _on_key_up(self, vk):
 
-        self._check_focus_change()
+        # A key up is dispatched against the tables its key down chose, not
+        # re-read here: one key's down and up are then matched by the same
+        # table, where re-reading let a Tab whose down moved the focus have
+        # its up matched by the next field's (issue #150). It also halves
+        # the focused-element reads, which on Windows cost the application
+        # in front 2-3 ms of CPU each. The exception is no focus read since
+        # configure() emptied the tables - the up of the key that reloaded
+        # the config - which would otherwise meet an empty table.
+        if self._focus is None:
+            self._check_focus_change()
 
         if self.replay_buffer.recording:
             self.replay_buffer.record(vk, False)
