@@ -66,11 +66,11 @@ on the repository's copy.
 
 | Task | Exercises | macOS | Windows |
 |---|---|---|---|
-| `extract_records.py` ([mac](mac/extract_records.py), [win](win/extract_records.py)) | pagination with a postcondition naming the next page, cross-system normalisation, partial failure, idempotent CSV | 17 rows from 5 pages across 2 systems; re-running leaves 17 | not yet run |
-| `handle_queue.py` ([mac](mac/handle_queue.py), [win](win/handle_queue.py)) | the three beats of a modal as `click(until=Appears)` / `click(given=Reads, until=Gone)`, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops | not yet run |
-| `submit_from_csv.py` ([mac](mac/submit_from_csv.py), [win](win/submit_from_csv.py)) | the write side: `ui.fill`, read-before-toggle, a submit that is never retried, an answer that must name its row, per-row checkpointing | 3 accepted, 1 rejected with the form's own reason written into the row; rerunning submits only the failure | not yet run |
-| `jump_to_error.py` ([mac](mac/jump_to_error.py), [win](win/jump_to_error.py)) | the text layer and its cheapest-rung-first ladder; finding the buffer by capability on Windows | finds `parser.py:42` in Terminal via the whole-buffer read | not yet run |
-| `snapshot_settings.py` ([mac](mac/snapshot_settings.py), [win](win/snapshot_settings.py)) | tab navigation on a native pane, label association, opening and closing only what it opened | 59 values from Terminal's six settings tabs, into JSON; opened from the menu bar and closed when it was not already open | not yet run |
+| `extract_records.py` ([mac](mac/extract_records.py), [win](win/extract_records.py)) | pagination with a postcondition naming the next page, cross-system normalisation, partial failure, idempotent CSV | 17 rows from 5 pages across 2 systems; re-running leaves 17 | Edge: the same 17 rows, and a rerun leaves 17 |
+| `handle_queue.py` ([mac](mac/handle_queue.py), [win](win/handle_queue.py)) | the three beats of a modal as `click(until=Appears)` / `click(given=Reads, until=Gone)`, per-step preconditions | approves 3 items, then refuses the "Delete all records?" dialog and stops | Edge: the same, after findings 26–28; checked on a local copy of the fix, this exact file not re-run |
+| `submit_from_csv.py` ([mac](mac/submit_from_csv.py), [win](win/submit_from_csv.py)) | the write side: `ui.fill`, read-before-toggle, a submit that is never retried, an answer that must name its row, per-row checkpointing | 3 accepted, 1 rejected with the form's own reason written into the row; rerunning submits only the failure | Edge: the same, after findings 28–29; checked on a local copy of the fix, this exact file not re-run |
+| `jump_to_error.py` ([mac](mac/jump_to_error.py), [win](win/jump_to_error.py)) | the text layer and its cheapest-rung-first ladder; finding the buffer by capability on Windows | finds `parser.py:42` in Terminal via the whole-buffer read | Windows Terminal: finds `…\acme\src\parser.py:42` via the whole-buffer read |
+| `snapshot_settings.py` ([mac](mac/snapshot_settings.py), [win](win/snapshot_settings.py)) | tab navigation on a native pane, label association, opening and closing only what it opened | 59 values from Terminal's six settings tabs, into JSON; opened from the menu bar and closed when it was not already open | Mouse Properties: 14 values from five tabs when already open; opening it itself is finding 30, not re-run |
 
 Not written yet: **print every browser tab to PDF**, which §2 calls the densest
 single case. It needs print dialogs and writes files, so it wants a deliberate
@@ -316,3 +316,39 @@ says so. Each file names the assumption it rests on - rows and cells both
 reported as `DataItem`, an open `<dialog>` as a `Pane`, the terminal buffer
 found by its Text pattern - so a first run that fails says which guess was
 wrong.
+
+### What the first Windows run corrected
+
+The Windows column was filled in by a run on Windows 11 (10.0.26200, Edge, 200 %
+display). Two of the four new actions worked as written; for the other three
+the run found the wrong assumption, and every one of them was a confident
+guess about Chromium's UI Automation tree that nobody had looked at -
+which is the skill's first instruction, broken by the examples that illustrate
+it.
+
+26. **An open `<dialog>` is a `Window`, not a `Pane`.** The same control type
+    as a top-level window - so the search for it must be scoped to the page's
+    `Document`, or the browser itself matches.
+27. **A heading is a `Text`.** UI Automation has no heading control type, so
+    `role="Heading"` finds nothing on Windows however the page is built. The
+    dialog's title is read as its first text.
+28. **Chromium passes DOM ids through for controls and headings, not for a
+    `<p>`.** `find(identifier="result")` and `identifier="confirm-detail"` are
+    None on Edge and answered on WebKit. The result line is found by what it
+    says, the detail by its position in the dialog.
+29. **`set_checked()` read every Edge checkbox as unchecked.** A Chromium
+    checkbox implements Value as well as Toggle, and Value is always `""`;
+    `keyhac/core/fill.py` fell back to `ToggleState` only for a *missing*
+    value, so the press worked and the read-back said it had not. A library
+    bug affecting every Chromium checkbox, found by an example - fixed, with a
+    test.
+30. **`control main.cpl` exits 1 even when the dialog opens**, and the close
+    that followed the walk lost the front to something nobody identified -
+    which threw away a read that had succeeded, because the JSON was written
+    after the cleanup. Both `snapshot_settings` files now write first and close
+    second, and the Windows one ignores the exit status, takes the front again
+    before Cancel, and lets the wait for the window be the check.
+
+The old README said the Windows port read **15** values from Mouse Properties;
+the old file and the new one both read **14** on this machine, tab for tab. The
+count depends on the machine's mouse and driver, not on the code.

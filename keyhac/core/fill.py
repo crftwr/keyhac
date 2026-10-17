@@ -487,8 +487,10 @@ def _is_checked(element) -> bool:
     def read():
         describe = getattr(element, "describe", None)
         value = describe().get("value") if describe is not None else None
-        if value is None:
-            # Windows reports the toggle state as an attribute, not a value.
+        if value is None or value == "":
+            # Windows reports the toggle state as an attribute, not a value -
+            # and a Chromium checkbox implements Value as well, always "", so
+            # an empty value is no answer either (PR #188).
             getter = getattr(element, "get_attribute_value", None)
             value = getter("ToggleState") if getter else None
         if isinstance(value, str):

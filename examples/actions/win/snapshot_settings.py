@@ -80,8 +80,10 @@ class SnapshotSettings(ThreadedAction):
         window = self._settings_window()
         opened_here = window is None
         if opened_here:
+            # No check=True: control.exe exits 1 even when the dialog opens.
+            # The wait for the window below is the real check.
             subprocess.run(["control", self.applet],
-                           check=True, capture_output=True, text=True)
+                           capture_output=True, text=True)
             window = ui.wait(self._settings_window, timeout=20,
                              message=f"the {self.title} dialog to open")
         ui.activate(node=window)
@@ -100,16 +102,22 @@ class SnapshotSettings(ThreadedAction):
             snapshot[name] = self._read_tab(window, chrome=set(names))
             logger.info(f"  {name}: {len(snapshot[name])} values")
 
-        if opened_here:
-            # Ours to close, identified as ours: the dialog this run opened.
-            ui.click(self.CANCEL, within=window, given=self.front,
-                     until=ui.Gone(window))
-        elif originally:
-            self._select(window, originally)     # leave it as it was found
-
+        # Written before the cleanup, so a close that fails cannot throw away
+        # a read that succeeded - which is exactly what the first Windows run
+        # did.
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_path.write_text(
             json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        if opened_here:
+            # Ours to close, identified as ours: the dialog this run opened.
+            # The front is taken again first rather than required: something
+            # took it during the walk on the first Windows run, and Cancel on a
+            # dialog this run opened is safe to aim at wherever it sits.
+            ui.activate(node=window)
+            ui.click(self.CANCEL, within=window, until=ui.Gone(window))
+        elif originally:
+            self._select(window, originally)     # leave it as it was found
         return snapshot
 
     def finished(self, result):

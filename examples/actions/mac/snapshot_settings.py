@@ -65,6 +65,13 @@ class SnapshotSettings(ThreadedAction):
         window = self._settings_window()
         opened_here = window is None
         if opened_here:
+            # The menu bar is reached through the front application, and
+            # activate() can only bring an application forward by one of its
+            # windows - so with none open there is nothing to stand on.
+            if not ui.windows(app=self.app_name):
+                raise RuntimeError(
+                    f"{self.app_name} has no window open - open one, or its "
+                    f"settings, and run this again")
             ui.activate(app=self.app_name)
             ui.menu(self.app_name, "Settings*|Preferences*",
                     until=self._settings_window)
@@ -86,15 +93,17 @@ class SnapshotSettings(ThreadedAction):
             snapshot[name] = self._read_tab(window, chrome=set(names))
             logger.info(f"  {name}: {len(snapshot[name])} values")
 
+        # Written before the cleanup, so a close that fails cannot throw away
+        # a read that succeeded.
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.output_path.write_text(
+            json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+
         if opened_here:
             # Ours to close, and identified as ours: this very window node.
             ui.click(self.CLOSE, within=window, until=ui.Gone(window))
         elif originally:
             self._select(window, originally)     # leave it as it was found
-
-        self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.output_path.write_text(
-            json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
         return snapshot
 
     def finished(self, result):

@@ -6,11 +6,18 @@ anything, and stop at the "Delete all records?" dialog that has the same shape
 and a first button that destroys everything.
 
 The three beats and the preconditions are the macOS file's unchanged. What
-changed is how a dialog is recognised. WebKit marks an open <dialog> with a
-subrole; Chromium reports it under UI Automation as a `Pane`, a control type
-the page has no other use for - but so does the browser's own chrome, so the
-search is scoped to the page's `Document` and confirmed by the heading inside
-it, and never run over the whole window.
+changed is how the dialog and its words are found - measured on Edge, and
+wrong in all three places on the first guess:
+
+  - **An open <dialog> is a `Window`.** WebKit marks it with a subrole;
+    Chromium gives it the control type a top-level window has. So does the
+    browser around the page, which is why the search is scoped to the page's
+    `Document` and never run over the whole browser window.
+  - **A heading is a `Text`.** UI Automation has no heading control type, so
+    the dialog's <h2> arrives as plain text - its first one.
+  - **A <p> has no AutomationId.** Chromium passes DOM ids through for
+    controls and headings, not for a paragraph, so the item's detail is read
+    by position - the dialog's second text - rather than by its id.
 
     python tools/run_action_file.py examples/actions/win/handle_queue.py
 """
@@ -29,11 +36,6 @@ FIXTURE = (pathlib.Path(__file__).resolve().parents[1]
 class PreconditionFailed(RuntimeError):
     """The screen is not what this action was written against - regenerate,
     rather than retry."""
-
-
-def is_dialog(node) -> bool:
-    """A modal <dialog>: a Pane in the page with a heading of its own."""
-    return node.find(role="Heading", max_depth=2) is not None
 
 
 class HandleQueue(ThreadedAction):
@@ -55,9 +57,7 @@ class HandleQueue(ThreadedAction):
         ui = self.ui
         self.PAGE = ui.Locator(role="Document", name="Queue*")
         self.OPEN_NEXT = ui.Locator(identifier="next-item")
-        self.DIALOG = ui.Locator(role="Pane", predicate=is_dialog)
-        self.HEADING = ui.Locator(role="Heading", max_depth=2)
-        self.DETAIL = ui.Locator(identifier="confirm-detail", max_depth=3)
+        self.DIALOG = ui.Locator(role="Window")      # within the Document only
         self.APPROVE = ui.Locator(role="Button", name="Approve", max_depth=2)
 
         subprocess.run(["cmd", "/c", "start", "", self.app_name, self.url],
@@ -98,14 +98,16 @@ class HandleQueue(ThreadedAction):
                   or ui.click(self.OPEN_NEXT, within=page, given=self.front,
                               until=ui.Appears(self.DIALOG, within=page)))
 
-        heading = dialog.find(**self.HEADING.criteria())
+        # The dialog's own texts, in order: its heading, then what it is about.
+        texts = [child for child in dialog.reread(max_depth=2).children
+                 if child.role == "Text"]
+        heading = texts[0] if texts else None
         title = heading.name.strip() if heading and heading.name else None
         if title != self.EXPECTED_TITLE:
             raise PreconditionFailed(
                 f"a dialog says {title!r}, expected {self.EXPECTED_TITLE!r} - "
                 f"the queue is done or the page changed; pressed nothing")
-        detail = dialog.find(**self.DETAIL.criteria())
-        item = detail.all_text.strip() if detail else "?"
+        item = texts[1].all_text.strip() if len(texts) > 1 else "?"
 
         # Beats 2 and 3: act, with the dialog going away as the postcondition,
         # and the heading re-read before every attempt.

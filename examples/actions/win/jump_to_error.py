@@ -71,6 +71,9 @@ class JumpToError(ThreadedAction):
 
     def run(self):
         ui = self.ui
+        # The frontmost terminal window, on purpose: bound to a key pressed in
+        # a terminal, that is the one the operator is looking at. With several
+        # open and this run from elsewhere, it is still just the frontmost.
         window = ui.window(app=self.app_name)
         if window is None:
             raise RuntimeError(f"{self.app_name} has no window open")

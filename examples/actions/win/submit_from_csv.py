@@ -2,9 +2,15 @@
 
 Windows, Microsoft Edge. The same task as `mac/submit_from_csv.py`, against
 the same fixture form, and of the five pairs the one where the two files are
-closest: every field has a DOM id, Chromium hands each one over as an
+closest: every field has a DOM id, Chromium hands each control's over as an
 AutomationId, and an address by identifier is the one kind that crosses
 platforms intact.
+
+Except for the result line. It is a <p id="result">, and Chromium passes ids
+through for controls, not paragraphs - measured, `find(identifier="result")`
+is None on Edge while WebKit answers it. So the line is found by what it
+says, which is also the more honest address: it is the only text on the page
+that starts "accepted" or "error:".
 
 The rules are the macOS file's: the status column is the checkpoint, the
 submit is pressed once and never retried, the wait after it names this row's
@@ -16,7 +22,9 @@ pastes with Ctrl-V and reads the value back - which on Windows is not a
 formality, since injected input is dropped often enough by some controls
 that the read-back is what turns it into a loud `FillFailed`. And
 `set_checked()` reads the checkbox's `ToggleState` where macOS reads a
-value; the action does not need to know which.
+value; the action does not need to know which. (It did need to, once: Edge's
+checkbox also implements Value, always as "", and `set_checked` took that as
+"unchecked" until it was taught to look past an empty value.)
 
     python tools/run_action_file.py examples/actions/win/submit_from_csv.py
         [source=~/Desktop/to_submit.csv]
@@ -60,7 +68,7 @@ class SubmitFromCsv(ThreadedAction):
                       for column, dom_id in FIELDS.items()}
         self.URGENT = ui.Locator(role="CheckBox", identifier="urgent")
         self.SUBMIT = ui.Locator(role="Button", identifier="submit")
-        self.RESULT = ui.Locator(identifier="result")
+        self.RESULT = ui.Locator(role="Text", name="accepted *|error: *")
 
         if not self.source.exists():
             shutil.copyfile(FIXTURES / "to_submit.csv", self.source)
