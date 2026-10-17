@@ -119,8 +119,16 @@ packages = [
 # has drifted from the API it describes is worse than no skill. Not an
 # importable package - the directory name is hyphenated and it holds Markdown -
 # so it rides along as data on `keyhac` itself.
-"keyhac" = ["skills/*/*.md", "skills/*/*/*.md", "skills/*/*/*.py",
-            "skills/*/*/*/*.py"]
+# The skill and nothing else: SKILL.md and its references, which is what the
+# skill bundle carries too. Its evals used to sit in the same tree and rode
+# into the wheel on broader globs (issue #190); they are development tooling
+# and now live with the clean room in .claude/skills/.
+"keyhac" = ["skills/*/SKILL.md", "skills/*/references/*.md"]
+
+[tool.setuptools.exclude-package-data]
+# Addressed to whoever works on Keyhac (why three references are copied in at
+# bundle time), not to a reader of the skill - the bundle leaves it out too.
+"keyhac" = ["skills/*/references/README.md"]
 
 [tool.setuptools.dynamic]
 version = { attr = "keyhac.__version__" }

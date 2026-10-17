@@ -89,8 +89,9 @@ help:
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make banner      - render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
-	@echo "  make cleanroom CASE=n    - clean-room test that bundle: build a room, drive it,"
-	@echo "                             audit the transcript and score it (TASK=\"...\" for your own)"
+	@echo "  make cleanroom           - clean-room test that bundle: every case in a room of its"
+	@echo "                             own, driven, audited and checked (CASE=n for one,"
+	@echo "                             TASK=\"...\" for your own)"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -239,18 +240,21 @@ icons-check: $(VENV_STAMP)
 skill-bundle: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/build_skill_bundle.py
 
-# Clean-room test: does the *bundle* teach an action, with no repository behind
+# Clean-room test: does the *bundle* teach the job, with no repository behind
 # it? Rebuilds the bundle first, because a room built from a stale one reports
 # an older skill's gaps as though they were this one's.
 #
-#   make cleanroom CASE=1                      one of evals/cases.md
+#   make cleanroom                             every case that needs no screen of yours
+#   make cleanroom CASE=3                      one case from cases/
 #   make cleanroom TASK="Save every tab ..."   a job of your own
+#   make cleanroom ARGS=--list                 the cases, and what each needs
 #   make cleanroom CASE=1 ARGS=--dry-run       build it, drive it yourself
+#   make cleanroom ARGS=--restore              put back a config.py a run could not
 #
 # Rooms are built in cleanroom/ (gitignored) and driven with --restricted, which
 # is what keeps this repository's CLAUDE.md and skills out of a session running
-# inside it. The room screen has to be up for a TASK of your own; CASE opens its
-# fixture.
+# inside it. A fixture stands in for ~/.keyhac/config.py during each room. The
+# screen has to be up for a TASK of your own; a CASE opens its fixture.
 CLEANROOM := .claude/skills/keyhac-skill-cleanroom/scripts/run_room.py
 cleanroom: skill-bundle
 ifdef CASE
@@ -258,7 +262,7 @@ ifdef CASE
 else ifdef TASK
 	$(VENV_PYTHON) $(CLEANROOM) --task "$(TASK)" $(ARGS)
 else
-	@echo "make cleanroom CASE=<1-10>  or  make cleanroom TASK=\"...\""; exit 2
+	$(VENV_PYTHON) $(CLEANROOM) $(ARGS)
 endif
 
 api-reference: $(VENV_STAMP)

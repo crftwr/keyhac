@@ -66,12 +66,13 @@ GENERATED = {
     ],
 }
 
-#: Not shipped to the model: evals are for this repo's CI, and the fixture is a
-#: deliberately-wrong action that has no business in a skill's context.  A
-#: README.md is addressed to whoever is working on Keyhac - the one under
-#: references/ explains why three references are missing from the source tree,
-#: which is a question the model will never have.
-EXCLUDE = {"evals", "README.md"}
+#: Not shipped to the model: a README.md is addressed to whoever is working on
+#: Keyhac - the one under references/ explains why three references are
+#: missing from the source tree, which is a question the model will never
+#: have.  (The evals used to be excluded here too; they moved out of the skill
+#: tree to the clean room in issue #190, so the folder is the skill and no
+#: more.)
+EXCLUDE = {"README.md"}
 
 STAMP = (f"\n\n---\n\nPackaged from Keyhac {keyhac.__version__}. This skill "
          f"describes that version's API; re-upload it after upgrading Keyhac.\n")
@@ -122,7 +123,7 @@ def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
             # SKILL.md file", and a nested one is a coin flip on how strictly
             # that is read. references/ keeps its relative position either way,
             # which is all SKILL.md's links need.
-            name = str(path.relative_to(skill))
+            name = path.relative_to(skill).as_posix()
             if path.suffix in TEXT_SUFFIXES:
                 text = path.read_text(encoding="utf-8").replace(
                     VERSION_TOKEN, keyhac.__version__)

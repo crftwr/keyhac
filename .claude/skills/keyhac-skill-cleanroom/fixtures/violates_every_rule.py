@@ -2,7 +2,7 @@
 
 Every problem below is one that was actually shipped at some point while the
 examples were being written; this file is the regression fixture for
-evals/check.py.  It is never executed.
+scripts/check.py.  It is never executed.
 """
 
 import time

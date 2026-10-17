@@ -2,6 +2,7 @@
 
     python .claude/skills/keyhac-skill-cleanroom/scripts/open_room.py \
         --task "Save every tab of the front Chrome window as a PDF."
+    python .claude/skills/keyhac-skill-cleanroom/scripts/open_room.py --case 3
 
 Prints the room's path and the sentence to hand the fresh session. Every step
 is here rather than in prose because the one that used to be prose - "copy the
@@ -11,14 +12,12 @@ rules in verbatim" - is the only step a transcription error can quietly ruin.
 import argparse
 import datetime
 import pathlib
-import re
 import shutil
 import sys
 import zipfile
 
 SKILL = pathlib.Path(__file__).resolve().parents[1]
 ROOT = SKILL.parents[2]
-CASES = ROOT / "keyhac" / "skills" / "keyhac" / "evals" / "cases.md"
 
 #: Rooms live in the checkout, gitignored, where the rest of the work is. Not a
 #: temp directory - the first room built was in /var/folders/9k/kmx0.../T/ and
@@ -108,45 +107,15 @@ def _refuse_a_room_that_is_neither(room: pathlib.Path) -> None:
             f"{ROOMS}/ or somewhere outside the checkout.")
 
 
-#: Cases written as a continuation of another, as data rather than inferred
-#: from the wording. Case 2 opens "Same as above" and case 9 "Do the same
-#: against Slack": read alone in a room, both point at a task that is not in
-#: it. The first real case-2 room said so in its second sentence - "TASK.md
-#: references 'same as above' - I need to find the prior task" - and went
-#: looking for the previous room, which the confinement refused. It would have
-#: measured what the room could guess about the missing half rather than what
-#: the case is about.
-CONTINUES = {2: 1, 3: 5, 9: 8}
+def build_room(task: str, room: str | pathlib.Path | None = None) -> pathlib.Path:
+    """The bundle, the rules, the task, and nothing else.
 
-
-def case_prompt(number: int) -> str:
-    """Case `number`'s prompt from cases.md - the quote, and nothing after it.
-
-    Typing the task by hand is where the scoring key leaks: the "must" list
-    sits directly under the prompt, and a copy-paste that takes one line too
-    many hands the room the answers and produces a run that looks excellent.
-    Lifting only the block quote makes that mistake unavailable.
+    The task is a case's PROMPT and nothing after it: the MUST list sits in
+    the same module and is the scoring key, so it never reaches TASK.md. Each
+    prompt stands on its own - the old cases.md had three that only made
+    sense after another ("same as above"), and a room handed one of those
+    spent its run looking for the half it was not given (issue #190).
     """
-    section = re.search(rf"^### {number}\..*?\n((?:>.*\n)+)", CASES.read_text(),
-                        re.MULTILINE)
-    if not section:
-        raise SystemExit(f"no case {number} in {CASES}")
-    quoted = " ".join(line.lstrip("> ").strip()
-                      for line in section.group(1).splitlines())
-    quoted = quoted.strip().strip('"')
-    if previous := CONTINUES.get(number):
-        # Put the task it continues in front of it, which is where "above" was
-        # pointing all along - as its own paragraph, so that "above" is
-        # literally true. Joined into one paragraph it still read as a quote
-        # from somewhere else, and case 2's room said so: "as if quoting an
-        # earlier instruction that is not in the room". It cost nothing and it
-        # is one line to stop costing anything.
-        return f"{case_prompt(previous)}\n\n{quoted}"
-    return quoted
-
-
-def build_room(task: str, room: str | None = None) -> pathlib.Path:
-    """The bundle, the rules, the task, and nothing else."""
     sys.path.insert(0, str(ROOT))
     import keyhac
 
@@ -155,40 +124,46 @@ def build_room(task: str, room: str | None = None) -> pathlib.Path:
     built = (pathlib.Path(room).expanduser().resolve() if room
              else ROOMS / f"{keyhac.__version__}-{stamp}")
     _refuse_a_room_that_is_neither(built)
+    if built.exists() and any(built.iterdir()):
+        raise SystemExit(f"{built} is not empty - a room starts with nothing in it")
     built.mkdir(parents=True, exist_ok=True)
 
     for bundle, name in zip(bundles, BUNDLES):
         with zipfile.ZipFile(bundle) as archive:
             archive.extractall(built / "skills" / name)
-    (built / "CLAUDE.md").write_text(CANARY)
+    (built / "CLAUDE.md").write_text(CANARY, encoding="utf-8")
     shutil.copy2(SKILL / "room" / "RULES.md", built / "RULES.md")
-    (built / "TASK.md").write_text(f"# The task\n\n{task.strip()}\n")
+    (built / "TASK.md").write_text(f"# The task\n\n{task.strip()}\n", encoding="utf-8")
     (built / "QUESTIONS.md").write_text(
         "# What the skill did not tell me\n\n"
         "One section per thing you had to guess. Empty means the run measured "
-        "nothing - see RULES.md.\n")
+        "nothing - see RULES.md.\n", encoding="utf-8")
     return built
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--case", type=int,
-                        help="an eval case number; its prompt is lifted from "
-                             "cases.md and its 'must' list is not")
+    source.add_argument("--case",
+                        help="a case under cases/, by number or name; its "
+                             "PROMPT goes in and its MUST list does not")
     source.add_argument("--task",
                         help="the prompt, intent only - no API names, and "
-                             "never the case's 'must' list, which is the "
-                             "scoring key")
+                             "never a case's MUST list, which is the scoring "
+                             "key")
     parser.add_argument("--room",
                         help=f"where to build it; under {ROOMS}/ by default")
     args = parser.parse_args()
 
-    task = case_prompt(args.case) if args.case else args.task
+    if args.case:
+        from outcome import load_cases
+        task = load_cases([args.case])[0].PROMPT
+    else:
+        task = args.task
     room = build_room(task, args.room)
 
     print(f"room:    {room}")
-    print(f"task:    {task}")
+    print(f"task:    {task.strip()}")
     print(f"skills:  {', '.join(BUNDLES)} "
           f"({len(list((room / 'skills').rglob('*')))} files)")
     print()
@@ -211,9 +186,11 @@ def main() -> int:
     print("Answer nothing it asks: a question you answer is a finding you have")
     print("destroyed.")
     print()
-    print("`make cleanroom CASE=n` does all of this and the driving too, and")
-    print("cannot be asked a question in the first place. This entry point is")
-    print("for the run you want to watch by hand.")
+    print("Nothing here swaps your config.py for the fixture, opens the case's")
+    print("screen or collects what the room makes - and a key-table case would")
+    print("edit your real config.py. `make cleanroom CASE=n` does all of that and")
+    print("the driving too, and cannot be asked a question in the first place.")
+    print("This entry point is for the run you want to watch by hand.")
     return 0
 
 

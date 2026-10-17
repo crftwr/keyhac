@@ -39,9 +39,20 @@ that and are easy to get wrong: the operator must not answer questions during
 the run (an answered question is a destroyed finding), and the case's "must"
 list stays out of the room, because it is the scoring key.
 
-Scoring is `evals/check.py` for the mechanical rules and the case's "must" list
-for judgement, and `evals/cases.md`'s rule stands: a "must" missed is a skill
-defect, not a model defect.
+The cases live with the procedure, in `cases/` — one module each, holding the
+prompt a user would type, the MUST list a person scores, and a `check()` that
+judges what the run produced: a `config.py` loaded by Keyhac's own engine and
+keys pressed through the fake hook, the fixture page's own record of what was
+submitted or approved, and what Keyhac's tools answered. They moved out of the
+shipped skill tree in issue #190 (the wheel had been carrying them by
+accident), and the checks were added in issue #193. `make cleanroom` runs every
+case in order; `tests/test_skill_cleanroom.py` runs every check against a run
+that did nothing (it must fail) and against a reference outcome (it must pass),
+on both platforms, so a broken check costs a test run rather than a room.
+
+`scripts/check.py` holds the rules every action shares, and stays advisory in a
+room's score. The rule from the old cases file stands: a MUST missed is a
+skill defect, not a model defect.
 
 ## Cross-cutting patterns
 

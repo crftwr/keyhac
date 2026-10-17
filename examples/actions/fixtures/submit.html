@@ -18,25 +18,41 @@
   <ul id="accepted"></ul>
   <script>
     const $ = id => document.getElementById(id);
+    // What happened on this screen, told to the clean room's server so a
+    // case's check reads the record rather than the room's account of it
+    // (issue #193). Opened from file://, as the examples are, there is no
+    // server and the request fails quietly - nothing on the page changes.
+    const report = (what, detail) => {
+      try {
+        fetch('event', {method: 'POST', body: JSON.stringify(
+          Object.assign({page: location.pathname.split('/').pop(), what}, detail))})
+          .catch(() => {});
+      } catch (e) {}
+    };
     const seen = new Set();
     $('submit').onclick = () => {
       const ref = $('ref').value.trim();
       const amount = $('amount').value.trim();
+      const answer = text => {
+        $('result').textContent = text;
+        report('submit', {ref, title: $('title').value, amount,
+                          urgent: $('urgent').checked, answer: text});
+      };
       // Server-side validation, the kind an action has to read back. Every
       // answer names the record it is about: the line is rewritten in place,
       // so two rows refused for the same reason would otherwise leave an
       // action reading the previous row's answer as this one's.
-      if (!ref) { $('result').textContent = "error: Reference is required"; return; }
+      if (!ref) { answer("error: Reference is required"); return; }
       if (!/^\d+$/.test(amount)) {
-        $('result').textContent = "error: " + ref + ": Amount must be a number"; return; }
+        answer("error: " + ref + ": Amount must be a number"); return; }
       if (seen.has(ref)) {
-        $('result').textContent = "error: " + ref + ": already submitted"; return; }
+        answer("error: " + ref + ": already submitted"); return; }
       seen.add(ref);
       const li = document.createElement('li');
       li.textContent = ref + " | " + $('title').value + " | " + amount +
                        ($('urgent').checked ? " | URGENT" : "");
       $('accepted').appendChild(li);
-      $('result').textContent = "accepted " + ref;
+      answer("accepted " + ref);
       ['ref','title','amount'].forEach(i => $(i).value = "");
       $('urgent').checked = false;
     };
