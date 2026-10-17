@@ -989,6 +989,15 @@ def test_describe_keymap_names_the_running_version(registry):
         f"Keyhac {keyhac.__version__}"
 
 
+def test_get_focus_names_the_running_version(registry):
+    """Issue #191: the cheapest call the skill makes carries it."""
+    assert registry.call("get_focus", {}).splitlines()[-1] == \
+        f"keyhac: {keyhac.__version__}"
+    registry.keymap.focus = None
+    said = registry.call("get_focus", {})
+    assert said.startswith("nothing focused") and keyhac.__version__ in said
+
+
 def test_get_focus_reads_the_focus_rather_than_the_snapshot(registry):
     """Issue #196: after a reload the snapshot is empty until a key event,
     and an agent cannot press one."""

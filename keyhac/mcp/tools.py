@@ -582,7 +582,8 @@ class ToolRegistry:
             Tool("get_focus",
                  "What currently has keyboard focus: application, window "
                  "title, and the focus path. Cheap, and usually tells you "
-                 "which window the operator means.",
+                 "which window the operator means. Its last line is the "
+                 "running Keyhac's version.",
                  {"type": "object", "properties": {}},
                  self.get_focus,
                  READ_ONLY),
@@ -929,7 +930,10 @@ class ToolRegistry:
                     f"window: {focus.window_title}\n"
                     f"path: {focus.path}")
 
-        return self.ui.on_main_thread(read) or "nothing focused"
+        # The version closes it because this is the cheapest call either of
+        # the skill's jobs makes, and the skill checks it here (issue #191).
+        focused = self.ui.on_main_thread(read) or "nothing focused"
+        return f"{focused}\nkeyhac: {keyhac.__version__}"
 
     def _container(self, window, within) -> tuple:
         """The one element `within` selects, and the line that places it.

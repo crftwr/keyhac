@@ -72,7 +72,10 @@ GENERATED = {
 #: have.  (The evals used to be excluded here too; they moved out of the skill
 #: tree to the clean room in issue #190, so the folder is the skill and no
 #: more.)
-EXCLUDE = {"README.md"}
+#: `__pycache__` because a folder that ever held Python leaves one behind
+#: untracked: the evals' bytecode outlived their move and shipped in every
+#: bundle since, the scoring rules of the clean room included.
+EXCLUDE = {"README.md", "__pycache__"}
 
 STAMP = (f"\n\n---\n\nPackaged from Keyhac {keyhac.__version__}. This skill "
          f"describes that version's API; re-upload it after upgrading Keyhac.\n")
@@ -116,7 +119,8 @@ def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
     problems = []
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(skill.rglob("*")):
-            if path.is_dir() or any(part in EXCLUDE for part in path.parts):
+            if path.is_dir() or path.suffix == ".pyc" \
+                    or any(part in EXCLUDE for part in path.parts):
                 continue
             # SKILL.md at the zip root, not nested under a folder: the
             # uploader's stated requirement is that the archive "must contain a

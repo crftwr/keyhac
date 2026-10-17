@@ -40,14 +40,19 @@ what you did not.
 
 1. **`read_config`** — always, before proposing any change. `write_config`
    replaces the whole file.
-2. **`describe_keymap`** — what exists, and the live focus path. If the user
-   said "only in VS Code", the focus path they need is in here; ask them to
-   focus the window first and call it again.
+2. **`describe_keymap`** — what exists, and the live focus: its `focus now:`
+   line names the application in front exactly as `app=` matches it. If the
+   user said "only in VS Code" and something else is in front, ask them to
+   focus VS Code and call it again — or read the name off `list_windows`,
+   whose application column is the same value.
 3. **`write_config`** — the complete file, with your change in it.
-4. **`reload_config`** — applies it, and hands back the error if the file no
-   longer loads. **Read what it returns**; a config that failed to load leaves
-   the previous one running, so nothing appears to happen.
-5. **`describe_keymap`** again — confirm the binding is where you meant it.
+4. **`reload_config`** — applies it. Its first line is the verdict: `loaded`,
+   or `FAILED to load` with the traceback under it. A config that failed
+   leaves the previous key tables running, so nothing appears to happen —
+   fix it and reload until it says `loaded`.
+5. **`describe_keymap`** again — confirm the binding is where you meant it,
+   and that its table is marked `*` (active) for the window in front, or
+   not, as you intended.
 6. **Ask the user to press the key**, naming it and what should happen.
 
 ## Editing someone's config.py
@@ -59,8 +64,10 @@ rather than a style preference:
   the rest byte-for-byte. Do not reorder, do not reformat, do not "tidy".
 - **Keep their comments**, including the ones you think are obsolete. They are
   notes to themselves.
-- **Keep their idiom.** If they use `LEADER` and `MOD` constants, use them; if
-  they spell things out, spell them out. Match the file, not your preference.
+- **Keep their idiom.** If they have portability constants — the template's
+  `MOD1` / `MOD2`, or names of their own — use them; if they spell things
+  out, spell them out. If they already have a condition you need (the
+  template's `is_terminal`), reuse it. Match the file, not your preference.
 - **Put it where it belongs** — a new binding goes in the section that already
   holds bindings like it, not at the end of the file.
 - **Say what you changed** in your reply, in terms of lines, so they can look
@@ -99,12 +106,38 @@ Both are in `references/configuration.md` in full; they are here because they
 produce bindings that are *silently* dead.
 
 - **A modifier no key produces never fires.** `Cmd-` and `Fn-` on Windows,
-  `Win-` on macOS. A config that runs on both machines has to branch on
-  `keymap.platform` or use the `LEADER` / `MOD` constants the template sets up.
+  `Win-` on macOS. A config that runs on both machines has to pick the
+  modifier per platform: if the config defines constants for it (the
+  template's `MOD1` / `MOD2`), use them; otherwise branch on
+  `keymap.platform`.
 - **macOS Fn-arrow.** Apple keyboards turn `Fn-Left/Right/Up/Down` into
   `Home`/`End`/`PageUp`/`PageDown` **in hardware**, so a `Fn-…-Left` binding can
   never fire. Bind `Fn-…-Home` instead. This one looks like a Keyhac bug and is
   not.
+
+## The common shapes, in the guide
+
+`references/configuration.md` has each of these with an example. They are
+the requests that come up most, and each has one spelling that is right and
+several that look right:
+
+- **"Make this key do nothing"** — `kt["F1"] = lambda: None`, in a table
+  scoped to the application. `None` is *not* that: it passes the key through.
+  (Assignments, "Making a key do nothing".)
+- **"Everywhere except this application"** — a table with
+  `custom_condition_func=lambda focus: not is_terminal(focus)`; there is no
+  negated `app=`. (Key tables, "Everywhere except one application".)
+- **"Give a key back in one application"** — bind it to `None` in a later
+  table. Never to itself: `kt["Ctrl-F"] = "Ctrl-F"` is consumed and re-sent,
+  not passed through.
+- **A multi-stroke prefix** — the second stroke is matched with its
+  modifiers, so Ctrl held through both strokes is `Ctrl-S`, not `S`. The
+  prefix key is taken away for its own use; say so, and offer the prefix
+  pressed twice to get it back. A key a binding sends is never matched
+  against the tables again. (Assignments, "Multi-stroke tables".)
+- **What an application is called** — `Focus.app_name`: the executable
+  without ".exe" on Windows, the localized name on macOS. (Key tables, "What
+  an application is called".)
 
 ## Choosing keys, when the user leaves it open
 
@@ -136,7 +169,7 @@ The line above is the only thing `config.py` needs; nothing else registers it.
 ## When you are done
 
 - [ ] `read_config` before writing, and the change is minimal
-- [ ] `reload_config`'s output read, not assumed
+- [ ] `reload_config` said `loaded` - not assumed
 - [ ] `describe_keymap` confirms the binding is in the table you meant
 - [ ] Nothing later overrides it, or you said so
 - [ ] Platform-conditional where the modifier or key name needs it
