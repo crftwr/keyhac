@@ -874,8 +874,9 @@ def _report(line: str, room: pathlib.Path = pathlib.Path()) -> None:
 #: - a file's contents, a note, a message - is what it said, not where it went.
 AIMED_AT = ("file_path", "path", "notebook_path", "pattern", "command", "glob")
 
-#: An absolute path in either spelling: /Users/... or C:\Users\... (or C:/...).
-_ABSOLUTE = re.compile(r"(?:[A-Za-z]:[\\/]|/)[^\s\"'`;|&)]+")
+#: An absolute path in either spelling: /Users/... or C:\Users\... (or C:/...),
+#: and \Users\... - rooted on the current drive, which Windows accepts too.
+_ABSOLUTE = re.compile(r"(?:[A-Za-z]:[\\/]|[\\/])[^\s\"'`;|&)]+")
 
 
 def _norm(path: str) -> str:

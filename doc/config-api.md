@@ -109,12 +109,17 @@ Thread-safe. Keyhac's own API does not need it from a worker - elements, windows
 ### <kbd>method</kbd> `Keymap.configure`
 
 ```python
-configure() → None
+configure() → bool
 ```
 
 Load (or reload) the configuration file and rebuild the keymap. 
 
 A configuration that fails to load leaves the previous keymap active and reports the traceback to the console. 
+
+
+
+**Returns:**
+  True when the configuration loaded, False when it failed and the  previous keymap was kept. 
 
 ---
 

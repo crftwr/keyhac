@@ -1,6 +1,13 @@
 """Keymap engine behavior, driven through FakeInputHook."""
 
+import pathlib
+
+import pytest
+
+from keyhac.core.keymap import Keymap
+from keyhac.core.vk import get_key_names
 from keyhac.platform.base import Focus
+from keyhac.platform.fake import FakeFocusProvider, FakeInputHook
 
 
 class TestKeyToKey:
@@ -755,7 +762,11 @@ class TestEditConfig:
     def test_reload_resets_editor_to_default(self, engine):
         e = engine(lambda keymap: None)
         e.keymap.editor = "CotEditor"
-        e.keymap.configure()
+        # A config that loads: the fixture's own needs _test_configure put
+        # into its namespace, and a failed reload keeps the previous editor.
+        pathlib.Path(e.keymap._config_path).write_text(
+            "def configure(keymap):\n    pass\n")
+        assert e.keymap.configure() is True
         assert e.keymap.editor == ""
 
     def test_reload_config_is_an_alias_for_configure(self, engine, monkeypatch):
@@ -821,6 +832,75 @@ class TestDescribeKeymap:
     def test_it_stops_at_the_limit_rather_than_running_long(self, engine):
         text = self._focused(engine).describe_keymap(limit=1)
         assert "stopped at limit=1" in text
+
+    def test_it_reads_the_focus_a_reload_emptied(self, engine):
+        """Issue #196: configure() empties the snapshot and only a key event
+        fills it, so right after a reload the report said "unknown" with a
+        window plainly in front - the moment an agent checks its new table."""
+        e = engine(self._config)
+        e.focus_provider.focus = Focus(app_name="Google Chrome", pid=1,
+                                       window_title="w", path="/Chrome/w")
+        assert e.keymap.focus is None
+        text = e.keymap.describe_keymap()
+        assert "focus now: Google Chrome" in text and "  *  chrome" in text
+        assert e.keymap.focus.app_name == "Google Chrome", "the snapshot is filled"
+
+    def test_a_snapshot_already_there_is_not_read_again(self, engine):
+        """Only the empty snapshot is filled: a read per call would make this
+        report disagree with the tables the hook last merged."""
+        keymap = self._focused(engine, app="Finder")
+        keymap._focus_provider.focus = Focus(app_name="Google Chrome", pid=1,
+                                             window_title="w", path="/x")
+        assert "focus now: Finder" in keymap.describe_keymap()
+
+
+class TestFailedReload:
+    """A configuration that fails to load keeps the previous one's tables.
+
+    The console, installation.md and the reload_config tool all say so, and
+    it was not true: configure() emptied the tables before running the
+    script, so a failed reload left the tables defined above the failing line
+    and dropped the rest, and a syntax error left none at all.
+    """
+
+    def _keymap(self, tmp_path, source):
+        config = tmp_path / "config.py"
+        config.write_text(source)
+        keymap = Keymap(FakeInputHook("ansi"), FakeFocusProvider(), "mac",
+                        config_path=str(config), template_path=str(config))
+        return keymap, config
+
+    GOOD = ("def configure(keymap):\n"
+            "    kt = keymap.define_keytable(focus_path_pattern='*')\n"
+            "    kt['Ctrl-F'] = 'Right'\n"
+            "    kt['Ctrl-B'] = 'Left'\n")
+
+    @pytest.mark.parametrize("broken", [
+        "def configure(keymap):\n"
+        "    kt = keymap.define_keytable(focus_path_pattern='*')\n"
+        "    kt['Ctrl-N'] = 'Down'\n"
+        "    raise RuntimeError('half way')\n",
+        "def configure(keymap:\n",
+    ], ids=["raises-half-way", "does-not-compile"])
+    def test_the_previous_tables_stay_active(self, tmp_path, broken):
+        keymap, config = self._keymap(tmp_path, self.GOOD)
+        assert keymap.configure() is True
+        config.write_text(broken)
+        assert keymap.configure() is False
+        keys = {str(k) for k in keymap._merged_keytable(keymap.read_focus())}
+        assert keys == {"D-Ctrl-F", "D-Ctrl-B"}
+
+    def test_the_tables_are_used_again_by_the_next_key(self, tmp_path):
+        keymap, config = self._keymap(tmp_path, self.GOOD)
+        keymap.configure()
+        hook = keymap._hook
+        hook.install(keymap.on_key_event, keymap.on_hook_restored,
+                     keymap.on_mouse_event)
+        config.write_text("def configure(keymap:\n")
+        keymap.configure()
+        names = get_key_names()
+        hook.key(names.str_to_vk("LCtrl"), True)
+        assert hook.key(names.str_to_vk("F"), True), "Ctrl-F is still bound"
 
 
 class TestActionRepr:

@@ -23,6 +23,7 @@ import urllib.request
 
 import pytest
 
+import keyhac
 import keyhac.core.keymap as keymap_module
 from keyhac.core import capture
 import keyhac.mcp.server as server_module
@@ -104,6 +105,7 @@ class FakeKeymap:
         self.focus = type("F", (), {"app_name": "TestApp", "window_title": "Main",
                                     "path": "/App/Window"})()
         self.reloaded = 0
+        self.loads = True
         self.extensions_dir = extensions_dir
 
         self.config_path = os.path.join(extensions_dir or "", "..", "config.py")
@@ -114,8 +116,17 @@ class FakeKeymap:
     def list_windows(self):
         return [FakeWindow("TestApp", "Main")]
 
+    def read_focus(self):
+        return self.focus
+
     def configure(self):
         self.reloaded += 1
+        logging.getLogger("keyhac.Input").debug("SEND     : U-LShift U-RShift")
+        logging.getLogger("keyhac.Keymap").info("Loading configuration script.")
+        if not self.loads:
+            logging.getLogger("keyhac.Keymap").error(
+                "Loading configuration script failed:\nTraceback ...\nNameError: x")
+        return self.loads
 
 
 @pytest.fixture
@@ -955,6 +966,35 @@ def test_the_tools_stop_waiting_before_the_client_does():
 def test_reload_config_reloads(registry):
     registry.call("reload_config", {})
     assert registry.keymap.reloaded == 1
+
+
+def test_reload_config_leads_with_the_verdict(registry):
+    """Issue #197: success used to be inferred from the absence of an error
+    line, under a DEBUG line that appeared every time."""
+    said = registry.call("reload_config", {})
+    assert said.splitlines()[0] == "loaded"
+    assert "DEBUG" not in said and "Loading configuration script" not in said
+
+    registry.keymap.loads = False
+    said = registry.call("reload_config", {})
+    assert said.splitlines()[0].startswith("FAILED to load")
+    assert "previous key tables are still active" in said.splitlines()[0]
+    assert "NameError: x" in said and "DEBUG" not in said
+
+
+def test_describe_keymap_names_the_running_version(registry):
+    """Issue #191: the skill compares this with the version it was packaged
+    from."""
+    assert registry.call("describe_keymap", {}).splitlines()[0] == \
+        f"Keyhac {keyhac.__version__}"
+
+
+def test_get_focus_reads_the_focus_rather_than_the_snapshot(registry):
+    """Issue #196: after a reload the snapshot is empty until a key event,
+    and an agent cannot press one."""
+    registry.keymap.focus = None
+    registry.keymap.read_focus = lambda: FakeKeymap().focus
+    assert "application: TestApp" in registry.call("get_focus", {})
 
 
 def test_enable_content_access_is_reversible(registry):
@@ -1868,6 +1908,7 @@ def test_the_endpoint_file_is_private_and_complete(server):
     published = json.loads(open(path).read())
     assert published["port"] == server.port
     assert published["token"] == server.token
+    assert published["version"] == keyhac.__version__, "issue #191"
 
 
 def test_the_bridge_path_is_published_when_there_is_one(tmp_path, registry,

@@ -499,7 +499,13 @@ class MCPServer:
         one had it first.
         """
         permissions.ensure_private_dir(os.path.dirname(self.endpoint_path))
-        published = {"port": self.port, "token": self.token, "pid": os.getpid()}
+        from keyhac import __version__
+        # The version for a reader that is not an MCP client - the clean-room
+        # runner, a script - and that would otherwise have to handshake to
+        # learn it (issue #191). An agent gets it from describe_keymap instead,
+        # and never needs to open the file that holds the token.
+        published = {"port": self.port, "token": self.token, "pid": os.getpid(),
+                     "version": __version__}
         # Omitted rather than null when this install generated no console
         # script: a reader can then treat the key's presence as "a stdio client
         # is configurable", with no separate existence check.
