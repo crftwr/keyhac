@@ -144,5 +144,17 @@ def test_the_runs_skip_a_screen_only_you_can_put_up_unless_named():
         (11, ""), (11, "short"), (11, "grown")]
     slack = [c for c in SCENARIOS if c.number == 9]
     assert product.runs(slack, named=True) == [(slack[0], "")]
-    only = run.Keyhac(only_configs=["short"]).runs([c for c in SCENARIOS if c.number == 11])
-    assert [v for _c, v in only] == ["short"]
+    from quality_loop import runner
+    eleven = product.runs([c for c in SCENARIOS if c.number == 11])
+    assert [v for _c, v in runner.pick_variants(product, eleven, ["short"])] == ["short"]
+    assert [v for _c, v in runner.pick_variants(product, eleven, ["template"])] == [""]
+
+
+def test_the_command_line_finds_this_adapter_and_its_scenarios_check():
+    from quality_loop import cli, config
+    settings = config.find(ROOT / "qa")
+    assert settings.root == ROOT and settings.rooms() == (ROOT / "cleanroom").resolve()
+    product = config.load_adapter(settings)
+    assert product.name == "keyhac" and product.default_variant == "template"
+    errors, _warnings = cli.check(product)
+    assert errors == []

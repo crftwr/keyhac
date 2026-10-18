@@ -1,9 +1,16 @@
-"""Keyhac's quality-loop: run the scenarios in qa/scenarios against the skill bundle.
+"""Keyhac's quality-loop adapter: the scenarios in qa/scenarios against the skill bundle.
 
     make qa                          # every scenario that needs no screen of yours
     make qa CASE=11                  # one scenario (repeatable: CASE="11 12")
     make qa CASE=11 CONFIGS=short    # only these fixture configs
-    make qa ARGS=--restore           # put back a config.py a run could not
+    make qa-restore                  # put back a config.py a run could not
+
+`make qa` is `quality-loop run --foreground`; qa/quality-loop.toml names this
+file as the adapter, so `quality-loop run 11 --variant short` (in the
+background), `quality-loop watch`, `quality-loop findings` and the conductor
+skill in .claude/skills/quality-loop all reach it the same way.
+KEYHAC_QA_KEEP=1 leaves what a room wrote in extensions/ as well as
+collecting it.
 
 Each scenario gets a room holding this version's bundle and nothing else, an
 operator agent that puts up its screen and afterwards reports what it finds,
@@ -19,7 +26,6 @@ what a room may reach, the stand-in, the screens and the evidence tools.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import pathlib
@@ -197,6 +203,7 @@ class KeyhacUp:
 class Keyhac(adapter.Adapter):
     name = "keyhac"
     version = keyhac.__version__
+    default_variant = configs.DEFAULT
     checkout = ROOT
     rooms = ROOT / "cleanroom"
     scenarios = HERE / "scenarios"
@@ -220,9 +227,8 @@ class Keyhac(adapter.Adapter):
         "notepad, Terminal / WindowsTerminal, Safari / msedge. Hold every room to "
         f"{HERE / 'scenarios' / '_always.md'} as well as to its scenario.")
 
-    def __init__(self, only_configs: list[str] | None = None, keep: bool = False):
-        self.only_configs = only_configs
-        self.keep = keep
+    def __init__(self, keep: bool | None = None):
+        self.keep = os.environ.get("KEYHAC_QA_KEEP") == "1" if keep is None else keep
         self._foreign: set[str] = set()
 
     def bundle(self) -> pathlib.Path:
@@ -267,8 +273,6 @@ class Keyhac(adapter.Adapter):
                 continue
             variants = case.meta.get("configs", [configs.DEFAULT]) \
                 if case.meta.get("edits_config") else [configs.DEFAULT]
-            if self.only_configs:
-                variants = [v for v in variants if v in self.only_configs]
             found += [(case, "" if v == configs.DEFAULT else v) for v in variants]
         return found
 
@@ -292,31 +296,6 @@ class Keyhac(adapter.Adapter):
                    standin.Watch(KEYHAC_HOME, "keyhac", skip=KEYHAC_OWN)],
             staged=staged, on_change=reload)
 
-
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--case", action="append", help="a scenario by number or name")
-    parser.add_argument("--configs", help="comma-separated fixture configs: "
-                        + ", ".join(configs.DESCRIBED))
-    parser.add_argument("--model", help="model for the rooms")
-    parser.add_argument("--operator-model", help="model for the operators")
-    parser.add_argument("--keep", action="store_true", help="leave what a room wrote "
-                        "in extensions/ as well as collecting it")
-    parser.add_argument("--restore", action="store_true",
-                        help="put back a config.py a run could not")
-    args = parser.parse_args(argv)
-    if args.restore:
-        for line in standin.restore(STAND_IN, KEYHAC_HOME, ["config.py"],
-                                    on_change=lambda: keyhac_call("reload_config")):
-            print(line)
-        return 0
-    names = [n for case in args.case or [] for n in case.split()] or None
-    product = Keyhac(only_configs=args.configs.split(",") if args.configs else None,
-                     keep=args.keep)
-    runner.run(product, names, model=args.model, operator_model=args.operator_model)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    def restore(self) -> list[str]:
+        return standin.restore(STAND_IN, KEYHAC_HOME, ["config.py"],
+                               on_change=lambda: keyhac_call("reload_config"))
