@@ -1,7 +1,7 @@
 +++
 title = "Stop F1 doing anything in VS Code"
 edits_config = true
-configs = ["template", "short", "grown"]
+config = "grown"
 +++
 
 ## Prompt

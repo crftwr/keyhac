@@ -1,7 +1,7 @@
 +++
 title = "Ctrl-X then Ctrl-S saves, Emacs style"
 edits_config = true
-configs = ["template", "short", "grown"]
+config = "template"
 +++
 
 ## Prompt
