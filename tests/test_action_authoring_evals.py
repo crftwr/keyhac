@@ -1,4 +1,4 @@
-"""The authoring skill's mechanical rules (the clean room's scripts/check.py).
+"""The authoring skill's mechanical rules (qa/action_rules.py).
 
 Two directions, because a checker that only ever says "ok" is a rubber stamp:
 the hand-written examples must pass, and a fixture that breaks every rule must
@@ -14,15 +14,15 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SKILL = ROOT / "keyhac/skills/keyhac"
 EXAMPLES = ROOT / "examples/actions"
-#: Where the checker and its fixture live since issue #190 moved them out of
-#: the shipped skill tree.
-CLEANROOM = ROOT / ".claude/skills/keyhac-skill-cleanroom"
+#: Where the checker and its fixture live: out of the shipped skill tree since
+#: issue #190, in qa/ since the clean room moved onto quality-loop (#205).
+QA = ROOT / "qa"
 
 
 @pytest.fixture(scope="module")
 def check():
     spec = importlib.util.spec_from_file_location(
-        "action_evals_check", CLEANROOM / "scripts/check.py")
+        "action_evals_check", QA / "action_rules.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.check
@@ -54,7 +54,7 @@ def test_the_hand_written_actions_follow_the_rules(check, action):
 
 
 def test_every_rule_is_actually_enforced(check):
-    problems = "\n".join(check(CLEANROOM / "fixtures/violates_every_rule.py"))
+    problems = "\n".join(check(QA / "fixtures/violates_every_rule.py"))
     for rule in ("rule 1", "rule 2", "rule 3", "rule 4", "rule 6", "rule 7"):
         assert rule in problems, f"{rule} was not caught"
 

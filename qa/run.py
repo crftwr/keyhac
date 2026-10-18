@@ -269,7 +269,7 @@ class Keyhac(adapter.Adapter):
     python = sys.executable
     evidence = {"keyhac": {
         "argv": [sys.executable, str(HERE / "evidence.py")],
-        "help": "replay | bindings | preserved | calls | events | records | expected"}}
+        "help": "replay | bindings | preserved | calls | events | records | expected | rules"}}
     evidence_help = (
         "`keyhac` is qa/evidence.py. `replay <room> --app Code --keys F1,Fn-F1` loads "
         "the room's config.py in Keyhac's own engine, focuses that application, "
@@ -279,7 +279,9 @@ class Keyhac(adapter.Adapter):
         "`calls` the room's Keyhac tool calls with their answers; `events` the "
         "fixture page's record; `records <room> <file> --expect systema,systemb` a "
         "CSV against the records the screens hold; `expected <screen>` what a "
-        "fixture screen holds. Names on this OS: VS Code is Code, TextEdit / "
+        "fixture screen holds; `rules <room>` the skill's mechanical rules (waits, "
+        "not sleeps; no coordinates; bounded loops; ...) on each action the room "
+        "left. Names on this OS: VS Code is Code, TextEdit / "
         "notepad, Terminal / WindowsTerminal, Safari / msedge. Hold every room to "
         f"{HERE / 'scenarios' / '_always.md'} as well as to its scenario.")
 

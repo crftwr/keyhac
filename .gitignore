@@ -20,8 +20,8 @@ README.pypi.md
 # file, so this would block a release rather than merely add noise.
 .local/
 
-# Clean-room test rooms (make cleanroom). They live in the checkout so
-# they are findable, and are kept out of git because a room is scratch:
-# a bundle copy, a transcript and one action. `git add -f` a room whose
-# QUESTIONS.md is worth keeping.
+# quality-loop's rooms and run records (make qa). They live in the checkout so
+# they are findable, and are kept out of git because a room is scratch: a
+# bundle copy, a transcript, an action, the evidence and the report.
+# `git add -f` a room worth keeping.
 cleanroom/

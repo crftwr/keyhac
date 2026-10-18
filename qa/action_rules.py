@@ -3,18 +3,19 @@
 The rules in the skill that can be read off the source, so a regression in
 the skill shows up as a failing file rather than as a subtly worse action three
 weeks later.  What a particular task needed - did the CSV get every row? - is
-each case's own `check()` in ../cases/; judgement-shaped rules (are the
-preconditions the *right* ones?) are its MUST list, for a person to score.
+a scenario's Must lines in qa/scenarios/; judgement-shaped rules (are the
+preconditions the *right* ones?) are the operator's to judge.
 Everything here is decidable, and the same for every action.
 
-    python .claude/skills/keyhac-skill-cleanroom/scripts/check.py action.py [...]
+    python qa/action_rules.py action.py [...]
 
 Exit status is the number of files with violations.  Calibrated in both
 directions by tests/test_action_authoring_evals.py: examples/actions/*/*.py
-must pass, and ../fixtures/violates_every_rule.py must trip every rule.
+must pass, and qa/fixtures/violates_every_rule.py must trip every rule.
 
-It lives beside the clean room rather than in the skill (issue #190): it is
-development tooling, and nothing in the shipped skill refers to it.
+It lives in qa/ rather than in the skill (issue #190): it is development
+tooling, and nothing in the shipped skill refers to it. The operator of a
+quality-loop room runs it as `rules <room>` through qa/evidence.py.
 """
 
 from __future__ import annotations

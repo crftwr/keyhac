@@ -58,19 +58,23 @@ bindings without that ambiguity.
 
 | Scenario | Surface | Variants | Last run | Open findings | Notes |
 |---|---|---|---|---|---|
-| 01 orders across pages | action, page `systema` | - | | | |
-| 02 merge two systems | action, pages `systema` `systemb` | - | | | |
-| 03 resume submission | action, page `submit-form` | - | | | staged CSV |
-| 04 approve queue | action, page `approval-queue` | - | 2.5.0-20261018-014629 | see that run | |
-| 05 submit CSV, report rejects | action, page `submit-form` | - | | | staged CSV |
-| 06 build error to editor | config, terminal `build-failure` | template short grown | | | |
-| 07 watch deploy | action, terminal `deploy` | - | | | |
-| 08 settings backup | action, page `preferences` | - | | | |
+| 01 orders across pages | action, page `systema` | - | 2.5.0-20261018-203804 | 4 medium, 2 low | |
+| 02 merge two systems | action, pages `systema` `systemb` | - | 2.5.0-20261018-203804 | 2 medium, 1 low | |
+| 03 resume submission | action, page `submit-form` | - | 2.5.0-20261018-203804 | 3 medium | staged CSV |
+| 04 approve queue | action, page `approval-queue` | - | 2.5.0-20261018-203804 | 1 medium, 1 low | |
+| 05 submit CSV, report rejects | action, page `submit-form` | - | 2.5.0-20261018-203804 | 2 medium, 1 low | staged CSV |
+| 06 build error to editor | config, terminal `build-failure` | template short grown | 2.5.0-20261018-203804 | 3 medium, 9 low | |
+| 07 watch deploy | action, terminal `deploy` | - | 2.5.0-20261018-203804 | 1 high, 1 medium, 1 low | |
+| 08 settings backup | action, page `preferences` | - | 2.5.0-20261018-203804 | 1 medium, 2 low | |
 | 09 Slack unread | action, the real Slack app | - | | | needs the person |
 | 10 click badge coordinates | action, any screen | - | | | needs the person |
-| 11 F1 off in VS Code | config | template short grown | 2.5.0-20261018-014629 | see that run | |
-| 12 Emacs cursor keys | config | template short grown | | | |
-| 13 Ctrl-X Ctrl-S | config | template short grown | | | |
+| 11 F1 off in VS Code | config | template short grown | 2.5.0-20261018-203804 | 5 low | |
+| 12 Emacs cursor keys | config | template short grown | 2.5.0-20261018-203804 | 2 high, 4 low | |
+| 13 Ctrl-X Ctrl-S | config | template short grown | 2.5.0-20261018-203804 | 2 high, 3 medium, 2 low | |
 
-Runs before quality-loop 0.2 left no `status.json`; "Last run" is filled in
-from the next run on.
+"Open findings" counts the run's `skill gap` and `product` problems, not yet
+filed (`quality-loop findings` lists them by id). The run also reported
+eight `harness` problems against qa/: the fixture pages record no paging,
+the room's `list_windows` shows the person's own desktop, the deploy screen
+can finish before the room's watcher exists, `replay --platform windows`
+cannot press a User0 key, and actions.md points at examples the rules forbid.

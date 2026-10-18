@@ -75,9 +75,11 @@ declared screens, that every fixture config loads on both platforms, that the
 evidence tools answer correctly on rooms whose outcome is known, and that the
 `quality-loop` command finds this adapter and its scenarios check.
 
-`.claude/skills/keyhac-skill-cleanroom/` is the harness this replaced, with
-Python cases and pass/fail checks. It stays until a full `make qa` run has
-been read, and then it goes.
+`qa/action_rules.py` holds the skill's mechanical rules for an action
+(waits, not sleeps; no coordinates; bounded loops; ...). The operator runs it
+on a room's action as `rules <room>`, and `tests/test_action_authoring_evals.py`
+calibrates it both ways: the hand-written examples pass, and
+`qa/fixtures/violates_every_rule.py` trips every rule.
 
 ## Cross-cutting patterns
 

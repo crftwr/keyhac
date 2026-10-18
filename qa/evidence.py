@@ -233,6 +233,20 @@ def cmd_preserved(args) -> dict:
     }
 
 
+def cmd_rules(args) -> dict:
+    """The skill's mechanical rules (qa/action_rules.py) on every action the
+    room left: what it installed in extensions/, and the copies in the room."""
+    import action_rules
+    room = pathlib.Path(args.room)
+    found = {}
+    for path in sorted([*(_evidence(args.room) / "extensions").glob("*.py"),
+                        *room.glob("*.py")]):
+        found[str(path.relative_to(room))] = action_rules.check(path)
+    return {"actions": found,
+            "note": "none found" if not found else
+                    "an empty list is a file that broke none of the rules"}
+
+
 def cmd_calls(args) -> dict:
     from quality_loop import transcript
     found = []
@@ -354,6 +368,11 @@ def main(argv=None) -> int:
     six.add_argument("file")
     six.add_argument("--expect", required=True, help="systema, systemb, or both, comma-separated")
     six.set_defaults(func=cmd_records)
+    eight = commands.add_parser("rules", help="the skill's mechanical rules (waits not "
+                                "sleeps, no coordinates, bounded loops...) on each action "
+                                "the room left")
+    eight.add_argument("room")
+    eight.set_defaults(func=cmd_rules)
     seven = commands.add_parser("expected", help="what a fixture screen holds")
     seven.add_argument("what", choices=sorted(EXPECTED))
     seven.set_defaults(func=cmd_expected)
