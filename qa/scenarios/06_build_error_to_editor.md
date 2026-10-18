@@ -1,7 +1,7 @@
 +++
 title = "One key from a failed build to the line that broke it"
 edits_config = true
-configs = ["template", "short", "grown"]
+config = "grown"
 +++
 
 ## Prompt

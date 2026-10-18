@@ -140,14 +140,17 @@ def test_the_runs_skip_a_screen_only_you_can_put_up_unless_named():
     product = run.Keyhac()
     everything = product.runs(SCENARIOS)
     assert not [c for c, _v in everything if c.meta.get("needs")]
-    assert [(c.number, v) for c, v in everything if c.number == 11] == [
-        (11, ""), (11, "short"), (11, "grown")]
+    assert len(everything) == len(SCENARIOS) - 2, "one room per scenario"
     slack = [c for c in SCENARIOS if c.number == 9]
     assert product.runs(slack, named=True) == [(slack[0], "")]
-    from quality_loop import runner
-    eleven = product.runs([c for c in SCENARIOS if c.number == 11])
-    assert [v for _c, v in runner.pick_variants(product, eleven, ["short"])] == ["short"]
-    assert [v for _c, v in runner.pick_variants(product, eleven, ["template"])] == [""]
+
+
+def test_each_config_editing_scenario_names_one_config_and_each_config_is_used():
+    named = {c.name: c.meta.get("config", configs.DEFAULT) for c in SCENARIOS
+             if c.meta.get("edits_config")}
+    assert set(named.values()) <= set(configs.DESCRIBED)
+    assert set(named.values()) == set(configs.DESCRIBED), "a fixture config nobody runs"
+    assert not [c for c in SCENARIOS if "configs" in c.meta], "one config per scenario now"
 
 
 def test_the_command_line_finds_this_adapter_and_its_scenarios_check():
@@ -155,7 +158,7 @@ def test_the_command_line_finds_this_adapter_and_its_scenarios_check():
     settings = config.find(ROOT / "qa")
     assert settings.root == ROOT and settings.rooms() == (ROOT / "cleanroom").resolve()
     product = config.load_adapter(settings)
-    assert product.name == "keyhac" and product.default_variant == "template"
+    assert product.name == "keyhac"
     errors, _warnings = cli.check(product)
     assert errors == []
 

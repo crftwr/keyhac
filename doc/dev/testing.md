@@ -37,7 +37,8 @@ design is #205):
 - **Nothing of yours is touched.** The run starts this checkout's Keyhac in
   a home of its own, a temporary directory that is its `HOME`: its
   `~/.keyhac` and `~/Desktop` are the run's, and one of `qa/configs.py`'s
-  fixtures (template, short, grown) is its `config.py`. There is nothing to
+  fixtures (template, short, grown) is its `config.py` - the one the
+  scenario's front matter names (`config = "short"`), the template otherwise. There is nothing to
   put back after a run that died. Your own Keyhac has to be quit for the
   length of a run - two cannot both hold the keyboard - and the run holds its
   single-instance lock so it cannot start halfway.
@@ -56,8 +57,8 @@ Runs are authorized by a person. They cost model time, they swap your
 config.py, and screen scenarios open windows.
 
 ```
-make qa CASE=11 CONFIGS=short          # attached; quit your own Keyhac first
-.venv/bin/quality-loop run 11 --variant short   # the same, in the background
+make qa CASE=11                        # attached; quit your own Keyhac first
+.venv/bin/quality-loop run 11          # the same, in the background
 .venv/bin/quality-loop watch           # follow it: run.log and status.json
 .venv/bin/quality-loop findings        # new / still there / gone / back
 ```

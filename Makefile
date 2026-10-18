@@ -90,8 +90,8 @@ help:
 	@echo "  make banner      - render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
 	@echo "  make qa                  - quality-loop: every scenario in qa/scenarios against the"
-	@echo "                             skill bundle, reported by an operator agent (CASE=n,"
-	@echo "                             CONFIGS=short); quit your own Keyhac first"
+	@echo "                             skill bundle, reported by an operator agent (CASE=n);"
+	@echo "                             quit your own Keyhac first"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -244,7 +244,6 @@ skill-bundle: $(VENV_STAMP)
 #
 #   make qa                          every scenario that needs no screen of yours
 #   make qa CASE=11                  one scenario (CASE="11 12" for several)
-#   make qa CASE=11 CONFIGS=short    only these fixture configs (comma-separated)
 #
 # `quality-loop run --foreground`: qa/quality-loop.toml names qa/run.py as the
 # adapter. Without --foreground a run goes to the background and
@@ -252,9 +251,8 @@ skill-bundle: $(VENV_STAMP)
 # FINDINGS.md beside them is the result. The run's Keyhac lives in a home of
 # its own (a temp directory): your ~/.keyhac is never touched, and your Keyhac
 # has to be quit for the length of a run.
-comma := ,
 qa: $(VENV_STAMP)
-	$(VENV_PYTHON) -m quality_loop run --foreground $(CASE) $(foreach v,$(subst $(comma), ,$(CONFIGS)),--variant $(v)) $(ARGS)
+	$(VENV_PYTHON) -m quality_loop run --foreground $(CASE) $(ARGS)
 
 api-reference: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs

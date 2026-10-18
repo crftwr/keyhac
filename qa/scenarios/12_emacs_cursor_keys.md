@@ -1,7 +1,7 @@
 +++
 title = "Emacs cursor keys everywhere but the terminal"
 edits_config = true
-configs = ["template", "short", "grown"]
+config = "short"
 +++
 
 ## Prompt

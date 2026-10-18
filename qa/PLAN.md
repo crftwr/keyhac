@@ -56,21 +56,25 @@ bindings without that ambiguity.
 
 ## Coverage
 
-| Scenario | Surface | Variants | Last run | Open findings | Notes |
+| Scenario | Surface | Config | Last run | Open findings | Notes |
 |---|---|---|---|---|---|
-| 01 orders across pages | action, page `systema` | - | 2.5.0-20261018-203804 | 4 medium, 2 low | |
-| 02 merge two systems | action, pages `systema` `systemb` | - | 2.5.0-20261018-203804 | 2 medium, 1 low | |
-| 03 resume submission | action, page `submit-form` | - | 2.5.0-20261018-203804 | 3 medium | staged CSV |
-| 04 approve queue | action, page `approval-queue` | - | 2.5.0-20261018-203804 | 1 medium, 1 low | |
-| 05 submit CSV, report rejects | action, page `submit-form` | - | 2.5.0-20261018-203804 | 2 medium, 1 low | staged CSV |
-| 06 build error to editor | config, terminal `build-failure` | template short grown | 2.5.0-20261018-203804 | 3 medium, 9 low | |
-| 07 watch deploy | action, terminal `deploy` | - | 2.5.0-20261018-203804 | 1 high, 1 medium, 1 low | |
-| 08 settings backup | action, page `preferences` | - | 2.5.0-20261018-203804 | 1 medium, 2 low | |
-| 09 Slack unread | action, the real Slack app | - | | | needs the person |
-| 10 click badge coordinates | action, any screen | - | | | needs the person |
-| 11 F1 off in VS Code | config | template short grown | 2.5.0-20261018-203804 | 5 low | |
-| 12 Emacs cursor keys | config | template short grown | 2.5.0-20261018-203804 | 2 high, 4 low | |
-| 13 Ctrl-X Ctrl-S | config | template short grown | 2.5.0-20261018-203804 | 2 high, 3 medium, 2 low | |
+| 01 orders across pages | action, page `systema` | template | 2.5.0-20261018-203804 | 4 medium, 2 low | |
+| 02 merge two systems | action, pages `systema` `systemb` | template | 2.5.0-20261018-203804 | 2 medium, 1 low | |
+| 03 resume submission | action, page `submit-form` | template | 2.5.0-20261018-203804 | 3 medium | staged CSV |
+| 04 approve queue | action, page `approval-queue` | template | 2.5.0-20261018-203804 | 1 medium, 1 low | |
+| 05 submit CSV, report rejects | action, page `submit-form` | template | 2.5.0-20261018-203804 | 2 medium, 1 low | staged CSV |
+| 06 build error to editor | config, terminal `build-failure` | grown | 2.5.0-20261018-203804 | 3 medium, 9 low | |
+| 07 watch deploy | action, terminal `deploy` | template | 2.5.0-20261018-203804 | 1 high, 1 medium, 1 low | |
+| 08 settings backup | action, page `preferences` | template | 2.5.0-20261018-203804 | 1 medium, 2 low | |
+| 09 Slack unread | action, the real Slack app | template | | | needs the person |
+| 10 click badge coordinates | action, any screen | template | | | needs the person |
+| 11 F1 off in VS Code | config | grown | 2.5.0-20261018-203804 | 5 low | |
+| 12 Emacs cursor keys | config | short | 2.5.0-20261018-203804 | 2 high, 4 low | |
+| 13 Ctrl-X Ctrl-S | config | template | 2.5.0-20261018-203804 | 2 high, 3 medium, 2 low | |
+
+Each scenario runs on one fixture config, the one its front matter names;
+every config is some scenario's. The run recorded here ran 06 and 11-13 on
+all three, which is where their findings came from.
 
 "Open findings" counts the run's `skill gap` and `product` problems, not yet
 filed (`quality-loop findings` lists them by id). The run also reported

@@ -2,11 +2,9 @@
 
     make qa                          # every scenario that needs no screen of yours
     make qa CASE=11                  # one scenario (repeatable: CASE="11 12")
-    make qa CASE=11 CONFIGS=short    # only these fixture configs
 
 `make qa` is `quality-loop run --foreground`; qa/quality-loop.toml names this
-file as the adapter, so `quality-loop run 11 --variant short` (in the
-background), `quality-loop watch`, `quality-loop findings` and the conductor
+file as the adapter, so `quality-loop run 11` (in the background), `quality-loop watch`, `quality-loop findings` and the conductor
 skill in .claude/skills/quality-loop all reach it the same way.
 
 Each scenario gets a room holding this version's bundle and nothing else, an
@@ -259,7 +257,6 @@ class KeyhacUp:
 class Keyhac(adapter.Adapter):
     name = "keyhac"
     version = keyhac.__version__
-    default_variant = configs.DEFAULT
     checkout = ROOT
     rooms = ROOT / "cleanroom"
     scenarios = HERE / "scenarios"
@@ -336,15 +333,18 @@ class Keyhac(adapter.Adapter):
         return endpoint(self.home) is not None
 
     def runs(self, cases, named=False):
+        """One room per scenario, on the config its front matter names
+        (`config = "short"`; the template when it names none). Each of the
+        three fixture configs is some scenario's: running every scenario on
+        all three made a full run 19 rooms, most of them finding the same
+        problems again."""
         found = []
         for case in cases:
             needs = case.meta.get("needs")
             if needs and not named:
                 print(f"  skipped: {case.name} - needs {needs}; name it with CASE=")
                 continue
-            variants = case.meta.get("configs", [configs.DEFAULT]) \
-                if case.meta.get("edits_config") else [configs.DEFAULT]
-            found += [(case, "" if v == configs.DEFAULT else v) for v in variants]
+            found.append((case, ""))
         return found
 
     def stand_in(self, case, variant, room):
@@ -363,7 +363,7 @@ class Keyhac(adapter.Adapter):
         # next inside the run's home, and collects what the room made.
         return standin.StandIn(
             home=home.keyhac, marker=home.stand_in,
-            fixtures={"config.py": configs.config(variant or configs.DEFAULT)},
+            fixtures={"config.py": configs.config(case.meta.get("config", configs.DEFAULT))},
             evidence=room / "evidence", backups="config.py.bak-*",
             watch=[standin.Watch(home.extensions, "extensions"),
                    standin.Watch(home.desktop, "desktop"),
