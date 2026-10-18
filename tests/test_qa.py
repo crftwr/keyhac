@@ -158,3 +158,22 @@ def test_the_command_line_finds_this_adapter_and_its_scenarios_check():
     assert product.name == "keyhac" and product.default_variant == "template"
     errors, _warnings = cli.check(product)
     assert errors == []
+
+
+def test_a_run_s_home_is_its_own_and_only_made_when_a_run_needs_it():
+    run = _run_module()
+    product = run.Keyhac()
+    product.runs(SCENARIOS)
+    assert product._home is None, "listing or checking scenarios makes no home"
+    try:
+        home = product.home
+        assert pathlib.Path.home() not in home.root.parents
+        assert ROOT not in home.root.parents, "a room must not reach the checkout"
+        rules = product.rules()
+        assert str(home.extensions) in rules and str(home.desktop) in rules
+        assert "{" not in rules
+        assert home.environment()["HOME"] == str(home.root)
+        stand_in = product.stand_in(SCENARIOS[10], "short", home.root / "room")
+        assert stand_in.home == home.keyhac and stand_in.marker == home.stand_in
+    finally:
+        product.home.remove()

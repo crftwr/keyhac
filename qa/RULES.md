@@ -4,12 +4,19 @@ You are doing the task in TASK.md using **only** the skill in `./skills`.
 Read its `SKILL.md`, then the references it sends you to for this task. Its
 `references/` are the whole of what you know.
 
+**Where things are.** On this machine, for this task, the user's home
+directory is `{home}`. Keyhac runs with that home, so `~` in an action means
+it too: their Keyhac folder is `{home}/.keyhac`, their actions go in
+`{extensions}`, and their Desktop is `{desktop}`. Use those full paths with
+your file tools - `~` there means a different directory, which you may not
+read.
+
 **Allowed**
 - Everything under `./skills`.
 - Keyhac's MCP tools, if the endpoint is connected. That is the product's
   public interface, not inside information — reading the screen with it is
   what the skill tells you to do.
-- Writing your action to `~/.keyhac/extensions/`, running it, reading its
+- Writing your action to `{extensions}`, running it, reading its
   result and its logs.
 - Reading and changing `config.py` through Keyhac's own tools, when the task
   calls for it. It is the operator's file; treat it that way.
@@ -20,7 +27,7 @@ Read its `SKILL.md`, then the references it sends you to for this task. Its
 - The installed `keyhac` package's source. Do not read the module you are
   importing, and do not use `help()`, `inspect`, or the REPL to list a
   signature the references do not give.
-- Other actions already in `~/.keyhac/extensions/`. They were written by
+- Other actions already in `{extensions}`. They were written by
   somebody who had the repository.
 - Asking the operator. They know the answer, which is exactly why asking
   destroys the measurement. The skill will tell you to ask - for a screen that

@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check skill-bundle cleanroom qa qa-restore \
+        api-reference api-reference-check skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -89,13 +89,9 @@ help:
 	@echo "  make icons-check - verify the committed icon assets match the SVG masters"
 	@echo "  make banner      - render doc/images/banner.svg to the GitHub Pages JPEGs (needs Chrome)"
 	@echo "  make skill-bundle        - package the authoring skill for Claude Desktop upload"
-	@echo "  make cleanroom           - clean-room test that bundle: every case in a room of its"
-	@echo "                             own, driven, audited and checked (CASE=n for one,"
-	@echo "                             TASK=\"...\" for your own, FIXTURE=short|grown|all"
-	@echo "                             for the config a key-table case finds)"
 	@echo "  make qa                  - quality-loop: every scenario in qa/scenarios against the"
 	@echo "                             skill bundle, reported by an operator agent (CASE=n,"
-	@echo "                             CONFIGS=short); make qa-restore after a run that died"
+	@echo "                             CONFIGS=short); quit your own Keyhac first"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -244,51 +240,21 @@ icons-check: $(VENV_STAMP)
 skill-bundle: $(VENV_STAMP)
 	$(VENV_PYTHON) tools/build_skill_bundle.py
 
-# Clean-room test: does the *bundle* teach the job, with no repository behind
-# it? Rebuilds the bundle first, because a room built from a stale one reports
-# an older skill's gaps as though they were this one's.
-#
-#   make cleanroom                             every case that needs no screen of yours
-#   make cleanroom CASE=3                      one case from cases/
-#   make cleanroom TASK="Save every tab ..."   a job of your own
-#   make cleanroom ARGS=--list                 the cases, and what each needs
-#   make cleanroom FIXTURE=all                 key-table cases on every fixture config
-#   make cleanroom CASE=1 ARGS=--dry-run       build it, drive it yourself
-#   make cleanroom ARGS=--restore              put back a config.py a run could not
-#
-# Rooms are built in cleanroom/ (gitignored) and driven with --restricted, which
-# is what keeps this repository's CLAUDE.md and skills out of a session running
-# inside it. Keyhac is started (MCP on, no timeout) if none is running, and quit
-# afterwards; a fixture stands in for ~/.keyhac/config.py during each room. The
-# screen has to be up for a TASK of your own; a CASE opens its fixture.
-CLEANROOM := .claude/skills/keyhac-skill-cleanroom/scripts/run_room.py
-CLEANROOM_FIXTURE := $(if $(FIXTURE),--fixture $(FIXTURE))
-cleanroom: skill-bundle
-ifdef CASE
-	$(VENV_PYTHON) $(CLEANROOM) --case $(CASE) $(CLEANROOM_FIXTURE) $(ARGS)
-else ifdef TASK
-	$(VENV_PYTHON) $(CLEANROOM) --task "$(TASK)" $(CLEANROOM_FIXTURE) $(ARGS)
-else
-	$(VENV_PYTHON) $(CLEANROOM) $(CLEANROOM_FIXTURE) $(ARGS)
-endif
-
 # --- quality-loop: the scenarios in qa/, run against the skill bundle ---------------
 #
 #   make qa                          every scenario that needs no screen of yours
 #   make qa CASE=11                  one scenario (CASE="11 12" for several)
 #   make qa CASE=11 CONFIGS=short    only these fixture configs (comma-separated)
-#   make qa-restore                  put back a config.py a run could not
 #
 # `quality-loop run --foreground`: qa/quality-loop.toml names qa/run.py as the
 # adapter. Without --foreground a run goes to the background and
 # `quality-loop watch` follows it. Rooms are built in cleanroom/ (gitignored);
-# FINDINGS.md beside them is the result.
+# FINDINGS.md beside them is the result. The run's Keyhac lives in a home of
+# its own (a temp directory): your ~/.keyhac is never touched, and your Keyhac
+# has to be quit for the length of a run.
 comma := ,
 qa: $(VENV_STAMP)
 	$(VENV_PYTHON) -m quality_loop run --foreground $(CASE) $(foreach v,$(subst $(comma), ,$(CONFIGS)),--variant $(v)) $(ARGS)
-
-qa-restore: $(VENV_STAMP)
-	$(VENV_PYTHON) -m quality_loop restore
 
 api-reference: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
