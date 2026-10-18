@@ -1,0 +1,11 @@
+# quality-loop's settings for this product. See `quality-loop --help`.
+
+# The installation the conductor runs.
+command = ".venv/bin/quality-loop"
+command_windows = ".venv/Scripts/quality-loop.exe"
+
+# The adapter: a file, and optionally its class (qa/run.py:Product).
+adapter = "qa/run.py:Keyhac"
+
+# Where runs are kept. Gitignored.
+rooms = "cleanroom"

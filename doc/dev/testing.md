@@ -45,14 +45,31 @@ design is #205):
   record, Keyhac's tool calls and the CSVs against the screens' ground truth.
 - **No verdict.** `FINDINGS.md` beside the rooms (`cleanroom/`, gitignored)
   gathers every report, most severe first. What to act on is yours to decide.
-  A problem's id, *where it would be fixed* and *how a fix is confirmed* are
-  what the next run is compared against.
+  A problem's id is what the next run is compared against
+  (`quality-loop findings`), and how a finding is filed once.
 
-Runs are started by a person (`make qa`, `CASE=`, `CONFIGS=`). They cost
-model time, they swap your config.py, and screen scenarios open windows.
+Runs are authorized by a person. They cost model time, they swap your
+config.py, and screen scenarios open windows.
+
+```
+make qa CASE=11 CONFIGS=short          # attached; make qa-restore after one that died
+.venv/bin/quality-loop run 11 --variant short   # the same, in the background
+.venv/bin/quality-loop watch           # follow it: run.log and status.json
+.venv/bin/quality-loop findings        # new / still there / gone / back
+```
+
+`qa/quality-loop.toml` names `qa/run.py` as the adapter for the
+`quality-loop` command. The **conductor skill**
+(`.claude/skills/quality-loop/`, installed and upgraded only by
+`quality-loop init`, never edited by hand) runs the loop with you: plans
+from `qa/PLAN.md`, runs, reads the findings, files them as Issues, fixes what
+you choose and retests, under a policy you set. Ask Claude Code in this
+checkout to "run the QA loop".
+
 `tests/test_qa.py` checks, without a room, that every scenario parses and names
-declared screens, that every fixture config loads on both platforms, and that
-the evidence tools answer correctly on rooms whose outcome is known.
+declared screens, that every fixture config loads on both platforms, that the
+evidence tools answer correctly on rooms whose outcome is known, and that the
+`quality-loop` command finds this adapter and its scenarios check.
 
 `.claude/skills/keyhac-skill-cleanroom/` is the harness this replaced, with
 Python cases and pass/fail checks. It stays until a full `make qa` run has
