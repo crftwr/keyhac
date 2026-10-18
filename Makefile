@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check skill-bundle cleanroom qa qa-restore \
+        api-reference api-reference-check skill-bundle cleanroom qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -95,7 +95,7 @@ help:
 	@echo "                             for the config a key-table case finds)"
 	@echo "  make qa                  - quality-loop: every scenario in qa/scenarios against the"
 	@echo "                             skill bundle, reported by an operator agent (CASE=n,"
-	@echo "                             CONFIGS=short); make qa-restore after a run that died"
+	@echo "                             CONFIGS=short); quit your own Keyhac first"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
@@ -277,18 +277,16 @@ endif
 #   make qa                          every scenario that needs no screen of yours
 #   make qa CASE=11                  one scenario (CASE="11 12" for several)
 #   make qa CASE=11 CONFIGS=short    only these fixture configs (comma-separated)
-#   make qa-restore                  put back a config.py a run could not
 #
 # `quality-loop run --foreground`: qa/quality-loop.toml names qa/run.py as the
 # adapter. Without --foreground a run goes to the background and
 # `quality-loop watch` follows it. Rooms are built in cleanroom/ (gitignored);
-# FINDINGS.md beside them is the result.
+# FINDINGS.md beside them is the result. The run's Keyhac lives in a home of
+# its own (a temp directory): your ~/.keyhac is never touched, and your Keyhac
+# has to be quit for the length of a run.
 comma := ,
 qa: $(VENV_STAMP)
 	$(VENV_PYTHON) -m quality_loop run --foreground $(CASE) $(foreach v,$(subst $(comma), ,$(CONFIGS)),--variant $(v)) $(ARGS)
-
-qa-restore: $(VENV_STAMP)
-	$(VENV_PYTHON) -m quality_loop restore
 
 api-reference: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs

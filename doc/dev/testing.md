@@ -30,13 +30,17 @@ design is #205):
   the screen it needs, and its Must / Must not lists.
   `qa/scenarios/_always.md` holds what every room is held to.
 - A **room** gets this version's bundle and the prompt, and nothing else. It
-  runs `--restricted`, with Keyhac's MCP and no shell, and may reach
-  `extensions/` and the Desktop. **The MCP endpoint is allowed and the
+  runs `--restricted`, with Keyhac's MCP and no shell, and may reach the
+  run's `extensions/` and Desktop. **The MCP endpoint is allowed and the
   checkout is not**: reading the screen through Keyhac's own tools is what the
   skill tells an author to do.
-- For the length of a room your `config.py` is set aside, and one of
-  `qa/configs.py`'s fixtures (template, short, grown) stands in for it. It
-  comes back whatever ends the run.
+- **Nothing of yours is touched.** The run starts this checkout's Keyhac in
+  a home of its own, a temporary directory that is its `HOME`: its
+  `~/.keyhac` and `~/Desktop` are the run's, and one of `qa/configs.py`'s
+  fixtures (template, short, grown) is its `config.py`. There is nothing to
+  put back after a run that died. Your own Keyhac has to be quit for the
+  length of a run - two cannot both hold the keyboard - and the run holds its
+  single-instance lock so it cannot start halfway.
 - An **operator** agent puts the scenario's screen up by name
   (`qa/run.py` `SCREENS`) and afterwards writes `REPORT.md`: problems with
   a severity and a kind, cited from evidence. `qa/evidence.py` gives it that
@@ -52,7 +56,7 @@ Runs are authorized by a person. They cost model time, they swap your
 config.py, and screen scenarios open windows.
 
 ```
-make qa CASE=11 CONFIGS=short          # attached; make qa-restore after one that died
+make qa CASE=11 CONFIGS=short          # attached; quit your own Keyhac first
 .venv/bin/quality-loop run 11 --variant short   # the same, in the background
 .venv/bin/quality-loop watch           # follow it: run.log and status.json
 .venv/bin/quality-loop findings        # new / still there / gone / back

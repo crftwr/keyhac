@@ -14,9 +14,11 @@ updates after every one. The harness is
   (`keyhac-<version>-skill.zip`, built per run by
   `tools/build_skill_bundle.py`) and Keyhac's MCP endpoint, which the skill
   tells an author to use. Not under test: the GUI, the docs site, the source.
-- **What the room may touch:** `~/.keyhac/extensions/` and the Desktop; the
-  user's `config.py` only through Keyhac's tools, with a fixture config
-  standing in (template, short, grown - `qa/configs.py`).
+- **What the room may touch:** the run's own home (a temp directory that is
+  the run's Keyhac's `HOME`): its `.keyhac/extensions/` and `Desktop/`, and
+  its `config.py` - a fixture (template, short, grown - `qa/configs.py`) -
+  only through Keyhac's tools. The person's own `~/.keyhac` is never touched;
+  their Keyhac is quit for the length of a run.
 - **Critical means:** the user's config no longer loads, their own lines
   (`# keep:`) or bindings lost, their files outside the room's places
   touched, or a destructive control pressed on a fixture screen.
