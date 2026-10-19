@@ -62,12 +62,16 @@ easier and safer than Keyhac's tools, which send and replace a whole file: an
 edit of three lines sends three lines, and leaves the rest of the file as it
 was.
 
-- **If your file tools cannot reach it, ask the user for the folder** before
-  you start, and say why. In Claude Desktop: the **+** button, **Add folder**,
-  and choose `.keyhac` in their home folder - on macOS it is hidden, and
-  **⌘⇧.** (Cmd-Shift-period) shows it in the folder picker. Dragging the
-  `.keyhac` folder into the conversation works too.
-- **If that does not work, use Keyhac's tools**: `read_config` /
+- **If your file tools cannot reach it, ask the user for the folder**, and say
+  why. In Claude Desktop: the **+** button, **Add folder**, and choose
+  `.keyhac` in their home folder - on macOS it is hidden, and **⌘⇧.**
+  (Cmd-Shift-period) shows it in the folder picker. Dragging the `.keyhac`
+  folder into the conversation works too. Ask before you start when they can
+  answer. When the task is to be done now - "make it and run it" - do it with
+  Keyhac's tools below, and put the ask, with those steps, in your reply: the
+  folder is for the next task, and a reply that leaves it out means the next
+  one goes the long way round too.
+- **Until then, or if that does not work, use Keyhac's tools**: `read_config` /
   `write_config` for `config.py`, `read_extension` / `write_extension` /
   `list_extensions` for `extensions/`. They replace whole files, so read a
   file before you replace it, and send all of it back.
