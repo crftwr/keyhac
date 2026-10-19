@@ -192,8 +192,8 @@ file, and `start_action` addresses it as `module.Class` -
 The operator reaches it the same way, without an edit, if their `config.py`
 has an `ActionsSource()` in a chooser - the template's `MOD1-P` window has one
 on its **Run** page. There the action is a row showing the first line of its
-class docstring, so make that line say what it does. Check with
-`read_config`; a config without one has no such page, and the operator then
+class docstring, so make that line say what it does. Read `config.py` to
+check; a config without one has no such page, and the operator then
 needs a key, or a Run page added (`ChooserPage("Run", [ActionsSource()])` in a
 `ShowCandidates`, see `references/config-api.md`).
 
@@ -211,7 +211,7 @@ def configure(keymap):
 `kt` is the global key table the default `config.py` defines near the top of
 `configure()` (`kt = keymap.define_keytable(focus_path_pattern="*")`). Their
 file may call it something else, or bind it in an application's table instead -
-so read it (`read_config`) and use the name it has; `references/key-tables.md`
+so read it and use the name it has; `references/key-tables.md`
 covers choosing the table. The two lines on their own, pasted as a new
 `configure()`, would fail with a `NameError`.
 
@@ -235,15 +235,16 @@ Do not hand over an action you have not run. The point of the tools is that
 you read your own failure rather than the operator relaying it, and an action
 that has never executed is a guess.
 
-0. **Changing an action you did not write in this conversation?
-   `read_extension("open_issues")` first.** `write_extension` replaces the
-   whole file, so editing one you have not read means rebuilding it from a
-   guess — and whatever you did not guess is gone. `list_extensions` shows what
-   is in the directory, helper modules included; `list_actions` shows only what
-   can be run.
-1. **`write_extension("open_issues", source)`** saves
-   `~/.keyhac/extensions/open_issues.py`, replacing what is there and keeping a
-   backup.
+0. **Changing an action you did not write in this conversation? Read it
+   first** — with your file tools, or `read_extension("open_issues")`.
+   `write_extension` replaces the whole file, so editing one you have not read
+   means rebuilding it from a guess — and whatever you did not guess is gone.
+   `list_extensions` shows what is in the directory, helper modules included;
+   `list_actions` shows only what can be run.
+1. **Save it as `~/.keyhac/extensions/open_issues.py`** — with your file tools
+   (SKILL.md: they are the way to work on `~/.keyhac`), or
+   `write_extension("open_issues", source)`, which replaces what is there and
+   keeps a backup. A fix in a later round is an edit of the lines that change.
 2. **`list_actions`** — your class should be there, named
    `open_issues.OpenIssues`. If it is not, the file does not parse or the class
    does not subclass `ThreadedAction`.

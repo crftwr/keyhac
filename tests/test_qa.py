@@ -162,9 +162,24 @@ def test_the_runs_skip_a_screen_only_you_can_put_up_unless_named():
     product = run.Keyhac()
     everything = product.runs(SCENARIOS)
     assert not [c for c, _v in everything if c.meta.get("needs")]
-    assert len(everything) == len(SCENARIOS) - 2, "one room per scenario"
+    assert len(everything) == 2 * (len(SCENARIOS) - 2), "a files and an mcp room each"
     slack = [c for c in SCENARIOS if c.number == 9]
-    assert product.runs(slack, named=True) == [(slack[0], "")]
+    assert product.runs(slack, named=True) == [(slack[0], ""), (slack[0], "mcp")]
+
+
+def test_a_files_room_reaches_the_keyhac_folder_and_an_mcp_room_does_not(tmp_path,
+                                                                        monkeypatch):
+    run = _run_module()
+    product = run.Keyhac()
+    product._home = home = run.Home()
+    try:
+        monkeypatch.setattr(run, "endpoint", lambda _home: {"bridge": "/bin/true"})
+        files = product.session(tmp_path / "01_orders_across_pages")
+        mcp = product.session(tmp_path / "01_orders_across_pages.mcp")
+        assert set(files.add_dirs) == {home.keyhac, home.desktop}
+        assert list(mcp.add_dirs) == []
+    finally:
+        home.remove()
 
 
 def test_each_config_editing_scenario_names_one_config_and_each_config_is_used():

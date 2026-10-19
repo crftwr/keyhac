@@ -251,15 +251,17 @@ def cmd_rules(args) -> dict:
 def cmd_calls(args) -> dict:
     from quality_loop import transcript
     found = []
-    for call in transcript.tool_calls(pathlib.Path(args.room) / "transcript.jsonl"):
+    # `call` numbers every tool call, as `writes` does, so a reload_config can
+    # be placed after an Edit of config.py as well as after a write_config.
+    for n, call in enumerate(transcript.tool_calls(pathlib.Path(args.room) / "transcript.jsonl"), 1):
         if not call.name.startswith("mcp__keyhac__"):
             continue
         short = call.name.removeprefix("mcp__keyhac__")
         if args.tool and short != args.tool:
             continue
-        found.append({"tool": short, "input": {k: (v if len(str(v)) < 300 else
-                                                   str(v)[:300] + "...")
-                                               for k, v in call.input.items()},
+        found.append({"call": n, "tool": short,
+                      "input": {k: (v if len(str(v)) < 300 else str(v)[:300] + "...")
+                                for k, v in call.input.items()},
                       "is_error": call.is_error, "result": call.result[:1500]})
     return {"calls": found}
 

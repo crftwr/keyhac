@@ -12,9 +12,17 @@ answers each line.
 - **None of the user's bindings was taken or changed.** Look at
   `bindings <room>` `changed_or_lost`. The exception is a scenario whose task
   is to change that very binding.
-- **An edit was reloaded.** In `calls <room>`, a `reload_config` comes after
-  the last `write_config`, and the room read its verdict (`loaded`, or
-  `FAILED to load`).
+- **An edit was reloaded.** A `reload_config` in `calls <room>` comes after
+  the last change to config.py - a `write_config` there, or an edit of
+  config.py under `outside_the_room` in `writes <room>`; their `call` numbers
+  put them in order - and the room read its verdict (`loaded`, or `FAILED to
+  load`).
+- **The room works where the skill says.** In a `files` room (no suffix) its
+  file tools reach `~/.keyhac`, and it reads and edits config.py and
+  extensions/ there rather than sending whole files through `write_config`
+  or `write_extension`. In an `.mcp` room they do not: the reply asks the
+  user to give it the `~/.keyhac` folder and says how, and the work goes
+  through Keyhac's tools.
 - **An action task leaves config.py alone,** unless the scenario asks for a
   key. If a scenario has no `edits_config` in its front matter, `preserved`
   should show `changed: false`.

@@ -38,14 +38,15 @@ what you did not.
 
 ## The loop
 
-1. **`read_config`** — always, before proposing any change. `write_config`
-   replaces the whole file.
+1. **Read `config.py`** — always, before proposing any change: with your file
+   tools, or `read_config` when they do not reach `~/.keyhac` (SKILL.md).
 2. **`describe_keymap`** — what exists, and the live focus: its `focus now:`
    line names the application in front exactly as `app=` matches it. If the
    user said "only in VS Code" and something else is in front, ask them to
    focus VS Code and call it again — or read the name off `list_windows`,
    whose application column is the same value.
-3. **`write_config`** — the complete file, with your change in it.
+3. **Make the change** — an edit of just the lines it needs, with your file
+   tools; or `write_config` with the complete file, your change in it.
 4. **`reload_config`** — applies it. Its first line is the verdict: `loaded`,
    or `FAILED to load` with the traceback under it. A config that failed
    leaves the previous key tables running, so nothing appears to happen —
@@ -61,8 +62,8 @@ what you did not.
 
 ## Editing someone's config.py
 
-`write_config` replaces the file. That makes every one of these a real rule
-rather than a style preference:
+It is their file, and `write_config` replaces it whole. That makes every one of
+these a real rule rather than a style preference:
 
 - **Change as little as possible.** Add the lines the request needs and leave
   the rest byte-for-byte. Do not reorder, do not reformat, do not "tidy".
@@ -75,7 +76,8 @@ rather than a style preference:
 - **Put it where it belongs** — a new binding goes in the section that already
   holds bindings like it, not at the end of the file.
 - **Say what you changed** in your reply, in terms of lines, so they can look
-  at it. A backup is kept, but a backup they do not know they need is no help.
+  at it. `write_config` keeps a backup and an edit with your own tools does
+  not - and a backup they do not know they need is no help either way.
 
 If the change is large enough that you are rewriting structure rather than
 adding to it, stop and show them the plan first.
@@ -178,7 +180,7 @@ The line above is the only thing `config.py` needs; nothing else registers it.
 
 ## When you are done
 
-- [ ] `read_config` before writing, and the change is minimal
+- [ ] `config.py` read before writing, and the change is minimal
 - [ ] `reload_config` said `loaded` - not assumed
 - [ ] `describe_keymap` confirms the binding is in the table you meant
 - [ ] Nothing later overrides it, or you said so
