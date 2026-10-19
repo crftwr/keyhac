@@ -422,7 +422,11 @@ remote system has already accepted - so rollback is usually not available and
   they are now: a record whose amount changed must show the new amount, and
   one deleted must go - so read everything into a working file and put it in
   place of the output when the run completes, keeping last period's under a
-  name the user can find (`all_orders-2026-09.csv`). A *log* ("save the new
+  name the user can find (`all_orders-2026-09.csv`). Name it for the period it
+  *covers*, recorded when it was made - a month-end run on the 1st is still
+  September's - and never write over a kept file: if the name is taken, add to
+  it rather than replace it. A test rerun of yours makes one of these too;
+  remove the one you made, and say so. A *log* ("save the new
   orders each week") adds only what is new, keyed, as above. If the prompt
   does not say which, pick one and say which in the reply.
 - **A refused row is done too.** The form answered it; that answer goes in its
