@@ -409,11 +409,25 @@ remote system has already accepted - so rollback is usually not available and
   week or each month-end finds the screen where the last complete run left it -
   on the last page - and the new records are on the pages it is not showing.
   If the task asks for *every* row and the screen is part-way through, reading
-  from there and reporting success is the one wrong answer. Either reach the
-  start through the UI's own control for it (a "First" or "1" link: that is
-  going where the task points, not undoing the operator's work), or stop before
-  reading and say which page it found. Rows keyed by record make reading
-  everything again cheap: what is already in the file is skipped, not doubled.
+  from there and reporting success is the one wrong answer. Reach the start the
+  way the UI offers - that is going where the task points, not undoing the
+  operator's work - or stop before reading and say which page it found. Rows
+  keyed by record make reading everything again cheap: what is already in the
+  file is skipped, not doubled.
+- **A list often has no way back on its last page** - no "First", no "1", no
+  "Previous". Look at the last page before you settle on a route, because that
+  is where every scheduled run after the first will start. In a browser the
+  first page has an address: read it on a run that starts there (macOS: the
+  web area's `node.element.get_attribute_value("AXURL")` - not the address
+  field, whose value was measured a page behind), keep it with the run record,
+  and have a later run load it in the same window - `ui.fill` it into that
+  window's address field and `ui.send_key("Enter", until=...)` naming page 1.
+  (A first run that starts mid-list has no address to keep: ask the user for
+  it, and make it a constructor default.) Opening it in a new window or tab
+  instead makes that one yours to close
+  (rule 9). Only where there is no such route does the action stop and ask -
+  and then the reply says up front that every run starts with putting page 1
+  on screen, since that is now a step of the routine, not an error.
 - Use distinct exception types for "the UI moved on me" (regenerate the action)
   and "my step failed" (retry it). They call for opposite responses.
 - Capture the application's own validation message after a submit. Without it,
