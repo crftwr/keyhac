@@ -18,6 +18,10 @@ answers each line.
 - **An action task leaves config.py alone,** unless the scenario asks for a
   key. If a scenario has no `edits_config` in its front matter, `preserved`
   should show `changed: false`.
+- **What an action task leaves on the Desktop, its action made.** `writes
+  <room>` shows `desktop` empty. A file the room wrote there with its own
+  tools - a CSV filled in by hand, a status column edited after the run - is
+  not the action's output, however right its contents.
 - **An action task says how to run it again.** An action stays in
   `extensions/` and is meant to be run again; the reply names it and where
   the user starts it: the chooser's Run page when config.py has an

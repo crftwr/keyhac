@@ -125,6 +125,23 @@ def test_records_finds_what_is_missing_and_doubled(room):
     assert found["wrong_amount"] == []
 
 
+def test_writes_names_a_desktop_file_the_room_wrote_itself(room):
+    def use(n, name, path):
+        return {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": f"t{n}", "name": name, "input": {"file_path": path}}]}}
+    lines = [use(1, "Write", str(room / "QUESTIONS.md")),
+             use(2, "Write", "/tmp/home/.keyhac/extensions/orders.py"),
+             use(3, "mcp__keyhac__start_action", ""),
+             use(4, "Edit", "C:\\Users\\run\\Desktop\\orders.csv")]
+    (room / "transcript.jsonl").write_text("\n".join(json.dumps(line) for line in lines))
+    found = _evidence("writes", room)
+    assert found["desktop"] == [{"file": "orders.csv", "tool": "Edit"}]
+    assert [w["path"] for w in found["outside_the_room"]] == [
+        "/tmp/home/.keyhac/extensions/orders.py"]
+    (room / "transcript.jsonl").write_text(json.dumps(lines[0]))
+    assert _evidence("writes", room)["desktop"] == []
+
+
 def test_the_settings_page_is_what_its_ground_truth_says():
     """Written out by hand; checked against the page so the two cannot drift."""
     page = (ROOT / "examples" / "actions" / "fixtures" / "settings.html").read_text()

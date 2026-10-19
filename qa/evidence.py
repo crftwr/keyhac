@@ -4,6 +4,7 @@
     python qa/evidence.py bindings <room> [--platform P]
     python qa/evidence.py preserved <room>
     python qa/evidence.py calls    <room> [--tool reload_config]
+    python qa/evidence.py writes   <room>
     python qa/evidence.py events   <room>
     python qa/evidence.py records  <room> <file> --expect systema[,systemb]
     python qa/evidence.py expected systema|systemb|to_submit|settings
@@ -263,6 +264,32 @@ def cmd_calls(args) -> dict:
     return {"calls": found}
 
 
+#: The room's own file tools - a file one of these wrote was not an action's output.
+FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def cmd_writes(args) -> dict:
+    """Files the room wrote with its own file tools rather than through an
+    action. `records` reads the Desktop as the run left it, and a room with
+    Write can put a correct CSV there by hand."""
+    from quality_loop import transcript
+    room = pathlib.Path(args.room).resolve()
+    desktop, elsewhere = [], []
+    for call in transcript.tool_calls(room / "transcript.jsonl"):
+        if call.name not in FILE_TOOLS or call.is_error:
+            continue
+        given = str(call.input.get("file_path") or call.input.get("notebook_path") or "")
+        # Either separator: a Windows room's paths reach a Mac reading its evidence.
+        segments = given.replace("\\", "/").split("/")
+        if len(segments) >= 2 and segments[-2] == "Desktop":
+            desktop.append({"file": segments[-1], "tool": call.name})
+        elif not pathlib.Path(given).resolve().is_relative_to(room):
+            elsewhere.append({"path": given, "tool": call.name})
+    return {"desktop": desktop, "outside_the_room": elsewhere,
+            "note": "a Desktop file here was written by the room, not by its action"
+                    if desktop else "the room wrote nothing on the Desktop itself"}
+
+
 def cmd_events(args) -> dict:
     path = _evidence(args.room) / "screen-events.jsonl"
     events = [json.loads(line) for line in (_text(path) or "").splitlines() if line.strip()]
@@ -359,7 +386,11 @@ def main(argv=None) -> int:
     four.add_argument("room")
     four.add_argument("--tool")
     four.set_defaults(func=cmd_calls)
-    five = commands.add_parser("events", help="what the fixture page recorded being done on it")
+    nine = commands.add_parser("writes", help="files the room wrote with its own file "
+                               "tools, not through an action - the Desktop ones first")
+    nine.add_argument("room")
+    nine.set_defaults(func=cmd_writes)
+    five = commands.add_parser("events",help="what the fixture page recorded being done on it")
     five.add_argument("room")
     five.set_defaults(func=cmd_events)
     six = commands.add_parser("records", help="a CSV the room left on the Desktop, "
