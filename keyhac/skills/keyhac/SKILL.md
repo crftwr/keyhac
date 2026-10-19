@@ -70,7 +70,9 @@ was.
   answer. When the task is to be done now - "make it and run it" - do it with
   Keyhac's tools below, and put the ask, with those steps, in your reply: the
   folder is for the next task, and a reply that leaves it out means the next
-  one goes the long way round too.
+  one goes the long way round too. Ask even when you think this session could
+  not use the folder - a sandbox, a host that confines your file tools: you
+  cannot see what the user's next session will allow, and they can.
 - **Until then, or if that does not work, use Keyhac's tools**: `read_config` /
   `write_config` for `config.py`, `read_extension` / `write_extension` /
   `list_extensions` for `extensions/`. They replace whole files, so read a
