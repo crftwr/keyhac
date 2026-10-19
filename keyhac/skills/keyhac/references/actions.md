@@ -61,6 +61,19 @@ page a Next produces. Nobody can put those up for you, so drive one step and
 look - write a throwaway action that performs the single press and dumps what
 appeared, run it, read the tree. That is one cheap run against the real screen,
 and it beats guessing at selectors for a dialog you have never seen.
+
+**Except when the press commits something.** Submit, Send, Save, Delete, Pay:
+there a throwaway run is not a look, it is a submission - the other system
+records it, outside anything the action keeps, and no undo takes it back. The
+same goes for a run made only to check your own logic against the live form.
+For those, look at everything up to the press, and get the answer's shape
+another way: ask the user what the form says when it accepts and when it
+refuses, or ask them to do one row by hand while you read the screen after.
+If neither is possible, let the first real run be the probe - write the wait
+after the press to take whatever answer appears, log it, and record it in that
+row - so the one press there is is the row's own, and is never repeated. To
+test a rerun, run it on a file with nothing left to submit.
+
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
 
@@ -365,6 +378,14 @@ remote system has already accepted - so rollback is usually not available and
 - Make reruns safe: key output rows (`(system, id)`), or keep a status column
   and skip what is already done. Then a partial failure is resumed, not
   repeated.
+- **A refused row is done too.** The form answered it; that answer goes in its
+  status, and a rerun skips it like an accepted one. Pressing Submit again on
+  the same values gets the same refusal at best, and a second record at worst.
+  What sends it again is the user, after they fix the row: tell them to clear
+  its status then. The next run picks up only rows Submit was never pressed
+  for. A row pressed with no answer before the timeout is *unknown*, not
+  failed - it may have gone in - so mark it that way and leave it for the user
+  to check, rather than pressing again.
 - Report **what to redo**, not that something failed: name the systems, rows or
   items that need another run.
 - **What `run()` returns is a report, not the output.** The rows come back so
@@ -410,6 +431,8 @@ Check the generated action against this list, and fix rather than explain:
 - [ ] Every wait names what it is waiting for, in words an operator would read
 - [ ] Selectors used more than once are `ui.Locator` values, written once
 - [ ] Every write is verified; every toggle is read first
+- [ ] Nothing - a probe, a check run, a retry of a refused row - pressed
+      Submit twice for one row
 - [ ] Preconditions before each press, not just at the start — `given=` for
       the ones that are not about the target
 - [ ] Results accumulate outside the failing scope, and are written per item

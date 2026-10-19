@@ -4,9 +4,11 @@ macOS, Safari. The write side, and the failure mode that matters there: a read
 that fails leaves nothing behind, while a submission that fails halfway leaves
 a partial mutation in a system that has already accepted it. So:
 
-  - **Idempotent.** The status column is the checkpoint. A row already marked
-    "ok" is skipped, so a rerun after a crash resumes rather than
-    double-submitting - which no undo could fix afterwards.
+  - **Idempotent.** The status column is the checkpoint. A row with an
+    answer - "ok" or "refused" - is skipped, so a rerun after a crash resumes
+    rather than double-submitting, which no undo could fix afterwards. A
+    refused row goes in again only after the operator fixes it and clears its
+    status; a row pressed with no answer is "unknown", left for them to check.
   - **Submit once, then wait for this row's answer.** The press has no
     `until=`, because a retried submit is a second record. The wait after it
     names *this* row's answer, because the result line is rewritten in place
@@ -22,8 +24,8 @@ a partial mutation in a system that has already accepted it. So:
 The CSV is updated in place. When `source` does not exist yet it is seeded
 from `fixtures/to_submit.csv`, so the example never rewrites the repository's
 copy. The fixture refuses the third row on purpose (its amount is not a
-number): a clean run ends with three accepted and one failed with the form's
-own reason, and running again submits nothing but that one.
+number): a clean run ends with three accepted and one refused with the form's
+own reason, and running again submits nothing.
 """
 
 import csv
@@ -32,7 +34,7 @@ import pathlib
 import shutil
 import subprocess
 
-from keyhac import FillFailed, ThreadedAction, getLogger
+from keyhac import FillFailed, ThreadedAction, WaitTimeout, getLogger
 
 logger = getLogger("SubmitFromCsv")
 
@@ -71,10 +73,16 @@ class SubmitFromCsv(ThreadedAction):
             shutil.copyfile(FIXTURES / "to_submit.csv", self.source)
             logger.info(f"seeded {self.source} from the fixture")
         rows, fieldnames = self._read_rows()
-        todo = [r for r in rows if r.get("status", "").strip() != "ok"]
+        # Only rows Submit was never pressed for. A refused row is done - the
+        # form answered it, and pressing again on the same values is a second
+        # submission - and an unknown one may have gone in.
+        todo = [r for r in rows
+                if r.get("status", "").partition(":")[0].strip() in ("", "not sent")]
         logger.info(f"{len(todo)} of {len(rows)} rows to submit")
+        outcome = {"ok": 0, "refused": 0, "unknown": 0, "not sent": 0,
+                   "skipped": len(rows) - len(todo)}
         if not todo:
-            return {"ok": 0, "failed": 0, "skipped": len(rows)}
+            return outcome
 
         subprocess.run(["open", "-a", self.app_name, self.url],
                        check=True, capture_output=True, text=True)
@@ -85,28 +93,42 @@ class SubmitFromCsv(ThreadedAction):
         window.wait_for(**self.SUBMIT.criteria(), timeout=20,
                         message="the form to load")
 
-        ok = failed = 0
         for row in todo[:self.limit]:
             try:
-                self._submit(window, row)
-                row["status"] = "ok"
-                ok += 1
+                row["status"] = self._submit(window, row)
             except (FillFailed, RuntimeError) as error:
-                row["status"] = f"failed: {error}"
-                failed += 1
-                logger.error(f"{row.get('ref')}: {error}")
+                # Raised before the press: nothing went in, so the next run
+                # tries this row again.
+                row["status"] = f"not sent: {error}"
+            outcome[row["status"].partition(":")[0]] += 1
+            if row["status"] != "ok":
+                logger.error(f"{row.get('ref')}: {row['status']}")
             # After every row, not at the end: a run that dies here must leave
             # a file that still says what got through.
             self._write_rows(rows, fieldnames)
-        return {"ok": ok, "failed": failed, "skipped": len(rows) - len(todo)}
+        return outcome
 
     def finished(self, result):
-        logger.info(f"{result['ok']} submitted, {result['failed']} failed, "
+        logger.info(f"{result['ok']} submitted, {result['refused']} refused, "
+                    f"{result['unknown']} unknown, {result['not sent']} not sent, "
                     f"{result['skipped']} already done -> {self.source}")
+        # What to redo, and who does it: a refused row goes in again only once
+        # the operator has fixed it, and an unknown one may already be in.
+        if result["refused"]:
+            logger.warning("refused rows: fix them in the CSV and clear their "
+                           "status to submit them again")
+        if result["unknown"]:
+            logger.warning("unknown rows: check the form's records before "
+                           "clearing their status - they may have gone in")
+        if result["not sent"]:
+            logger.warning("not-sent rows were never submitted; the next run "
+                           "tries them again")
 
     # -- one row -------------------------------------------------------------
 
-    def _submit(self, window, row) -> None:
+    def _submit(self, window, row) -> str:
+        """Fill and submit one row, and return its status. Raises only before
+        the press, when nothing has gone in."""
         ui = self.ui
         ref = row.get("ref", "").strip()
         for column, field in self.FIELD.items():
@@ -123,12 +145,18 @@ class SubmitFromCsv(ThreadedAction):
 
         # Once, with no until=: a retry here is a second submission.
         ui.click(self.SUBMIT, within=window, given=self.front)
-        answer = ui.wait(lambda: self._answer_for(window, ref), timeout=15,
-                         message=f"the form to answer {ref or 'the blank row'}")
+        try:
+            answer = ui.wait(lambda: self._answer_for(window, ref), timeout=15,
+                             message=f"the form to answer {ref or 'the blank row'}")
+        except WaitTimeout:
+            # Pressed, and no answer: it may have gone in. Not "failed", which
+            # would invite pressing again.
+            return "unknown: pressed Submit, no answer - check the form's records"
         if answer.startswith("error:"):
             # "error: REF-203: Amount must be a number" -> the form's reason.
             reason = answer.removeprefix("error:").strip()
-            raise RuntimeError(reason.removeprefix(f"{ref}:").strip())
+            return f"refused: {reason.removeprefix(f'{ref}:').strip()}"
+        return "ok"
 
     def _answer_for(self, window, ref: str) -> str | None:
         """The result line, once it is about this row - accepted or refused.
