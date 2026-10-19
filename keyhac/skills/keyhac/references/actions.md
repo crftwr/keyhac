@@ -297,7 +297,13 @@ rerun behaving, not something to clear away. When you do need the first-run
 path again, set the file aside rather than emptying or editing it - rename it
 to `orders.before-test.csv`, where the user will see it - and never edit a
 status column to make the action do a row again: that sends it to the other
-system a second time. Then two things hold when you hand over:
+system a second time. With a shell the rename is one `mv`. Without one, an
+action can do it: a throwaway one whose `run()` is a single
+`pathlib.Path(...).rename(...)`, started once and retired with
+`delete_extension` - or ask the user to move the file. The screen is part of
+the start too: a list left on its last page is put back on page 1 the way
+the delivered action itself would get there (see "A list often has no way
+back"). Then two things hold when you hand over:
 
 - the last run of the delivered action, started from files as the user could
   have them, made what is in the output - not an earlier version's run, and
@@ -305,6 +311,11 @@ system a second time. Then two things hold when you hand over:
 - the reply names every change you made to the user's files by hand, and
   where anything you set aside now is. They are the user's files; a change
   they were not told about is one they cannot undo.
+
+If the start cannot be made again at all - the deploy it watched is over, the
+form has no more rows to take - change nothing after that last run, or say in
+the reply which path of the version you hand over has not run since your last
+edit. "Tested" is a claim about the file the user gets.
 
 **The endpoint closes itself an hour after the operator opens it**, and every
 tool then stops answering at once — which reads like a dropped connection and is
