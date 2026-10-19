@@ -2,7 +2,7 @@
 name: quality-loop
 description: Run the quality-loop improvement loop for this product with a person - set quality-loop up for a new product, plan which scenarios to run, start clean-room runs, read the findings, file them as GitHub Issues, fix what the person chooses, retest, and repeat under a policy the person sets. Use when the person says "set up quality-loop", "run quality-loop", "run the QA loop", "keep looping until #12 is fixed", "what did the last run find", or asks to plan or review clean-room tests or scenarios.
 metadata:
-  quality-loop-version: "0.2.0"
+  quality-loop-version: "0.2.2"
 ---
 
 # Conducting the quality loop
