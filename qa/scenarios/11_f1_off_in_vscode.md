@@ -7,7 +7,8 @@ config = "grown"
 ## Prompt
 
 I keep hitting F1 by accident in VS Code and it throws up the command palette.
-Make F1 do nothing in VS Code - everywhere else it should stay as it is.
+In my Keyhac config, make F1 do nothing in VS Code - everywhere else it should
+stay as it is.
 
 ## Screen
 

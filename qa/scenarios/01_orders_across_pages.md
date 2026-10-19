@@ -1,12 +1,13 @@
 +++
-title = "Save a paged order list to CSV"
+title = "An action that saves a paged order list to CSV"
 +++
 
 ## Prompt
 
-The order list in my browser (SystemA) runs over several pages. I need all of
-it in a spreadsheet: save every order to orders.csv on my Desktop, with its
-ID, name and amount.
+The order list in my browser (SystemA) runs over several pages, and every week
+I need all of it in a spreadsheet. Make me a Keyhac action that saves every
+order to orders.csv on my Desktop, with its ID, name and amount - and run it
+now so I can see it works.
 
 ## Screen
 

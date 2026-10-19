@@ -1,14 +1,15 @@
 +++
-title = "Finish a data entry that stopped halfway"
+title = "An action that finishes a data entry that stopped halfway"
 staged = [["to_submit_partial.csv", "to_submit.csv"]]
 +++
 
 ## Prompt
 
-Last night I started entering the records in to_submit.csv on my Desktop into
-the "Submit a record" form in my browser, and it stopped partway. The status
-column shows which ones went through. Enter the rest - none of them may go in
-twice.
+Every night I enter the records in to_submit.csv on my Desktop into the
+"Submit a record" form in my browser. Last night it stopped partway; the status
+column shows which ones went through. Make me a Keyhac action for this that
+picks up where it left off - none of them may go in twice - and run it now to
+enter the rest.
 
 ## Screen
 

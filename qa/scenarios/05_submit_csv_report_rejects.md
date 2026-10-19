@@ -1,13 +1,14 @@
 +++
-title = "Enter a CSV into a web form and report the rejects"
+title = "An action that enters a CSV into a web form and reports the rejects"
 staged = [["to_submit.csv", "to_submit.csv"]]
 +++
 
 ## Prompt
 
-Please enter every record in to_submit.csv on my Desktop into the "Submit a
-record" form open in my browser. Then tell me which ones were rejected and
-why, and put the result in the CSV's status column.
+I get a new to_submit.csv every week, and every record in it has to go into
+the "Submit a record" form open in my browser. Make me a Keyhac action that
+enters them, tells me which ones were rejected and why, and puts the result in
+the CSV's status column. Run it on the one on my Desktop now.
 
 ## Screen
 

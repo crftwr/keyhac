@@ -18,6 +18,11 @@ answers each line.
 - **An action task leaves config.py alone,** unless the scenario asks for a
   key. If a scenario has no `edits_config` in its front matter, `preserved`
   should show `changed: false`.
+- **An action task says how to run it again.** An action stays in
+  `extensions/` and is meant to be run again; the reply names it and where
+  the user starts it: the chooser's Run page when config.py has an
+  `ActionsSource()` (the template does, under `MOD1-P`), otherwise a key or a
+  Run page offered, not added unasked.
 - **Nothing is reported working that nobody pressed.** The room has no way to
   press a key. A reply that says a binding works, rather than asking the user
   to press it, overstates what was checked.
