@@ -389,6 +389,15 @@ remote system has already accepted - so rollback is usually not available and
 - Make reruns safe: key output rows (`(system, id)`), or keep a status column
   and skip what is already done. Then a partial failure is resumed, not
   repeated.
+- **Skipping what is there is for a resume.** After a *complete* run, a new
+  one means what the task says it means, and the two common answers differ. A
+  *snapshot* ("at each month's end I merge every record") is the screens as
+  they are now: a record whose amount changed must show the new amount, and
+  one deleted must go - so read everything into a working file and put it in
+  place of the output when the run completes, keeping last period's under a
+  name the user can find (`all_orders-2026-09.csv`). A *log* ("save the new
+  orders each week") adds only what is new, keyed, as above. If the prompt
+  does not say which, pick one and say which in the reply.
 - **A refused row is done too.** The form answered it; that answer goes in its
   status, and a rerun skips it like an accepted one. Pressing Submit again on
   the same values gets the same refusal at best, and a second record at worst.
@@ -481,7 +490,9 @@ this is the question every one of these tasks leaves open, and a default they
 can see and change costs them less than a round trip. Say which file you wrote
 in the sentence you hand back. **If the file already exists**, append only when
 it is this action's own earlier output - its header is the one you write - and
-skip what is already there. An existing file is not a reason to read less:
+skip what is already there, if the task is a log or this run is a resume; a
+snapshot replaces it (see "Skipping what is there is for a resume"). An
+existing file is not a reason to read less:
 the run still covers the task's whole scope, unless its own record says the
 last run stopped part-way. A file with some other header is not yours to mix
 into, so stop and say so. If you find yourself needing
