@@ -5,7 +5,7 @@ needs = "the Slack desktop app, signed in, with a channel or two unread"
 
 ## Prompt
 
-Make me an action that lists the Slack channels where I have unread messages -
+Make me a Keyhac action that lists the Slack channels where I have unread messages -
 from the Slack desktop app - and shows them to me so I can jump to one.
 
 ## Screen

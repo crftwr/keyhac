@@ -7,10 +7,10 @@ config = "grown"
 ## Prompt
 
 When a build fails in my terminal I want one key that opens the file and line
-that broke it in VS Code (code -g file:line). There's a failed build in the
-terminal window right now - try it on that, but don't actually open the editor
-while you're testing, just show me what it would open. Then put it on a key
-that's free.
+that broke it in VS Code (code -g file:line). Make it a Keyhac action. There's
+a failed build in the terminal window right now - try it on that, but don't
+actually open the editor while you're testing, just show me what it would
+open. Then put it on a key that's free.
 
 ## Screen
 

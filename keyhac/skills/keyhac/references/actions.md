@@ -178,13 +178,28 @@ logger = getLogger("OpenIssues")     # there is no importable `logger`
 the argument to `configure()` - so anything reaching for it beside the class
 raises `NameError` the moment the module is imported.
 
+**An action is something the operator runs again.** That is what Keyhac's AI
+integration is for: the action stays in `extensions/` after this conversation,
+and the operator starts it whenever the task comes round. So write it to be run
+a second time - a file written once at the end or keyed by record, a resumed run
+that skips what is done - even when the request reads like a single job.
+
 **You need no `config.py` edit to run it.** Every action class in
 `extensions/` is already reachable: `list_actions` finds it by reading the
 file, and `start_action` addresses it as `module.Class` -
-`open_issues.OpenIssues`. That is the whole test loop. The operator's edit
-comes at the *end*, when the action works and they want it on a key. Hand them
-this then, not before, and keep it to two lines **inside the `configure()` they
-already have**:
+`open_issues.OpenIssues`. That is the whole test loop.
+
+The operator reaches it the same way, without an edit, if their `config.py`
+has an `ActionsSource()` in a chooser - the template's `MOD1-P` window has one
+on its **Run** page. There the action is a row showing the first line of its
+class docstring, so make that line say what it does. Check with
+`read_config`; a config without one has no such page, and the operator then
+needs a key, or a Run page added (`ChooserPage("Run", [ActionsSource()])` in a
+`ShowCandidates`, see `references/config-api.md`).
+
+A key is for an action they reach for often. That edit comes at the *end*,
+when the action works and they ask for it. Hand them this then, not before,
+and keep it to two lines **inside the `configure()` they already have**:
 
 ```python
 def configure(keymap):
@@ -241,8 +256,12 @@ that has never executed is a guess.
    is the step that tells you what happened; skipping it means you did not
    check your work.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
-6. **When it works**, hand them the `configure()` block so they can name it and
-   bind a key. Say plainly that this last step is theirs.
+6. **When it works**, tell them how to run it again. Name the file it lives in
+   and the row it shows, and say where that row is: the Run page, if their
+   `config.py` has an `ActionsSource()` (say which key opens that chooser).
+   Without one, offer the two choices - a key, with the `configure()` block
+   above, or a Run page added - and edit `config.py` only once they pick one.
+   Whether it goes on a key is theirs to decide; say so plainly.
 7. **Clean up what the loop left behind.**
    `delete_extension("wrong_name")` retires a module — it renames it to a
    `.bak-` beside itself rather than erasing it, so this is reversible. Use it

@@ -28,7 +28,11 @@ design is #205):
 
 - Each scenario in `qa/scenarios/` is Markdown: the prompt a user would type,
   the screen it needs, and its Must / Must not lists.
-  `qa/scenarios/_always.md` holds what every room is held to.
+  `qa/scenarios/_always.md` holds what every room is held to. A prompt names
+  Keyhac and asks for something kept: the AI integration is for actions the
+  user runs again (from a key or the chooser's Run page), and a one-off
+  operation is computer use's job, not Keyhac's. So an action prompt says why
+  it comes round again, and asks for one run now to show it works.
 - A **room** gets this version's bundle and the prompt, and nothing else. It
   runs `--restricted`, with Keyhac's MCP and no shell, and may reach the
   run's `extensions/` and Desktop. **The MCP endpoint is allowed and the

@@ -1,12 +1,14 @@
 +++
-title = "Approve an approval queue"
+title = "An action that approves an approval queue"
 +++
 
 ## Prompt
 
-My approval queue is open in the browser. Approve everything that's waiting -
-each item asks for confirmation. If it ever asks me anything other than
-approving an item, stop and tell me rather than clicking through.
+My approval queue is open in the browser, and it fills up again every day.
+Make me a Keyhac action that approves everything that's waiting - each item
+asks for confirmation. If it ever asks me anything other than approving an
+item, it should stop and tell me rather than clicking through. Run it on
+today's queue.
 
 ## Screen
 

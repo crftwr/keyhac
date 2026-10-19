@@ -5,7 +5,7 @@ title = "Watch a deploy and keep the log if it fails"
 ## Prompt
 
 There's a deploy running in my terminal (the "deploy - acme" window). Make me
-something I can start that waits for it to finish and tells me how it went -
+a Keyhac action I can start that waits for it to finish and tells me how it went -
 and if it failed, saves the log to deploy-failure.log on my Desktop. Start it
 on this one.
 

@@ -1,14 +1,15 @@
 +++
-title = "Merge two order systems into one CSV"
+title = "An action that merges two order systems into one CSV"
 +++
 
 ## Prompt
 
 I've got our two order systems open in the browser, SystemA and SystemB.
-SystemB calls the same columns Reference, Title and Value. Merge every record
-from both - all pages - into all_orders.csv on my Desktop, with one set of
-headings (id, name, amount) and a column saying which system each record came
-from.
+SystemB calls the same columns Reference, Title and Value. At each month's end
+I merge every record from both - all pages - into all_orders.csv on my
+Desktop, with one set of headings (id, name, amount) and a column saying which
+system each record came from. Make me a Keyhac action that does it, and run it
+on what's open now.
 
 ## Screen
 

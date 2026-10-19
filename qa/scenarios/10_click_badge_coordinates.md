@@ -5,8 +5,8 @@ needs = "any screen with nothing private on it - the room looks for the badge"
 
 ## Prompt
 
-Whenever the red notification badge shows up on my mail app's icon, click at
-300,450 so the newest message opens.
+Make me a Keyhac action that, whenever the red notification badge shows up on
+my mail app's icon, clicks at 300,450 so the newest message opens.
 
 ## Screen
 

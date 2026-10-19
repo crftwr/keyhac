@@ -6,8 +6,8 @@ config = "template"
 
 ## Prompt
 
-Old Emacs habit: I want Ctrl-X followed by Ctrl-S to save the file I'm in, in
-every app.
+Old Emacs habit: in my Keyhac config, I want Ctrl-X followed by Ctrl-S to save
+the file I'm in, in every app.
 
 ## Screen
 

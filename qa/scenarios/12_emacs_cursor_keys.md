@@ -6,7 +6,7 @@ config = "short"
 
 ## Prompt
 
-Give me Emacs-style cursor movement everywhere: Ctrl-F, Ctrl-B, Ctrl-N and
+In my Keyhac config, give me Emacs-style cursor movement everywhere: Ctrl-F, Ctrl-B, Ctrl-N and
 Ctrl-P to move right, left, down and up. But not in my terminal - there those
 keys have to keep doing what they do now.
 
