@@ -92,7 +92,7 @@ class Home:
         self.extensions = self.keyhac / "extensions"
         self.desktop = self.root / "Desktop"
         #: Where the stand-in keeps the previous fixture between rooms: in the
-        #: home, but out of the room's reach (extensions/ and Desktop only).
+        #: home, but out of the room's reach (~/.keyhac and Desktop only).
         self.stand_in = self.root / "stand-in"
         for directory in (self.extensions, self.desktop):
             directory.mkdir(parents=True)
@@ -261,6 +261,7 @@ class Keyhac(adapter.Adapter):
     rooms = ROOT / "cleanroom"
     scenarios = HERE / "scenarios"
     skill_name = "keyhac"
+    default_variant = "files"
     fixtures = FIXTURES
     screens = SCREENS
     python = sys.executable
@@ -274,13 +275,16 @@ class Keyhac(adapter.Adapter):
         "the starting config and --platform windows the other OS. `bindings` lists "
         "what the run added, changed or lost; `preserved` the user's # keep: lines; "
         "`calls` the room's Keyhac tool calls with their answers; `writes` the files "
-        "the room wrote with its own file tools, the Desktop ones first; `events` the "
+        "the room wrote with its own file tools, the Desktop ones with whether an "
+        "action was started after each; `events` the "
         "fixture page's record; `records <room> <file> --expect systema,systemb` a "
         "CSV against the records the screens hold; `expected <screen>` what a "
         "fixture screen holds; `rules <room>` the skill's mechanical rules (waits, "
         "not sleeps; no coordinates; bounded loops; ...) on each action the room "
         "left. Names on this OS: VS Code is Code, TextEdit / "
-        "notepad, Terminal / WindowsTerminal, Safari / msedge. Hold every room to "
+        "notepad, Terminal / WindowsTerminal, Safari / msedge. A room named `.mcp` "
+        "had file tools that reach neither ~/.keyhac nor the Desktop; one with no "
+        "suffix had both. Hold every room to "
         f"{HERE / 'scenarios' / '_always.md'} as well as to its scenario.")
 
     def __init__(self):
@@ -311,9 +315,20 @@ class Keyhac(adapter.Adapter):
         info = endpoint(self.home)
         if info is None or "bridge" not in info:
             raise SystemExit("Keyhac's endpoint is not answering, or publishes no bridge")
+        # The variant - the scenario's `access` - is the room's label after the
+        # scenario's name (runner.label_of): the session is made before the
+        # stand-in, the one call that is handed it.
+        variant = room.name.partition(".")[2]
+        # files (the default): the room's file tools reach ~/.keyhac and the
+        # Desktop, as for an agent the user gave the folder. mcp: they reach
+        # neither, as in Claude Desktop with no folder added, so config.py and
+        # extensions/ are Keyhac's tools' alone. The first rooms had only
+        # extensions/ and the Desktop - like neither host - and edited actions
+        # directly while config.py went through write_config whole.
+        reach = [] if variant == "mcp" else [self.home.keyhac, self.home.desktop]
         # The bridge finds the endpoint under ~/.keyhac: the run's, by HOME.
         return session.Session(
-            allow=ALLOW, add_dirs=[self.home.extensions, self.home.desktop],
+            allow=ALLOW, add_dirs=reach,
             mcp_servers={"keyhac": {"command": info["bridge"],
                                     "env": self.home.environment()}})
 
@@ -335,17 +350,20 @@ class Keyhac(adapter.Adapter):
 
     def runs(self, cases, named=False):
         """One room per scenario, on the config its front matter names
-        (`config = "short"`; the template when it names none). Each of the
-        three fixture configs is some scenario's: running every scenario on
-        all three made a full run 19 rooms, most of them finding the same
-        problems again."""
+        (`config = "short"`; the template when it names none) and with the
+        access it names: `access = "mcp"` is a room whose file tools do not
+        reach ~/.keyhac (the fallback through Keyhac's tools), labelled
+        `.mcp`; otherwise they do (the setup the skill asks for). Each fixture
+        config and each access is some scenario's: running every scenario on
+        all three configs made a full run 19 rooms, most of them finding the
+        same problems again."""
         found = []
         for case in cases:
             needs = case.meta.get("needs")
             if needs and not named:
                 print(f"  skipped: {case.name} - needs {needs}; name it with CASE=")
                 continue
-            found.append((case, ""))
+            found.append((case, "mcp" if case.meta.get("access") == "mcp" else ""))
         return found
 
     def stand_in(self, case, variant, room):

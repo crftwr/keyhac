@@ -125,21 +125,26 @@ def test_records_finds_what_is_missing_and_doubled(room):
     assert found["wrong_amount"] == []
 
 
-def test_writes_names_a_desktop_file_the_room_wrote_itself(room):
-    def use(n, name, path):
+def test_writes_says_which_desktop_changes_came_after_the_last_action_run(room):
+    def use(n, name, given):
         return {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": f"t{n}", "name": name, "input": {"file_path": path}}]}}
-    lines = [use(1, "Write", str(room / "QUESTIONS.md")),
-             use(2, "Write", "/tmp/home/.keyhac/extensions/orders.py"),
-             use(3, "mcp__keyhac__start_action", ""),
-             use(4, "Edit", "C:\\Users\\run\\Desktop\\orders.csv")]
+            {"type": "tool_use", "id": f"t{n}", "name": name, "input": given}]}}
+    lines = [use(1, "Write", {"file_path": str(room / "QUESTIONS.md")}),
+             use(2, "Write", {"file_path": "/tmp/home/.keyhac/extensions/orders.py"}),
+             use(3, "Write", {"file_path": "/tmp/home/Desktop/orders.csv"}),
+             use(4, "mcp__keyhac__start_action", {"name": "orders.Orders"}),
+             use(5, "Edit", {"file_path": "C:\\Users\\run\\Desktop\\orders.csv"})]
     (room / "transcript.jsonl").write_text("\n".join(json.dumps(line) for line in lines))
     found = _evidence("writes", room)
-    assert found["desktop"] == [{"file": "orders.csv", "tool": "Edit"}]
+    assert found["desktop"] == [
+        {"file": "orders.csv", "tool": "Write", "call": 3, "an_action_ran_after": True},
+        {"file": "orders.csv", "tool": "Edit", "call": 5, "an_action_ran_after": False}]
+    assert found["last_start_action"] == {"call": 4, "action": "orders.Orders"}
+    assert found["note"].startswith("1 Desktop change")
     assert [w["path"] for w in found["outside_the_room"]] == [
         "/tmp/home/.keyhac/extensions/orders.py"]
-    (room / "transcript.jsonl").write_text(json.dumps(lines[0]))
-    assert _evidence("writes", room)["desktop"] == []
+    (room / "transcript.jsonl").write_text("\n".join(json.dumps(line) for line in lines[:4]))
+    assert _evidence("writes", room)["note"].startswith("no Desktop change")
 
 
 def test_the_settings_page_is_what_its_ground_truth_says():
@@ -160,6 +165,30 @@ def test_the_runs_skip_a_screen_only_you_can_put_up_unless_named():
     assert len(everything) == len(SCENARIOS) - 2, "one room per scenario"
     slack = [c for c in SCENARIOS if c.number == 9]
     assert product.runs(slack, named=True) == [(slack[0], "")]
+
+
+def test_each_access_is_some_scenarios_and_names_its_room():
+    run = _run_module()
+    accesses = {c.meta.get("access", "files") for c in SCENARIOS}
+    assert accesses == {"files", "mcp"}, "an access nobody runs, or one not known"
+    rooms = dict((c.name, v) for c, v in run.Keyhac().runs(SCENARIOS, named=True))
+    assert {name for name, v in rooms.items() if v == "mcp"} == {
+        c.name for c in SCENARIOS if c.meta.get("access") == "mcp"}
+
+
+def test_a_files_room_reaches_the_keyhac_folder_and_an_mcp_room_does_not(tmp_path,
+                                                                        monkeypatch):
+    run = _run_module()
+    product = run.Keyhac()
+    product._home = home = run.Home()
+    try:
+        monkeypatch.setattr(run, "endpoint", lambda _home: {"bridge": "/bin/true"})
+        files = product.session(tmp_path / "01_orders_across_pages")
+        mcp = product.session(tmp_path / "01_orders_across_pages.mcp")
+        assert set(files.add_dirs) == {home.keyhac, home.desktop}
+        assert list(mcp.add_dirs) == []
+    finally:
+        home.remove()
 
 
 def test_each_config_editing_scenario_names_one_config_and_each_config_is_used():

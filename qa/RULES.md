@@ -18,8 +18,9 @@ read.
   what the skill tells you to do.
 - Writing your action to `{extensions}`, running it, reading its
   result and its logs.
-- Reading and changing `config.py` through Keyhac's own tools, when the task
-  calls for it. It is the operator's file; treat it that way.
+- Reading and changing `config.py`, when the task calls for it - with your
+  file tools where they reach it, otherwise through Keyhac's own tools. It is
+  the operator's file; treat it that way.
 
 **Forbidden**
 - The Keyhac checkout, anywhere on this machine: its source, its `doc/`, its
@@ -29,6 +30,8 @@ read.
   signature the references do not give.
 - Other actions already in `{extensions}`. They were written by
   somebody who had the repository.
+- Backups beside `config.py` (`config.py.bak-*`) and in `{extensions}`
+  (`*.bak-*`) that you did not make. They are from other tasks.
 - Asking the operator. They know the answer, which is exactly why asking
   destroys the measurement. The skill will tell you to ask - for a screen that
   is not up yet, for a value only they know - and you cannot. Do what the rest

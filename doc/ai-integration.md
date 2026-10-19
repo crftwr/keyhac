@@ -228,7 +228,26 @@ time](#a-client-with-a-shell-but-no-mcp-transport).
   [The bridge, for stdio-only clients](#the-bridge-for-stdio-only-clients) has
   the config snippets and where that path is for each kind of install.
 
-### 3. How to go about it
+### 3. The folder
+
+Ask the user to give you **`~/.keyhac`** (`%USERPROFILE%\.keyhac` on Windows),
+the folder that holds `config.py` and `extensions/`. With your own file tools
+on it, a change to their config is an edit of the lines that change; through
+Keyhac's tools it is the whole file read and sent back, every time. It is the
+recommended setup, and the skill asks for it too.
+
+- **Claude Desktop:** the **+** button in the message box, **Add folder**, and
+  choose `.keyhac` in the home folder. On macOS the folder is hidden: press
+  **⌘⇧.** (Cmd-Shift-period) in the folder picker to show it. Dragging the
+  `.keyhac` folder into the conversation works too.
+- **Claude Code**, or another agent that already reads and writes the user's
+  files: nothing to do. Check that you can read `~/.keyhac/config.py`.
+
+If it cannot be done, everything still works through Keyhac's tools
+(`read_config`, `write_config`, `read_extension`, `write_extension`, ...);
+they are there for exactly that case.
+
+### 4. How to go about it
 
 - **Back up** any other application's config file before editing it, and show
   the user the change. **If you have no way to write files at all** — which is
@@ -268,7 +287,7 @@ upload, no user step — registered the bridge at user scope, and connected. A
 later session then called the tools as native tools and got real answers back.
 Note that the second half needed a *new* session: the one that did the setup was
 older than the server it had just registered, which is the ordinary case and the
-reason the last step of [How to go about it](#3-how-to-go-about-it) says to
+reason the last step of [How to go about it](#4-how-to-go-about-it) says to
 verify in a fresh one.
 
 **Connecting to the HTTP port directly is out of scope.** The daemon does serve
@@ -567,6 +586,12 @@ audit and nothing half-enabled — the switch being off *is* the answer.
 
 Your `config.py` decides which action classes get a key. It no longer decides
 which the agent may run; the switch does, and the switch expires.
+
+The file tools in the table (`read_config` to `delete_extension`) are for an
+agent that cannot reach `~/.keyhac` itself. Given the folder ([The
+folder](#3-the-folder)), it reads and edits `config.py` and `extensions/`
+directly, and uses Keyhac's tools for what only Keyhac can say:
+`reload_config` for whether the config loads, `list_actions` for what can run.
 
 ## The loop
 

@@ -2,6 +2,7 @@
 title = "Ctrl-X then Ctrl-S saves, Emacs style"
 edits_config = true
 config = "template"
+access = "mcp"
 +++
 
 ## Prompt
