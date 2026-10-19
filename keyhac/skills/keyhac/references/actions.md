@@ -74,7 +74,9 @@ after the press to take whatever answer appears, log it, and record it in that
 row - so the one press there is is the row's own, and is never repeated. To
 test a rerun, run it on a file with nothing left to submit.
 
-**Then send one row before the rest.** A reader that is wrong about the answer
+**Then send one row before the rest** - for these actions, whose presses
+commit; one that only reads and pages can be run again as often as you like,
+and needs none of this. A reader that is wrong about the answer
 is found out only after a press, and once every row has been pressed there is
 nothing left to run the fixed version on - the result came from code the user
 does not get. So give the action a `limit` argument (default: no limit), and
