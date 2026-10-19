@@ -60,13 +60,13 @@ bindings without that ambiguity.
 
 | Scenario | Surface | Config | Last run | Open findings | Notes |
 |---|---|---|---|---|---|
-| 01 orders across pages | action, page `systema` | template | 2.5.0-20261018-203804 | 4 medium, 2 low | |
-| 02 merge two systems | action, pages `systema` `systemb` | template | 2.5.0-20261018-203804 | 2 medium, 1 low | |
-| 03 resume submission | action, page `submit-form` | template | 2.5.0-20261018-203804 | 3 medium | staged CSV |
+| 01 orders across pages | action, page `systema` | template | 2.5.0-20261020-030519 | 2 medium, 1 low | #215 #221 #222 fixed |
+| 02 merge two systems | action, pages `systema` `systemb` | template | 2.5.0-20261020-030519 | 4 medium, 1 low | #215 #221 fixed; #224 open |
+| 03 resume submission | action, page `submit-form` | template | 2.5.0-20261020-030519 (`.mcp`) | 3 medium, 2 low | staged CSV; #226 fixed; #225 open |
 | 04 approve queue | action, page `approval-queue` | template | 2.5.0-20261018-203804 | 1 medium, 1 low | |
-| 05 submit CSV, report rejects | action, page `submit-form` | template | 2.5.0-20261018-203804 | 2 medium, 1 low | staged CSV |
+| 05 submit CSV, report rejects | action, page `submit-form` | template | 2.5.0-20261020-030519 | 1 medium, 3 low | staged CSV; #216 #226 fixed |
 | 06 build error to editor | config, terminal `build-failure` | grown | 2.5.0-20261018-203804 | 3 medium, 9 low | |
-| 07 watch deploy | action, terminal `deploy` | template | 2.5.0-20261018-203804 | 1 high, 1 medium, 1 low | |
+| 07 watch deploy | action, terminal `deploy` | template | 2.5.0-20261020-030519 | 1 high, 2 medium, 1 low | #214 #222 fixed; #223 open |
 | 08 settings backup | action, page `preferences` | template | 2.5.0-20261018-203804 | 1 medium, 2 low | |
 | 09 Slack unread | action, the real Slack app | template | | | needs the person |
 | 10 click badge coordinates | action, any screen | template | | | needs the person |
