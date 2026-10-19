@@ -257,7 +257,9 @@ that has never executed is a guess.
    is the step that tells you what happened; skipping it means you did not
    check your work.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
-6. **When it works**, tell them how to run it again. Name the file it lives in
+   The output an earlier round left is the user's file now - see below.
+6. **When it works** - its last run, of the version you hand over, made what
+   is in its output - tell them how to run it again. Name the file it lives in
    and the row it shows, and say where that row is: the Run page, if their
    `config.py` has an `ActionsSource()` (say which key opens that chooser).
    Without one, offer the two choices - a key, with the `configure()` block
@@ -272,6 +274,24 @@ that has never executed is a guess.
    theirs to remove. If the reply says `config.py` mentions the module, read
    that file and offer to take the lines out — leaving them there means their
    next reload fails and their key bindings stop working.
+
+**An earlier round's output is in the way? Run against it first.** After the
+first round, the output file is there, and so is the status a run wrote into
+the user's CSV. That is the state the user meets every time they run the
+action again, so a changed action is tried against it before anything else:
+if the next run skips what is there, or says "already saved", that is the
+rerun behaving, not something to clear away. When you do need the first-run
+path again, set the file aside rather than emptying or editing it - rename it
+to `orders.before-test.csv`, where the user will see it - and never edit a
+status column to make the action do a row again: that sends it to the other
+system a second time. Then two things hold when you hand over:
+
+- the last run of the delivered action, started from files as the user could
+  have them, made what is in the output - not an earlier version's run, and
+  not an edit of yours after it;
+- the reply names every change you made to the user's files by hand, and
+  where anything you set aside now is. They are the user's files; a change
+  they were not told about is one they cannot undo.
 
 **The endpoint closes itself an hour after the operator opens it**, and every
 tool then stops answering at once — which reads like a dropped connection and is
@@ -374,6 +394,8 @@ remote system has already accepted - so rollback is usually not available and
 Check the generated action against this list, and fix rather than explain:
 
 - [ ] **It has been run**, and you read the result — not "it should work"
+- [ ] Its output was made by the last run of this version, and the reply names
+      every change you made to the user's files by hand
 - [ ] No `sleep`, no coordinates, no bare `time` waits
 - [ ] **No hand-written retry loop** — every act is a verb with an `until=`
 - [ ] Every wait names what it is waiting for, in words an operator would read
