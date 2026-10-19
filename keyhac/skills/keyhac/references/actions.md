@@ -476,7 +476,12 @@ remote system has already accepted - so rollback is usually not available and
   and then the reply says up front that every run starts with putting page 1
   on screen, since that is now a step of the routine, not an error.
 - Use distinct exception types for "the UI moved on me" (regenerate the action)
-  and "my step failed" (retry it). They call for opposite responses.
+  and "my step failed" (retry it). They call for opposite responses - so the
+  `except` that keeps one bad item from losing the rest catches only the
+  second. A screen that is not the one the action was written for (a column
+  gone, a heading renamed) will be the same on every rerun: let it end the run,
+  with a message naming what was found instead and saying the action needs
+  changing. "Run it again" there is advice that cannot work.
 - Capture the application's own validation message after a submit. Without it,
   "write the failure back to the row" cannot be implemented.
 
