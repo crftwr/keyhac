@@ -157,6 +157,22 @@ readily as a callable, and returns what the condition returned. A timeout
 raises `WaitTimeout` (a `TimeoutError`) — an error, not a `False`, because an
 action whose precondition never arrived must stop.
 
+**Let it end the run; do not catch it to report it.** An action that catches
+the timeout and returns `("unknown", …)` ends *finished*: `get_action_result`
+and the operator's log read it as a run that worked, and the next step anyone
+takes is built on that. The words a person needs go in `message=` - the
+exception carries them - or in a log line, followed by `raise`:
+
+```python
+except WaitTimeout:
+    logger.error("no result after an hour - is the deploy still running?")
+    raise
+```
+
+Catching is for what the action can still finish without: one item of many
+that did not load, recorded as such, while the run goes on to the rest. The
+thing the task waits *for* is not one of those.
+
 **Wait for the state you expect, not for the old state to change.** "It
 differs from what I captured" and "the result arrived" coincide only when the
 new value happens to differ: a transform can be the identity — a translation

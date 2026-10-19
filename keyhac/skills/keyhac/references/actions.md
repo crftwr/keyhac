@@ -357,6 +357,12 @@ class ExtractThings(ThreadedAction):
         logger.info(f"{len(result)} rows")
 ```
 
+The `except` there is for the *items*: a run that stops at item 7 still has
+items 1-6 to report. What the whole task waits on - the deploy finishing, the
+page loading at all - is not caught: its `WaitTimeout` ends the run as a
+failure, which is what it is (`references/practice.md`, "Waiting for what you
+do not cause").
+
 `self.stopped` above is the action's own attribute, not something the base
 class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
