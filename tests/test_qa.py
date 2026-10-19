@@ -125,21 +125,26 @@ def test_records_finds_what_is_missing_and_doubled(room):
     assert found["wrong_amount"] == []
 
 
-def test_writes_names_a_desktop_file_the_room_wrote_itself(room):
-    def use(n, name, path):
+def test_writes_says_which_desktop_changes_came_after_the_last_action_run(room):
+    def use(n, name, given):
         return {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": f"t{n}", "name": name, "input": {"file_path": path}}]}}
-    lines = [use(1, "Write", str(room / "QUESTIONS.md")),
-             use(2, "Write", "/tmp/home/.keyhac/extensions/orders.py"),
-             use(3, "mcp__keyhac__start_action", ""),
-             use(4, "Edit", "C:\\Users\\run\\Desktop\\orders.csv")]
+            {"type": "tool_use", "id": f"t{n}", "name": name, "input": given}]}}
+    lines = [use(1, "Write", {"file_path": str(room / "QUESTIONS.md")}),
+             use(2, "Write", {"file_path": "/tmp/home/.keyhac/extensions/orders.py"}),
+             use(3, "Write", {"file_path": "/tmp/home/Desktop/orders.csv"}),
+             use(4, "mcp__keyhac__start_action", {"name": "orders.Orders"}),
+             use(5, "Edit", {"file_path": "C:\\Users\\run\\Desktop\\orders.csv"})]
     (room / "transcript.jsonl").write_text("\n".join(json.dumps(line) for line in lines))
     found = _evidence("writes", room)
-    assert found["desktop"] == [{"file": "orders.csv", "tool": "Edit"}]
+    assert found["desktop"] == [
+        {"file": "orders.csv", "tool": "Write", "call": 3, "an_action_ran_after": True},
+        {"file": "orders.csv", "tool": "Edit", "call": 5, "an_action_ran_after": False}]
+    assert found["last_start_action"] == {"call": 4, "action": "orders.Orders"}
+    assert found["note"].startswith("1 Desktop change")
     assert [w["path"] for w in found["outside_the_room"]] == [
         "/tmp/home/.keyhac/extensions/orders.py"]
-    (room / "transcript.jsonl").write_text(json.dumps(lines[0]))
-    assert _evidence("writes", room)["desktop"] == []
+    (room / "transcript.jsonl").write_text("\n".join(json.dumps(line) for line in lines[:4]))
+    assert _evidence("writes", room)["note"].startswith("no Desktop change")
 
 
 def test_the_settings_page_is_what_its_ground_truth_says():

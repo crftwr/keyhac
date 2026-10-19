@@ -270,24 +270,34 @@ FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 def cmd_writes(args) -> dict:
     """Files the room wrote with its own file tools rather than through an
-    action. `records` reads the Desktop as the run left it, and a room with
-    Write can put a correct CSV there by hand."""
+    action, each with its place among the room's tool calls, and whether an
+    action was started after it. Changing a file while trying an action is
+    what a person does too; `records` reads the Desktop as the run left it, so
+    a change after the last action run is what makes that reading wrong."""
     from quality_loop import transcript
     room = pathlib.Path(args.room).resolve()
+    calls = transcript.tool_calls(room / "transcript.jsonl")
+    started = [n for n, call in enumerate(calls, 1)
+               if call.name == "mcp__keyhac__start_action" and not call.is_error]
+    last = started[-1] if started else None
     desktop, elsewhere = [], []
-    for call in transcript.tool_calls(room / "transcript.jsonl"):
+    for n, call in enumerate(calls, 1):
         if call.name not in FILE_TOOLS or call.is_error:
             continue
         given = str(call.input.get("file_path") or call.input.get("notebook_path") or "")
         # Either separator: a Windows room's paths reach a Mac reading its evidence.
         segments = given.replace("\\", "/").split("/")
         if len(segments) >= 2 and segments[-2] == "Desktop":
-            desktop.append({"file": segments[-1], "tool": call.name})
+            desktop.append({"file": segments[-1], "tool": call.name, "call": n,
+                            "an_action_ran_after": last is not None and last > n})
         elif not pathlib.Path(given).resolve().is_relative_to(room):
-            elsewhere.append({"path": given, "tool": call.name})
+            elsewhere.append({"path": given, "tool": call.name, "call": n})
+    after = [w for w in desktop if not w["an_action_ran_after"]]
     return {"desktop": desktop, "outside_the_room": elsewhere,
-            "note": "a Desktop file here was written by the room, not by its action"
-                    if desktop else "the room wrote nothing on the Desktop itself"}
+            "last_start_action": None if last is None else {
+                "call": last, "action": calls[last - 1].input.get("name")},
+            "note": f"{len(after)} Desktop change(s) by hand after the last action run"
+                    if after else "no Desktop change by hand after the last action run"}
 
 
 def cmd_events(args) -> dict:
@@ -387,7 +397,8 @@ def main(argv=None) -> int:
     four.add_argument("--tool")
     four.set_defaults(func=cmd_calls)
     nine = commands.add_parser("writes", help="files the room wrote with its own file "
-                               "tools, not through an action - the Desktop ones first")
+                               "tools, not through an action - the Desktop ones with "
+                               "whether an action was started after each")
     nine.add_argument("room")
     nine.set_defaults(func=cmd_writes)
     five = commands.add_parser("events",help="what the fixture page recorded being done on it")

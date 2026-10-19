@@ -28,8 +28,9 @@ updates after every one. The harness is
 **Level 2.** `qa/evidence.py` answers from the run's record: `replay` loads
 the room's config in Keyhac's own engine and presses keys through the fake
 hook; `bindings` / `preserved` diff the config; `calls` lists the room's
-Keyhac tool calls and `writes` the files it wrote itself, so a Desktop file
-made by hand is not taken for an action's output; `events` and `records` read the fixture screens' record
+Keyhac tool calls and `writes` the files it wrote itself, and whether an
+action ran after each, so a Desktop file changed by hand after the last run is
+not taken for an action's output; `events` and `records` read the fixture screens' record
 against hand-written ground truth. `qa/scenarios/_always.md` is what every
 room is held to.
 
