@@ -161,6 +161,14 @@ class MacInputHook(InputHook):
     # approximating the OS movement-slop rule.
     DOUBLE_CLICK_INTERVAL = 0.5
 
+    # How long an injected button stays down before its up is posted. With
+    # none, Safari sometimes takes the up before the down - the page sees
+    # mouseup then mousedown, and no click - while the send reports success
+    # (issue #226: 7 Submit presses lost in 100 with no dwell, 0 in 160 with
+    # 20 ms). A hardware click holds the button for tens of milliseconds, so
+    # nothing reads this as anything but an ordinary click.
+    CLICK_DWELL = 0.02
+
     def __init__(self):
         self._on_key: Callable[[KeyEvent], bool] | None = None
         self._on_restored: Callable[[], None] | None = None
@@ -172,6 +180,7 @@ class MacInputHook(InputHook):
         # escalation.
         self._mouse_buttons_down: set = set()
         self._last_click: tuple[str, float, int] | None = None
+        self._mouse_down_at: dict = {}  # CGMouseButton -> monotonic time of our down
 
         self._event_tap = None
         self._run_loop_source = None
@@ -276,6 +285,7 @@ class MacInputHook(InputHook):
         self._deferred_real_events = []
         self._mouse_buttons_down = set()
         self._last_click = None
+        self._mouse_down_at = {}
         logger.info("Keyboard hook uninstalled.")
 
     @property
@@ -530,9 +540,21 @@ class MacInputHook(InputHook):
                     cg, Quartz.kCGMouseEventClickState, self._click_state(kind, down))
                 if down:
                     self._mouse_buttons_down.add(button)
+                    self._mouse_down_at[button] = time.monotonic()
                 else:
                     self._mouse_buttons_down.discard(button)
+                    self._dwell(self._mouse_down_at.pop(button, None))
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, cg)
+
+    def _dwell(self, down_at: float | None) -> None:
+        """Hold off an up until CLICK_DWELL after its down was posted - only
+        the part not already spent, so a caller that paused itself pays
+        nothing."""
+        if down_at is None:
+            return
+        remaining = MacInputHook.CLICK_DWELL - (time.monotonic() - down_at)
+        if remaining > 0:
+            time.sleep(remaining)
 
     def _motion_event_type(self):
         """(event type, button) for injected motion: the dragged type of a

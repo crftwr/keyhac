@@ -70,6 +70,12 @@ class MouseHarness:
             Quartz, "CGEventSourceButtonState",
             lambda state, button: button in self.buttons_physical)
         monkeypatch.setattr(hook_module.time, "monotonic", lambda: self.now)
+        self.slept = []
+
+        def sleep(seconds):
+            self.slept.append(seconds)
+            self.now += seconds
+        monkeypatch.setattr(hook_module.time, "sleep", sleep)
 
         self.hook = hook_module.MacInputHook()
         self.hook._source_translated = SimpleNamespace(state_id=TRANSLATED_ID)
@@ -93,6 +99,23 @@ def test_button_events_land_at_the_cursor(m):
         m.Q.kCGEventLeftMouseUp, m.Q.kCGMouseButtonLeft)
     assert down.pos == up.pos == (100, 200)
     assert down.source_id == TRANSLATED_ID
+
+
+def test_an_up_waits_until_its_down_has_been_held(m):
+    """Posted back to back, Safari sometimes takes the up first and the page
+    gets no click (issue #226)."""
+    m.hook.send_mouse([("left", True), ("left", False)])
+    assert m.slept == [pytest.approx(m.hook.CLICK_DWELL)]
+    assert [e.event_type for e in m.posted] == [
+        m.Q.kCGEventLeftMouseDown, m.Q.kCGEventLeftMouseUp]
+
+
+def test_a_down_already_held_long_enough_costs_nothing(m):
+    m.hook.send_mouse([("left", True)])
+    m.now += 0.05                         # the caller held it itself
+    m.hook.send_mouse([("left", False)])
+    m.hook.send_mouse([("right", False)])  # an up with no down of ours
+    assert m.slept == []
 
 
 def test_right_and_middle_buttons_map(m):
