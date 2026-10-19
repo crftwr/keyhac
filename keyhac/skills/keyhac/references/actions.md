@@ -74,6 +74,27 @@ after the press to take whatever answer appears, log it, and record it in that
 row - so the one press there is is the row's own, and is never repeated. To
 test a rerun, run it on a file with nothing left to submit.
 
+**Then send one row before the rest.** A reader that is wrong about the answer
+is found out only after a press, and once every row has been pressed there is
+nothing left to run the fixed version on - the result came from code the user
+does not get. So give the action a `limit` argument (default: no limit), and
+start it first through a throwaway subclass in its own file:
+
+```python
+from submit_records import SubmitRecords        # the action you deliver
+
+class FirstRow(SubmitRecords):
+    """Throwaway: one row, to check what the form answers."""
+    def __init__(self):
+        super().__init__(limit=1)
+```
+
+Have the action log the answer text it classified for each row, and after that
+one row compare it with what the screen shows. Fix the reader if it misread,
+correct that one row's status if it is wrong - and say so - retire `FirstRow`
+with `delete_extension`, then run the delivered action for the rest. Its run
+is then the one that made the rest of the result.
+
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
 
