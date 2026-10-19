@@ -352,18 +352,27 @@ remote system has already accepted - so rollback is usually not available and
   as they were read. An action whose only copy of the work is its return value
   loses all of it to the exception that ends the run - which is rule 7 seen
   from the other end.
-- **Start from the screen you are given - for a *resume*.** An action does not
-  navigate back to a start state it did not create - the same instinct as rule
-  9, since it did not open that page either. That is what makes resuming cheap,
-  and it means a rerun after a *complete* run reads only the last page rather
-  than starting over. Say which page or item you stopped on, so "leave it where
-  it is and press again" is an instruction the operator can act on.
-- **The task's scope still wins over the starting screen.** If the task asks
-  for *every* row and a first run - nothing recorded yet - finds the screen
-  part-way through (page 2 of 3), skipping page 1 silently is the one wrong
-  answer. Either reach the start through the UI's own control for it (a
-  "First" or "1" link: that is going where the task points, not undoing the
-  operator's work), or stop before reading and say the run began mid-way.
+- **Record whether the last run finished.** A file with rows in it says what
+  was read, not whether the run reached the end - and only the second tells a
+  resume from a fresh run. Write it down when the run ends: a last line or a
+  small state file beside the output saying "complete", or "stopped on page 2
+  of 3".
+- **Start from the screen you are given - for a *resume*.** When the record
+  says the last run stopped part-way, carry on from where the screen is: an
+  action does not navigate back to a start state it did not create - the same
+  instinct as rule 9, since it did not open that page either. That is what
+  makes resuming cheap. Say which page or item you stopped on, so "leave it
+  where it is and press again" is an instruction the operator can act on.
+- **Every other run covers the task's whole scope.** A first run, and a rerun
+  after a *complete* one, are not resumes. An action the operator runs each
+  week or each month-end finds the screen where the last complete run left it -
+  on the last page - and the new records are on the pages it is not showing.
+  If the task asks for *every* row and the screen is part-way through, reading
+  from there and reporting success is the one wrong answer. Either reach the
+  start through the UI's own control for it (a "First" or "1" link: that is
+  going where the task points, not undoing the operator's work), or stop before
+  reading and say which page it found. Rows keyed by record make reading
+  everything again cheap: what is already in the file is skipped, not doubled.
 - Use distinct exception types for "the UI moved on me" (regenerate the action)
   and "my step failed" (retry it). They call for opposite responses.
 - Capture the application's own validation message after a submit. Without it,
@@ -382,7 +391,8 @@ Check the generated action against this list, and fix rather than explain:
 - [ ] Preconditions before each press, not just at the start — `given=` for
       the ones that are not about the target
 - [ ] Results accumulate outside the failing scope, and are written per item
-- [ ] A second run does not duplicate the first
+- [ ] A second run does not duplicate the first, and a run after a complete
+      one still reads the whole scope - not just the page left on screen
 - [ ] Loops are bounded
 - [ ] Cleanup closes only what the action itself opened, identified as its own
 - [ ] It says what to redo when it stops
@@ -401,7 +411,9 @@ this is the question every one of these tasks leaves open, and a default they
 can see and change costs them less than a round trip. Say which file you wrote
 in the sentence you hand back. **If the file already exists**, append only when
 it is this action's own earlier output - its header is the one you write - and
-skip what is already there; a file with some other header is not yours to mix
+skip what is already there. An existing file is not a reason to read less:
+the run still covers the task's whole scope, unless its own record says the
+last run stopped part-way. A file with some other header is not yours to mix
 into, so stop and say so. If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
