@@ -471,7 +471,7 @@ remote system has already accepted - so rollback is usually not available and
   "Previous". Look at the last page before you settle on a route, because that
   is where every scheduled run after the first will start. In a browser the
   first page has an address: read it on a run that starts there (macOS: the
-  web area's `node.element.get_attribute_value("AXURL")` - not the address
+  web area's `node.element.get_attribute_value("AXURL")`, a string - not the address
   field, whose value was measured a page behind), keep it with the run record,
   and have a later run load it in the same window - `ui.fill` it into that
   window's address field and `ui.send_key("Enter", until=...)` naming page 1.
