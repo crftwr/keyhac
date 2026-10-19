@@ -88,7 +88,7 @@ dependencies = [
 # quality-loop runs qa/ (`make qa`): the skill bundle tried by an isolated
 # agent, reported on by an operator agent. Development only; nothing at
 # runtime imports it.
-dev = ["pytest>=8", "quality-loop>=0.2.0"]
+dev = ["pytest>=8", "quality-loop>=0.2.2"]
 
 [project.scripts]
 keyhac = "keyhac.main:main"
