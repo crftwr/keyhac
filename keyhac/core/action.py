@@ -340,6 +340,11 @@ class ThreadedAction:
     def finished(self, result: Any) -> None:
         """Called on the event-loop thread once run() has returned.
 
+        Not called when run() raised - the error is logged with its traceback
+        and `get_action_result` reports the run as failed - nor when it was
+        cancelled. What must happen either way, such as recording where the
+        run stopped, belongs in a `finally` inside run().
+
         Args:
             result: Whatever run() returned.
         """
