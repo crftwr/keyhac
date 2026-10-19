@@ -162,9 +162,18 @@ def test_the_runs_skip_a_screen_only_you_can_put_up_unless_named():
     product = run.Keyhac()
     everything = product.runs(SCENARIOS)
     assert not [c for c, _v in everything if c.meta.get("needs")]
-    assert len(everything) == 2 * (len(SCENARIOS) - 2), "a files and an mcp room each"
+    assert len(everything) == len(SCENARIOS) - 2, "one room per scenario"
     slack = [c for c in SCENARIOS if c.number == 9]
-    assert product.runs(slack, named=True) == [(slack[0], ""), (slack[0], "mcp")]
+    assert product.runs(slack, named=True) == [(slack[0], "")]
+
+
+def test_each_access_is_some_scenarios_and_names_its_room():
+    run = _run_module()
+    accesses = {c.meta.get("access", "files") for c in SCENARIOS}
+    assert accesses == {"files", "mcp"}, "an access nobody runs, or one not known"
+    rooms = dict((c.name, v) for c, v in run.Keyhac().runs(SCENARIOS, named=True))
+    assert {name for name, v in rooms.items() if v == "mcp"} == {
+        c.name for c in SCENARIOS if c.meta.get("access") == "mcp"}
 
 
 def test_a_files_room_reaches_the_keyhac_folder_and_an_mcp_room_does_not(tmp_path,

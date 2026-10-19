@@ -1,6 +1,7 @@
 +++
 title = "An action that finishes a data entry that stopped halfway"
 staged = [["to_submit_partial.csv", "to_submit.csv"]]
+access = "mcp"
 +++
 
 ## Prompt

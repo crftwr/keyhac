@@ -315,9 +315,9 @@ class Keyhac(adapter.Adapter):
         info = endpoint(self.home)
         if info is None or "bridge" not in info:
             raise SystemExit("Keyhac's endpoint is not answering, or publishes no bridge")
-        # The variant is the room's label after the scenario's name
-        # (runner.label_of): the session is made before the stand-in, the one
-        # call that is handed it.
+        # The variant - the scenario's `access` - is the room's label after the
+        # scenario's name (runner.label_of): the session is made before the
+        # stand-in, the one call that is handed it.
         variant = room.name.partition(".")[2]
         # files (the default): the room's file tools reach ~/.keyhac and the
         # Desktop, as for an agent the user gave the folder. mcp: they reach
@@ -349,20 +349,21 @@ class Keyhac(adapter.Adapter):
         return endpoint(self.home) is not None
 
     def runs(self, cases, named=False):
-        """Two rooms per scenario: `files`, whose file tools reach ~/.keyhac
-        (the setup the skill asks for), and `mcp`, whose do not (the fallback
-        through Keyhac's tools). Each is on the config the scenario's front
-        matter names (`config = "short"`; the template when it names none).
-        Each of the three fixture configs is some scenario's: running every
-        scenario on all three made a full run 19 rooms, most of them finding
-        the same problems again. `--variant files` runs half."""
+        """One room per scenario, on the config its front matter names
+        (`config = "short"`; the template when it names none) and with the
+        access it names: `access = "mcp"` is a room whose file tools do not
+        reach ~/.keyhac (the fallback through Keyhac's tools), labelled
+        `.mcp`; otherwise they do (the setup the skill asks for). Each fixture
+        config and each access is some scenario's: running every scenario on
+        all three configs made a full run 19 rooms, most of them finding the
+        same problems again."""
         found = []
         for case in cases:
             needs = case.meta.get("needs")
             if needs and not named:
                 print(f"  skipped: {case.name} - needs {needs}; name it with CASE=")
                 continue
-            found += [(case, ""), (case, "mcp")]
+            found.append((case, "mcp" if case.meta.get("access") == "mcp" else ""))
         return found
 
     def stand_in(self, case, variant, room):

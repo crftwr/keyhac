@@ -34,11 +34,11 @@ design is #205):
   operation is computer use's job, not Keyhac's. So an action prompt says why
   it comes round again, and asks for one run now to show it works.
 - A **room** gets this version's bundle and the prompt, and nothing else. It
-  runs `--restricted`, with Keyhac's MCP and no shell. Each scenario gets two
-  rooms: in `files` its file tools reach the run's `~/.keyhac` and Desktop, the
-  setup the skill asks the user for; in `.mcp` they reach neither, as in Claude
-  Desktop with no folder added, and config.py and `extensions/` are Keyhac's
-  tools' alone. `--variant files` runs one of the two. **The MCP endpoint is
+  runs `--restricted`, with Keyhac's MCP and no shell. Its file tools reach the
+  run's `~/.keyhac` and Desktop, the setup the skill asks the user for - unless
+  the scenario's front matter says `access = "mcp"`: that room, labelled
+  `.mcp`, reaches neither, as in Claude Desktop with no folder added, and
+  config.py and `extensions/` are Keyhac's tools' alone. **The MCP endpoint is
   allowed and the checkout is not**: reading the screen through Keyhac's own
   tools is what the skill tells an author to do.
 - **Nothing of yours is touched.** The run starts this checkout's Keyhac in
