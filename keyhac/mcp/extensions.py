@@ -264,8 +264,9 @@ def _first_line(docstring: str | None) -> str | None:
 class Loader:
     """Imports a module when something asks to run a class in it, not before.
 
-    Instances are cached per name and invalidated by the file's mtime, so an
-    edited file is re-imported on its next run. Without that the second run of
+    Instances are cached per name and invalidated by the mtimes of the file
+    and of everything in `extensions/` it imports, so an edited file is
+    re-imported on its next run. Without that the second run of
     a fix loop would execute the first version - the same silent staleness
     `_prepare_extensions` exists to prevent for `config.py`'s own imports.
 
@@ -288,7 +289,11 @@ class Loader:
         return None if entry is None else entry[1]
 
     def instantiate(self, action: ActionClass):
-        stamp = _mtime(action.path)
+        # Stamped over the import graph, as `_loaded_and_current` judges the
+        # module: an action subclassing one in another file - a one-row probe
+        # beside the action it tries - is otherwise handed its cached instance
+        # after only the other file changed, and runs the replaced code.
+        stamp = _graph_stamp(action)
         entry = self._instances.get(action.name)
         if entry is not None and entry[0] == stamp:
             return entry[1]
@@ -357,6 +362,16 @@ def _loaded_and_current(action: ActionClass):
         if Keymap._loaded_extension(name, parsed[name].path) is None:
             return None
     return sys.modules.get(action.module)
+
+
+def _graph_stamp(action: ActionClass) -> tuple:
+    """The mtimes of `action`'s file and of every module in `extensions/` it
+    imports, transitively - what has to stay still for a cached instance to
+    still be this code."""
+    parsed = _parse_directory(os.path.dirname(action.path))
+    names = _imported_modules(parsed, action.module, set())
+    paths = {action.path, *(parsed[name].path for name in names)}
+    return tuple(sorted((path, _mtime(path)) for path in paths))
 
 
 def _imported_modules(parsed: dict, module: str, seen: set) -> set:
