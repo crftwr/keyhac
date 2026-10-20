@@ -69,33 +69,16 @@ same goes for a run made only to check your own logic against the live form.
 For those, look at everything up to the press, and get the answer's shape
 another way: ask the user what the form says when it accepts and when it
 refuses, or ask them to do one row by hand while you read the screen after.
-If neither is possible, let the first real run be the probe - write the wait
-after the press to take whatever answer appears, log it, and record it in that
-row - so the one press there is is the row's own, and is never repeated. To
-test a rerun, run it on a file with nothing left to submit.
+If neither is possible, let the first real run be the probe, so the one press
+there is is the row's own and is never repeated.
 
 **Then send one row before the rest** - for these actions, whose presses
 commit; one that only reads and pages can be run again as often as you like,
-and needs none of this. A reader that is wrong about the answer
-is found out only after a press, and once every row has been pressed there is
-nothing left to run the fixed version on - the result came from code the user
-does not get. So give the action a `limit` argument (default: no limit), and
-start it first through a throwaway subclass in its own file:
-
-```python
-from submit_records import SubmitRecords        # the action you deliver
-
-class FirstRow(SubmitRecords):
-    """Throwaway: one row, to check what the form answers."""
-    def __init__(self):
-        super().__init__(limit=1)
-```
-
-Have the action log the answer text it classified for each row, and after that
-one row compare it with what the screen shows. Fix the reader if it misread,
-correct that one row's status if it is wrong - and say so - retire `FirstRow`
-with `delete_extension`, then run the delivered action for the rest. Its run
-is then the one that made the rest of the result.
+and needs none of this. A reader that is wrong about the answer is found out
+only after a press, and once every row has been pressed there is nothing left
+to run the fixed version on - the result came from code the user does not
+get. So run the code you deliver on one row first, compare what it made of
+the answer with what the screen shows, and fix the reader before the rest go.
 
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
@@ -142,11 +125,10 @@ that looks correct and is not.
 
 1. **Never `sleep`.** Wait for something specific: an element appearing, a
    label reading what the screen *should* now show. Name the target state,
-   never "different from what I captured before clicking" - a transform can
-   be the identity (translating `kt` returns `kt`), and a wait for the value
-   to *change* then never returns even though the screen is already correct.
-   `sleep` passes on your machine and fails on a slower one - and on a faster
-   one it fails *silently*, acting on a screen that has not arrived.
+   never "different from what I captured before clicking"
+   (`references/practice.md`, "Wait for the state you expect"). `sleep`
+   passes on your machine and fails on a slower one - and on a faster one it
+   fails *silently*, acting on a screen that has not arrived.
 2. **Never coordinates, and address by structure when names run out.**
    `identifier` first *when it is a real name* - a DOM id or an AutomationId.
    macOS `AXIdentifier` values like `_NS:746` are nib serial numbers: ignore
@@ -155,9 +137,8 @@ that looks correct and is not.
    Code containing pixel positions is a failed generation - though using a
    rect to *associate* a label with an unnamed field is fine, and on native
    macOS panes it is the only thing that works. When the role itself is the
-   wrong question, address by **capability**: the thing you can tick is the one
-   with a `ToggleState`, whatever it calls itself - and scope that search to the
-   panel, or you will find a toolbar button that also toggles.
+   wrong question, address a control by what it can do and where it sits, not
+   by what it calls itself (`references/quirks.md`).
 3. **Read back after writing.** `node.set_text()` does this for you and raises
    `FillFailed`. Every write mechanism has a silent-failure mode; the read-back
    is what turns all of them into loud ones. `verify=False` is not a speed
@@ -298,12 +279,9 @@ that has never executed is a guess.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
    The output an earlier round left is the user's file now - see below.
 6. **When it works** - its last run, of the version you hand over, made what
-   is in its output - tell them how to run it again. Name the file it lives in
-   and the row it shows, and say where that row is: the Run page, if their
-   `config.py` has an `ActionsSource()` (say which key opens that chooser).
-   Without one, offer the two choices - a key, with the `configure()` block
-   above, or a Run page added - and edit `config.py` only once they pick one.
-   Whether it goes on a key is theirs to decide; say so plainly.
+   is in its output - tell them how to reach it again from the `config.py`
+   they have. A key or a Run page is theirs to choose: edit `config.py` only
+   once they do.
 7. **Clean up what the loop left behind.**
    `delete_extension("wrong_name")` retires a module — it renames it to a
    `.bak-` beside itself rather than erasing it, so this is reversible. Use it

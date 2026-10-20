@@ -141,8 +141,7 @@ answered = ui.wait(lambda: (ui.window(...).find(identifier="result")
 ```
 
 Skip it and the action reads the *previous* row's answer and files it against
-this one — a wrong result that looks like a working action. A run that read
-without waiting concluded the page was silent, and it was not.
+this one — a wrong result that looks like a working action.
 
 **Name what the application produces, never what you typed.** A postcondition
 of `Appears(Locator(text="REF-777"))` after filling a form with `REF-777` is
@@ -225,11 +224,9 @@ press after it. They are not the same thing: the first takes the front, the
 second refuses to press when something else has taken it back — a notification,
 or the operator's own click, mid-run.
 
-This is not "navigating to a start state you did not create". That rule is
-about *where in the application* you are — the page, the record, the tab — and
-it says leave that where you found it. Which window is front is not that: a
-keystroke goes to whatever is in front, so an action that does not take the
-front is typing into somebody else's window.
+Taking the front is not disturbing the operator's work: a keystroke goes to
+whatever is in front, so an action that does not take it is typing into
+somebody else's window.
 
 **When more than one window matches, choose on purpose and say which.**
 `ui.window(app=...)` hands back the first match, and with two windows of the
