@@ -55,7 +55,7 @@ def test_the_hand_written_actions_follow_the_rules(check, action):
 
 def test_every_rule_is_actually_enforced(check):
     problems = "\n".join(check(QA / "fixtures/violates_every_rule.py"))
-    for rule in ("rule 1", "rule 2", "rule 3", "rule 4", "rule 6", "rule 7"):
+    for rule in ("rule 1", "rule 2", "rule 3", "rule 4", "rule 7", "rule 8"):
         assert rule in problems, f"{rule} was not caught"
 
 

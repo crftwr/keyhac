@@ -1,12 +1,19 @@
 # Writing a Keyhac action
 
-An action drives another application's accessibility tree. The body is a
-pipeline; the UI is its I/O driver, not its subject:
+An action drives another application's accessibility tree. The body is
+usually a pipeline over many items - one that waits on a single thing is the
+same shape with one item; the UI is its I/O driver, not its subject:
 
 ```
 enumerate targets → for each: navigate, wait, read or write, accumulate
                   → aggregate → transform → emit
 ```
+
+Most of this document is about that shape: an action started and left to
+work through a list, a queue or a wait, often again each week. An action a key
+press runs and finishes - on the selection, the field, the line under the
+caret - shares the rules and the API, and has a few concerns of its own
+("Actions a key press runs and finishes", below).
 
 **Write plain Python.** Locating an element is a tree search, branching is
 `if`, extraction is a regex, iteration is a loop. Nothing here needs a model at
@@ -62,40 +69,28 @@ look - write a throwaway action that performs the single press and dumps what
 appeared, run it, read the tree. That is one cheap run against the real screen,
 and it beats guessing at selectors for a dialog you have never seen.
 
-**Except when the press commits something.** Submit, Send, Save, Delete, Pay:
-there a throwaway run is not a look, it is a submission - the other system
-records it, outside anything the action keeps, and no undo takes it back. The
-same goes for a run made only to check your own logic against the live form.
-For those, look at everything up to the press, and get the answer's shape
-another way: ask the user what the form says when it accepts and when it
-refuses, or ask them to do one row by hand while you read the screen after.
-If neither is possible, let the first real run be the probe - write the wait
-after the press to take whatever answer appears, log it, and record it in that
-row - so the one press there is is the row's own, and is never repeated. To
-test a rerun, run it on a file with nothing left to submit.
+**Except when the press commits something.** Submit, Send, Save, Delete, Pay,
+Approve: there a throwaway run is not a look, it is the act itself - the other
+system records it, outside anything the action keeps, and no undo takes it
+back. Read "commits" as any change the user cannot simply take back
+themselves - in another system, or in their own document or settings where
+the application keeps no undo for it. The same goes for a run made only to
+check your own logic against the live screen. For those, look at everything
+up to the press, and learn what
+the press leads to another way: ask the user, or ask them to do one item by
+hand while you read the screen after. If neither is possible, let the first
+real item be the probe, so the one press there is is that item's own and is
+never repeated.
 
-**Then send one row before the rest** - for these actions, whose presses
-commit; one that only reads and pages can be run again as often as you like,
-and needs none of this. A reader that is wrong about the answer
-is found out only after a press, and once every row has been pressed there is
-nothing left to run the fixed version on - the result came from code the user
-does not get. So give the action a `limit` argument (default: no limit), and
-start it first through a throwaway subclass in its own file:
-
-```python
-from submit_records import SubmitRecords        # the action you deliver
-
-class FirstRow(SubmitRecords):
-    """Throwaway: one row, to check what the form answers."""
-    def __init__(self):
-        super().__init__(limit=1)
-```
-
-Have the action log the answer text it classified for each row, and after that
-one row compare it with what the screen shows. Fix the reader if it misread,
-correct that one row's status if it is wrong - and say so - retire `FirstRow`
-with `delete_extension`, then run the delivered action for the rest. Its run
-is then the one that made the rest of the result.
+**Then let one item go before the rest** - for these actions, whose presses
+commit; one that only reads can be run again as often as you like, and needs
+none of this. A mistake in such an action is found only after a press, and
+what has been pressed cannot be pressed again with the fixed code. So no
+version of the action does its first committing step on more than one item:
+run each version on one item, check what it did against the screen, and only
+then let it do the rest. That holds again after every change, whatever the
+change touched. `start_action`'s `arguments` go to the constructor for one
+run, so a limit the action takes lets you do this with the file as delivered.
 
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
@@ -142,11 +137,10 @@ that looks correct and is not.
 
 1. **Never `sleep`.** Wait for something specific: an element appearing, a
    label reading what the screen *should* now show. Name the target state,
-   never "different from what I captured before clicking" - a transform can
-   be the identity (translating `kt` returns `kt`), and a wait for the value
-   to *change* then never returns even though the screen is already correct.
-   `sleep` passes on your machine and fails on a slower one - and on a faster
-   one it fails *silently*, acting on a screen that has not arrived.
+   never "different from what I captured before clicking"
+   (`references/practice.md`, "Wait for the state you expect"). `sleep`
+   passes on your machine and fails on a slower one - and on a faster one it
+   fails *silently*, acting on a screen that has not arrived.
 2. **Never coordinates, and address by structure when names run out.**
    `identifier` first *when it is a real name* - a DOM id or an AutomationId.
    macOS `AXIdentifier` values like `_NS:746` are nib serial numbers: ignore
@@ -155,9 +149,8 @@ that looks correct and is not.
    Code containing pixel positions is a failed generation - though using a
    rect to *associate* a label with an unnamed field is fine, and on native
    macOS panes it is the only thing that works. When the role itself is the
-   wrong question, address by **capability**: the thing you can tick is the one
-   with a `ToggleState`, whatever it calls itself - and scope that search to the
-   panel, or you will find a toolbar button that also toggles.
+   wrong question, address a control by what it can do and where it sits, not
+   by what it calls itself (`references/quirks.md`).
 3. **Read back after writing.** `node.set_text()` does this for you and raises
    `FillFailed`. Every write mechanism has a silent-failure mode; the read-back
    is what turns all of them into loud ones. `verify=False` is not a speed
@@ -298,12 +291,9 @@ that has never executed is a guess.
 5. Read, fix, and go back to 1. Nothing in this loop needs the operator.
    The output an earlier round left is the user's file now - see below.
 6. **When it works** - its last run, of the version you hand over, made what
-   is in its output - tell them how to run it again. Name the file it lives in
-   and the row it shows, and say where that row is: the Run page, if their
-   `config.py` has an `ActionsSource()` (say which key opens that chooser).
-   Without one, offer the two choices - a key, with the `configure()` block
-   above, or a Run page added - and edit `config.py` only once they pick one.
-   Whether it goes on a key is theirs to decide; say so plainly.
+   is in its output - tell them how to reach it again from the `config.py`
+   they have. A key or a Run page is theirs to choose: edit `config.py` only
+   once they do.
 7. **Clean up what the loop left behind.**
    `delete_extension("wrong_name")` retires a module — it renames it to a
    `.bak-` beside itself rather than erasing it, so this is reversible. Use it
@@ -315,21 +305,16 @@ that has never executed is a guess.
    next reload fails and their key bindings stop working.
 
 **An earlier round's output is in the way? Run against it first.** After the
-first round, the output file is there, and so is the status a run wrote into
-the user's CSV. That is the state the user meets every time they run the
-action again, so a changed action is tried against it before anything else:
-if the next run skips what is there, or says "already saved", that is the
-rerun behaving, not something to clear away. When you do need the first-run
-path again, set the file aside rather than emptying or editing it - rename it
-to `orders.before-test.csv`, where the user will see it - and never edit a
-status column to make the action do a row again: that sends it to the other
-system a second time. With a shell the rename is one `mv`. Without one, an
-action can do it: a throwaway one whose `run()` is a single
-`pathlib.Path(...).rename(...)`, started once and retired with
-`delete_extension` - or ask the user to move the file. The screen is part of
-the start too: a list left on its last page is put back on page 1 the way
-the delivered action itself would get there (see "A list often has no way
-back"). Then two things hold when you hand over:
+first round, what it left is there - its output, the record of what it
+committed, the other system's state. That is what the user meets every time
+they run the action again, so a changed action is tried against it before
+anything else: if the next run skips what is there, or says "already done",
+that is the rerun behaving, not something to clear away. When you do need the
+first-run path again, set what is in the way aside where the user will see it
+rather than emptying or editing it, and never change the record of a
+committed item to make the action do it again: that commits it a second
+time. The screen is part of the start too; put it back the way the delivered
+action itself would. Then two things hold when you hand over:
 
 - the last run of the delivered action, started from files as the user could
   have them, made what is in the output - not an earlier version's run, and
@@ -393,6 +378,18 @@ do not cause").
 class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
 `finished()` can tell a run that stopped early from one that reached the end.
+**An instance can serve more than one run** - a key binding holds one, and
+`start_action` keeps one until the file changes; only the Run page makes a new
+one each time - so set per-run state at the top of `run()`, not in `__init__`,
+or a run reports what the last one left.
+
+**Tell the user in `finished()`.** The log is for you and for Keyhac's
+console; the person learns the outcome from a balloon -
+`self.keymap.pop_balloon(name, text, timeout)` (`references/configuration.md`,
+"Balloons"). `finished()` runs on the thread a balloon needs. One about a run
+that went on while they were elsewhere belongs in a corner and stays until
+they close it: `timeout=None, anchor="corner"`. It is absent when Keyhac runs
+without its UI, so reach it with `getattr(self.keymap, "pop_balloon", None)`.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it
@@ -409,90 +406,78 @@ nothing that has to ask an application.
 a `WaitTimeout` that follows says the application never answered. Anywhere
 else it ends the read; let it end the action, or catch it to retry later.
 
+## Actions a key press runs and finishes
+
+The person pressed a key in the middle of their own work and is waiting,
+looking at the place they pressed it. So:
+
+- **Act on what the press named**, not on whatever is in front by the time
+  `run()` gets there: capture it in `starting()` (`keymap.focus`), and check
+  in `run()` that it is still what you were given.
+- **Leave them where they were.** Focus, selection, caret and clipboard come
+  back as you found them, unless changing one of them is the point.
+- **Quick is part of correct.** Read the least that answers - scoped to the
+  focused element or its window, not a dump of the screen.
+- **When it cannot do it, say so where they are looking** - a balloon at the
+  caret - and change nothing.
+
 ## Failure, progress, resume
 
-These actions run for tens of minutes over hundreds of items. A read that fails
+An action that works through many items can run for tens of minutes over
+hundreds of them, and this section is mostly about those. A read that fails
 leaves nothing behind; a write that fails halfway leaves a partial mutation the
 remote system has already accepted - so rollback is usually not available and
 **checkpointing matters more than undo**.
 
-- Write the outcome **per item, as it happens**, not at the end. A run killed
-  mid-way must leave a file that tells the truth about what got through.
-- Make reruns safe: key output rows (`(system, id)`), or keep a status column
-  and skip what is already done. Then a partial failure is resumed, not
-  repeated.
-- **Skipping what is there is for a resume.** After a *complete* run, a new
-  one means what the task says it means, and the two common answers differ. A
-  *snapshot* ("at each month's end I merge every record") is the screens as
-  they are now: a record whose amount changed must show the new amount, and
-  one deleted must go - so read everything into a working file and put it in
-  place of the output when the run completes, keeping last period's under a
-  name the user can find (`all_orders-2026-09.csv`). Name it for the period it
-  *covers*, recorded when it was made - a month-end run on the 1st is still
-  September's - and never write over a kept file: if the name is taken, add to
-  it rather than replace it. A test rerun of yours makes one of these too;
-  remove the one you made, and say so. A *log* ("save the new
-  orders each week") adds only what is new, keyed, as above. If the prompt
-  does not say which, pick one and say which in the reply.
-- **A refused row is done too.** The form answered it; that answer goes in its
-  status, and a rerun skips it like an accepted one. Pressing Submit again on
-  the same values gets the same refusal at best, and a second record at worst.
-  What sends it again is the user, after they fix the row: tell them to clear
-  its status then. The next run picks up only rows Submit was never pressed
-  for. A row pressed with no answer before the timeout is *unknown*, not
-  failed - it may have gone in - so mark it that way and leave it for the user
-  to check, rather than pressing again.
-- Report **what to redo**, not that something failed: name the systems, rows or
-  items that need another run.
-- **What `run()` returns is a report, not the output.** The rows come back so
-  `finished()` can say how many there were; the file they belong in was written
-  as they were read. An action whose only copy of the work is its return value
-  loses all of it to the exception that ends the run - which is rule 7 seen
-  from the other end.
-- **Record whether the last run finished.** A file with rows in it says what
-  was read, not whether the run reached the end - and only the second tells a
-  resume from a fresh run. Write it down when the run ends: a last line or a
-  small state file beside the output saying "complete", or "stopped on page 2
-  of 3".
-- **Start from the screen you are given - for a *resume*.** When the record
-  says the last run stopped part-way, carry on from where the screen is: an
-  action does not navigate back to a start state it did not create - the same
-  instinct as rule 9, since it did not open that page either. That is what
-  makes resuming cheap. Say which page or item you stopped on, so "leave it
-  where it is and press again" is an instruction the operator can act on.
-- **Every other run covers the task's whole scope.** A first run, and a rerun
-  after a *complete* one, are not resumes. An action the operator runs each
-  week or each month-end finds the screen where the last complete run left it -
-  on the last page - and the new records are on the pages it is not showing.
-  If the task asks for *every* row and the screen is part-way through, reading
-  from there and reporting success is the one wrong answer. Reach the start the
-  way the UI offers - that is going where the task points, not undoing the
-  operator's work - or stop before reading and say which page it found. Rows
-  keyed by record make reading everything again cheap: what is already in the
-  file is skipped, not doubled.
-- **A list often has no way back on its last page** - no "First", no "1", no
-  "Previous". Look at the last page before you settle on a route, because that
-  is where every scheduled run after the first will start. In a browser the
-  first page has an address: read it on a run that starts there (macOS: the
-  web area's `node.element.get_attribute_value("AXURL")`, a string - not the address
-  field, whose value was measured a page behind), keep it with the run record,
-  and have a later run load it in the same window - `ui.fill` it into that
-  window's address field and `ui.send_key("Enter", until=...)` naming page 1.
-  (A first run that starts mid-list has no address to keep: ask the user for
-  it, and make it a constructor default.) Opening it in a new window or tab
-  instead makes that one yours to close
-  (rule 9). Only where there is no such route does the action stop and ask -
-  and then the reply says up front that every run starts with putting page 1
-  on screen, since that is now a step of the routine, not an error.
-- Use distinct exception types for "the UI moved on me" (regenerate the action)
-  and "my step failed" (retry it). They call for opposite responses - so the
-  `except` that keeps one bad item from losing the rest catches only the
-  second. A screen that is not the one the action was written for (a column
-  gone, a heading renamed) will be the same on every rerun: let it end the run,
-  with a message naming what was found instead and saying the action needs
-  changing. "Run it again" there is advice that cannot work.
-- Capture the application's own validation message after a submit. Without it,
-  "write the failure back to the row" cannot be implemented.
+- **The output tells the truth as the run goes.** Write each item's outcome
+  when it happens, not at the end, so a run killed mid-way leaves a file that
+  says what got through. What `run()` returns is a report for `finished()`,
+  not the only copy of the work - that copy is lost to the exception that ends
+  the run (rule 7).
+- **Record whether the run reached the end**, somewhere a later run can read.
+  Rows in a file say what was read, not whether the run finished, and only the
+  second tells a resume from a fresh run.
+- **A resume finishes what the last run left; every other run does the whole
+  task.** A resume does nothing twice - keyed rows or a status column let it
+  skip what is done - and how it gets back to work is yours to choose. Any
+  other run, a scheduled one after a complete run included, covers the task's
+  whole scope wherever the screen happens to be, and a scheduled run usually
+  finds it where the last one ended. Reaching the start the way the UI offers
+  is going where the task points; where there is no way, stop before reading
+  and say where the screen was. Reading from where it stands and reporting
+  success is the one wrong answer. Look at where a complete run leaves the
+  screen before settling on a route back (`references/quirks.md`, "A paged
+  list often has no way back").
+- **A rerun after a complete run means what the task says.** A *snapshot*
+  ("at each month's end I merge every record") is the screens as they are
+  now: changed and deleted records show as such, the new output replaces the
+  old only when the run completes, and the previous one stays where the user
+  will find it. A *log* ("save the new orders each week") adds only what is
+  new. If the prompt does not say which, pick one and say so. What the choice
+  turns on and only the user knows - which period a snapshot covers, say - is
+  theirs to give: ask, or make it a default they can see. Never destroy output
+  they already have.
+- **Nothing is committed twice.** An item the other system answered -
+  accepted or refused - is done: record the answer, in the application's own
+  words, and a rerun skips it. Only the user sends a refused item again, after
+  fixing it; tell them how to mark it for that.
+- **Only what you have seen becomes a verdict.** Accepted, refused,
+  succeeded, failed: an answer becomes one of these only when it is in a form
+  you have seen on the screen or been told by the user. No answer before the
+  timeout, or one in any other form, is *unknown* - record its own words and
+  leave it to the user rather than leaning it either way: a wrong "ok" is
+  never looked at again, and a wrong "refused" gets sent twice.
+- **Stop for the reason there is, and say what follows from it.** "The UI
+  moved on me" and "my step failed" call for opposite responses, so give them
+  distinct exception types: the `except` that keeps one bad item from losing
+  the rest catches only the second. Hold the action to what the user named -
+  a column's heading, a button's label - not to where it happens to sit, so
+  that only what they named going missing makes a screen a different one; a
+  new order or an extra column does not. A different screen will be the same
+  on every rerun, so it ends the run. However the run ends - through a handler
+  that saves progress on the way out as much as anywhere - the report says
+  what that cause calls for: which systems, rows or items to redo, or what was
+  found instead and that the action needs changing.
 
 ## When you are done
 
@@ -506,8 +491,8 @@ Check the generated action against this list, and fix rather than explain:
 - [ ] Every wait names what it is waiting for, in words an operator would read
 - [ ] Selectors used more than once are `ui.Locator` values, written once
 - [ ] Every write is verified; every toggle is read first
-- [ ] Nothing - a probe, a check run, a retry of a refused row - pressed
-      Submit twice for one row
+- [ ] Nothing - a probe, a check run, a retry of a refused item - committed
+      one item twice, and every version did its first commit on one item
 - [ ] Preconditions before each press, not just at the start — `given=` for
       the ones that are not about the target
 - [ ] Results accumulate outside the failing scope, and are written per item
@@ -515,7 +500,8 @@ Check the generated action against this list, and fix rather than explain:
       one still reads the whole scope - not just the page left on screen
 - [ ] Loops are bounded
 - [ ] Cleanup closes only what the action itself opened, identified as its own
-- [ ] It says what to redo when it stops
+- [ ] When it stops, it says what that cause calls for - what to redo, or
+      that the action needs changing
 
 ## What belongs in the user's prompt, not in your questions
 
@@ -529,14 +515,12 @@ argument with that default - so the operator overrides it on the line that
 binds the key, and the file is somewhere they will find it. Do not stop to ask:
 this is the question every one of these tasks leaves open, and a default they
 can see and change costs them less than a round trip. Say which file you wrote
-in the sentence you hand back. **If the file already exists**, append only when
-it is this action's own earlier output - its header is the one you write - and
-skip what is already there, if the task is a log or this run is a resume; a
-snapshot replaces it (see "Skipping what is there is for a resume"). An
-existing file is not a reason to read less:
-the run still covers the task's whole scope, unless its own record says the
-last run stopped part-way. A file with some other header is not yours to mix
-into, so stop and say so. If you find yourself needing
+in the sentence you hand back. **If the file already exists**, it is this
+action's own earlier output when it is in the form this action writes - a CSV
+with the header it writes, say - even if the user has opened and saved it
+since. Its own output is a rerun, handled as "Failure, progress, resume" says,
+and never a reason to read less. Anything else is not yours to mix into: stop
+and say so. If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 

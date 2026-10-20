@@ -156,6 +156,16 @@ subscription API to reach for: one existed and was removed once measured.
 Polling is what finds the change, and it is fast enough - a modal was seen
 10-25 ms after the click.
 
+## A paged list often has no way back
+
+Many web lists have no "First", no "1" and no "Previous" on their last page -
+and the last page is where a complete run leaves the screen, so it is where
+every scheduled run after the first starts. In a browser the first page has
+an address: a run that starts there can record it, and a later one load it in
+the same window. On macOS read it from the web area
+(`node.element.get_attribute_value("AXURL")`, a string), not from the address
+field, whose value was measured a page behind.
+
 ## Terminals and editors do answer whole-value reads
 
 Terminal.app's `AXTextArea` returns the entire scrollback through `AXValue`,
@@ -225,8 +235,7 @@ A text field on a settings pane has **no name at all** - the Columns field is
 beside it, with nothing in the tree linking them. A snapshot keyed on names
 silently drops every text field on the screen.
 
-Pair them by geometry: the label is the static text immediately to the left
-whose vertical centre matches. That is *association*, not addressing - the
+Pair them by geometry. That is *association*, not addressing - the
 field is still found by role - and it is the one legitimate use of `rect`.
 
 ## A tab is defined by its parent, not by its role
@@ -333,18 +342,8 @@ reader that knows about only one silently records a fraction of the screen:
 | RadioButton, ListItem, TabItem, TreeItem | `IsSelected` |
 
 Measured on Internet Properties: reading only `value` and `ToggleState` found
-**1** control on the Security panel; adding `IsSelected` found **5**. So:
-
-```python
-def state_of(node):
-    if node.value is not None:
-        return node.value
-    for attribute in ("ToggleState", "IsSelected"):
-        state = node.element.get_attribute_value(attribute)
-        if state is not None:
-            return state
-    return None
-```
+**1** control on the Security panel; adding `IsSelected` found **5**. The two
+patterns are read with `node.element.get_attribute_value(...)`.
 
 `IsSelected` is also the **only** way to work a tab. A Win32 `TabItem` supports
 no `Invoke`, no `Toggle` and no `Expand` - `get_action_names()` returns `[]`
@@ -362,10 +361,9 @@ activates the window that is already open, on whatever document the user was
 editing - and `FindWindowW("Notepad", None)` then names *that* window. An
 action that "opens Notepad and types" will type into their work.
 
-Open a named file of your own, find the window by *its* title, confirm the
-element you are about to write to by content only you would have written, and
-require it to hold keyboard focus first. Assume this of every modern Windows
-application, not only Notepad.
+So rule 9 applies to what you write into as much as to what you close:
+identify the window and the field as yours before writing. Assume this of
+every modern Windows application, not only Notepad.
 
 ## Windows: the UIA Text pattern answers, at least here
 

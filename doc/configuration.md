@@ -197,8 +197,9 @@ consumes and sends again, as described below.
 - **Prefixes**: `O-` one-shot (see below), `D-` key-down only, `U-` key-up only.
 - **Key names**: letters, digits, punctuation (`Semicolon`, `Slash`,
   `OpenBracket`, …, plus JIS names like `Yen` and `Atmark`), `F1`–`F20` (to `F24`
-  on Windows), the navigation cluster (`Left`, `Home`, `PageUp`, …), numpad
-  (`Num0`, `NumAdd`, …), `Kana`/`Eisu`/`Menu`/`Help` (macOS — `Menu` is the
+  on Windows), `Return` (`Enter` also works), `Escape`, `Tab`, `Space`, `Back`
+  (Backspace), `Delete`, the navigation cluster (`Left`, `Home`, `PageUp`, …),
+  numpad (`Num0`, `NumAdd`, …), `Kana`/`Eisu`/`Menu`/`Help` (macOS — `Menu` is the
   application key a PC keyboard sends), `Apps`/`PrintScreen`/`ScrollLock`/
   `Pause` (Windows), and the modifier keys themselves as primary keys (`LWin`,
   `RCmd`, …). Any unmapped key is expressible as its raw code: `"(124)"`.
