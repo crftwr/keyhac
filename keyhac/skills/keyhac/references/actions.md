@@ -74,8 +74,9 @@ Approve: there a throwaway run is not a look, it is the act itself - the other
 system records it, outside anything the action keeps, and no undo takes it
 back. Read "commits" as any change the user cannot simply take back
 themselves - in another system, or in their own document or settings where
-the application keeps no undo for it. The same goes for a run made only to check your own logic against the
-live screen. For those, look at everything up to the press, and learn what
+the application keeps no undo for it. The same goes for a run made only to
+check your own logic against the live screen. For those, look at everything
+up to the press, and learn what
 the press leads to another way: ask the user, or ask them to do one item by
 hand while you read the screen after. If neither is possible, let the first
 real item be the probe, so the one press there is is that item's own and is
