@@ -9,6 +9,12 @@ enumerate targets → for each: navigate, wait, read or write, accumulate
                   → aggregate → transform → emit
 ```
 
+Most of this document is about that shape: an action started and left to
+work through a list, a queue or a wait, often again each week. An action a key
+press runs and finishes - on the selection, the field, the line under the
+caret - shares the rules and the API, and has a few concerns of its own
+("Actions a key press runs and finishes", below).
+
 **Write plain Python.** Locating an element is a tree search, branching is
 `if`, extraction is a regex, iteration is a loop. Nothing here needs a model at
 runtime, and a regex beats one on paths, line numbers, URLs and IDs - it is
@@ -66,7 +72,9 @@ and it beats guessing at selectors for a dialog you have never seen.
 **Except when the press commits something.** Submit, Send, Save, Delete, Pay,
 Approve: there a throwaway run is not a look, it is the act itself - the other
 system records it, outside anything the action keeps, and no undo takes it
-back. The same goes for a run made only to check your own logic against the
+back. Read "commits" as any change the user cannot simply take back
+themselves - in another system, or in their own document or settings where
+the application keeps no undo for it. The same goes for a run made only to check your own logic against the
 live screen. For those, look at everything up to the press, and learn what
 the press leads to another way: ask the user, or ask them to do one item by
 hand while you read the screen after. If neither is possible, let the first
@@ -374,6 +382,14 @@ no `super().__init__()` to call. Name it what you like; what matters is that
 one each time - so set per-run state at the top of `run()`, not in `__init__`,
 or a run reports what the last one left.
 
+**Tell the user in `finished()`.** The log is for you and for Keyhac's
+console; the person learns the outcome from a balloon -
+`self.keymap.pop_balloon(name, text, timeout)` (`references/configuration.md`,
+"Balloons"). `finished()` runs on the thread a balloon needs. One about a run
+that went on while they were elsewhere belongs in a corner and stays until
+they close it: `timeout=None, anchor="corner"`. It is absent when Keyhac runs
+without its UI, so reach it with `getattr(self.keymap, "pop_balloon", None)`.
+
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it
 and a hung application stalls the action rather than the keyboard. Keyhac's
@@ -388,6 +404,21 @@ nothing that has to ask an application.
 "not found" nor `StaleElement`. Waits treat it as "not yet" and ask again, and
 a `WaitTimeout` that follows says the application never answered. Anywhere
 else it ends the read; let it end the action, or catch it to retry later.
+
+## Actions a key press runs and finishes
+
+The person pressed a key in the middle of their own work and is waiting,
+looking at the place they pressed it. So:
+
+- **Act on what the press named**, not on whatever is in front by the time
+  `run()` gets there: capture it in `starting()` (`keymap.focus`), and check
+  in `run()` that it is still what you were given.
+- **Leave them where they were.** Focus, selection, caret and clipboard come
+  back as you found them, unless changing one of them is the point.
+- **Quick is part of correct.** Read the least that answers - scoped to the
+  focused element or its window, not a dump of the screen.
+- **When it cannot do it, say so where they are looking** - a balloon at the
+  caret - and change nothing.
 
 ## Failure, progress, resume
 
