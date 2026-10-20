@@ -1595,7 +1595,9 @@ The replayed keys run back through the keymap, so recorded bindings expand again
 
 
 ## <kbd>class</kbd> `ClipboardHistory`
-Automatically captures historical clipboard text. 
+Automatically captures historical clipboard content. 
+
+Text is kept across restarts, and so are copied files (as their paths). Rich text and images are kept for the session: choosing such an entry puts the formatting or the image back. 
 
 Content the copying app marked as concealed or transient - what password managers do with a copied password - is never recorded. 
 
@@ -1607,8 +1609,9 @@ Reached from a configuration as ``keymap.clipboard_history``, and shown by the S
  
  - <b>`max_items`</b>:  Maximum entries kept (default 1000). 
  - <b>`max_label_length`</b>:  Maximum length of item labels (default 4096). 
- - <b>`max_data_size`</b>:  Maximum size of a single captured item (default 10 MB). 
+ - <b>`max_data_size`</b>:  Maximum size of a single captured format - larger  ones are dropped, keeping the rest (default 10 MB). 
  - <b>`max_persist_data_size`</b>:  Maximum size of an item written to disk  (default 64 KB). 
+ - <b>`max_session_data_size`</b>:  Total size of the rich text and images kept  in memory.  Past it, the oldest entries fall back to their text,  and images without one are forgotten (default 64 MB). 
  - <b>`persist`</b>:  Whether the history is saved across restarts (default True;  set False to keep it in memory only). 
  - <b>`filename`</b>:  Where it is saved (default ~/.keyhac/clipboard.json). 
 
@@ -1644,7 +1647,7 @@ Get the most recent clipboard text.
 
 
 **Returns:**
-  The newest history entry, or None when the history is empty. 
+  The newest history entry with text, or None when there is none. 
 
 ---
 
@@ -1654,7 +1657,9 @@ Get the most recent clipboard text.
 items()
 ```
 
-Iterate the history. 
+Iterate the history's text. 
+
+Entries without text - an image, files copied in Explorer - are not included; the chooser lists them. 
 
 
 
@@ -1948,6 +1953,8 @@ Build the source.
 
 ## <kbd>class</kbd> `ClipboardHistorySource`
 Everything the clipboard has held, most recent first. 
+
+Enter pastes the entry with the formatting or image it was copied with, Option(Alt)-Enter pastes its text alone, and Shift sets the clipboard without pasting.  When the clipboard holds something the history does not keep - a password manager's copy, or a format it cannot read - a "Current clipboard" row comes first, and pastes it untouched. 
 
 ---
 

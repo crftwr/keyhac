@@ -160,7 +160,26 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   sequence-number probe on Windows, `changeCount` on macOS (~1 s tick — history does
   not need 33 ms latency).
 - Paste flow (the battle-tested keyhac-win shape): set clipboard → refocus target
-  app → serialized `Ctrl-V`/`Cmd-V` injection. Shift-select = copy-only.
+  app → serialized `Ctrl-V`/`Cmd-V` injection. Shift-select = copy-only;
+  Option(Alt)-select = the text alone.
+- **Entries are `ClipboardSnapshot`s of a fixed format set** (#19): text, RTF, HTML,
+  one image (PNG preferred over TIFF/DIB), files, Windows' `Preferred DropEffect`.
+  Not every format, as keyhac-mac did: on Windows some are GDI handles rather than
+  memory, and `GetClipboardData` on a delay-rendered format makes the source app
+  render it synchronously on the main thread — the hook's thread. Reading only the
+  kept set means Excel is not asked for its dozens of formats. A kept format that
+  is itself delay-rendered by a hung app can still stall; that is accepted, bounded
+  degradation. What is dropped sets `lossy`, which labels a text entry
+  *(text only)* — formats that merely restate the kept ones (synthesized text, NS*
+  aliases, shell drop views) do not count.
+- **Current clipboard is tracked apart from the entries.** Choosing the entry that
+  is still on the clipboard pastes without re-setting it, so nothing the history
+  dropped is lost; concealed and unreadable content get a "Current clipboard" row
+  that does the same. A restored Windows cut is rewritten MOVE → COPY, or pasting
+  from history would move the files again.
+- Rich formats are session-only under `max_session_data_size`; JSON persists
+  `string` entries (format-compatible with keyhac-mac) and new `files` entries,
+  which older readers skip.
 
 ## Chooser
 

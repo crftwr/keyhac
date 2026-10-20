@@ -140,7 +140,8 @@ def configure(keymap):
     # ---- Clipboard ---------------------------------------------------
 
     # --- history, in a chooser window ----------------------------------
-    # Enter pastes; Shift-Enter only sets the clipboard.  Type to filter.
+    # Enter pastes; Shift-Enter only sets the clipboard; Option(Alt)-Enter
+    # pastes the text without its formatting.  Type to filter.
     kt[f"{MOD1}-V"] = ShowClipboardHistory()
 
     # --- fixed snippets -------------------------------------------------
