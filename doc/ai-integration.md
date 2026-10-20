@@ -643,9 +643,16 @@ division of labour that matters:
   the live tree via `describe_screen`.
 
 So the shape is: record the task, then ask Claude to turn that skill into a
-Keyhac action *against the screen in front of it*. Expect it to ask questions
-first — a recording shows you set a filter to "active" but not whether that is
-a constant or an argument.
+Keyhac action *against the screen in front of it*. A plain request is enough to
+start — "I want to make a Keyhac action from operations I capture with Record a
+skill" — and Claude asks for the capture when it needs it. Expect it to ask
+questions first — a recording shows you set a filter to "active" but not
+whether that is a constant or an argument.
+
+**Talk while you record.** Say what you are doing and why, and what may vary
+next time — which values change, what should happen when something is
+missing. That is how the nuance of what the action must cope with reaches it;
+the clicks alone do not carry it.
 
 **The recording is Anthropic's, not Keyhac's**: it is captured by Claude
 Desktop under its own consent dialog and sent to Claude. Keyhac never records
