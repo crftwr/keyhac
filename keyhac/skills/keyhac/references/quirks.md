@@ -156,6 +156,16 @@ subscription API to reach for: one existed and was removed once measured.
 Polling is what finds the change, and it is fast enough - a modal was seen
 10-25 ms after the click.
 
+## A paged list often has no way back
+
+Many web lists have no "First", no "1" and no "Previous" on their last page -
+and the last page is where a complete run leaves the screen, so it is where
+every scheduled run after the first starts. In a browser the first page has
+an address: a run that starts there can record it, and a later one load it in
+the same window. On macOS read it from the web area
+(`node.element.get_attribute_value("AXURL")`, a string), not from the address
+field, whose value was measured a page behind.
+
 ## Terminals and editors do answer whole-value reads
 
 Terminal.app's `AXTextArea` returns the entire scrollback through `AXValue`,

@@ -1,7 +1,8 @@
 # Writing a Keyhac action
 
-An action drives another application's accessibility tree. The body is a
-pipeline; the UI is its I/O driver, not its subject:
+An action drives another application's accessibility tree. The body is
+usually a pipeline over many items - one that waits on a single thing is the
+same shape with one item; the UI is its I/O driver, not its subject:
 
 ```
 enumerate targets → for each: navigate, wait, read or write, accumulate
@@ -62,23 +63,24 @@ look - write a throwaway action that performs the single press and dumps what
 appeared, run it, read the tree. That is one cheap run against the real screen,
 and it beats guessing at selectors for a dialog you have never seen.
 
-**Except when the press commits something.** Submit, Send, Save, Delete, Pay:
-there a throwaway run is not a look, it is a submission - the other system
-records it, outside anything the action keeps, and no undo takes it back. The
-same goes for a run made only to check your own logic against the live form.
-For those, look at everything up to the press, and get the answer's shape
-another way: ask the user what the form says when it accepts and when it
-refuses, or ask them to do one row by hand while you read the screen after.
-If neither is possible, let the first real run be the probe, so the one press
-there is is the row's own and is never repeated.
+**Except when the press commits something.** Submit, Send, Save, Delete, Pay,
+Approve: there a throwaway run is not a look, it is the act itself - the other
+system records it, outside anything the action keeps, and no undo takes it
+back. The same goes for a run made only to check your own logic against the
+live screen. For those, look at everything up to the press, and learn what
+the press leads to another way: ask the user, or ask them to do one item by
+hand while you read the screen after. If neither is possible, let the first
+real item be the probe, so the one press there is is that item's own and is
+never repeated.
 
-**Then send one row before the rest** - for these actions, whose presses
-commit; one that only reads and pages can be run again as often as you like,
-and needs none of this. A reader that is wrong about the answer is found out
-only after a press, and once every row has been pressed there is nothing left
-to run the fixed version on - the result came from code the user does not
-get. So run the code you deliver on one row first, compare what it made of
-the answer with what the screen shows, and fix the reader before the rest go.
+**Then let one item go before the rest** - for these actions, whose presses
+commit; one that only reads can be run again as often as you like, and needs
+none of this. A mistake in such an action is found only after a press, and
+what has been pressed cannot be pressed again with the fixed code. So no
+version of the action does its first committing step on more than one item:
+run each version on one item, check what it did against the screen, and only
+then let it do the rest. That holds again after every change, whatever the
+change touched.
 
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
@@ -293,16 +295,16 @@ that has never executed is a guess.
    next reload fails and their key bindings stop working.
 
 **An earlier round's output is in the way? Run against it first.** After the
-first round, the output file is there, and so is the status a run wrote into
-the user's CSV. That is the state the user meets every time they run the
-action again, so a changed action is tried against it before anything else:
-if the next run skips what is there, or says "already saved", that is the
-rerun behaving, not something to clear away. When you do need the first-run
-path again, set what is in the way aside where the user will see it rather
-than emptying or editing it, and never edit a status column to make the
-action do a row again: that sends it to the other system a second time. The
-screen is part of the start too; put it back the way the delivered action
-itself would. Then two things hold when you hand over:
+first round, what it left is there - its output, the record of what it
+committed, the other system's state. That is what the user meets every time
+they run the action again, so a changed action is tried against it before
+anything else: if the next run skips what is there, or says "already done",
+that is the rerun behaving, not something to clear away. When you do need the
+first-run path again, set what is in the way aside where the user will see it
+rather than emptying or editing it, and never change the record of a
+committed item to make the action do it again: that commits it a second
+time. The screen is part of the start too; put it back the way the delivered
+action itself would. Then two things hold when you hand over:
 
 - the last run of the delivered action, started from files as the user could
   have them, made what is in the output - not an earlier version's run, and
@@ -366,6 +368,9 @@ do not cause").
 class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
 `finished()` can tell a run that stopped early from one that reached the end.
+**One instance serves every run** - a key binding holds one, and
+`start_action` keeps one until the file changes - so set per-run state at the
+top of `run()`, not in `__init__`, or a run reports what the last one left.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it
@@ -384,7 +389,8 @@ else it ends the read; let it end the action, or catch it to retry later.
 
 ## Failure, progress, resume
 
-These actions run for tens of minutes over hundreds of items. A read that fails
+An action that works through many items can run for tens of minutes over
+hundreds of them, and this section is mostly about those. A read that fails
 leaves nothing behind; a write that fails halfway leaves a partial mutation the
 remote system has already accepted - so rollback is usually not available and
 **checkpointing matters more than undo**.
@@ -405,14 +411,9 @@ remote system has already accepted - so rollback is usually not available and
   finds it where the last one ended. Reaching the start the way the UI offers
   is going where the task points; where there is no way, stop before reading
   and say where the screen was. Reading from where it stands and reporting
-  success is the one wrong answer.
-- **A list often has no way back from its last page** - no "First", no "1",
-  no "Previous" - and that is where every scheduled run after the first
-  starts, so look there before settling on a route. In a browser the first
-  page has an address a run can record and a later one load in the same
-  window. On macOS read it from the web area
-  (`node.element.get_attribute_value("AXURL")`, a string), not from the
-  address field, whose value was measured a page behind.
+  success is the one wrong answer. Look at where a complete run leaves the
+  screen before settling on a route back (`references/quirks.md`, "A paged
+  list often has no way back").
 - **A rerun after a complete run means what the task says.** A *snapshot*
   ("at each month's end I merge every record") is the screens as they are
   now: changed and deleted records show as such, the new output replaces the
@@ -422,12 +423,12 @@ remote system has already accepted - so rollback is usually not available and
   turns on and only the user knows - which period a snapshot covers, say - is
   theirs to give: ask, or make it a default they can see. Never destroy output
   they already have.
-- **Nothing is sent twice.** A row the form answered, accepted or refused, is
-  done: its answer goes in its status - the application's own words, which is
-  what "write the failure back to the row" needs - and a rerun skips it. Only
-  the user sends a refused row again, after fixing it; tell them to clear its
-  status then. A row pressed with no answer before the timeout is *unknown*,
-  not failed - it may have gone in - so mark it that way for the user to check.
+- **Nothing is committed twice.** An item the other system answered -
+  accepted or refused - is done: record the answer, in the application's own
+  words, and a rerun skips it. Only the user sends a refused item again, after
+  fixing it; tell them how to mark it for that. An item pressed with no answer
+  before the timeout is *unknown*, not failed - it may have gone through - so
+  record it that way for the user to check.
 - **Stop for the reason there is, and say what follows from it.** "The UI
   moved on me" and "my step failed" call for opposite responses, so give them
   distinct exception types: the `except` that keeps one bad item from losing
@@ -452,8 +453,8 @@ Check the generated action against this list, and fix rather than explain:
 - [ ] Every wait names what it is waiting for, in words an operator would read
 - [ ] Selectors used more than once are `ui.Locator` values, written once
 - [ ] Every write is verified; every toggle is read first
-- [ ] Nothing - a probe, a check run, a retry of a refused row - pressed
-      Submit twice for one row
+- [ ] Nothing - a probe, a check run, a retry of a refused item - committed
+      one item twice, and every version did its first commit on one item
 - [ ] Preconditions before each press, not just at the start — `given=` for
       the ones that are not about the target
 - [ ] Results accumulate outside the failing scope, and are written per item
@@ -476,10 +477,12 @@ argument with that default - so the operator overrides it on the line that
 binds the key, and the file is somewhere they will find it. Do not stop to ask:
 this is the question every one of these tasks leaves open, and a default they
 can see and change costs them less than a round trip. Say which file you wrote
-in the sentence you hand back. **If the file already exists** and is not this
-action's own earlier output, it is not yours to mix into: stop and say so. Its
-own output is a rerun, handled as "Failure, progress, resume" says - and never
-a reason to read less. If you find yourself needing
+in the sentence you hand back. **If the file already exists**, it is this
+action's own earlier output when it is in the form this action writes - a CSV
+with the header it writes, say - even if the user has opened and saved it
+since. Its own output is a rerun, handled as "Failure, progress, resume" says,
+and never a reason to read less. Anything else is not yours to mix into: stop
+and say so. If you find yourself needing
 the user to say `find` or `set_text`, this skill has failed - fix the
 skill instead.
 
