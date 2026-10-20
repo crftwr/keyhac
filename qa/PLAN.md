@@ -60,19 +60,20 @@ bindings without that ambiguity.
 
 | Scenario | Surface | Config | Last run | Open findings | Notes |
 |---|---|---|---|---|---|
-| 01 orders across pages | action, page `systema` | template | 2.5.0-20261020-030519 | 2 medium, 1 low | #215 #221 #222 fixed |
-| 02 merge two systems | action, pages `systema` `systemb` | template | 2.5.0-20261020-030519 | 4 medium, 1 low | #215 #221 fixed; #224 open |
-| 03 resume submission | action, page `submit-form` | template | 2.5.0-20261020-030519 (`.mcp`) | 3 medium, 2 low | staged CSV; #226 fixed; #225 open |
-| 04 approve queue | action, page `approval-queue` | template | 2.5.0-20261018-203804 | 1 medium, 1 low | |
-| 05 submit CSV, report rejects | action, page `submit-form` | template | 2.5.0-20261020-030519 | 1 medium, 3 low | staged CSV; #216 #226 fixed |
+| 01 orders across pages | action, page `systema` | template | 2.5.0-20261020-194735 | 2 medium, 5 low | #215 #221 #222 fixed; own output judged by header |
+| 02 merge two systems | action, pages `systema` `systemb` | template | 2.5.0-20261020-190055 | 2 medium, 5 low | #238 #246 not seen; #250 still there |
+| 03 resume submission | action, page `submit-form` | template | 2.5.0-20261020-194735 (`.mcp`) | 1 high, 3 medium, 2 low | staged CSV; folder ask (#225) accepted as `.mcp`-only |
+| 04 approve queue | action, page `approval-queue` | template | 2.5.0-20261020-194735 | 2 medium, 2 low | one item per version followed; start_action arguments (#254) |
+| 05 submit CSV, report rejects | action, page `submit-form` | template | 2.5.0-20261020-194735 | 3 medium, 2 low | staged CSV; stale imported module (#253) |
 | 06 build error to editor | config, terminal `build-failure` | grown | 2.5.0-20261018-203804 | 3 medium, 9 low | |
-| 07 watch deploy | action, terminal `deploy` | template | 2.5.0-20261020-030519 | 1 high, 2 medium, 1 low | #214 #222 fixed; #223 open |
+| 07 watch deploy | action, terminal `deploy` | template | 2.5.0-20261020-190055 | 2 medium, 1 low | verdict guessed; balloon not found (#255) |
 | 08 settings backup | action, page `preferences` | template | 2.5.0-20261018-203804 | 1 medium, 2 low | |
 | 09 Slack unread | action, the real Slack app | template | | | needs the person |
 | 10 click badge coordinates | action, any screen | template | | | needs the person |
 | 11 F1 off in VS Code | config | grown | 2.5.0-20261018-203804 | 5 low | |
 | 12 Emacs cursor keys | config | short | 2.5.0-20261018-203804 | 2 high, 4 low | |
 | 13 Ctrl-X Ctrl-S | config | template | 2.5.0-20261018-203804 | 2 high, 3 medium, 2 low | |
+| 14 Title Case the selection | action on a key, page `notes` | template | | | the only action a key press runs and finishes; edits the user's own text |
 
 Each scenario runs on one fixture config, the one its front matter names;
 every config is some scenario's. The run recorded here ran 06 and 11-13 on

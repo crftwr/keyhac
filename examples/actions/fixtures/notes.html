@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Notes - draft</title></head>
+<body>
+  <h1>Draft</h1>
+  <textarea id="note" rows="6" cols="60"></textarea>
+  <script>
+    const note = document.getElementById('note');
+    const LINES = ["intro paragraph goes here",
+                   "the quick brown fox jumps over the lazy dog",
+                   "closing line stays as it is"];
+    // What happened on this screen, told to the clean room's server so a
+    // case's check reads the record rather than the room's account of it
+    // (issue #193). Opened from file://, as the examples are, there is no
+    // server and the request fails quietly - nothing on the page changes.
+    const report = (what, detail) => {
+      try {
+        fetch('event', {method: 'POST', body: JSON.stringify(
+          Object.assign({page: location.pathname.split('/').pop(), what}, detail))})
+          .catch(() => {});
+      } catch (e) {}
+    };
+    note.value = LINES.join("\n");
+    // The second line is selected when the page opens - the selection the
+    // action is asked to work on. A textarea keeps its selection while the
+    // window is not in front, so it is still there when the room looks.
+    const start = LINES[0].length + 1;
+    note.focus();
+    note.setSelectionRange(start, start + LINES[1].length);
+    // Every change to the text, as it now reads, and where focus goes: the
+    // record says what was written and whether the field was left as found.
+    note.addEventListener('input', () => report('edit', {text: note.value}));
+    note.addEventListener('blur', () => report('blur', {}));
+    note.addEventListener('focus', () => report('focus', {}));
+  </script>
+</body></html>
