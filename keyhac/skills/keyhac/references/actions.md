@@ -428,9 +428,13 @@ remote system has already accepted - so rollback is usually not available and
 - **Nothing is committed twice.** An item the other system answered -
   accepted or refused - is done: record the answer, in the application's own
   words, and a rerun skips it. Only the user sends a refused item again, after
-  fixing it; tell them how to mark it for that. An item pressed with no answer
-  before the timeout is *unknown*, not failed - it may have gone through - so
-  record it that way for the user to check.
+  fixing it; tell them how to mark it for that.
+- **Only what you have seen becomes a verdict.** Accepted, refused,
+  succeeded, failed: an answer becomes one of these only when it is in a form
+  you have seen on the screen or been told by the user. No answer before the
+  timeout, or one in any other form, is *unknown* - record its own words and
+  leave it to the user rather than leaning it either way: a wrong "ok" is
+  never looked at again, and a wrong "refused" gets sent twice.
 - **Stop for the reason there is, and say what follows from it.** "The UI
   moved on me" and "my step failed" call for opposite responses, so give them
   distinct exception types: the `except` that keeps one bad item from losing
