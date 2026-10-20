@@ -1578,6 +1578,36 @@ def test_an_edited_helper_wins_over_the_loaded_module(writable, clean_modules):
     assert writable._startable("uses_lib.Uses").run() == 2
 
 
+def test_a_started_action_sees_an_edit_to_the_module_it_imports(
+        writable, clean_modules):
+    """The instance cache follows the import graph too, not the one file.
+
+    A one-row probe subclassing the delivered action from a file of its own
+    was started, the delivered file was edited, and the next start of the
+    unchanged probe ran the cached instance - the replaced code - and
+    committed a row with it (clean-room run 2.5.0-20261020-194735, 05).
+    """
+    directory = extensions(writable)
+    write_action(writable, name="delivered", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Delivered(ThreadedAction):\n"
+        "    def run(self):\n"
+        "        return 1\n"))
+    write_action(writable, name="probe", source=(
+        "from delivered import Delivered\n\n\n"
+        "class Probe(Delivered):\n"
+        "    pass\n"))
+
+    assert writable._startable("probe.Probe").run() == 1
+
+    edited = directory / "delivered.py"
+    edited.write_text(edited.read_text().replace("return 1", "return 2"))
+    later = os.stat(edited).st_mtime + 5
+    os.utime(edited, (later, later))                    # only the base moved
+
+    assert writable._startable("probe.Probe").run() == 2
+
+
 def test_an_unrelated_edit_does_not_split_the_module(writable, clean_modules):
     """The reason freshness follows the import graph and not the directory.
 
