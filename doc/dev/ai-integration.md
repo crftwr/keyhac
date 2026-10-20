@@ -889,7 +889,7 @@ while *writing* one. These have different security properties and should be desi
 separately from the runtime tools:
 
 ```
-start_action(name)        → start it, return at once
+start_action(name, arguments?) → start it, return at once (arguments: one run's constructor kwargs)
 get_action_result(name)   → wait up to a bound, return output/errors
 cancel_action(name)       → stop it, as the operator's Esc does
 get_recent_trace(...)     → only after explicit recording and human approval (§9)
