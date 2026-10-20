@@ -28,6 +28,46 @@ log_success() {
     echo "[SUCCESS] $1"
 }
 
+# Oldest macOS a Mach-O file declares it can run on, across all its slices.
+# Modern binaries say so in LC_BUILD_VERSION ("minos"), older ones in
+# LC_VERSION_MIN_MACOSX ("version"); -show-build prints both, alongside a
+# "version" line of its own for the linker that produced the file, which is why
+# the fields are read per load command rather than grepped for.
+macho_min_os() {
+    vtool -show-build "$1" 2>/dev/null | awk '
+        /cmd LC_BUILD_VERSION/      { build = 1; vmin = 0; next }
+        /cmd LC_VERSION_MIN_MACOSX/ { vmin = 1; build = 0; next }
+        build && $1 == "minos"      { print $2; build = 0 }
+        vmin  && $1 == "version"    { print $2; vmin = 0 }
+    ' | sort -V | tail -1
+}
+
+# True when macOS version $1 is newer than $2.
+version_gt() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
+# Compile every .py under $2 to bytecode with interpreter $1, or stop the build.
+#
+# The bundle is signed, so whatever Python has to compile at run time it writes
+# into the signed bundle and breaks the seal (`codesign --verify` then fails on
+# every installed copy). Two things made that happen to every release up to
+# 2.5.0, and XeFM 1.8.0 alike. First, a failed compile was only a warning.
+# Second, the default timestamp mode validates a .pyc against its source's
+# mtime, and the copies that carry the bundle from here to /Applications -
+# create_dmg.sh's and `make install-macos-dmg`'s `cp -R` - do not keep mtimes,
+# so bytecode that was complete at build time was stale once installed.
+# unchecked-hash bytecode is used without looking at the source at all, which
+# is right for files nobody may edit without breaking the signature anyway; -f
+# replaces whatever timestamp-mode .pyc a copied tree brought along.
+compile_bytecode() {
+    if ! "$1" -m compileall -q -f --invalidation-mode unchecked-hash "$2"; then
+        log_error "Bytecode compilation failed under $2"
+        exit 1
+    fi
+    log_info "  Compiled $(find "$2" -name "*.pyc" | wc -l | tr -d ' ') .pyc files under ${2#${APP_BUNDLE}/}"
+}
+
 # ============================================================================
 # Build Configuration
 # ============================================================================
@@ -81,6 +121,19 @@ fi
 # Compiler settings
 CC="clang"
 CFLAGS="-framework Cocoa"
+
+# Oldest macOS the bundle is built to run on. Without this clang targets the
+# machine doing the build, so the floor silently followed whoever ran the
+# release: 2.5.0 was built on macOS 27 and refused to launch on macOS 26 with
+# "You can't use this version of the application with this version of macOS",
+# while Info.plist still claimed 11.0. XeFM hit and fixed the same thing first
+# (its issue #455); the fix had not been carried over. 11.0 is what NSImage
+# needs to load the menu-extra SVG, the oldest macOS any arm64 Mac runs, and a
+# floor python.org's framework and every bundled wheel already meet. Step 5
+# measures the finished bundle against it and fails the build if anything sits
+# higher, so the floor cannot drift again without someone deciding it should.
+MACOS_MIN_VERSION="11.0"
+CFLAGS="${CFLAGS} -mmacosx-version-min=${MACOS_MIN_VERSION}"
 
 # Configure compiler flags based on Python installation type
 if [ "$USE_FRAMEWORK" = true ]; then
@@ -180,6 +233,17 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR_BUNDLE="${CONTENTS_DIR}/Resources"
 FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
 
+# Start from an empty bundle. Every step below copies in what it needs but only
+# a few remove anything, so whatever a previous build left behind was signed
+# and shipped with the rest: 2.5.0 carried Homebrew dylibs in
+# lib-dynload/.dylibs from the days the build used Homebrew's Python (four of
+# them built for macOS 26, referenced by nothing) and cpython-313 extensions in
+# python_packages. A release must not depend on what the build tree held.
+if [ -d "${APP_BUNDLE}" ]; then
+    log_info "Removing the previous bundle at ${APP_BUNDLE}"
+    rm -rf "${APP_BUNDLE}"
+fi
+
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR_BUNDLE}"
 mkdir -p "${FRAMEWORKS_DIR}"
@@ -207,14 +271,12 @@ log_info "Copying Keyhac Python source"
 KEYHAC_PKG_DEST="${RESOURCES_DIR_BUNDLE}/keyhac"
 rm -rf "${KEYHAC_PKG_DEST}"
 cp -R "${PROJECT_ROOT}/keyhac" "${KEYHAC_PKG_DEST}"
+# The working tree's caches hold bytecode for whatever Pythons ran the tests
+# (2.5.0 shipped cpython-313 files); compiled fresh below.
+find "${KEYHAC_PKG_DEST}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
-# Pre-compile Keyhac Python files
 log_info "Pre-compiling Keyhac Python files..."
-if "${VENV_PYTHON}" -m compileall -q "${KEYHAC_PKG_DEST}"; then
-    log_info "  Compiled Keyhac Python files"
-else
-    log_info "  Warning: Compilation failed"
-fi
+compile_bytecode "${VENV_PYTHON}" "${KEYHAC_PKG_DEST}"
 
 # The MCP stdio bridge, as a console script.
 #
@@ -258,7 +320,8 @@ fi
 # package root, plus the collected third-party deps.
 PYTHONPATH="${resources}:${resources}/python_packages"
 export PYTHONPATH
-exec "${python}" -m keyhac.mcp.bridge "$@"
+# -B: write no bytecode into the signed bundle, as the launcher does.
+exec "${python}" -B -m keyhac.mcp.bridge "$@"
 BRIDGE_EOF
 chmod +x "${BRIDGE_BIN_DIR}/keyhac-mcp-bridge"
 log_info "  Resources/bin/keyhac-mcp-bridge"
@@ -322,13 +385,8 @@ if [ -n "${MISSING_FONTS}" ]; then
 fi
 log_info "  Bundled Noto fonts present in ${FONTS_DEST}"
 
-# Pre-compile PuiKit Python files
 log_info "Pre-compiling PuiKit Python files..."
-if "${VENV_PYTHON}" -m compileall -q "${PUIKIT_DEST}"; then
-    log_info "  Compiled PuiKit Python files"
-else
-    log_info "  Warning: Compilation failed"
-fi
+compile_bytecode "${VENV_PYTHON}" "${PUIKIT_DEST}"
 
 # Collect Python dependencies
 log_info "Collecting Python dependencies..."
@@ -353,6 +411,11 @@ else
     log_warning "Dependency collection script not found at ${COLLECT_SCRIPT}"
     log_warning "Python packages will need to be added manually"
 fi
+
+# These were never compiled before, so PyObjC's bytecode was written into the
+# installed bundle on first launch.
+log_info "Pre-compiling Python dependencies..."
+compile_bytecode "${VENV_PYTHON}" "${PACKAGES_DEST}"
 
 # Copy application icon if it exists
 # The committed app icon (regenerated from art/icon.svg by `make icons`),
@@ -581,7 +644,19 @@ if [ "$USE_FRAMEWORK" = true ]; then
         rm -rf "${PYTHON_DEST}/Resources"
         log_info "  Removed Resources/"
     fi
-    
+
+    # python.org signs Python.framework as a bundle, and that signature seals
+    # Resources/Info.plist - just deleted. dyld then refuses to load the dylib
+    # into the interpreter ("code signature invalid", errno=1), so every run of
+    # the bundled Python during the build aborts, the standard-library
+    # pre-compile below included; 2.5.0 shipped without stdlib bytecode because
+    # of it. Homebrew's framework is linker-signed with nothing sealed beside
+    # it, which is why this began only with the move to python.org. XeFM found
+    # and fixed it in the same move. Step 6 writes a minimal Info.plist and
+    # signs the framework for real.
+    codesign --force --sign - "${PYTHON_DEST}/Python" \
+        || { log_error "Failed to ad-hoc sign ${PYTHON_DEST}/Python"; exit 1; }
+
     # Remove development tools from bin/
     for tool in "idle${PYTHON_VERSION}" pip3 "pip${PYTHON_VERSION}" "pydoc${PYTHON_VERSION}" "python${PYTHON_VERSION}-config"; do
         if [ -f "${PYTHON_DEST}/bin/${tool}" ]; then
@@ -618,33 +693,17 @@ if [ "$USE_FRAMEWORK" = true ]; then
 
     log_success "Unnecessary files removed"
 
-    # Pre-compile Python standard library
+    # Pre-compile Python standard library, with the bundled interpreter so the
+    # bytecode matches the runtime exactly. See compile_bytecode for why a
+    # failure here stops the build.
     log_info "Pre-compiling Python standard library..."
     STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
-    if [ -d "${STDLIB_PATH}" ]; then
-        # Use the bundled Python to compile the standard library
-        # This ensures compatibility and uses the correct Python version
-        BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
-        if [ -f "${BUNDLE_PYTHON}" ]; then
-            # Compile all .py files in the standard library
-            # -q: quiet mode (only show errors)
-            # -f: force recompilation even if .pyc files exist
-            if "${BUNDLE_PYTHON}" -m compileall -q -f "${STDLIB_PATH}"; then
-                log_info "  Compiled Python standard library"
-
-                # Count compiled files for verification
-                PYC_COUNT=$(find "${STDLIB_PATH}" -name "*.pyc" | wc -l | tr -d ' ')
-                PY_COUNT=$(find "${STDLIB_PATH}" -name "*.py" | wc -l | tr -d ' ')
-                log_info "  Created ${PYC_COUNT} .pyc files from ${PY_COUNT} .py files"
-            else
-                log_warning "Standard library compilation had errors (non-critical)"
-            fi
-        else
-            log_warning "Bundled Python not found, skipping standard library pre-compilation"
-        fi
-    else
-        log_warning "Standard library path not found: ${STDLIB_PATH}"
+    BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
+    if [ ! -d "${STDLIB_PATH}" ] || [ ! -f "${BUNDLE_PYTHON}" ]; then
+        log_error "No standard library or interpreter to compile it with under ${PYTHON_DEST}"
+        exit 1
     fi
+    compile_bytecode "${BUNDLE_PYTHON}" "${STDLIB_PATH}"
 
     # Update install names to use embedded framework
     log_info "Updating install names to use embedded framework..."
@@ -762,33 +821,17 @@ else
     # Before the pre-compile below, which runs the interpreter.
     relocate_embedded_interpreter
 
-    # Pre-compile Python standard library
+    # Pre-compile Python standard library, with the bundled interpreter so the
+    # bytecode matches the runtime exactly. See compile_bytecode for why a
+    # failure here stops the build.
     log_info "Pre-compiling Python standard library..."
     STDLIB_PATH="${PYTHON_DEST}/lib/python${PYTHON_VERSION}"
-    if [ -d "${STDLIB_PATH}" ]; then
-        # Use the bundled Python to compile the standard library
-        # This ensures compatibility and uses the correct Python version
-        BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
-        if [ -f "${BUNDLE_PYTHON}" ]; then
-            # Compile all .py files in the standard library
-            # -q: quiet mode (only show errors)
-            # -f: force recompilation even if .pyc files exist
-            if "${BUNDLE_PYTHON}" -m compileall -q -f "${STDLIB_PATH}"; then
-                log_info "  Compiled Python standard library"
-                
-                # Count compiled files for verification
-                PYC_COUNT=$(find "${STDLIB_PATH}" -name "*.pyc" | wc -l | tr -d ' ')
-                PY_COUNT=$(find "${STDLIB_PATH}" -name "*.py" | wc -l | tr -d ' ')
-                log_info "  Created ${PYC_COUNT} .pyc files from ${PY_COUNT} .py files"
-            else
-                log_warning "Standard library compilation had errors (non-critical)"
-            fi
-        else
-            log_warning "Bundled Python not found, skipping standard library pre-compilation"
-        fi
-    else
-        log_warning "Standard library path not found: ${STDLIB_PATH}"
+    BUNDLE_PYTHON="${PYTHON_DEST}/bin/python3"
+    if [ ! -d "${STDLIB_PATH}" ] || [ ! -f "${BUNDLE_PYTHON}" ]; then
+        log_error "No standard library or interpreter to compile it with under ${PYTHON_DEST}"
+        exit 1
     fi
+    compile_bytecode "${BUNDLE_PYTHON}" "${STDLIB_PATH}"
     
     # Update install names for Python shared library
     log_info "Updating install names to use embedded Python..."
@@ -987,7 +1030,37 @@ log_info "Substituting version: ${VERSION}"
 # experiments only - a distributable build uses the default.
 BUNDLE_ID="${BUNDLE_ID:-crftwr.Keyhac2}"
 log_info "Bundle identifier: ${BUNDLE_ID}"
+
+# LSMinimumSystemVersion is only true if every Mach-O in the bundle runs that
+# far back, so the finished bundle is measured before the plist promises it. A
+# binary above the floor is a build error, not a warning: the plist would let a
+# Mac launch the app and dyld would then refuse the binary, or - when the
+# launcher itself is the one above - the Mac refuses with a version dialog,
+# which is how 2.5.0 shipped to macOS 26 users unable to start it.
+log_info "Checking every binary in the bundle runs on macOS ${MACOS_MIN_VERSION}..."
+ABOVE_FLOOR=""
+while IFS= read -r macho; do
+    [ -n "${macho}" ] || continue
+    file -b "${macho}" | grep -q "Mach-O" || continue
+    MACHO_MIN=$(macho_min_os "${macho}")
+    [ -n "${MACHO_MIN}" ] || continue
+    if version_gt "${MACHO_MIN}" "${MACOS_MIN_VERSION}"; then
+        ABOVE_FLOOR="${ABOVE_FLOOR}    macOS ${MACHO_MIN}: ${macho#${APP_BUNDLE}/}
+"
+    fi
+done <<MACHO_LIST
+$(find "${APP_BUNDLE}" -type f \( -perm -u+x -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null)
+MACHO_LIST
+if [ -n "${ABOVE_FLOOR}" ]; then
+    log_error "These binaries need a newer macOS than the ${MACOS_MIN_VERSION} the bundle targets:"
+    printf '%s' "${ABOVE_FLOOR}" >&2
+    log_error "Rebuild them for ${MACOS_MIN_VERSION}, or raise MACOS_MIN_VERSION deliberately."
+    exit 1
+fi
+log_success "  Every binary runs on macOS ${MACOS_MIN_VERSION}"
+
 sed -e "s/{{VERSION}}/${VERSION}/g" -e "s/{{BUNDLE_ID}}/${BUNDLE_ID}/g" \
+    -e "s/{{MIN_OS}}/${MACOS_MIN_VERSION}/g" \
     "${TEMPLATE_FILE}" > "${PLIST_FILE}"
 
 # Validate Info.plist is valid XML

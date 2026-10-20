@@ -95,6 +95,11 @@
         return NO;
     }
 
+    // Never write bytecode. Everything bundled is precompiled (build.sh), and a
+    // .pyc written at run time lands inside the signed bundle and breaks its
+    // seal. Same setting as the Windows launcher.
+    config.write_bytecode = 0;
+
     // Initialize Python
     PyStatus status = Py_InitializeFromConfig(&config);
     PyConfig_Clear(&config);

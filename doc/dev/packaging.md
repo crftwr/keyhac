@@ -80,6 +80,22 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
   outside the bundle — a framework's `bin/pythonX.Y` is only the GUI stub for
   the `Python.app` this build drops, and every binary copied in still names the
   Homebrew path it was linked against. 2.4.1 shipped exactly that (#140).
+- The macOS floor is `MACOS_MIN_VERSION` in `build.sh` (11.0), and it is a
+  decision, not a property of the build machine. Without
+  `-mmacosx-version-min`, clang targets whatever macOS compiles it: 2.5.0 was
+  built on macOS 27 and macOS 26 refused to launch it, while Info.plist still
+  said 11.0. `build.sh` now compiles the launcher for the floor, writes the same
+  value into `LSMinimumSystemVersion`, and fails the build if any Mach-O in
+  the finished bundle declares a newer minimum. It also starts from an empty
+  bundle every time, since leftovers from earlier builds were being shipped.
+- Nothing may write bytecode into the bundle at run time: it is signed, and a
+  `.pyc` written there breaks the seal of the installed copy. Every Python tree
+  in it is precompiled by `build.sh`'s `compile_bytecode` in `unchecked-hash`
+  mode, because the default timestamp mode compares against source mtimes that
+  `cp -R` (create_dmg.sh, `make install-macos-dmg`) does not keep — 2.5.0 had
+  427 stale `.pyc` once installed, and no stdlib bytecode at all. A compile
+  failure stops the build, the launcher sets `write_bytecode = 0` (as the
+  Windows one does), and the MCP bridge runs with `-B`.
 - Bundle id is `crftwr.Keyhac2`, settled: it is the identity TCC keys the
   Accessibility grant on (and NSUserDefaults the saved window frames), so changing
   it after 2.0.0 shipped would revoke both for everyone installed. Reusing 1.x's
