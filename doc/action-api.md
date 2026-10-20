@@ -260,7 +260,7 @@ ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL))
 **Raises:**
  
  - <b>`WaitTimeout`</b>:  The target never appeared, or the postcondition never  held. 
- - <b>`StaleElement`</b>:  The target was there and had gone by the time it was  pressed. 
+ - <b>`StaleElement`</b>:  The target was there and had gone by the time it was  pressed - including between one attempt and the next, when  nothing more is pressed. 
 
 ---
 
@@ -374,6 +374,7 @@ ui.fill("REC-001", ui.Locator(identifier="record-id"), within=form)
  
  - <b>`FillFailed`</b>:  Every mechanism was tried and the value did not stick. 
  - <b>`WaitTimeout`</b>:  The field never appeared, or `until` never held. 
+ - <b>`StaleElement`</b>:  The field had gone by the time it was written, or  between one attempt and the next. 
 
 ---
 
@@ -537,6 +538,7 @@ Scrolling past the target is the hazard, so `retry_interval` is short and `amoun
 **Raises:**
  
  - <b>`WaitTimeout`</b>:  It never showed up. 
+ - <b>`StaleElement`</b>:  The view named by `locator` or `node` had gone  between one turn and the next. 
 
 ---
 
