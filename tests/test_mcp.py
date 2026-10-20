@@ -1327,6 +1327,61 @@ def test_starting_one_that_needs_arguments_is_refused(writable):
         writable.call("start_action", {"name": "thing.NeedsArgs"})
 
 
+LIMITED = '''\
+from keyhac import ThreadedAction
+
+
+class Limited(ThreadedAction):
+    def __init__(self, limit=None):
+        self.limit = limit
+
+    def run(self):
+        return self.limit
+'''
+
+
+def test_arguments_reach_the_constructor(writable, clean_modules):
+    """What a trial needs: the delivered file, unchanged, run on one item."""
+    write_action(writable, name="limited", source=LIMITED)
+    assert writable._startable("limited.Limited", {"limit": 1}).run() == 1
+
+
+def test_a_start_without_arguments_is_not_handed_the_trial(writable,
+                                                            clean_modules):
+    """The cache is per arguments too: the run after a one-item trial is the
+    real one, and must not keep the trial's limit."""
+    write_action(writable, name="limited", source=LIMITED)
+    writable._startable("limited.Limited", {"limit": 1})
+    assert writable._startable("limited.Limited").run() is None
+    assert writable._startable("limited.Limited", {"limit": 1}).run() == 1
+
+
+def test_arguments_can_supply_what_has_no_default(writable, clean_modules):
+    write_action(writable, name="needs", source=(
+        "from keyhac import ThreadedAction\n\n\n"
+        "class Needs(ThreadedAction):\n"
+        "    def __init__(self, target):\n"
+        "        self.target = target\n\n"
+        "    def run(self):\n"
+        "        return self.target\n"))
+    assert writable._startable("needs.Needs", {"target": "x"}).run() == "x"
+
+
+def test_a_wrong_argument_is_refused_naming_the_constructor(writable,
+                                                            clean_modules):
+    write_action(writable, name="limited", source=LIMITED)
+    with pytest.raises(KeyError, match="limitt.*__init__"):
+        writable.call("start_action", {"name": "limited.Limited",
+                                       "arguments": {"limitt": 1}})
+
+
+def test_arguments_must_be_an_object(writable, clean_modules):
+    write_action(writable, name="limited", source=LIMITED)
+    with pytest.raises(KeyError, match="object"):
+        writable.call("start_action", {"name": "limited.Limited",
+                                       "arguments": [1]})
+
+
 def test_a_file_that_does_not_parse_is_skipped_not_reported(writable):
     write_action(writable, name="broken", source="def nope(:\n")
     write_action(writable, name="good")

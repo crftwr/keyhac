@@ -572,7 +572,7 @@ coordinates, or bindings it never checked.
 | `describe_keymap` | the key tables, which match the current focus, and what each binds |
 | `read_config`, `write_config` | your `config.py` — read it, replace it (backup kept) |
 | `list_actions` | the action classes in `extensions/`, what is running, how each last ended |
-| `start_action`, `get_action_result`, `cancel_action` | start an action, collect what it logged, stop it |
+| `start_action`, `get_action_result`, `cancel_action` | start an action (with constructor `arguments` for one run, if you pass them), collect what it logged, stop it |
 | `list_extensions` | the files in `extensions/`, including helpers with no action class |
 | `read_extension` | read a module as it is on disk |
 | `write_extension` | save a module — the whole file |

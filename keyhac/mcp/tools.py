@@ -716,10 +716,19 @@ class ToolRegistry:
                  "take minutes, which is why starting and collecting are "
                  "separate steps. Takes a module.Class from list_actions, and "
                  "re-imports the file when it has changed - so write_extension "
-                 "then start_action needs no reload_config in between.",
+                 "then start_action needs no reload_config in between. "
+                 "`arguments` go to the class's constructor for this run "
+                 "only - a trial on one item (`{\"limit\": 1}`) runs the file "
+                 "as delivered, and a later start without them gets its "
+                 "defaults again.",
                  {"type": "object", "properties": {
                      "name": {**string, "description":
-                              "module.Class, from list_actions."}},
+                              "module.Class, from list_actions."},
+                     "arguments": {"type": "object", "description":
+                                   "Keyword arguments for the constructor, "
+                                   "as a JSON object. Omit to use its "
+                                   "defaults - which is how a key or the Run "
+                                   "page starts it."}},
                   "required": ["name"]},
                  self.start_action,
                  _writes(destructive=True, idempotent=False, open_world=True)),
@@ -1227,30 +1236,35 @@ class ToolRegistry:
             raise KeyError(f"{name!r} has not been started; call list_actions")
         return action
 
-    def _startable(self, name: str):
+    def _startable(self, name: str, arguments: dict | None = None):
         """Resolve a name for *running*.
 
         No permission check: the endpoint being reachable at all is the
         permission. It listens only while the operator's switch is on, and the
         switch closes itself - see `Keymap.start_mcp_server`.
         """
+        if arguments is not None and not isinstance(arguments, dict):
+            raise KeyError(f"arguments must be a JSON object of keyword "
+                           f"arguments, not {type(arguments).__name__}")
+        arguments = arguments or {}
         found = {action.name: action
                  for action in extensions.discover(self.keymap.extensions_dir)}
         action = found.get(name)
         if action is None:
             raise KeyError(f"no action class named {name!r}; call list_actions")
-        if action.required:
+        missing = [arg for arg in action.required if arg not in arguments]
+        if missing:
             raise KeyError(
                 f"{name} takes constructor arguments with no default "
-                f"({', '.join(action.required)}), so it cannot be started from "
-                f"here. Give them defaults - the operator can still pass other "
-                f"values where they bind it to a key.")
+                f"({', '.join(missing)}), so it cannot be started without "
+                f"them. Give them defaults - a key or the Run page starts it "
+                f"with none - or pass them in `arguments` for this run.")
         # Re-imports when the file has moved, so write_extension followed by
         # start_action runs what was just written, with no reload_config
         # between them.
-        return self._loader.instantiate(action)
+        return self._loader.instantiate(action, arguments)
 
-    def start_action(self, name: str) -> str:
+    def start_action(self, name: str, arguments: dict | None = None) -> str:
         """Start it and get out of the way.
 
         Asynchronous by design rather than because the transport forced it.
@@ -1261,10 +1275,14 @@ class ToolRegistry:
         how fast the action happened to be would be worse still: the branch
         would hinge on the least predictable thing there is.
         """
-        action = self._startable(name)
+        # Before resolving, not after: a start with other arguments makes a new
+        # instance and replaces the cached one, which is the one cancel_action
+        # reaches - so resolving first would take a running action out of reach
+        # of its stop button.
         if capture.get_run(name) is not None and capture.get_run(name).running:
             return (f"{name} is already running - get_action_result to watch "
                     f"it, or cancel_action to stop it.")
+        action = self._startable(name, arguments)
 
         # Opened here, on the calling thread, and handed to the worker - not
         # opened inside it. This call returns immediately by design, and a

@@ -253,11 +253,14 @@ covers choosing the table. The two lines on their own, pasted as a new
 
 Two consequences worth writing for:
 
-- **Give every constructor argument a default.** `start_action` instantiates
-  with none, so `def __init__(self, target)` cannot be run at all -
-  `list_actions` says so instead of offering it. Defaults keep it testable and
-  lose you nothing; the operator can still pass other values on the line that
-  binds the key. There is no `super().__init__()` to call: the base keeps no
+- **Give every constructor argument a default.** The Run page starts an
+  action with none, and so does `start_action` unless you pass `arguments`,
+  so `def __init__(self, target)` cannot be run from either -
+  `list_actions` says so instead of offering it. Defaults are what the
+  operator's runs use; the operator can still pass other values on the line
+  that binds the key, and you can pass some for one run of yours -
+  `start_action("submit_records.SubmitRecords", arguments={"limit": 1})` -
+  without editing the file. There is no `super().__init__()` to call: the base keeps no
   instance state, and a running action is tracked in a class-level set.
 - **The class must subclass `ThreadedAction`** to be found at all. Any
   distance does: subclassing another action, or a shared base you split into a
