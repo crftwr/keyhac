@@ -442,6 +442,15 @@ review-before-egress step — the recording goes to Claude. And its output forma
 has not been examined here; the first real one should be, before the skill's
 guidance hardens.
 
+**Tried end to end, 2026-10-21** (the author, Claude Desktop, macOS). A plain
+prompt — "I want to make a Keyhac action from operations captured with Record
+a skill" — was enough. Claude Desktop asked for the capture, asked about what
+was unclear, and then implemented the action without trouble. The narration
+earned its place: talking through the task while recording is the easy way to
+say how flexible the action has to be, which a click log cannot carry. The
+recorded skill's own format was still not inspected; the flow worked without
+anyone having to.
+
 ### Layer 2 — State reading
 
 More exists than an earlier draft of this document assumed. Both platforms already
