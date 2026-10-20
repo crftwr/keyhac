@@ -33,10 +33,10 @@
     <key>CFBundleSignature</key>
     <string>????</string>
 
-    <!-- macOS 11+: NSImage loads the menu-extra template SVG directly, and
-         keyhac-mac's supported floor is the same. -->
+    <!-- MACOS_MIN_VERSION in build.sh, which also compiles the launcher for
+         it and fails the build if any bundled binary needs newer. -->
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>{{MIN_OS}}</string>
 
     <!-- Agent app: menu-bar extra + tool windows, no Dock icon, no app menu.
          Matches keyhac-mac 1.x (LSUIElement = YES) and puikit's
