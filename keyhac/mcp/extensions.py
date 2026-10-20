@@ -48,6 +48,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import inspect
+import json
 import os
 import sys
 
@@ -276,7 +278,7 @@ class Loader:
     """
 
     def __init__(self):
-        self._instances: dict[str, tuple[float, object]] = {}
+        self._instances: dict[str, tuple[tuple, str, object]] = {}
 
     def cached(self, name: str):
         """The live instance for `name`, or None. Never imports.
@@ -286,17 +288,21 @@ class Loader:
         closed underneath it.
         """
         entry = self._instances.get(name)
-        return None if entry is None else entry[1]
+        return None if entry is None else entry[2]
 
-    def instantiate(self, action: ActionClass):
+    def instantiate(self, action: ActionClass, arguments: dict | None = None):
+        arguments = arguments or {}
         # Stamped over the import graph, as `_loaded_and_current` judges the
-        # module: an action subclassing one in another file - a one-row probe
-        # beside the action it tries - is otherwise handed its cached instance
-        # after only the other file changed, and runs the replaced code.
+        # module: an action subclassing one in another file is otherwise
+        # handed its cached instance after only the other file changed, and
+        # runs the replaced code.
         stamp = _graph_stamp(action)
+        # And keyed by the arguments: the start after a one-item trial is the
+        # real run, and must not be handed the trial's instance.
+        given = json.dumps(arguments, sort_keys=True, default=repr)
         entry = self._instances.get(action.name)
-        if entry is not None and entry[0] == stamp:
-            return entry[1]
+        if entry is not None and entry[0] == stamp and entry[1] == given:
+            return entry[2]
         # The module `config.py` imported, when it and everything it imports
         # are still the files on disk. Re-importing an unchanged module is
         # what split every action in two: the class this ran and the class on
@@ -324,7 +330,19 @@ class Loader:
         if loaded is None:
             raise KeyError(f"{action.path} no longer defines "
                            f"{action.class_name}")
-        instance = loaded()
+        try:
+            instance = loaded(**arguments)
+        except TypeError as error:
+            # A wrong keyword is the caller's to fix, so it is said with the
+            # signature it was checked against, not as a traceback.
+            if not arguments:
+                raise
+            try:
+                takes = str(inspect.signature(loaded.__init__))
+            except (TypeError, ValueError):
+                takes = "(unknown)"
+            raise KeyError(f"{action.name} could not take {sorted(arguments)}: "
+                           f"{error}. Its __init__{takes}") from error
         # The scan matched a base *named* ThreadedAction; this is where that
         # becomes a fact. Shadowing the name is far-fetched, but the caller
         # relies on the real base's cancellable() and would otherwise fail with
@@ -333,7 +351,7 @@ class Loader:
         if not isinstance(instance, ThreadedAction):
             raise KeyError(f"{action.name} does not subclass keyhac's "
                            f"ThreadedAction, so it cannot be run from here")
-        self._instances[action.name] = (stamp, instance)
+        self._instances[action.name] = (stamp, given, instance)
         return instance
 
 
