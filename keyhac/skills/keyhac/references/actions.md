@@ -80,7 +80,8 @@ what has been pressed cannot be pressed again with the fixed code. So no
 version of the action does its first committing step on more than one item:
 run each version on one item, check what it did against the screen, and only
 then let it do the rest. That holds again after every change, whatever the
-change touched.
+change touched. `start_action`'s `arguments` go to the constructor for one
+run, so a limit the action takes lets you do this with the file as delivered.
 
 Ask in conversation for what a screen cannot show: how many items, which steps
 are slow, what the branch rule is, what a failure should do.
@@ -368,9 +369,10 @@ do not cause").
 class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
 `finished()` can tell a run that stopped early from one that reached the end.
-**One instance serves every run** - a key binding holds one, and
-`start_action` keeps one until the file changes - so set per-run state at the
-top of `run()`, not in `__init__`, or a run reports what the last one left.
+**An instance can serve more than one run** - a key binding holds one, and
+`start_action` keeps one until the file changes; only the Run page makes a new
+one each time - so set per-run state at the top of `run()`, not in `__init__`,
+or a run reports what the last one left.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it
