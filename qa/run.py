@@ -75,6 +75,7 @@ SCREENS = {
     "submit-form": screens.Page("submit.html", title=_title("submit.html")),
     "approval-queue": screens.Page("dialog.html", title=_title("dialog.html")),
     "preferences": screens.Page("settings.html", title=_title("settings.html")),
+    "notes": screens.Page("notes.html", title=_title("notes.html")),
     "build-failure": screens.Terminal("build_failure.py", title="build - acme"),
     "deploy": screens.Terminal("deploy.py", title="deploy - acme"),
 }
