@@ -349,35 +349,43 @@ is `ThreadedAction`, and it is not optional - a key press must return control
 immediately:
 
 ```python
+class ItemFailed(Exception):       # your own types: Keyhac defines neither
+    """This item did not go through; the rest still can."""
+
+class ScreenChanged(Exception):
+    """Not the screen this was written for: the action needs changing."""
+
 class ExtractThings(ThreadedAction):
     def starting(self):            # loop thread: capture origin, log intent
         logger.info("extracting…")
 
     def run(self):                 # worker: the whole pipeline, may block
         window = self.ui.window(app="Safari")
+        self.failed = []                          # per run: not in __init__
         rows = []
         for target in targets:
             try:
-                self._read_one(window, rows)      # appends as it goes
-            except PreconditionFailed as error:   # the UI moved: stop
-                self.stopped = str(error)         # your own attribute
-                break
-        return rows
+                self._read_one(window, target, rows)   # appends as it goes
+            except ItemFailed as error:           # this item only: go on
+                self.failed.append((target, str(error)))
+        return rows                # ScreenChanged is not caught: ends the run
 
     def finished(self, result):    # loop thread: report, apply, notify
-        logger.info(f"{len(result)} rows")
+        logger.info(f"{len(result)} rows, {len(self.failed)} to redo")
 ```
 
-The `except` there is for the *items*: a run that stops at item 7 still has
-items 1-6 to report. What the whole task waits on - the deploy finishing, the
-page loading at all - is not caught: its `WaitTimeout` ends the run as a
-failure, which is what it is (`references/practice.md`, "Waiting for what you
-do not cause").
+The `except` there is for the *items*: item 7 failing still leaves the rest to
+read and items 1-6 to report. A screen that is not the one the action was
+written for is not caught - it will be the same for every item, so it ends the
+run, and so does `WaitTimeout` on what the whole task waits on - the deploy
+finishing, the page loading at all (`references/practice.md`, "Waiting for
+what you do not cause"). Either way, what was read is already written, not
+held in `rows` (see "Failure, progress, resume").
 
-`self.stopped` above is the action's own attribute, not something the base
+`self.failed` above is the action's own attribute, not something the base
 class keeps - `ThreadedAction` holds no per-instance state at all, and there is
 no `super().__init__()` to call. Name it what you like; what matters is that
-`finished()` can tell a run that stopped early from one that reached the end.
+`finished()` can say what to redo.
 **An instance can serve more than one run** - a key binding holds one, and
 `start_action` keeps one until the file changes; only the Run page makes a new
 one each time - so set per-run state at the top of `run()`, not in `__init__`,
