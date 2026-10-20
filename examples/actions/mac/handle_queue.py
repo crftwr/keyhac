@@ -19,7 +19,7 @@ every press, and stops.
 import pathlib
 import subprocess
 
-from keyhac import ThreadedAction, WaitTimeout, getLogger
+from keyhac import StaleElement, ThreadedAction, WaitTimeout, getLogger
 
 logger = getLogger("HandleQueue")
 
@@ -86,6 +86,11 @@ class HandleQueue(ThreadedAction):
                 break
             except WaitTimeout as error:
                 self.stopped_because = f"gave up waiting: {error}"
+                break
+            except StaleElement as error:
+                # The page moved under a retry - a dialog took the front, the
+                # button left the tree - and nothing more was pressed into it.
+                self.stopped_because = f"the page changed: {error}"
                 break
         return {"handled": self.handled, "stopped": self.stopped_because,
                 "page_says": self._log_line(window)}

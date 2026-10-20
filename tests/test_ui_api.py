@@ -551,6 +551,76 @@ class TestVerbs:
                       timeout=0.3, retry_interval=0.05)
         assert "attempts" in str(error.value)
 
+    def test_a_target_gone_between_attempts_is_not_pressed_again(self, ui):
+        """Issue #206: the press opened a modal, the modal made the button
+        inert, and the retry pressed it four more times through the old
+        reference. Gone from the tree means gone - one press, and a
+        StaleElement saying so rather than a timeout saying "did not take"."""
+        from keyhac import StaleElement
+
+        api, element = ui
+        button = element.kids[0]
+
+        def press(name):
+            button.pressed += 1
+            element.kids.remove(button)       # the modal takes the page
+        button.perform_action = press
+
+        with pytest.raises(StaleElement) as error:
+            api.click(api.Locator(role="AXButton", name="Save"),
+                      until=lambda: False, timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 1
+        assert "after 1 attempt" in str(error.value)
+
+    def test_a_retry_presses_the_control_found_again(self, ui):
+        """The old reference is not trusted even while the locator still
+        matches: an inert element can answer through it. What is found now
+        is what is pressed now."""
+        api, element = ui
+        old = element.kids[0]
+        fresh = FakeElement("AXButton", name="Save", identifier="save",
+                            key="b2")
+
+        def press(name):
+            old.pressed += 1
+            element.kids[0] = fresh           # re-rendered under the press
+        old.perform_action = press
+
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: fresh.pressed >= 1,
+                  timeout=2.0, retry_interval=0.05)
+        assert (old.pressed, fresh.pressed) == (1, 1)
+
+    def test_a_held_node_that_died_between_attempts_is_not_pressed_again(
+            self, ui):
+        """node= has no description to look for again, so it is asked what
+        Gone asks: whether its own reference has died."""
+        from keyhac import StaleElement
+
+        api, element = ui
+        button = element.kids[0]
+        button.is_stale = lambda: button.pressed > 0
+        with pytest.raises(StaleElement):
+            api.click(node=api.node(button), until=lambda: False,
+                      timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 1
+
+    def test_a_field_gone_between_writes_is_not_written_again(
+            self, ui, monkeypatch):
+        from keyhac import StaleElement
+
+        api, element = ui
+        writes = []
+
+        def set_text(node, text):
+            writes.append(text)
+            element.kids.pop()                # the field went with the form
+        monkeypatch.setattr(UINode, "set_text", set_text)
+        with pytest.raises(StaleElement):
+            api.fill("x", api.Locator(role="AXTextArea", name="Body"),
+                     until=lambda: False, timeout=2.0, retry_interval=0.05)
+        assert writes == ["x"]
+
     def test_appears_hands_back_what_it_found(self, ui):
         api, element = ui
         found = api.click(api.Locator(role="AXButton", name="Save"),

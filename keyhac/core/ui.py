@@ -675,7 +675,8 @@ class UI:
             WaitTimeout: The target never appeared, or the postcondition never
                 held.
             StaleElement: The target was there and had gone by the time it was
-                pressed.
+                pressed - including between one attempt and the next, when
+                nothing more is pressed.
         """
         from keyhac.core.act import act_on
 
@@ -684,17 +685,22 @@ class UI:
         # finding it and acting on it, and a press aimed at what used to be
         # there is the silent wrong thing this API exists to refuse.
         target.reread()
+        what = f"clicking {locator or target!r}"
+        current = [target]
+
+        def recheck(attempts):
+            current[0] = self._still_there(locator, within, current[0], what,
+                                           attempts)
 
         def act():
             # On this thread (issue #173): the ladder reads geometry,
             # hit-tests and injects a click, and none of that needs the loop
             # - injection is thread-safe on both OSes, and the hit test never
             # asks one of Keyhac's own windows anything.
-            return act_on(target.element)
+            return act_on(current[0].element)
 
-        return self._until(act, until, timeout, retry_interval,
-                           what=f"clicking {locator or target!r}",
-                           given=given) or target
+        return self._until(act, until, timeout, retry_interval, what=what,
+                           given=given, recheck=recheck) or current[0]
 
     def activate(self, app: str = None, title: str = None,
                  timeout: float = 10.0, retry_interval: float = 2.0,
@@ -792,12 +798,21 @@ class UI:
         Raises:
             FillFailed: Every mechanism was tried and the value did not stick.
             WaitTimeout: The field never appeared, or `until` never held.
+            StaleElement: The field had gone by the time it was written, or
+                between one attempt and the next.
         """
         target = self._target(locator, within, node, timeout)
         target.reread()
-        return self._until(lambda: target.set_text(text), until, timeout,
-                           retry_interval, what=f"filling {locator or target!r}",
-                           given=given) or target
+        what = f"filling {locator or target!r}"
+        current = [target]
+
+        def recheck(attempts):
+            current[0] = self._still_there(locator, within, current[0], what,
+                                           attempts)
+
+        return self._until(lambda: current[0].set_text(text), until, timeout,
+                           retry_interval, what=what, given=given,
+                           recheck=recheck) or current[0]
 
     def scroll(self, locator: Locator = None, within=None, node=None,
                by: str = "down", amount: float = 3.0,
@@ -840,18 +855,30 @@ class UI:
 
         Raises:
             WaitTimeout: It never showed up.
+            StaleElement: The view named by `locator` or `node` had gone
+                between one turn and the next.
         """
         from keyhac.core.act import scroll as turn
 
+        named = locator is not None or node is not None
         view = (self._target(locator, within, node, timeout)
-                if (locator is not None or node is not None) else self.window())
+                if named else self.window())
         notches = -abs(amount) if by == "down" else abs(amount)
+        what = f"scrolling {by}"
+        current = [view]
+
+        def recheck(attempts):
+            current[0] = self._still_there(locator, within, current[0], what,
+                                           attempts)
 
         def act():
-            return turn(view.element, notches)
+            return turn(current[0].element, notches)
 
-        return self._until(act, until, timeout, retry_interval,
-                           what=f"scrolling {by}", given=given) or view
+        # The focused window is re-asked for nothing: "whatever is in front"
+        # has no earlier identity to have lost.
+        return self._until(act, until, timeout, retry_interval, what=what,
+                           given=given,
+                           recheck=recheck if named else None) or current[0]
 
     def menu(self, *path: str, given: Condition | Callable[[], Any] = None,
                until: Condition | Callable[[], Any] = None,
@@ -956,6 +983,40 @@ class UI:
             and (within if within is not None else self.window()).find(**criteria),
             timeout=timeout, message=f"{locator} to appear")
 
+    def _still_there(self, locator, within, node, what: str, attempts: int):
+        """The target to act on again, found afresh - or StaleElement.
+
+        Run between attempts, never before the first (issue #206). A locator
+        is resolved again in the same scope, once and without waiting, and
+        what it finds *now* is what the next attempt acts on: the old
+        reference is not trusted, because an element a modal has made inert
+        leaves the tree but can still answer through a reference held from
+        before (measured on macOS - an `AXPress` through it fired `onclick`
+        five times behind a "Delete all records?" dialog). A `node=` has no
+        description to look for, so all it can be asked is whether its own
+        reference has died - `Gone`'s question, asked the same way.
+
+        Not finding it is not retried and not waited for: the act it was
+        retrying has already gone out, so whatever replaced the target is
+        in front of the next one.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.uitree import StaleElement
+
+        if locator is not None:
+            scope = within if within is not None else self.window()
+            found = (scope.find(**locator.criteria())
+                     if scope is not None else None)
+            if found is not None:
+                return found
+        elif not Gone(node).check(self):
+            return node
+        raise StaleElement(
+            f"{what} stopped: the target was gone after {attempts} "
+            f"attempt{'s' if attempts != 1 else ''}, so it was not acted on "
+            f"again - something else is in front of it now")
+
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,
                  until: Condition | Callable[[], Any] = None,
@@ -998,13 +1059,14 @@ class UI:
                            what=f"sending {keys!r}", given=given)
 
     def _until(self, act, until, timeout: float, retry_interval: float, what: str,
-               given=None):
+               given=None, recheck=None):
         """Wait for the precondition, act, watch, act again - the one loop
         the verbs share, and the one an action no longer writes.
 
             deadline = now + timeout
             repeat:
                 wait for given()                    # the gate
+                recheck()                           # not before the first
                 act()                               # the one costly line
                 watch until() for retry_interval       # or until the deadline
                 if it held: return what it held with
@@ -1025,6 +1087,12 @@ class UI:
         beside rather than against the released name. Two unqualified names
         for two different rates is what made this pair unreadable when it was
         `interval` and `retry_every`.
+
+        **`recheck` is the target's own precondition** (issue #206): called
+        with the number of attempts already made, before every attempt but
+        the first, and expected to raise `StaleElement` when what the verb
+        is acting on has gone. It raises rather than waits, which is what
+        keeps "the target went away" apart from "the act did not take".
 
         lazydocs: ignore
         """
@@ -1052,6 +1120,8 @@ class UI:
         while True:
             if given is not None:
                 self._hold(given, deadline, what)
+            if attempts and recheck is not None:
+                recheck(attempts)
             act()
             attempts += 1
             window = min(retry_interval, deadline - time.monotonic())

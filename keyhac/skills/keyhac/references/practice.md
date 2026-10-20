@@ -119,6 +119,15 @@ again. An `until` written as `given` waits for what nothing has caused yet.
 double-acts: double-save, double-submit. Say what "it worked" means and you
 get the retry; say nothing and you get one attempt.
 
+**A retry stops when the target has gone.** Before every attempt after the
+first, `click`, `fill` and `scroll` look for the target again, and act on what
+they find *now*. If it is no longer there — the press opened a dialog, and a
+modal makes the page behind it unreachable — they raise `StaleElement` without
+acting again, rather than timing out with "did not take". Catch it apart from
+`WaitTimeout`: the screen moved, which is a different repair from an act that
+never landed. A locator can be looked for again; a `node=` can only be asked
+whether its own reference has died, so pass a locator where there is one.
+
 **A press without `until` returns when it has pressed, not when the screen has
 answered** — and reading right after it reads the screen from before. Measured
 against Safari: the page's result line took **121 ms** to say what had just
