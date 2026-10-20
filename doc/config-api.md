@@ -1597,6 +1597,8 @@ The replayed keys run back through the keymap, so recorded bindings expand again
 ## <kbd>class</kbd> `ClipboardHistory`
 Automatically captures historical clipboard text. 
 
+Content the copying app marked as concealed or transient - what password managers do with a copied password - is never recorded. 
+
 Reached from a configuration as ``keymap.clipboard_history``, and shown by the ShowClipboardHistory action. 
 
 
