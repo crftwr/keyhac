@@ -20,11 +20,11 @@ class BadExtract:
         # rule 2: an element addressed by where it happened to be
         ui.click(640, 480)
 
-        # rule 7: "Next" linking to itself runs until someone notices
+        # rule 8: "Next" linking to itself runs until someone notices
         while True:
             for cell in ui.cells(window):
                 rows.append(cell)
-            # rule 6: raising after collecting discards everything above
+            # rule 7: raising after collecting discards everything above
             if not ui.find(window, "next"):
                 raise RuntimeError("pagination ended unexpectedly")
             ui.press(window, "next")

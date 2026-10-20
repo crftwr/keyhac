@@ -40,15 +40,15 @@ def _check_ast(tree: ast.AST) -> list[str]:
     problems = []
 
     for node in ast.walk(tree):
-        # rule 7: a while loop that follows links must be bounded.
+        # rule 8: every while loop must be bounded.
         if isinstance(node, ast.While):
             test = ast.dump(node.test)
             bounded = ("Compare" in test and "True" not in test) or any(
                 isinstance(inner, (ast.Break,)) for inner in ast.walk(node))
             if not bounded:
                 problems.append(
-                    f"line {node.lineno}: unbounded while loop - a 'Next' that "
-                    f"links to itself runs forever (rule 7)")
+                    f"line {node.lineno}: unbounded while loop - give it a "
+                    f"bound (rule 8)")
 
         # rule 4: pressing a checkbox directly instead of set_checked().
         if isinstance(node, ast.Call):
@@ -63,7 +63,7 @@ def _check_ast(tree: ast.AST) -> list[str]:
 
 
 def _accumulator_escapes(tree: ast.AST) -> list[str]:
-    """Rule 6: a list built inside a function that raises is lost with it.
+    """Rule 7: a list built inside a function that raises is lost with it.
 
     Flags a local list that is appended to and also referenced by an `except`
     handler's sibling code - the shape that discarded every page already read.
@@ -107,7 +107,7 @@ def _accumulator_escapes(tree: ast.AST) -> list[str]:
                 problems.append(
                     f"line {node.lineno}: '{name}' accumulates inside "
                     f"{node.name}(), which also raises - everything collected "
-                    f"so far is discarded with the exception (rule 6)")
+                    f"so far is discarded with the exception (rule 7)")
     return problems
 
 
