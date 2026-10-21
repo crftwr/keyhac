@@ -191,6 +191,16 @@ class ClipboardHistorySource(_PastingSource):
                 extras={"entry": entry}))
         return rows
 
+    def remove(self, candidate) -> bool:
+        """lazydocs: ignore"""
+        entry = candidate.extras.get("entry")
+        if entry is None:
+            # A current-clipboard row is not an entry: there is nothing kept
+            # to remove.
+            return False
+        Keymap.get_instance().clipboard_history.remove(entry)
+        return True
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         history = Keymap.get_instance().clipboard_history

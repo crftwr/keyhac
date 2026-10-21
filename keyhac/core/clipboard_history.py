@@ -181,6 +181,26 @@ class ClipboardHistory:
             return s
         return None
 
+    def remove_item(self, s: str) -> None:
+        """Remove text from the history, without touching the OS clipboard.
+
+        Args:
+            s: The text to remove.  Nothing happens if it is not there.
+        """
+        entry = self._entries.get(("text", s))
+        if entry is not None:
+            self.remove(entry)
+
+    def remove(self, entry: ClipboardEntry) -> None:
+        """Remove an entry.  If it is what the clipboard holds now, the
+        clipboard keeps it - it is not recorded again until the clipboard
+        changes.
+
+        lazydocs: ignore
+        """
+        if self._entries.pop(entry.key, None) is not None:
+            self.dirty = True
+
     def current(self):
         """What the clipboard holds now: a ClipboardEntry, CONCEALED,
         UNSUPPORTED, or None.

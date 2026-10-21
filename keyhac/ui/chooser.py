@@ -245,7 +245,7 @@ class ChooserWindow:
                  activates=False, badge_of=None,
                  pages=None, on_page=None, pending=None, background=None,
                  source_of=None, below=None, passes_through=None,
-                 preview_of=None):
+                 preview_of=None, remove_of=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -279,6 +279,8 @@ class ChooserWindow:
         #: `candidate -> (produce, background)` or None, from the action: how
         #: to ask the row's source for its preview.  See _schedule_preview.
         self._preview_of = preview_of
+        #: `candidate -> bool`, from the action: remove a row for good.
+        self._remove_of = remove_of
         self._preview_window = None
         #: The row being previewed, or waited on.  Bumping the generation
         #: abandons whatever preview is in flight.
@@ -700,6 +702,32 @@ class ChooserWindow:
                 flash=True)
         except Exception:
             logger.debug("This platform cannot point at a control.")
+
+    # --- removing ---------------------------------------------------------
+
+    def _remove_selected(self) -> None:
+        """Remove the selected row for good, if its source can."""
+        candidate = self._selected()
+        if candidate is None or self._remove_of is None:
+            return
+        try:
+            removed = self._remove_of(candidate)
+        except Exception:
+            logger.error("Removing the row failed.", exc_info=True)
+            return
+        if not removed:
+            logger.info("This row cannot be removed.")
+            return
+        index = self._list.selected
+        self._items = [c for c in self._items if c is not candidate]
+        self._filtered = [c for c in self._filtered if c is not candidate]
+        self._list.set_items(self._rows())
+        if self._filtered:
+            # The row below moves up into the place of the one removed, so
+            # pressing the key again goes on down the list.
+            self._focus_list(min(index, len(self._filtered) - 1))
+        else:
+            self._focus_edit()
 
     # --- preview ------------------------------------------------------------
 
@@ -1159,6 +1187,13 @@ class ChooserWindow:
                 # selection has to go through _navigate, or the mark stays on
                 # the row the selection just left.
                 self._navigate(event.key)
+                self.panel.render()
+                return
+            if (self.in_list and event.key == "delete"
+                    and set(event.modifiers) == {"shift"}):
+                # XeFM's key for "forget this entry". Bare Delete stays the
+                # query's: it leaves the list for the field, as typing does.
+                self._remove_selected()
                 self.panel.render()
                 return
             if (self.in_list and event.key == "space" and not event.modifiers
