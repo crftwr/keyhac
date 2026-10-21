@@ -112,24 +112,12 @@ class TestPreviewWindow:
         assert source.asked == []
         assert _preview_windows(ui_backend) == []
 
-    def test_space_in_the_list_toggles_previews(self, ui_backend):
-        source = _Notes()
-        chooser = _open(source)
-        _key(chooser, "down")
-        _key(chooser, "down")
-        ui_backend.fire_timers()
-        _key(chooser, "space", " ")
-        assert _preview_windows(ui_backend) == []
-        assert chooser._edit.text == ""      # not typed into the query
-        assert chooser.previews_on is False
-        _key(chooser, "space", " ")
-        ui_backend.fire_timers()
-        assert _preview_windows(ui_backend)
-
-    def test_space_in_the_field_is_still_a_space(self, ui_backend):
+    def test_space_in_the_list_goes_to_the_query(self, ui_backend):
         chooser = _open(_Notes())
+        _key(chooser, "down")
         _key(chooser, "space", " ")
-        assert chooser.previews_on is True
+        assert chooser._edit.text == " "
+        assert not chooser.in_list
 
     def test_an_image_is_decoded(self, ui_backend):
         from PIL import Image

@@ -659,9 +659,7 @@ it is paid for only when you ask for it.
 Rows that one line cannot show — an image, a long text, copied files, an
 action's description — get a **preview window** beside the chooser once the
 selection rests on them. Clipboard entries, snippets, clipboard tools (the
-converted result, before you choose it) and actions have one. **Space** in the
-list turns previews off and on, and the choice is remembered; in the filter
-field Space is still a space.
+converted result, before you choose it) and actions have one.
 
 A source of your own offers one by overriding `preview()`:
 
