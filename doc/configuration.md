@@ -656,9 +656,9 @@ it is paid for only when you ask for it.
 
 ### Previews
 
-Rows that one line cannot show — an image, a long text, copied files, an
-action's description — get a **preview window** beside the chooser once the
-selection rests on them. Clipboard entries, snippets, clipboard tools (the
+Once the selection rests on a row, a **preview window** beside the chooser shows
+what one line cannot: the whole text with its size and format, an image, copied
+files, an action's description. Clipboard entries, snippets, clipboard tools (the
 converted result, before you choose it) and actions have one.
 
 A source of your own offers one by overriding `preview()`:

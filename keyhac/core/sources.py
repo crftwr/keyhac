@@ -86,15 +86,6 @@ def _chooser_took_focus() -> bool:
 _PREVIEW_LINES = 40
 _PREVIEW_CHARS = 4000
 
-#: A one-line text up to this long is shown in full by its row, so it gets no
-#: preview.
-_PREVIEW_MIN_CHARS = 80
-
-
-def _needs_preview(text: str) -> bool:
-    return bool(text) and ("\n" in text.strip() or len(text) > _PREVIEW_MIN_CHARS)
-
-
 def _text_preview(text: str, title: str = None, fields=()) -> CandidatePreview:
     """A text, its head only, with its size."""
     lines = text.split("\n")
@@ -159,7 +150,12 @@ class ClipboardHistorySource(_PastingSource):
                 fields.insert(1, ("Missing", f"{missing:,}"))
             return CandidatePreview(text="\n".join(snapshot.files),
                                     fields=tuple(fields))
-        if not _needs_preview(entry.text):
+        # Every text gets one, short or not: whether a row shows it in full
+        # depends on the window's width and the font, and the preview says
+        # more than the row does anyway - its size, its format, when it was
+        # copied.  A preview that came and went with the length would read
+        # as one that does not work.
+        if not entry.text:
             return None
         if snapshot.kind == "rich":
             fields.insert(0, ("Format", "Rich text, shown plain"))
@@ -264,7 +260,7 @@ class SnippetsSource(_PastingSource):
         value = candidate.payload
         # A callable is not called: choosing it is when its value is wanted,
         # and calling it to look could have whatever effect it has.
-        if isinstance(value, str) and _needs_preview(value):
+        if isinstance(value, str) and value:
             return _text_preview(value)
         return None
 
