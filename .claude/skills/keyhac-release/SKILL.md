@@ -1,6 +1,6 @@
 ---
 name: keyhac-release
-description: Release a new version of Keyhac — confirm the version bump, run the pre-tag checks and account for the standing interactive pass, cut the tag, publish the GitHub Release with a hand-written note, and attach the macOS DMG, Windows zip, skill bundles, and PyPI wheel. Use when the user says "release Keyhac", "release a patch/minor/major version of Keyhac", or "ship keyhac X.Y.Z" — and also on the Windows machine afterwards, when they say "finish the Keyhac release on Windows" or "attach the Windows artifacts" (step 6: no new tag, just the Windows targets at the existing one).
+description: Release a new version of Keyhac — confirm the version bump, run the pre-tag checks and account for the standing interactive pass, cut the tag, publish the GitHub Release with a hand-written note, and attach the macOS DMG, Windows zip, skill bundles, and PyPI wheel, and bump the Homebrew cask (crftwr/homebrew-tap). Use when the user says "release Keyhac", "release a patch/minor/major version of Keyhac", or "ship keyhac X.Y.Z" — and also on the Windows machine afterwards, when they say "finish the Keyhac release on Windows" or "attach the Windows artifacts" (step 6: no new tag, just the Windows targets at the existing one).
 ---
 
 # Releasing Keyhac
@@ -127,6 +127,12 @@ gh release edit vX.Y.Z --notes-file <scratch>/release-note-x.y.z.md
   quietly, and a user connecting the MCP endpoint without the skill gets
   sleep-and-coordinates actions instead of an error), the sdist + wheel, and
   "PyPI: published".
+- Once the DMG is attached, bump the Homebrew cask. It opens a PR on
+  crftwr/homebrew-tap; merge it when its CI passes. Skip this for a release
+  that ships no DMG:
+  ```
+  brew bump-cask-pr --no-fork --version X.Y.Z crftwr/tap/keyhac
+  ```
 - List what this machine could not produce (the other OS's artifacts, the
   Store submission) as explicitly remaining, with the commands the other
   session must run.

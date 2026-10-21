@@ -96,10 +96,11 @@ what it can reach, and the security model.
 
 ## Install
 
-- **macOS 15+** — download `Keyhac-<version>-macos.dmg` from
+- **macOS 11+** — download `Keyhac-<version>-macos.dmg` from
   [Releases](https://github.com/crftwr/keyhac/releases): drag Keyhac.app into
-  Applications and launch it. Grant the Accessibility permission when prompted
-  (required for the keyboard hook).
+  Applications and launch it. Or install it with Homebrew:
+  `brew install --cask crftwr/tap/keyhac`. Grant the Accessibility permission
+  when prompted (required for the keyboard hook).
 - **Windows 10/11 (x64)** — install from the
   [Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH)
   (or `winget install --id 9P8H1PG6PRHH --source msstore`) — automatic updates, no
