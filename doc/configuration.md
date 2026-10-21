@@ -37,6 +37,51 @@ what it does, and a `queue.py` next to a queue-handling action would otherwise s
 the standard library for the whole process. If you name a module after one Python
 already provides, Python's copy wins and yours is unreachable — rename it.
 
+### Extra Python libraries
+
+Your config and extensions can import the standard library and what Keyhac itself
+ships. For anything else, list it in `~/.keyhac/requirements.txt`, next to
+`config.py`, and choose **Advanced > Sync Python Packages** in the tray / menu-bar menu:
+
+```
+# ~/.keyhac/requirements.txt
+requests
+openpyxl
+```
+
+The sync runs pip in the background, using the Python Keyhac itself runs on, so
+compiled packages match it. pip's output appears in the console, and the config
+reloads when it finishes. If you installed Keyhac with pip, `keyhac deps sync` does
+the same from a shell, and `keyhac deps status` says (offline) whether a sync is due.
+
+It works the same for every install, the macOS app and the Windows app included. The
+libraries go into `~/.keyhac/site-packages/`, not into Keyhac, so upgrading Keyhac
+keeps them.
+
+- **The file decides what is installed.** Delete a line and sync, and that library is
+  removed. An empty file (or no file) removes them all.
+- **Keyhac's own libraries win.** If a library you list needs a different version of
+  one Keyhac already uses, the sync fails and the console names both sides. Nothing
+  changes until a sync succeeds.
+- **Syncing is the only time Keyhac goes online, and only when you start it.** At
+  startup and on every reload, Keyhac checks offline whether the file changed since
+  the last sync, or whether Keyhac was upgraded. If so, the console says a sync is
+  due. Keyhac never syncs on its own.
+- **Already-loaded libraries update on restart.** Unlike `extensions/`, these are not
+  re-imported on reload, which is the right behavior for libraries. A library that was
+  already imported keeps its old version until Keyhac restarts. On Windows, if a
+  library in use can't be replaced, the new set takes over at the next start.
+- **A new Python version needs one sync.** Libraries are kept per Python version
+  (`site-packages/3.14/`). When a newer Keyhac runs on a newer Python, the console
+  says so, and one sync installs the same list again.
+
+`requirements.txt` is an ordinary pip requirements file: version specifiers,
+`--index-url`, and paths relative to the file all work. A file it pulls in with `-r`
+is not watched by the startup check, so sync by hand after editing one. Don't edit
+`site-packages/` yourself; every sync replaces it. If you keep `~/.keyhac` in a
+dotfiles repository, commit `requirements.txt` and leave `site-packages/` out: each
+machine syncs its own.
+
 "Edit Config" in the tray menu opens the file in an editor. Pick yours with:
 
 ```python

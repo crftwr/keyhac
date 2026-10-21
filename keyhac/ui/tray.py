@@ -1,7 +1,9 @@
 """The menu bar extra / system tray icon."""
 
 import inspect
+import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -77,6 +79,8 @@ def install_tray(console, keymap, hook) -> None:
         console._mcp_checkbox.checked = keymap.mcp_server_running
         console.panel.render()
 
+    package_sync = PackageSync(keymap)
+
     items = (
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
@@ -105,6 +109,15 @@ def install_tray(console, keymap, hook) -> None:
             # what this really provides is the URL - the page's first line
             # tells the reader to pass it on rather than follow it themselves.
             MenuItem("Setup Guide", on_select=open_guide),
+        )),
+        # What is chosen once in a long while, kept out of the top level the
+        # everyday items share.
+        MenuItem("Advanced", submenu=Menu(
+            # The one item in Keyhac that reaches the network
+            # (doc/installation.md says so), and only because it was chosen
+            # here.
+            MenuItem("Sync Python Packages", on_select=package_sync.start,
+                     enabled=lambda: not package_sync.running),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
@@ -183,6 +196,64 @@ class _TrayIndicator:
             set_tray("⌨", menu, **options)
         else:
             set_tray(None, menu, image=image, **options)
+
+
+class PackageSync:
+    """Sync Python Packages: make ``site-packages/`` beside config.py match
+    ``requirements.txt`` (#272), on a worker thread - pip reaches the network
+    and can take minutes, and the main thread runs the keyboard hook.
+
+    pip's output streams into the console as it comes. The outcome is
+    reported on the main thread, which then reloads the config, so an import
+    in config.py that failed for want of a package gets another try.
+    """
+
+    def __init__(self, keymap, sync=None):
+        self._keymap = keymap
+        self._sync = sync
+        self.running = False
+
+    def start(self) -> None:
+        from keyhac.core import python_packages
+        if self.running:
+            logger.info("Sync Python Packages is already running.")
+            return
+        layout = python_packages.Layout(
+            os.path.dirname(self._keymap.extensions_dir))
+        sync = self._sync or python_packages.sync
+        self.running = True
+        logger.info(f"Syncing Python packages from {layout.requirements}...")
+
+        def worker() -> None:
+            try:
+                outcome = sync(layout, log=logger.info)
+            except Exception as e:
+                outcome = e
+            self._keymap.call_on_main_thread(lambda: self._finish(outcome))
+
+        threading.Thread(target=worker, name="keyhac-deps-sync",
+                         daemon=True).start()
+
+    def _finish(self, outcome) -> None:
+        from keyhac.core import python_packages
+        self.running = False
+        if isinstance(outcome, python_packages.SyncError):
+            logger.error(f"Sync Python Packages failed: {outcome}")
+            return
+        if isinstance(outcome, Exception):
+            logger.error(f"Sync Python Packages failed: {outcome!r}")
+            return
+        logger.info("Python packages synced: "
+                    f"{', '.join(outcome.installed) or 'nothing'}")
+        if outcome.pruned:
+            logger.info("Already provided by Keyhac, left out: "
+                        f"{', '.join(outcome.pruned)}")
+        if outcome.pending_restart:
+            logger.info("The packages in use are replaced when Keyhac next starts.")
+            return
+        logger.info("Packages already imported keep their old version until "
+                    "Keyhac restarts.")
+        self._keymap.configure()
 
 
 def _cancel(name: str) -> None:

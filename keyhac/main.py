@@ -7,6 +7,7 @@ Windows).  --no-ui keeps the M1 headless mode (bare native loop + stderr).
 
 Usage:
     keyhac [-d] [-c PATH] [--no-ui]       (or: python -m keyhac ...)
+    keyhac deps [-c PATH] sync|status     (keyhac/deps_cli.py)
 """
 
 import argparse
@@ -23,6 +24,13 @@ WEBSITE_URL = "https://crftwr.github.io/keyhac/"
 
 
 def main() -> int:
+    # `keyhac deps sync|status` - the packages ~/.keyhac/requirements.txt
+    # declares. Before everything below: it starts no hook and no window, and
+    # runs beside a Keyhac that is already running.
+    if len(sys.argv) > 1 and sys.argv[1] == "deps":
+        from keyhac.deps_cli import main as deps_main
+        return deps_main(sys.argv[2:])
+
     parser = argparse.ArgumentParser(prog="keyhac", description="Keyhac 2")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="enable debug logging (key events, dispatch)")

@@ -6,7 +6,11 @@
 - **Windows 10 / 11, 64-bit**.
 
 Keyhac runs entirely on your machine. It never connects to the internet — there is no
-update check and no telemetry.
+update check and no telemetry. The one exception is a step you take yourself:
+**Advanced > Sync Python Packages** in the tray menu downloads the extra libraries
+you list in `requirements.txt` (see
+[Configuration](configuration.md#extra-python-libraries)).
+Nothing reaches the network unless you choose it.
 
 ## macOS
 

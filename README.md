@@ -48,6 +48,8 @@ Keyhac 2's UI is built on [PuiKit](https://github.com/crftwr/puikit).
   multi-monitor aware.
 - **Keyboard macros**: record and replay keys.
 - **Mouse output**: send clicks, wheel scrolls and pointer moves from key bindings.
+- **Extra Python libraries**: list them in `~/.keyhac/requirements.txt` and choose
+  Advanced > Sync Python Packages in the tray menu — the app bundles included.
 - **Console window**: live log, last-key and focus-path inspector — see exactly what to
   bind. Runs from the system tray (Windows) / menu-bar extra (macOS).
 - **AI-authored actions**: let an AI assistant read the screen and write the automation
