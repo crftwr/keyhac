@@ -21,6 +21,9 @@ logger = log.getLogger("Clipboard")
 class ClipboardHistory:
     """Automatically captures historical clipboard text.
 
+    Content the copying app marked as concealed or transient - what password
+    managers do with a copied password - is never recorded.
+
     Reached from a configuration as ``keymap.clipboard_history``, and shown by
     the ShowClipboardHistory action.
 
@@ -60,6 +63,10 @@ class ClipboardHistory:
 
         lazydocs: ignore
         """
+        # Asked before anything is read: a password manager's copy must not
+        # reach the history, in memory or on disk.
+        if self._provider.is_concealed():
+            return
         s = self._provider.get_text()
         if s:
             self.add_item(s)

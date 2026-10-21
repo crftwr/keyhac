@@ -23,9 +23,19 @@ class FakeClipboard:
     def get_text(self):
         return self.text
 
-    def set_text(self, s):
+    def set_text(self, s, concealed=False):
         self.text = s
         self.writes.append(s)
+        self.concealed_writes = getattr(self, "concealed_writes", [])
+        if concealed:
+            self.concealed_writes.append(s)
+
+
+class ConcealedClipboard(FakeClipboard):
+    """Holds a password manager's copy."""
+
+    def is_concealed(self):
+        return True
 
 
 class FakeField:
@@ -120,6 +130,19 @@ def test_preserve_clipboard_restores_after_an_exception(wired):
             clipboard.set_text("scratch")
             raise ValueError("boom")
     assert clipboard.get_text() == "what the user had copied"
+
+
+def test_preserve_clipboard_keeps_a_password_concealed(engine, monkeypatch):
+    # Restored without its marker, a password manager's copy would land in
+    # every clipboard history - ours included.
+    keymap = engine(lambda keymap: None).keymap
+    clipboard = ConcealedClipboard("hunter2")
+    monkeypatch.setattr(type(keymap), "clipboard",
+                        property(lambda self: clipboard), raising=False)
+    with preserve_clipboard():
+        clipboard.set_text("scratch")
+    assert clipboard.get_text() == "hunter2"
+    assert clipboard.concealed_writes == ["hunter2"]
 
 
 # -- focus -------------------------------------------------------------------

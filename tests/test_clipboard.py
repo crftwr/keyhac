@@ -1,5 +1,6 @@
 """ClipboardHistory with a fake provider, and the clipboard's thread rule."""
 
+import os
 import threading
 import time
 
@@ -14,8 +15,14 @@ class FakeProvider(ClipboardProvider):
     def __init__(self):
         self.text = None
         self.changed = False
+        self.concealed = False
+        self.reads = 0
+
+    def is_concealed(self):
+        return self.concealed
 
     def get_text(self):
+        self.reads += 1
         return self.text
 
     def set_text(self, s):
@@ -79,6 +86,28 @@ class TestClipboardHistory:
             assert history.get_current() == "item4"
         finally:
             ClipboardHistory.max_items = old_cap
+
+    def test_concealed_content_is_never_read_or_recorded(self, tmp_path):
+        provider, path = make(tmp_path)
+        history = ClipboardHistory(provider, path)
+        provider.text, provider.concealed = "hunter2", True
+        history.on_clipboard_changed()
+        assert provider.reads == 0
+        assert list(history.items()) == []
+        history.flush()
+        assert "hunter2" not in (open(path).read() if os.path.exists(path) else "")
+
+    def test_recording_resumes_after_concealed_content(self, tmp_path):
+        provider, path = make(tmp_path)
+        history = ClipboardHistory(provider, path)
+        provider.text, provider.concealed = "hunter2", True
+        history.on_clipboard_changed()
+        provider.text, provider.concealed = "ordinary", False
+        history.on_clipboard_changed()
+        assert [s for s, _ in history.items()] == ["ordinary"]
+
+    def test_a_provider_that_cannot_tell_is_not_concealed(self):
+        assert OffMainThread().is_concealed() is False
 
     def test_labels_are_flattened(self, tmp_path):
         provider, path = make(tmp_path)

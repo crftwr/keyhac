@@ -150,8 +150,13 @@ def preserve_clipboard():
         keymap = _keymap()
         clipboard = keymap.clipboard if keymap else None
         saved = None
+        concealed = False
         if clipboard is not None:
             try:
+                # getattr: a provider from before is_concealed() existed is
+                # still a provider, and must still get its text back.
+                is_concealed = getattr(clipboard, "is_concealed", None)
+                concealed = bool(is_concealed and is_concealed())
                 saved = clipboard.get_text()
             except Exception:
                 logger.debug("could not read the clipboard to save it",
@@ -161,7 +166,10 @@ def preserve_clipboard():
         finally:
             if clipboard is not None and saved is not None:
                 try:
-                    clipboard.set_text(saved)
+                    if concealed:
+                        clipboard.set_text(saved, concealed=True)
+                    else:
+                        clipboard.set_text(saved)
                 except Exception:
                     logger.debug("could not restore the clipboard",
                                  exc_info=True)

@@ -39,6 +39,12 @@ if sys.platform == "win32":
     kernel32.GlobalAlloc.restype = ctypes.c_void_p
     kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
     kernel32.GlobalFree.restype = ctypes.c_void_p
+    kernel32.GlobalSize.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalSize.restype = ctypes.c_size_t
+    user32.RegisterClipboardFormatW.argtypes = [wintypes.LPCWSTR]
+    user32.RegisterClipboardFormatW.restype = ctypes.c_uint
+    user32.IsClipboardFormatAvailable.argtypes = [ctypes.c_uint]
+    user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
 
 
 class WinClipboardProvider(ClipboardProvider):
@@ -47,6 +53,12 @@ class WinClipboardProvider(ClipboardProvider):
         if sys.platform != "win32":
             raise RuntimeError("WinClipboardProvider requires Windows")
         self._last_sequence = user32.GetClipboardSequenceNumber()
+        # Registered formats: the name is the contract, the number is per
+        # session, so it is looked up once here.
+        self._cf_exclude = user32.RegisterClipboardFormatW(
+            "ExcludeClipboardContentFromMonitorProcessing")
+        self._cf_can_include = user32.RegisterClipboardFormatW(
+            "CanIncludeInClipboardHistory")
 
     @main_thread_only
     def get_text(self) -> str | None:
@@ -67,7 +79,7 @@ class WinClipboardProvider(ClipboardProvider):
             user32.CloseClipboard()
 
     @main_thread_only
-    def set_text(self, s: str) -> None:
+    def set_text(self, s: str, concealed: bool = False) -> None:
         if not user32.OpenClipboard(None):
             return
         try:
@@ -86,6 +98,41 @@ class WinClipboardProvider(ClipboardProvider):
             # to free (the documented SetClipboardData contract).
             if not user32.SetClipboardData(CF_UNICODETEXT, handle):
                 kernel32.GlobalFree(handle)
+            if concealed:
+                self._set_marker(self._cf_exclude)
+        finally:
+            user32.CloseClipboard()
+
+    @staticmethod
+    def _set_marker(cf: int) -> None:
+        """Put an empty marker format on the already-open clipboard."""
+        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, 1)
+        if handle and not user32.SetClipboardData(cf, handle):
+            kernel32.GlobalFree(handle)
+
+    @main_thread_only
+    def is_concealed(self) -> bool:
+        # Presence alone says "leave this alone"; no open needed to ask.
+        if self._cf_exclude and user32.IsClipboardFormatAvailable(self._cf_exclude):
+            return True
+        # CanIncludeInClipboardHistory carries a DWORD: 0 excludes, 1 allows.
+        if not (self._cf_can_include
+                and user32.IsClipboardFormatAvailable(self._cf_can_include)):
+            return False
+        if not user32.OpenClipboard(None):
+            # Marked but unreadable: err on the side of not recording it.
+            return True
+        try:
+            handle = user32.GetClipboardData(self._cf_can_include)
+            if not handle or kernel32.GlobalSize(handle) < 4:
+                return True
+            ptr = kernel32.GlobalLock(handle)
+            if not ptr:
+                return True
+            try:
+                return ctypes.c_uint32.from_address(ptr).value == 0
+            finally:
+                kernel32.GlobalUnlock(handle)
         finally:
             user32.CloseClipboard()
 

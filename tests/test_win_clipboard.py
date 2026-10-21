@@ -4,6 +4,7 @@ These mutate the system clipboard; the module fixture snapshots any text
 present and restores it afterwards (non-text content cannot be preserved).
 """
 
+import ctypes
 import sys
 
 import pytest
@@ -52,3 +53,25 @@ class TestWinClipboardProvider:
         user32.EmptyClipboard()
         user32.CloseClipboard()
         assert provider.get_text() is None
+
+    @pytest.mark.parametrize("name, dword, concealed", [
+        ("ExcludeClipboardContentFromMonitorProcessing", None, True),
+        ("CanIncludeInClipboardHistory", 0, True),
+        ("CanIncludeInClipboardHistory", 1, False),
+    ])
+    def test_monitor_markers(self, provider, name, dword, concealed):
+        from keyhac.platform.win.clipboard import kernel32, user32
+        provider.set_text("secret")
+        assert provider.is_concealed() is False
+        # Add the marker beside the text, the way a password manager does.
+        assert user32.OpenClipboard(None)
+        try:
+            data = (dword or 0).to_bytes(4, "little")
+            handle = kernel32.GlobalAlloc(0x0002, len(data))
+            ptr = kernel32.GlobalLock(handle)
+            ctypes.memmove(ptr, data, len(data))
+            kernel32.GlobalUnlock(handle)
+            user32.SetClipboardData(user32.RegisterClipboardFormatW(name), handle)
+        finally:
+            user32.CloseClipboard()
+        assert provider.is_concealed() is concealed
