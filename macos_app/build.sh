@@ -468,7 +468,9 @@ log_success "Resources copied successfully"
 # are developer toys in an app bundle. The lib-dynload _test*.so modules are
 # the C half of the test suite whose Python half ("test/") the callers already
 # remove. ensurepip and pydoc_data serve pip and pydoc, both already removed
-# from bin/ just above.
+# from bin/ just above. pip itself stays in the framework's site-packages:
+# Sync Python Packages runs it as `python3 -m pip` (keyhac/core/
+# python_packages.py, #272).
 #
 # Together: ~21 MB, and 13 fewer binaries to codesign and notarize.
 prune_unused_stdlib() {

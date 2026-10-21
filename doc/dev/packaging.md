@@ -160,7 +160,70 @@ state that fails *quietly*: the tools work and the actions come back full of
 | Extensions | `~/.keyhac/extensions/` (on sys.path) |
 | Clipboard history | `~/.keyhac/clipboard.json` |
 | App settings | `~/.keyhac/settings.json` |
+| Extra libraries | `~/.keyhac/requirements.txt` → `~/.keyhac/site-packages/X.Y/` (appended to sys.path, not purged on reload) |
 
 With `--config PATH`, clipboard.json and settings.json live beside the config
 (sandbox isolation). Windows portable mode (everything next to `Keyhac.exe`) is not
 implemented yet — issue tracker.
+
+## Extra Python libraries: `requirements.txt` (#272)
+
+The bundles are sealed, so a library Keyhac does not ship reaches `config.py`
+through `~/.keyhac/requirements.txt` and a user-started sync
+(`keyhac/core/python_packages.py`; the user doc is in
+[configuration.md](../configuration.md#extra-python-libraries)). The design is
+XeFM's (crftwr/xefm#664) and the module is a port of `xefm/python_packages.py`;
+keep the two in step.
+
+```
+<data dir>/requirements.txt
+<data dir>/site-packages/
+    3.14/            target, appended to sys.path with site.addsitedir
+        .stamp       JSON: requirements sha256, host sha256, python, platform
+    .3.14.new/       staging: built by a sync, swapped in whole
+    .3.14.old/       the previous target during a swap
+    .pip/            pip wheel downloaded from PyPI (Windows app only)
+```
+
+- **Load**: `Keymap.configure` calls `activate()` after `_prepare_extensions`
+  and before `config.py` runs, on every load. It finishes a staged swap that
+  waited for a restart, appends the target unless the stamp names another
+  platform, and logs a warning when a sync is due. The check is offline; it
+  reads the stamp and `importlib.metadata`, nothing else.
+- **Sync**: tray menu *Sync Python Packages* (`ui/tray.py`'s `PackageSync`,
+  worker thread, outcome back through `call_on_main_thread`, then
+  `keymap.configure()`), or `keyhac deps sync` (`keyhac/deps_cli.py`, only
+  where `keyhac` is a command: the launchers hand Python a fixed argv). pip
+  runs with `--target` into staging, the host's distributions as exact-version
+  constraints, then those are pruned and the directory is swapped in. This is
+  the only code in Keyhac that reaches the network, and doc/installation.md
+  says so.
+- **Reload model**: a reload after a sync sees new packages (the directory is
+  already on sys.path and import caches are invalidated). A package that was
+  already imported keeps its old version until restart, which the console
+  says. On Windows a swap blocked by a loaded `.pyd` stays staged and completes
+  at the next start.
+
+Which interpreter and which pip (`keyhac_python()`, `pip_command()`):
+
+| Install | Interpreter | pip |
+|---|---|---|
+| pip / pipx / uv, source checkout | `sys.executable` | `python -m pip`, else ensurepip's bundled wheel |
+| macOS app | `sys.base_prefix/bin/python3` (the framework's; `relocate_embedded_interpreter` makes it runnable) | `python3 -m pip`: the python.org framework's `site-packages/pip`, which `build.sh` keeps |
+| Windows app (zip, Store) | `<root>\runtime\python.exe` | neither pip nor ensurepip in the embeddable CPython: a pip wheel from PyPI, sha256-checked against PyPI's digest, cached in `site-packages/.pip/` |
+
+pip runs with `PYTHONDONTWRITEBYTECODE=1`, since a `.pyc` written into the
+signed macOS bundle would break its seal. pip still compiles what it installs,
+into the target.
+
+Verified on macOS (2026-10-22), against a Developer ID–signed, hardened-runtime
+build: a sync run with the bundle's `python3` installed `markupsafe` from PyPI,
+the same interpreter imported its unsigned `_speedups` `.so` from the target,
+and the bundle gained no `.pyc`. Still open:
+
+- The same import inside the running Keyhac process itself (the launcher
+  carries `disable-library-validation`, so it is expected to load), through
+  the tray menu end to end.
+- Windows app and the Store package: the PyPI pip download route, launching
+  `runtime\python.exe` from inside the MSIX package, and loading an unsigned
+  `.pyd` from `~/.keyhac` have not been run there.

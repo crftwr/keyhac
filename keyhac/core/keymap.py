@@ -314,6 +314,9 @@ class Keymap:
                 logger.warning(f"Could not create {extensions_dir}: {e}")
 
             self._prepare_extensions(extensions_dir)
+            # Before config.py runs, which may import what requirements.txt
+            # brought.
+            self._activate_python_packages(os.path.dirname(extensions_dir))
 
             try:
                 self.config = Config(self._config_path, self._template_path)
@@ -388,6 +391,20 @@ class Keymap:
                 _extension_stamps.pop(name, None)
 
         shutil.rmtree(os.path.join(resolved, "__pycache__"), ignore_errors=True)
+
+    @staticmethod
+    def _activate_python_packages(data_dir: str) -> None:
+        """Put ``site-packages/X.Y`` beside config.py on sys.path and check it
+        against ``requirements.txt`` (#272), saying so when a sync is due.
+
+        Unlike ``extensions/`` it is never purged on reload: a library with
+        state or a C extension does not re-import. The check is offline and
+        never syncs - a sync reaches the network, so it waits to be asked for.
+        """
+        from keyhac.core import python_packages
+        status = python_packages.activate(python_packages.Layout(data_dir))
+        if status.message:
+            logger.warning(status.message)
 
     @staticmethod
     def _stamp_extensions(extensions_dir: str) -> None:

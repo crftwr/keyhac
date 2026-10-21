@@ -207,6 +207,12 @@ logger = getLogger("OpenIssues")     # there is no importable `logger`
 the argument to `configure()` - so anything reaching for it beside the class
 raises `NameError` the moment the module is imported.
 
+**A library Keyhac does not ship comes from `~/.keyhac/requirements.txt`.**
+Prefer the standard library. When an action needs more, add the line to that
+file and ask the operator to choose **Sync Python Packages** in the tray menu:
+the sync downloads, and it is theirs to start. Never install into
+`extensions/` or into Keyhac itself.
+
 **An action is something the operator runs again.** That is what Keyhac's AI
 integration is for: the action stays in `extensions/` after this conversation,
 and the operator starts it whenever the task comes round. So write it to be run
