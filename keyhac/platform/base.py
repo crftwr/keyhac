@@ -387,6 +387,15 @@ class ClipboardProvider(ABC):
         s = self.get_text()
         return ClipboardSnapshot(text=s) if s else None
 
+    def image_data(self, snapshot: "ClipboardSnapshot") -> bytes | None:
+        """A snapshot's image as a self-contained file's bytes (PNG, TIFF,
+        BMP ...), for a preview to decode; None when it has no image.
+
+        The snapshot's items are this provider's own format, and on Windows
+        the bitmap in them is a bare DIB, which no decoder reads without the
+        file header written here.  Pure data: no clipboard access."""
+        return None
+
     def set_snapshot(self, snapshot: "ClipboardSnapshot") -> None:
         """Put a snapshot back on the clipboard, every format it kept.
 

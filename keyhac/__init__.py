@@ -16,7 +16,7 @@ from keyhac.core.action import (
     PlaybackRecordedKeys,
 )
 from keyhac.core.clipboard_history import ClipboardHistory
-from keyhac.core.candidate import Candidate
+from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.source import CallableSource, ChooserPage, CandidateSource
 from keyhac.core.sources import (
     ActionsSource,

@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import time
 
 from keyhac.platform.base import ClipboardProvider, ClipboardSnapshot
 from keyhac.core import log, permissions
@@ -39,12 +40,16 @@ class ClipboardEntry:
     lazydocs: ignore
     """
 
-    __slots__ = ("key", "snapshot", "label")
+    __slots__ = ("key", "snapshot", "label", "time")
 
-    def __init__(self, key, snapshot: ClipboardSnapshot, label: str):
+    def __init__(self, key, snapshot: ClipboardSnapshot, label: str,
+                 when: float = None):
         self.key = key
         self.snapshot = snapshot
         self.label = label
+        #: When it was copied (time.time()); None for one loaded from disk,
+        #: which records no time.
+        self.time = when
 
     @property
     def text(self) -> str | None:
@@ -243,7 +248,8 @@ class ClipboardHistory:
         key = self._key(snapshot)
         if key in self._entries:
             del self._entries[key]
-        self._entries[key] = ClipboardEntry(key, snapshot, self._label(snapshot))
+        self._entries[key] = ClipboardEntry(key, snapshot, self._label(snapshot),
+                                            None if self._loading else time.time())
         while len(self._entries) > self.max_items:
             self._entries.popitem(last=False)
         self._fit_session_budget()
@@ -264,7 +270,8 @@ class ClipboardHistory:
                 continue
             reduced = entry.snapshot.without_items()
             if reduced.text or reduced.files:
-                self._entries[key] = ClipboardEntry(key, reduced, self._label(reduced))
+                self._entries[key] = ClipboardEntry(key, reduced, self._label(reduced),
+                                                    entry.time)
             else:
                 del self._entries[key]
 
@@ -302,8 +309,20 @@ class ClipboardHistory:
         except OSError as e:
             logger.error(f"Saving clipboard history failed: {e}")
 
+    #: True while the saved history is being read back, whose entries carry
+    #: no time of their own.
+    _loading = False
+
     def _load(self) -> None:
         self._entries.clear()
+        self._loading = True
+        try:
+            self._load_file()
+        finally:
+            self._loading = False
+        self.dirty = False
+
+    def _load_file(self) -> None:
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, encoding="utf-8") as fd:
@@ -317,4 +336,3 @@ class ClipboardHistory:
                             files=tuple(item["data"])))
             except (OSError, ValueError, TypeError) as e:
                 logger.error(f"Loading clipboard history failed: {e}")
-        self.dirty = False

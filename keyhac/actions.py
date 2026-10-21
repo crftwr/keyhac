@@ -452,7 +452,8 @@ class ChooserAction:
                                 pages=self.page_names(),
                                 on_page=self._page_rows,
                                 background=background,
-                                source_of=self._source_name)
+                                source_of=self._source_name,
+                                preview_of=self._preview_job)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -574,6 +575,19 @@ class ChooserAction:
         lazydocs: ignore
         """
         return getattr(self._owners.get(id(candidate)), "name", "")
+
+    def _preview_job(self, candidate):
+        """How to ask a row's source for its preview: `(produce, background)`,
+        or None for a source that offers none.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.source import CandidateSource
+        source = self._owners.get(id(candidate))
+        if source is None or type(source).preview is CandidateSource.preview:
+            return None
+        return (lambda: source.preview(candidate),
+                bool(getattr(source, "preview_background", False)))
 
     def _adopt(self, source, item):
         from keyhac.core.candidate import Candidate

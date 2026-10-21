@@ -86,3 +86,27 @@ class Candidate:
         if isinstance(item, Candidate):
             return item
         return Candidate(display=item[1], icon=item[0], payload=item)
+
+
+@dataclass(frozen=True)
+class CandidatePreview:
+    """What the chooser's preview window shows for the selected row.
+
+    Returned from `CandidateSource.preview()`.  Three kinds of content, any
+    mix of them; the window draws whichever are present, top to bottom:
+    the image, then the text, then the fields.
+
+    Attributes:
+        title: A heading, when the row's own label is not enough to say what
+            is being previewed.
+        image: Encoded image bytes (PNG, JPEG, TIFF, BMP) or a path to an
+            image file.  Decoded off the main thread and scaled to fit.
+        text: Plain text, shown from its first line - long text is cut
+            short, not scrolled.
+        fields: `(label, value)` pairs shown as a small table under the rest:
+            an image's size, a file's state, an action's arguments.
+    """
+    title: str = None
+    image: Any = None
+    text: str = None
+    fields: tuple = ()
