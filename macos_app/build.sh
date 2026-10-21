@@ -137,12 +137,13 @@ CFLAGS="-framework Cocoa"
 # release: 2.5.0 was built on macOS 27 and refused to launch on macOS 26 with
 # "You can't use this version of the application with this version of macOS",
 # while Info.plist still claimed 11.0. XeFM hit and fixed the same thing first
-# (its issue #455); the fix had not been carried over. 11.0 is what NSImage
-# needs to load the menu-extra SVG, the oldest macOS any arm64 Mac runs, and a
-# floor python.org's framework and every bundled wheel already meet. Step 5
+# (its issue #455); the fix had not been carried over. 12.0 is the oldest
+# macOS anyone has run Keyhac on (#270, in a VM; Apple silicon virtualizes 12
+# and later only, so 11 was never run). python.org's framework and every
+# bundled wheel already go lower. Step 5
 # measures the finished bundle against it and fails the build if anything sits
 # higher, so the floor cannot drift again without someone deciding it should.
-MACOS_MIN_VERSION="11.0"
+MACOS_MIN_VERSION="12.0"
 CFLAGS="${CFLAGS} -mmacosx-version-min=${MACOS_MIN_VERSION}"
 
 # Configure compiler flags based on Python installation type
