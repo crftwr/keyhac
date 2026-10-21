@@ -1168,6 +1168,24 @@ found.
   macOS 11 cannot be run this way: Apple silicon virtualizes 12 and later
   only. Rather than keep a floor nobody had run, `MACOS_MIN_VERSION` went
   from 11.0 to 12.0.
+- **And on the newest macOS, in a VM?** (2026-10-21, Keyhac 2.6.0 release
+  DMG, macOS 27.0 (26A428) in a Tart VM from
+  `ghcr.io/cirruslabs/macos-golden-gate-vanilla:27.0`, running next to the
+  macOS 12 one.) **Yes.** Gatekeeper accepts it as Notarized Developer ID,
+  the Accessibility prompt appears and the grant goes through System
+  Settings, and the menu-bar icon, console and the template config's
+  remaps all work. This guest has a Mac keyboard, so Fn is real and the
+  template runs unmodified. The pair of VMs is the standing way to check
+  the floor and the newest macOS before a release.
+
+  The image needed two things before its result meant anything. Gatekeeper
+  comes up allowing the App Store only (the template's
+  `spctl --global-disable` is left half-done on 27), so every Developer ID
+  app is rejected with "lack of matching active rule". Fixing it takes
+  `sudo spctl --global-enable` plus "App Store & Known Developers" in
+  System Settings; 27 no longer takes that from the command line. And its
+  44 GB disk filled within minutes from the macOS update downloading in the
+  background, so turn automatic downloads off first.
 
 
 ## The interactive pass before a release
