@@ -23,6 +23,22 @@ update check and no telemetry.
 To start Keyhac at login, add Keyhac.app in
 System Settings → General → Login Items.
 
+### Homebrew
+
+```
+brew install --cask crftwr/tap/keyhac
+```
+
+This installs the same DMG into Applications, so steps 2 and 3 above still
+apply. Since Keyhac never checks for updates, `brew upgrade --cask keyhac` is an
+easy way to stay current. It quits a running Keyhac before it replaces the app,
+so start Keyhac again afterwards.
+
+- If you already installed the DMG by hand, add `--adopt` so Homebrew takes
+  over that copy instead of refusing to overwrite it.
+- `brew uninstall --cask keyhac` removes the app. `~/.keyhac/` is never
+  touched, not even with `--zap`.
+
 ## Windows
 
 ### Microsoft Store (recommended)

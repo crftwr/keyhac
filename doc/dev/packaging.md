@@ -118,7 +118,10 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
 `make release-windows-zip` (on Windows) → `make release-whl` → `make release-skill`;
 `make release-status` shows where a version stands. `make release-windows-msix`
 (on Windows) is the
-odd one out: it submits to the Microsoft Store, not the GitHub Release. Supporting scripts:
+odd one out: it submits to the Microsoft Store, not the GitHub Release. After the DMG
+is attached, `brew bump-cask-pr --no-fork --version X.Y.Z crftwr/tap/keyhac` bumps the
+cask in [crftwr/homebrew-tap](https://github.com/crftwr/homebrew-tap) (by hand, not
+from the Makefile; the cask is only a URL and a sha256 pointing at that DMG). Supporting scripts:
 `tools/{release_preflight,bump_version,_version_source}.py`. The version lives in
 `keyhac/__init__.py` (`__version__`), one number for both OSes.
 
