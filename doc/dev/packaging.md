@@ -88,6 +88,15 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
   value into `LSMinimumSystemVersion`, and fails the build if any Mach-O in
   the finished bundle declares a newer minimum. It also starts from an empty
   bundle every time, since leftovers from earlier builds were being shipped.
+- The bundle is single-architecture: whatever the launcher was compiled for.
+  python.org's framework and the PyObjC wheels arrive universal2, and the
+  launcher (no `-arch`) is built for the build machine alone, so 2.6.0 shipped
+  106 universal binaries and an x86_64-only `pythonX.Y-intel64` none of which
+  could ever run (#273). `build.sh` drops the `-intel64` launcher, thins every
+  Mach-O to the launcher's slices (read off the launcher, so a universal
+  launcher keeps a fat bundle), and fails the build if any Mach-O still
+  carries an architecture the launcher lacks. Intel Macs are not supported
+  either way — the Homebrew cask declares `depends_on arch: :arm64`.
 - Nothing may write bytecode into the bundle at run time: it is signed, and a
   `.pyc` written there breaks the seal of the installed copy. Every Python tree
   in it is precompiled by `build.sh`'s `compile_bytecode` in `unchecked-hash`
