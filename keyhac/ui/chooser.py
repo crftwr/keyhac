@@ -144,9 +144,6 @@ _POINTER_OUTSET = 4.0
 #: flicker through every row passed on the way.
 _PREVIEW_DELAY = 0.3
 
-#: Whether previews are shown, kept between invocations like the size.
-_PREVIEW_KEY = "chooser_preview"
-
 #: Keys that address the *query* rather than the list: they edit it or move
 #: its caret, so pressing one in the list means the field, exactly as typing
 #: does. Modifier forms arrive under these same names - Ctrl-Left is word-wise,
@@ -703,27 +700,6 @@ class ChooserWindow:
 
     # --- preview ------------------------------------------------------------
 
-    @property
-    def previews_on(self) -> bool:
-        """Whether previews are shown (Space in the list toggles it)."""
-        store = getattr(runtime, "settings", None)
-        if store is None:
-            return getattr(self, "_previews_fallback", True)
-        value = store.get(_PREVIEW_KEY)
-        return True if value is None else bool(value)
-
-    def toggle_previews(self) -> None:
-        """Turn previews off or on, for this window and the next ones."""
-        store = getattr(runtime, "settings", None)
-        on = not self.previews_on
-        if store is not None:
-            store.set(_PREVIEW_KEY, on)
-        else:
-            # Headless: nowhere to keep it, so it lasts as long as the window.
-            self._previews_fallback = on
-        self._previewing = None
-        self._schedule_preview()
-
     def _selected(self):
         index = self._list.selected
         if 0 <= index < len(self._filtered):
@@ -740,7 +716,7 @@ class ChooserWindow:
         """
         if self._preview_of is None:
             return
-        candidate = self._selected() if self.in_list and self.previews_on else None
+        candidate = self._selected() if self.in_list else None
         if candidate is not None and candidate is self._previewing:
             return
         self._preview_generation += 1
@@ -1159,14 +1135,6 @@ class ChooserWindow:
                 # selection has to go through _navigate, or the mark stays on
                 # the row the selection just left.
                 self._navigate(event.key)
-                self.panel.render()
-                return
-            if (self.in_list and event.key == "space" and not event.modifiers
-                    and self._preview_of is not None):
-                # Quick Look's key. In the list it typed a blank into the
-                # query and nothing else; the query's own spaces are typed in
-                # the field, where it still goes.
-                self.toggle_previews()
                 self.panel.render()
                 return
             if self.in_list and (event.char or event.key in _FIELD_KEYS
