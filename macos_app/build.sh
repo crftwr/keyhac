@@ -47,6 +47,16 @@ version_gt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
 }
 
+# Every Mach-O file under $1, one path per line, found by content rather than
+# by name or mode: a check that only looks where binaries are expected to be
+# is one a binary somewhere else walks past. Symlinks are skipped, so each
+# file is listed once.
+bundle_machos() {
+    find "$1" -type f -print0 \
+        | xargs -0 file --no-pad -F $'\t' 2>/dev/null \
+        | awk -F'\t' '$2 ~ /^ Mach-O/ { print $1 }'
+}
+
 # Compile every .py under $2 to bytecode with interpreter $1, or stop the build.
 #
 # The bundle is signed, so whatever Python has to compile at run time it writes
@@ -664,13 +674,24 @@ if [ "$USE_FRAMEWORK" = true ]; then
             log_info "  Removed bin/${tool}"
         fi
     done
-    
+
+    # python.org's universal2 framework also ships an x86_64-only launcher for
+    # running the interpreter under Rosetta. Keyhac's own executable is built
+    # for this machine alone, so that launcher can never be the one that runs
+    # (Step 4c), and nothing in the bundle execs it.
+    for tool in "python${PYTHON_VERSION}-intel64" python3-intel64; do
+        if [ -e "${PYTHON_DEST}/bin/${tool}" ] || [ -L "${PYTHON_DEST}/bin/${tool}" ]; then
+            rm -f "${PYTHON_DEST}/bin/${tool}"
+            log_info "  Removed bin/${tool}"
+        fi
+    done
+
     # Remove pkg-config files
     if [ -d "${PYTHON_DEST}/lib/pkgconfig" ]; then
         rm -rf "${PYTHON_DEST}/lib/pkgconfig"
         log_info "  Removed lib/pkgconfig/"
     fi
-    
+
     # Remove Python test suite (saves ~68MB)
     if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
@@ -791,13 +812,21 @@ else
             log_info "  Removed bin/${tool}"
         fi
     done
-    
+
+    # The Rosetta launcher, as in the framework path above.
+    for tool in "python${PYTHON_VERSION}-intel64" python3-intel64; do
+        if [ -e "${PYTHON_DEST}/bin/${tool}" ] || [ -L "${PYTHON_DEST}/bin/${tool}" ]; then
+            rm -f "${PYTHON_DEST}/bin/${tool}"
+            log_info "  Removed bin/${tool}"
+        fi
+    done
+
     # Remove pkg-config files
     if [ -d "${PYTHON_DEST}/lib/pkgconfig" ]; then
         rm -rf "${PYTHON_DEST}/lib/pkgconfig"
         log_info "  Removed lib/pkgconfig/"
     fi
-    
+
     # Remove Python test suite (saves ~68MB)
     if [ -d "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test" ]; then
         rm -rf "${PYTHON_DEST}/lib/python${PYTHON_VERSION}/test"
@@ -926,7 +955,91 @@ else
 fi
 
 # ============================================================================
-# Step 4c: Generate third-party license notices
+# Step 4c: Drop the architectures the launcher cannot run
+# ============================================================================
+#
+# python.org ships its framework universal2, and so do the PyObjC wheels; that
+# is not Intel support. The launcher is compiled without -arch, so it is built
+# for this machine alone, and a process started from an executable with no
+# x86_64 slice never maps a byte of the x86_64 code behind it - every foreign
+# slice is weight in the DMG and one more thing to sign and notarize. 2.6.0
+# carried 106 universal binaries and an x86_64-only interpreter (#273).
+#
+# The slices follow the launcher rather than a hardcoded arm64: a build on an
+# Intel Mac thins to x86_64 by the same rule, and a launcher built universal
+# makes the thinning stand aside.
+#
+# lipo rewrites the file, so the signature it carried no longer matches. Re-sign
+# ad-hoc at once - an unsigned Mach-O cannot exec on Apple Silicon at all - and
+# Step 6 replaces that with the real identity.
+
+LAUNCHER_ARCHS=$(lipo -archs "${MACOS_DIR}/${APP_NAME}" 2>/dev/null)
+if [ -z "${LAUNCHER_ARCHS}" ]; then
+    log_error "Could not read the architectures of ${MACOS_DIR}/${APP_NAME}"
+    exit 1
+fi
+BUNDLE_MACHOS=$(bundle_machos "${APP_BUNDLE}")
+
+if [ "$(echo "${LAUNCHER_ARCHS}" | wc -w | tr -d ' ')" != "1" ]; then
+    log_info "Step 4c: Launcher is ${LAUNCHER_ARCHS}; keeping every slice"
+else
+    BUNDLE_ARCH="${LAUNCHER_ARCHS}"
+    log_info "Step 4c: Thinning universal binaries to ${BUNDLE_ARCH}..."
+
+    THINNED=0
+    BYTES_BEFORE=0
+    BYTES_AFTER=0
+    while IFS= read -r macho; do
+        [ -n "${macho}" ] || continue
+        MACHO_ARCHS=$(lipo -archs "${macho}" 2>/dev/null)
+        [ "$(echo "${MACHO_ARCHS}" | wc -w | tr -d ' ')" -gt 1 ] || continue
+        if ! echo "${MACHO_ARCHS}" | tr ' ' '\n' | grep -qx "${BUNDLE_ARCH}"; then
+            log_error "${macho#${APP_BUNDLE}/} has no ${BUNDLE_ARCH} slice"
+            exit 1
+        fi
+        SIZE_BEFORE=$(stat -f%z "${macho}")
+        # Written back through the original path so the file keeps its mode:
+        # the interpreter has to stay executable.
+        if ! lipo -thin "${BUNDLE_ARCH}" "${macho}" -output "${macho}.thin"; then
+            log_error "Failed to thin ${macho#${APP_BUNDLE}/}"
+            exit 1
+        fi
+        cat "${macho}.thin" > "${macho}"
+        rm -f "${macho}.thin"
+        codesign --force --sign - "${macho}" 2>/dev/null \
+            || { log_error "Failed to ad-hoc sign ${macho#${APP_BUNDLE}/}"; exit 1; }
+        THINNED=$((THINNED + 1))
+        BYTES_BEFORE=$((BYTES_BEFORE + SIZE_BEFORE))
+        BYTES_AFTER=$((BYTES_AFTER + $(stat -f%z "${macho}")))
+    done <<< "${BUNDLE_MACHOS}"
+
+    log_success "  Thinned ${THINNED} binaries to ${BUNDLE_ARCH}, \
+$(( (BYTES_BEFORE - BYTES_AFTER) / 1024 / 1024 ))MB saved"
+fi
+
+# Guard, whichever branch ran: no Mach-O may carry an architecture the
+# launcher lacks. Thinning only touches universal files, so this is also what
+# catches a single-architecture binary for the wrong machine - the -intel64
+# interpreter was one.
+FOREIGN=""
+while IFS= read -r macho; do
+    [ -n "${macho}" ] || continue
+    for arch in $(lipo -archs "${macho}" 2>/dev/null); do
+        if ! echo "${LAUNCHER_ARCHS}" | tr ' ' '\n' | grep -qx "${arch}"; then
+            FOREIGN="${FOREIGN}    ${arch}: ${macho#${APP_BUNDLE}/}
+"
+        fi
+    done
+done <<< "${BUNDLE_MACHOS}"
+if [ -n "${FOREIGN}" ]; then
+    log_error "These binaries carry code the ${LAUNCHER_ARCHS} launcher can never run:"
+    printf '%s' "${FOREIGN}" >&2
+    exit 1
+fi
+log_success "  Every binary matches the launcher (${LAUNCHER_ARCHS})"
+
+# ============================================================================
+# Step 4d: Generate third-party license notices
 # ============================================================================
 #
 # Build an aggregated THIRD_PARTY_NOTICES.txt from the license text shipped with
@@ -937,7 +1050,7 @@ fi
 # incomplete notice can never ship. The script is stdlib-only and platform-
 # agnostic - the Windows bundle build reuses it the same way.
 
-log_info "Step 4c: Generating third-party license notices..."
+log_info "Step 4d: Generating third-party license notices..."
 
 NOTICES_SCRIPT="${PROJECT_ROOT}/tools/generate_third_party_notices.py"
 NOTICES_OUT="${RESOURCES_DIR_BUNDLE}/THIRD_PARTY_NOTICES.txt"
