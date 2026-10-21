@@ -21,7 +21,7 @@ Raster targets (all checked in; re-run only when the artwork changes):
   metric across DPI scales, maximum shell compatibility), 64/128/256 px as
   PNG entries (Vista+) for Explorer's large views.
 - ``keyhac/ui/assets/keyhac.icns`` — macOS app icon for the bundled app
-  (doc/dev/packaging.md), PNG entries at every standard slot up to 1024.
+  (doc/dev/packaging.md), PNG entries in the ic07-ic14 slots, 32 to 1024 px.
 - ``keyhac/ui/assets/MenuExtraTemplate.png`` + ``@2x`` — the menu bar
   extra at 19x18 pt (the 19x18 canvas at exact 1x/2x scale; puikit's
   tray loader pairs the @2x sibling and applies the AppKit "…Template"
@@ -125,8 +125,11 @@ def write_ico(path, bmp_images, png_images=()):
 
 # icns entry types by (render px, type): the @2x slots (ic11-ic14) reuse the
 # corresponding double-resolution render — same pixels, different point size.
+# No icp4/icp5/icp6: macOS 12's IconServices does not read a PNG in them, and
+# drew noise for the 16 and 32 pt @1x icon (the Accessibility list, #270).
+# Without them the system scales down from ic11/ic12, as it does for
+# iconutil's output, which has no icp slots either.
 _ICNS_SLOTS = (
-    (16, b"icp4"), (32, b"icp5"), (64, b"icp6"),
     (128, b"ic07"), (256, b"ic08"), (512, b"ic09"), (1024, b"ic10"),
     (32, b"ic11"), (64, b"ic12"), (256, b"ic13"), (512, b"ic14"),
 )
