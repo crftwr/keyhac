@@ -467,6 +467,10 @@ across restarts. Content a password manager marks as concealed is never recorded
 While such content, or something in a format the history cannot read, is on the
 clipboard, a **Current clipboard** row comes first and pastes it untouched.
 
+**Shift-Delete** in the list removes the selected entry from the history, and from
+`clipboard.json` (fn-Shift-⌫ on a Mac keyboard). The clipboard itself keeps what
+it holds. A source of your own can offer the same by overriding `remove()`.
+
 Filtering is multi-word AND substring, plus Migemo, so typing `gijiroku` finds an
 entry containing 議事録 without switching to an input method.
 

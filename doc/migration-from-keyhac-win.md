@@ -38,6 +38,7 @@ per-user directory, exactly as in 1.x. See
 | `keymap.ShellExecuteCommand(None, "app.exe", …)` | `LaunchApplication("app.exe")`; for verbs/params use `subprocess` in a function |
 | `keymap.command_ClipboardList` | `ShowClipboardHistory()` |
 | `cblister_FixedPhrase(…)` | `ShowClipboardSnippets([...])` |
+| `Delete` in the list window, `keymap.command_ClipboardRemove` | `Shift-Delete` on the entry in the chooser; `keymap.clipboard_history.remove_item(text)` from code |
 | `keymap.command_RecordStart/Stop/Toggle/Play` | `StartRecordingKeys()` / `StopRecordingKeys()` / `ToggleRecordingKeys()` / `PlaybackRecordedKeys()` |
 | `JobQueue` / `JobItem` | `ThreadedAction` (subclass with `starting()` / `run()` / `finished()`) |
 | `keymap.delayedCall(func, msec)`, `CronItem` / `CronTable` | no built-in equivalent — schedule with `threading` and hand the callback back with `keymap.call_on_main_thread(func)`; see [Timers](#timers-delayedcall--crontable) |

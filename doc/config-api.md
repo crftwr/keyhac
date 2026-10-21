@@ -1668,6 +1668,22 @@ Entries without text - an image, files copied in Explorer - are not included; th
 
 ---
 
+### <kbd>method</kbd> `ClipboardHistory.remove_item`
+
+```python
+remove_item(s: str) → None
+```
+
+Remove text from the history, without touching the OS clipboard. 
+
+
+
+**Args:**
+ 
+ - <b>`s`</b>:  The text to remove.  Nothing happens if it is not there. 
+
+---
+
 ### <kbd>method</kbd> `ClipboardHistory.set_current`
 
 ```python
@@ -1893,6 +1909,29 @@ Asked only once the selection has rested on the row, never while the list is bui
 
 **Returns:**
  A CandidatePreview, or None for no preview. 
+
+---
+
+### <kbd>method</kbd> `CandidateSource.remove`
+
+```python
+remove(candidate: keyhac.core.candidate.Candidate) → bool
+```
+
+Remove a row for good - Shift-Delete in the chooser's list. 
+
+Override this for a source whose rows are a record the user keeps (a history, a list of favourites), and return True once it is gone; the window then drops the row.  The default says the row cannot be removed, and the key does nothing. 
+
+
+
+**Args:**
+ 
+ - <b>`candidate`</b>:  The selected row. 
+
+
+
+**Returns:**
+ True if the row was removed. 
 
 ---
 

@@ -132,6 +132,22 @@ class CandidateSource:
         """
         return None
 
+    def remove(self, candidate: Candidate) -> bool:
+        """Remove a row for good - Shift-Delete in the chooser's list.
+
+        Override this for a source whose rows are a record the user keeps
+        (a history, a list of favourites), and return True once it is gone;
+        the window then drops the row.  The default says the row cannot be
+        removed, and the key does nothing.
+
+        Args:
+            candidate: The selected row.
+
+        Returns:
+            True if the row was removed.
+        """
+        return False
+
     def choose(self, candidate: Candidate, modifier_flags: int) -> None:
         """Run the candidate's own action if it has one, else `on_chosen`.
 

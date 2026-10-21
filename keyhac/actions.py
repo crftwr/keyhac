@@ -453,7 +453,8 @@ class ChooserAction:
                                 on_page=self._page_rows,
                                 background=background,
                                 source_of=self._source_name,
-                                preview_of=self._preview_job)
+                                preview_of=self._preview_job,
+                                remove_of=self._remove_row)
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
@@ -588,6 +589,23 @@ class ChooserAction:
             return None
         return (lambda: source.preview(candidate),
                 bool(getattr(source, "preview_background", False)))
+
+    def _remove_row(self, candidate) -> bool:
+        """Ask a row's source to remove it; True if it did.  The row also
+        leaves what this window has read, or switching pages would bring it
+        back.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.source import CandidateSource
+        source = self._owners.get(id(candidate))
+        if source is None or type(source).remove is CandidateSource.remove:
+            return False
+        if not source.remove(candidate):
+            return False
+        for state in self._read.values():
+            state[0][:] = [c for c in state[0] if c is not candidate]
+        return True
 
     def _adopt(self, source, item):
         from keyhac.core.candidate import Candidate
