@@ -196,8 +196,17 @@ NEEDS_SYNC = "needs-sync"
 #: The directory was synced for another platform and is not loaded.
 FOREIGN = "foreign"
 
-_HOW_TO_SYNC = ("Choose Sync Python Packages in the tray menu, or run "
-                "`keyhac deps sync`.")
+
+
+def _how_to_sync() -> str:
+    """The tray menu always; the ``keyhac deps`` command only where it
+    exists. The app bundles are desktop apps with no ``keyhac`` on PATH, and
+    a message naming one sends the user looking for something that is not
+    there."""
+    if in_app_bundle():
+        return "Choose Sync Python Packages in the tray menu."
+    return ("Choose Sync Python Packages in the tray menu, or run "
+            "`keyhac deps sync`.")
 
 
 @dataclass
@@ -209,9 +218,9 @@ class Status:
     @property
     def message(self) -> str:
         if self.state == NEEDS_SYNC:
-            return f"Python packages need a sync: {self.reason}. {_HOW_TO_SYNC}"
+            return f"Python packages need a sync: {self.reason}. {_how_to_sync()}"
         if self.state == FOREIGN:
-            return f"Python packages not loaded: {self.reason}. {_HOW_TO_SYNC}"
+            return f"Python packages not loaded: {self.reason}. {_how_to_sync()}"
         return ""
 
 
@@ -319,6 +328,14 @@ _NO_WINDOW = ({"creationflags": subprocess.CREATE_NO_WINDOW}
               if sys.platform == "win32" else {})
 
 
+def in_app_bundle() -> bool:
+    """Whether Keyhac runs from the macOS or Windows app rather than under a
+    real ``python`` (a pip, pipx or uv install, or a source checkout). In the
+    bundles ``sys.executable`` is the launcher, never named ``python*``."""
+    name = os.path.basename(sys.executable or "").lower()
+    return not name.startswith("python")
+
+
 def keyhac_python() -> str:
     r"""The interpreter pip runs on: the one Keyhac itself runs on.
 
@@ -335,8 +352,7 @@ def keyhac_python() -> str:
       ``python.exe`` under ``<root>\runtime``.
     """
     executable = sys.executable or ""
-    name = os.path.basename(executable).lower()
-    if name.startswith("python"):
+    if not in_app_bundle():
         return executable
     if sys.platform == "darwin":
         return os.path.join(sys.base_prefix, "bin", "python3")

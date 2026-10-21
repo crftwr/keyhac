@@ -74,7 +74,17 @@ class TestCheck:
         assert status.state == pp.NEEDS_SYNC
         assert not status.loaded
         assert "Sync Python Packages" in status.message
-        assert "keyhac deps sync" in status.message
+
+    def test_the_command_is_named_only_where_it_exists(self, layout, monkeypatch):
+        write_requirements(layout, "requests\n")
+        monkeypatch.setattr(sys, "executable", "/venv/bin/python3.14")
+        assert "keyhac deps sync" in pp.check(layout, HOST).message
+        # The app bundles are desktop apps: there is no `keyhac` command.
+        monkeypatch.setattr(sys, "executable",
+                            "/Applications/Keyhac.app/Contents/MacOS/Keyhac")
+        message = pp.check(layout, HOST).message
+        assert "Sync Python Packages" in message
+        assert "keyhac deps" not in message
 
     def test_in_sync(self, layout):
         synced(layout, "requests\n")
