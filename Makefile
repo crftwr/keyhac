@@ -479,8 +479,8 @@ release-skill: skill-bundle
 	@# Version-specific, not dist/keyhac-*-skill.zip: the bundles carry their
 	@# version in the name now, so a glob without it uploads every older one
 	@# still sitting in dist/ alongside this release's.
-	gh release upload v$(KEYHAC_VERSION) dist/keyhac-*-$(KEYHAC_VERSION)-skill.zip --clobber
-	@echo "Attached the skill bundles to release v$(KEYHAC_VERSION)"
+	gh release upload v$(KEYHAC_VERSION) dist/keyhac-$(KEYHAC_VERSION)-skill.zip --clobber
+	@echo "Attached the skill bundle to release v$(KEYHAC_VERSION)"
 
 # --- release-status: read-only progress check -------------------------------
 # The one place to see which artifacts have landed for the version the
