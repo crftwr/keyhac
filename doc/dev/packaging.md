@@ -190,7 +190,7 @@ keep the two in step.
   waited for a restart, appends the target unless the stamp names another
   platform, and logs a warning when a sync is due. The check is offline; it
   reads the stamp and `importlib.metadata`, nothing else.
-- **Sync**: tray menu *Sync Python Packages* (`ui/tray.py`'s `PackageSync`,
+- **Sync**: tray menu *Advanced > Sync Python Packages* (`ui/tray.py`'s `PackageSync`,
   worker thread, outcome back through `call_on_main_thread`, then
   `keymap.configure()`), or `keyhac deps sync` (`keyhac/deps_cli.py`, only
   where `keyhac` is a command: the launchers hand Python a fixed argv). pip

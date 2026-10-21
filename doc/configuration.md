@@ -41,7 +41,7 @@ already provides, Python's copy wins and yours is unreachable — rename it.
 
 Your config and extensions can import the standard library and what Keyhac itself
 ships. For anything else, list it in `~/.keyhac/requirements.txt`, next to
-`config.py`, and choose **Sync Python Packages** in the tray / menu-bar menu:
+`config.py`, and choose **Advanced > Sync Python Packages** in the tray / menu-bar menu:
 
 ```
 # ~/.keyhac/requirements.txt

@@ -204,8 +204,8 @@ def _how_to_sync() -> str:
     a message naming one sends the user looking for something that is not
     there."""
     if in_app_bundle():
-        return "Choose Sync Python Packages in the tray menu."
-    return ("Choose Sync Python Packages in the tray menu, or run "
+        return "Choose Advanced > Sync Python Packages in the tray menu."
+    return ("Choose Advanced > Sync Python Packages in the tray menu, or run "
             "`keyhac deps sync`.")
 
 

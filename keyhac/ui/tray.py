@@ -85,11 +85,6 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
         MenuItem("Reload Config", on_select=keymap.configure),
-        # Beside Reload Config, which it ends with. The one item in Keyhac
-        # that reaches the network (doc/installation.md says so), and only
-        # because it was chosen here.
-        MenuItem("Sync Python Packages", on_select=package_sync.start,
-                 enabled=lambda: not package_sync.running),
         MenuItem("Keyboard Hook", on_select=toggle_hook,
                  checked=lambda: hook.installed),
         # Nested under a name that means something to someone who has never
@@ -114,6 +109,15 @@ def install_tray(console, keymap, hook) -> None:
             # what this really provides is the URL - the page's first line
             # tells the reader to pass it on rather than follow it themselves.
             MenuItem("Setup Guide", on_select=open_guide),
+        )),
+        # What is chosen once in a long while, kept out of the top level the
+        # everyday items share.
+        MenuItem("Advanced", submenu=Menu(
+            # The one item in Keyhac that reaches the network
+            # (doc/installation.md says so), and only because it was chosen
+            # here.
+            MenuItem("Sync Python Packages", on_select=package_sync.start,
+                     enabled=lambda: not package_sync.running),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
