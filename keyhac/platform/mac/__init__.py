@@ -9,6 +9,20 @@ def check_accessibility(prompt: bool = True) -> bool:
     return bool(AS.AXIsProcessTrustedWithOptions(options))
 
 
+def accessibility_settings_path() -> str:
+    """Where the Accessibility list is, spelled as this macOS spells it:
+    System Settings arrived in macOS 13; 12 and earlier have System
+    Preferences, with the pane named the other way round."""
+    import platform
+    try:
+        major = int(platform.mac_ver()[0].split(".")[0])
+    except ValueError:
+        major = 13
+    if major >= 13:
+        return "System Settings > Privacy & Security > Accessibility"
+    return "System Preferences > Security & Privacy > Privacy > Accessibility"
+
+
 def create_platform():
     from keyhac.platform.mac.hook import MacInputHook
     from keyhac.platform.mac.focus import MacFocusProvider

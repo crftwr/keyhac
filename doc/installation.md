@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **macOS 11 or later**, or
+- **macOS 12 or later**, or
 - **Windows 10 / 11, 64-bit**.
 
 Keyhac runs entirely on your machine. It never connects to the internet — there is no
@@ -16,7 +16,8 @@ update check and no telemetry.
 2. Launch Keyhac. It is a menu-bar app — look for the keycap icon in the menu bar;
    there is no Dock icon.
 3. On first launch macOS asks for the **Accessibility permission**
-   (System Settings → Privacy & Security → Accessibility). Keyhac's keyboard hook
+   (System Settings → Privacy & Security → Accessibility; on macOS 12, System
+   Preferences → Security & Privacy → Privacy → Accessibility). Keyhac's keyboard hook
    cannot work without it. The permission is attached to the app bundle, so it
    survives updates.
 
@@ -157,7 +158,8 @@ pass afterwards — see
 ## Uninstall
 
 - **macOS**: quit Keyhac, delete Keyhac.app, delete `~/.keyhac`, and remove the
-  Accessibility entry in System Settings → Privacy & Security → Accessibility.
+  Accessibility entry in System Settings → Privacy & Security → Accessibility
+  (System Preferences → Security & Privacy → Privacy on macOS 12).
 - **Windows (Microsoft Store)**: quit Keyhac, uninstall it from
   Settings → Apps → Installed apps (or `winget uninstall Keyhac`), and delete
   `~/.keyhac`.

@@ -235,9 +235,10 @@ class MacInputHook(InputHook):
             None,
         )
         if self._event_tap is None:
+            from keyhac.platform.mac import accessibility_settings_path
             raise RuntimeError(
                 "Failed to create the event tap. "
-                "Check Accessibility permission (System Settings > Privacy & Security > Accessibility).")
+                f"Check Accessibility permission ({accessibility_settings_path()}).")
 
         self._run_loop_source = Quartz.CFMachPortCreateRunLoopSource(None, self._event_tap, 0)
         Quartz.CFRunLoopAddSource(

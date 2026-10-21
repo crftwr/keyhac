@@ -80,7 +80,7 @@ def main() -> int:
         if not platform_module.check_accessibility(prompt=True):
             logger.error(
                 "Accessibility permission is required. Grant it in "
-                "System Settings > Privacy & Security > Accessibility, then restart Keyhac.")
+                f"{platform_module.accessibility_settings_path()}, then restart Keyhac.")
             return 1
 
     # Where config.py and the state files beside it live: --config, else
