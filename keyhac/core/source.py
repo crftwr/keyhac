@@ -23,7 +23,7 @@ copying it onto every candidate would be storing what is already known.
 
 from typing import Any, Callable
 
-from keyhac.core.candidate import Candidate
+from keyhac.core.candidate import Candidate, CandidatePreview
 
 
 class CandidateSource:
@@ -109,6 +109,28 @@ class CandidateSource:
         time.
         """
         return ""
+
+    #: Whether `preview()` may run on a worker thread.  The same rule as
+    #: `background`: True only for a preview that touches nothing but the
+    #: outside world - reading a file, a subprocess.
+    preview_background: bool = False
+
+    def preview(self, candidate: Candidate) -> CandidatePreview | None:
+        """What to show beside this row while it is selected, or None.
+
+        Asked only once the selection has rested on the row, never while the
+        list is built, so a preview may cost real work - but on the main
+        thread it holds the keyboard while it runs, so a slow one sets
+        `preview_background`.  Return None for rows the label already says
+        everything about; the window then shows nothing.
+
+        Args:
+            candidate: The selected row.
+
+        Returns:
+            A CandidatePreview, or None for no preview.
+        """
+        return None
 
     def choose(self, candidate: Candidate, modifier_flags: int) -> None:
         """Run the candidate's own action if it has one, else `on_chosen`.

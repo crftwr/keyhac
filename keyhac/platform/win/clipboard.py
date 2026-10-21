@@ -132,6 +132,19 @@ def as_copy_effect(data: bytes) -> bytes:
     return data
 
 
+def dib_to_bmp(dib: bytes) -> bytes:
+    """A packed DIB with the BITMAPFILEHEADER that makes it a .bmp file."""
+    header_size, = struct.unpack_from("<I", dib, 0)
+    bit_count, = struct.unpack_from("<H", dib, 14)
+    compression, = struct.unpack_from("<I", dib, 16)
+    colors_used, = struct.unpack_from("<I", dib, 32)
+    palette = colors_used or (1 << bit_count if bit_count <= 8 else 0)
+    # BI_BITFIELDS with a plain BITMAPINFOHEADER carries three masks after it.
+    masks = 12 if compression == 3 and header_size == 40 else 0
+    offset = 14 + header_size + masks + palette * 4
+    return b"BM" + struct.pack("<IHHI", 14 + len(dib), 0, 0, offset) + dib
+
+
 def describe(item: dict, text: str | None, dropped: bool) -> ClipboardSnapshot:
     """The portable description of one Windows clipboard item."""
     files = parse_hdrop(item["CF_HDROP"]) if "CF_HDROP" in item else ()
@@ -301,6 +314,14 @@ class WinClipboardProvider(ClipboardProvider):
             return describe(item, text, dropped)
         finally:
             user32.CloseClipboard()
+
+    def image_data(self, snapshot: ClipboardSnapshot) -> bytes | None:
+        item = snapshot.items[0] if snapshot.items else {}
+        if "PNG" in item:
+            return item["PNG"]
+        if "CF_DIB" in item and len(item["CF_DIB"]) >= 40:
+            return dib_to_bmp(item["CF_DIB"])
+        return None
 
     @main_thread_only
     def set_snapshot(self, snapshot: ClipboardSnapshot) -> None:

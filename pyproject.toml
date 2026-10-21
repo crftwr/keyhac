@@ -82,6 +82,10 @@ dependencies = [
     # focus, so it cannot host an input method, and without Migemo a localised
     # candidate list cannot be filtered by name at all.
     "pymigemo==0.0.1",
+    # The chooser preview decodes clipboard images (PNG/TIFF/BMP bytes) into a
+    # puikit RasterImage, scaled to fit (issue #262). puikit depends on it
+    # already; named here because Keyhac imports it itself.
+    "pillow>=9",
 ]
 
 [project.optional-dependencies]

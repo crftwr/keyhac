@@ -1871,6 +1871,31 @@ Act on the chosen row.  Override this.
 
 ---
 
+### <kbd>method</kbd> `CandidateSource.preview`
+
+```python
+preview(
+    candidate: keyhac.core.candidate.Candidate
+) → keyhac.core.candidate.CandidatePreview | None
+```
+
+What to show beside this row while it is selected, or None. 
+
+Asked only once the selection has rested on the row, never while the list is built, so a preview may cost real work - but on the main thread it holds the keyboard while it runs, so a slow one sets `preview_background`.  Return None for rows the label already says everything about; the window then shows nothing. 
+
+
+
+**Args:**
+ 
+ - <b>`candidate`</b>:  The selected row. 
+
+
+
+**Returns:**
+ A CandidatePreview, or None for no preview. 
+
+---
+
 
 ## <kbd>class</kbd> `CallableSource`
 A source built from a plain callable, so anything that can produce a list can be one without subclassing - SSH hosts, git branches, records out of a line-of-business system. 

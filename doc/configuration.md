@@ -650,6 +650,33 @@ to do — walking the window's controls, asking a server — costs that work eve
 time it is in the page being opened, so putting it in a page of its own means
 it is paid for only when you ask for it.
 
+### Previews
+
+Once the selection rests on a row, a **preview window** beside the chooser shows
+what one line cannot: the whole text with its size and format, an image, copied
+files, an action's description. Clipboard entries, snippets, clipboard tools (the
+converted result, before you choose it) and actions have one.
+
+A source of your own offers one by overriding `preview()`:
+
+```python
+class Branches(CandidateSource):
+    name = "Branch"
+    preview_background = True     # it runs git, not Keyhac: a worker may run it
+
+    def preview(self, candidate):
+        log = subprocess.run(["git", "log", "-5", "--oneline", candidate.payload],
+                             capture_output=True, text=True).stdout
+        return CandidatePreview(title=candidate.payload, text=log)
+```
+
+`CandidatePreview` takes a `title`, an `image` (encoded bytes or a path),
+`text` and `fields` — `(label, value)` pairs. Return None for rows whose label
+already says it all. `preview()` is asked only after the selection rests, so it
+may do real work; on the main thread that work holds the keyboard, so a slow one
+sets `preview_background = True`, under the same rule as `background`: it may
+touch only the world outside Keyhac.
+
 ### Where the window opens
 
 By default the chooser opens **under the caret**, falling back to the focused

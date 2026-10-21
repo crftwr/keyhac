@@ -124,6 +124,13 @@ class MacClipboardProvider(ClipboardProvider):
             image_size=image_size if image_size != (0, 0) else None,
             files=tuple(files), lossy=dropped, items=items)
 
+    def image_data(self, snapshot: ClipboardSnapshot) -> bytes | None:
+        for item in snapshot.items:
+            for t in IMAGE_TYPES:
+                if t in item:
+                    return item[t]
+        return None
+
     @main_thread_only
     def set_snapshot(self, snapshot: ClipboardSnapshot) -> None:
         items = snapshot.items

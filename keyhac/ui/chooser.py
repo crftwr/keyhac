@@ -139,6 +139,11 @@ _POINTER_RADIUS = 4.0
 #: stays visible against it.
 _POINTER_OUTSET = 4.0
 
+#: How long the selection rests on a row before its preview is asked for.
+#: Arrowing through rows moves faster than this, so the window does not
+#: flicker through every row passed on the way.
+_PREVIEW_DELAY = 0.3
+
 #: Keys that address the *query* rather than the list: they edit it or move
 #: its caret, so pressing one in the list means the field, exactly as typing
 #: does. Modifier forms arrive under these same names - Ctrl-Left is word-wise,
@@ -236,7 +241,8 @@ class ChooserWindow:
                  title="Keyhac", center_on=None, clamp_to=None, matcher=None,
                  activates=False, badge_of=None,
                  pages=None, on_page=None, pending=None, background=None,
-                 source_of=None, below=None, passes_through=None):
+                 source_of=None, below=None, passes_through=None,
+                 preview_of=None):
         self._items = [Candidate.from_item(item) for item in items]
         # Rows still being produced, drained in slices between renders.  None
         # is the ordinary case: a source that returns a list has nothing left
@@ -267,6 +273,14 @@ class ChooserWindow:
         #: rectangle it is drawn at, so an unchanged selection redraws nothing.
         self._pointer = None
         self._pointing_at = None
+        #: `candidate -> (produce, background)` or None, from the action: how
+        #: to ask the row's source for its preview.  See _schedule_preview.
+        self._preview_of = preview_of
+        self._preview_window = None
+        #: The row being previewed, or waited on.  Bumping the generation
+        #: abandons whatever preview is in flight.
+        self._previewing = None
+        self._preview_generation = 0
 
         self.window = backend.create_window(
             *_remembered_size(), title=title,
@@ -655,6 +669,9 @@ class ChooserWindow:
         the accessibility ones; a clipboard entry has no place on screen and
         simply clears the mark.
         """
+        # Every move of the selection comes through here, which is also what
+        # the preview has to follow.
+        self._schedule_preview()
         rect = None
         index = self._list.selected
         if 0 <= index < len(self._filtered):
@@ -680,6 +697,120 @@ class ChooserWindow:
                 flash=True)
         except Exception:
             logger.debug("This platform cannot point at a control.")
+
+    # --- preview ------------------------------------------------------------
+
+    def _selected(self):
+        index = self._list.selected
+        if 0 <= index < len(self._filtered):
+            return self._filtered[index]
+        return None
+
+    def _schedule_preview(self) -> None:
+        """Ask for the selected row's preview once the selection rests.
+
+        Only a row the user has stepped onto is previewed.  With the focus in
+        the field nothing is selected - Enter would take the top match, but
+        that is a guess the list is not proposing, and previewing it would
+        put a window up on every keystroke.
+        """
+        if self._preview_of is None:
+            return
+        candidate = self._selected() if self.in_list else None
+        if candidate is not None and candidate is self._previewing:
+            return
+        self._preview_generation += 1
+        self._previewing = candidate
+        self._close_preview_window()
+        if candidate is None or self._done:
+            return
+        generation = self._preview_generation
+        self.panel.call_later(_PREVIEW_DELAY,
+                              lambda: self._make_preview(generation, candidate))
+
+    def _make_preview(self, generation: int, candidate) -> None:
+        if generation != self._preview_generation or self._done:
+            return
+        try:
+            job = self._preview_of(candidate)
+        except Exception:
+            logger.debug("No preview for this row.", exc_info=True)
+            return
+        if job is None:
+            return
+        produce, background = job
+        frame = self.window.frame_px()
+        if frame is None:
+            return
+        if self._preview_window is None:
+            from keyhac.ui.preview import PreviewWindow
+            self._preview_window = PreviewWindow(self._backend)
+        box = self._preview_window.image_box(frame)
+
+        def build(preview=None):
+            from keyhac.ui.preview import decode_image
+            if preview is None:
+                preview = produce()
+            raster = None
+            if preview is not None and preview.image is not None:
+                raster = decode_image(preview.image, box)
+            return preview, raster
+
+        def land(result):
+            if generation != self._preview_generation or self._done:
+                return
+            preview, raster = result
+            if preview is None:
+                return
+            frame_now = self.window.frame_px()
+            if frame_now is not None:
+                self._preview_window.show(preview, raster, frame_now)
+
+        def failed():
+            logger.debug("The preview could not be made.", exc_info=True)
+
+        if not self.panel.dispatches_to_main_thread:
+            # Nowhere to hand a worker's result back to: make it here. Tests
+            # take this path; the two real backends never do.
+            try:
+                land(build())
+            except Exception:
+                failed()
+            return
+        preview = None
+        if not background:
+            # The source's own code runs where it said it may: here.  Only
+            # the decode, which is Pillow's alone, goes to the worker.
+            try:
+                preview = produce()
+            except Exception:
+                failed()
+                return
+            if preview is None:
+                return
+            if preview.image is None:
+                land((preview, None))
+                return
+
+        def work():
+            try:
+                with worker_thread_context():
+                    result = build(preview)
+            except Exception:
+                failed()
+                return
+            self._backend.call_on_main_thread(lambda: land(result))
+
+        threading.Thread(target=work, name="ChooserPreview", daemon=True).start()
+
+    def _close_preview_window(self) -> None:
+        if self._preview_window is not None:
+            self._preview_window.close()
+
+    def _stop_preview(self) -> None:
+        self._preview_generation += 1
+        self._previewing = None
+        self._close_preview_window()
 
     # --- streaming --------------------------------------------------------
 
@@ -1062,6 +1193,7 @@ class ChooserWindow:
             self._release_keys()
             self._stop_background()
             self._stop_pointing()
+            self._stop_preview()
             if self._on_canceled is not None:
                 self._on_canceled()
 
@@ -1078,6 +1210,7 @@ class ChooserWindow:
             self._release_keys()
             self._stop_background()
             self._stop_pointing()
+            self._stop_preview()
             self.window.close()
 
     def _finish(self, candidate, modifier_flags: int) -> None:
@@ -1087,6 +1220,7 @@ class ChooserWindow:
         self._release_keys()
         self._stop_background()
         self._stop_pointing()
+        self._stop_preview()
         self.window.close()
         if candidate is None:
             if self._on_canceled is not None:

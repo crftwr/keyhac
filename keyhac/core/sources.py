@@ -14,11 +14,12 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import os
 import time
 import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
-from keyhac.core.candidate import Candidate
+from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
 from keyhac.core.source import CandidateSource
@@ -79,6 +80,28 @@ def _chooser_took_focus() -> bool:
     return bool(open_entry and open_entry[2] is not None)
 
 
+#: How much of a text a preview shows.  Cut short rather than scrolled: the
+#: window cannot take the keyboard to scroll, and the head of a text is what
+#: tells two similar entries apart.
+_PREVIEW_LINES = 40
+_PREVIEW_CHARS = 4000
+
+def _text_preview(text: str, title: str = None, fields=()) -> CandidatePreview:
+    """A text, its head only, with its size."""
+    lines = text.split("\n")
+    shown = "\n".join(lines[:_PREVIEW_LINES])[:_PREVIEW_CHARS]
+    if len(shown) < len(text):
+        shown += "\n…"
+    size = (("Lines", f"{len(lines):,}"), ("Characters", f"{len(text):,}"))
+    return CandidatePreview(title=title, text=shown, fields=tuple(fields) + size)
+
+
+def _when(stamp: float) -> str:
+    if time.strftime("%Y%m%d", time.localtime(stamp)) == time.strftime("%Y%m%d"):
+        return time.strftime("%H:%M:%S", time.localtime(stamp))
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp))
+
+
 #: The row standing for the clipboard's own content when the history did not
 #: record it.  Choosing it pastes without touching the clipboard.
 _CURRENT_CLIPBOARD = object()
@@ -97,6 +120,48 @@ class ClipboardHistorySource(_PastingSource):
     """
 
     name = "Clipboard"
+
+    #: The preview reads the entry already in hand, and for files asks the
+    #: file system whether they still exist - which a path on a network share
+    #: that has gone away can take seconds to answer.
+    preview_background = True
+
+    def preview(self, candidate):
+        """lazydocs: ignore"""
+        entry = candidate.extras.get("entry")
+        if entry is None:
+            # The current-clipboard rows: concealed content is not shown, and
+            # unreadable content cannot be.
+            return None
+        snapshot = entry.snapshot
+        fields = []
+        if entry.time is not None:
+            fields.append(("Copied", _when(entry.time)))
+        if snapshot.kind == "image":
+            clipboard = Keymap.get_instance().clipboard
+            data = clipboard.image_data(snapshot) if clipboard else None
+            if snapshot.image_size:
+                fields.insert(0, ("Size", "{} × {} px".format(*snapshot.image_size)))
+            return CandidatePreview(image=data, fields=tuple(fields))
+        if snapshot.files:
+            missing = sum(1 for p in snapshot.files if not os.path.exists(p))
+            fields.insert(0, ("Files", f"{len(snapshot.files):,}"))
+            if missing:
+                fields.insert(1, ("Missing", f"{missing:,}"))
+            return CandidatePreview(text="\n".join(snapshot.files),
+                                    fields=tuple(fields))
+        # Every text gets one, short or not: whether a row shows it in full
+        # depends on the window's width and the font, and the preview says
+        # more than the row does anyway - its size, its format, when it was
+        # copied.  A preview that came and went with the length would read
+        # as one that does not work.
+        if not entry.text:
+            return None
+        if snapshot.kind == "rich":
+            fields.insert(0, ("Format", "Rich text, shown plain"))
+        elif snapshot.lossy:
+            fields.insert(0, ("Format", "Text only - the rest was not kept"))
+        return _text_preview(entry.text, fields=fields)
 
     def candidates(self):
         """lazydocs: ignore"""
@@ -180,6 +245,15 @@ class SnippetsSource(_PastingSource):
                           payload=item[2] if len(item) > 2 else item[1])
                 for item in self.snippets]
 
+    def preview(self, candidate):
+        """lazydocs: ignore"""
+        value = candidate.payload
+        # A callable is not called: choosing it is when its value is wanted,
+        # and calling it to look could have whatever effect it has.
+        if isinstance(value, str) and value:
+            return _text_preview(value)
+        return None
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         value = candidate.payload
@@ -212,20 +286,36 @@ class ClipboardToolsSource(_PastingSource):
         return [Candidate(icon=item[0], display=item[1], payload=item[2])
                 for item in self.tools]
 
-    def on_chosen(self, candidate, modifier_flags: int) -> None:
-        """lazydocs: ignore"""
+    @staticmethod
+    def _current_text():
         from keyhac.core.clipboard_history import CONCEALED, UNSUPPORTED
 
-        keymap = Keymap.get_instance()
-        history = keymap.clipboard_history
+        history = Keymap.get_instance().clipboard_history
         current = history.current()
         if current is None:
             # Not looked at yet, or empty: the newest text is the best guess.
-            text = history.get_current()
-        elif current in (CONCEALED, UNSUPPORTED):
-            text = None
-        else:
-            text = current.text
+            return history.get_current()
+        if current in (CONCEALED, UNSUPPORTED):
+            return None
+        return current.text
+
+    def preview(self, candidate):
+        """lazydocs: ignore"""
+        text = self._current_text()
+        if text is None:
+            return None
+        try:
+            converted = candidate.payload(text)
+        except Exception as e:
+            return CandidatePreview(title="This tool fails on the clipboard",
+                                    text=f"{type(e).__name__}: {e}")
+        if converted is None:
+            return None
+        return _text_preview(str(converted), title="Result")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        text = self._current_text()
         if text is None:
             logger.warning("The clipboard holds no text; nothing to convert.")
             return
@@ -756,6 +846,31 @@ class ActionsSource(CandidateSource):
                           extras={"address": action.name,
                                   "required": action.required})
                 for action in found]
+
+    #: Reads the action's file, and nothing of Keyhac's.
+    preview_background = True
+
+    def preview(self, candidate):
+        """lazydocs: ignore"""
+        import ast
+
+        action = candidate.payload
+        doc = None
+        try:
+            with open(action.path, encoding="utf-8") as fd:
+                tree = ast.parse(fd.read())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == action.class_name:
+                    doc = ast.get_docstring(node)
+                    break
+        except (OSError, SyntaxError, ValueError):
+            pass
+        fields = [("Address", action.name)]
+        if action.required:
+            fields.append(("Needs", ", ".join(action.required)))
+        return CandidatePreview(title=action.class_name,
+                                text=doc or "(no docstring)",
+                                fields=tuple(fields))
 
     def badge(self, candidate) -> str:
         """lazydocs: ignore"""
