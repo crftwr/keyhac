@@ -80,8 +80,12 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
   outside the bundle — a framework's `bin/pythonX.Y` is only the GUI stub for
   the `Python.app` this build drops, and every binary copied in still names the
   Homebrew path it was linked against. 2.4.1 shipped exactly that (#140).
-- The macOS floor is `MACOS_MIN_VERSION` in `build.sh` (11.0), and it is a
-  decision, not a property of the build machine. Without
+- The macOS floor is `MACOS_MIN_VERSION` in `build.sh` (12.0), and it is a
+  decision, not a property of the build machine. 12 is the oldest macOS
+  Keyhac has been run on (#270, a Tart VM; the record is in
+  [testing.md](testing.md#live-verification-record)). 11 was the floor
+  until then, but Apple silicon cannot virtualize it, so nobody had run
+  it, and the floor was raised to what had been run. Without
   `-mmacosx-version-min`, clang targets whatever macOS compiles it: 2.5.0 was
   built on macOS 27 and macOS 26 refused to launch it, while Info.plist still
   said 11.0. `build.sh` now compiles the launcher for the floor, writes the same

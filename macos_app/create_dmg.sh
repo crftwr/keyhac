@@ -126,7 +126,7 @@ create_install_doc() {
 
 ## Requirements
 
-- macOS 11 (Big Sur) or later
+- macOS 12 (Monterey) or later
 - No additional software installation required
 
 ## Troubleshooting

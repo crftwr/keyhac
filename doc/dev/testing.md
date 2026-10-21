@@ -1133,6 +1133,41 @@ found.
   Notepad's previous session, so a tab of an existing file reappeared. The
   pass only moves UIA focus in it, never types, and the file was left
   unmodified.
+- **Does the release run on macOS 12?** (2026-10-21, issue #270, Keyhac
+  2.6.0 release DMG, macOS 12.7.6 in a Tart VM from
+  `ghcr.io/cirruslabs/macos-monterey-vanilla`, on an M5 host running macOS
+  27.) **Yes.** Gatekeeper accepts the notarized app, and the launcher,
+  the embedded Python and every import come up with no dyld or import
+  error. The menu-bar icon appears, the console opens and shows key events,
+  and the template config's remaps work. 13 and 14 were not run: they are
+  only worth running if 12 fails. The bundle built afterwards from the fix
+  branch (floor 12.0, thinned to arm64 by #274, the icon below) launched
+  there too, with the hook installed and the config loaded.
+
+  The one real bug: Keyhac's icon was noise in the Accessibility list.
+  Monterey's IconServices does not read the PNGs `make_icons.py` wrote into
+  `icp4`/`icp5`, and those are the slots it uses for 16 and 32 pt at 1x.
+  Larger sizes, and every size at 2x, were fine, and NSImage decoded the
+  same file correctly, so only something drawn through IconServices shows
+  it. The icns now has the `ic07`-`ic14` slots only, and the system scales
+  down from them. The permission messages also named System Settings,
+  which macOS 12 calls System Preferences, with the pane named the other way
+  round; they now name whichever the running OS has.
+
+  Three things about the VM, none of them Keyhac's. The authorization UI
+  crashes in the guest (System Preferences aborts on the lock, and
+  UserNotificationCenter crashes, so the Accessibility prompt never
+  appears), so SIP was disabled from recovery to get the permission
+  through. The guest keyboard is a generic USB one with no Fn, because
+  Virtualization.framework's Mac keyboard needs a macOS 14 guest. So the
+  remaps were driven through `define_modifier("RCmd", "User0")` in place of
+  the template's Fn. And the default 1024x768 pt display is unreadably small
+  in recovery; `tart set --display 1280x800px` for recovery, a smaller
+  point size for normal boot.
+
+  macOS 11 cannot be run this way: Apple silicon virtualizes 12 and later
+  only. Rather than keep a floor nobody had run, `MACOS_MIN_VERSION` went
+  from 11.0 to 12.0.
 
 
 ## The interactive pass before a release

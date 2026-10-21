@@ -41,7 +41,7 @@ possible layer: the low-level hook, event injection, focus/window queries, and p
 ## Goals
 
 1. One repository, one Python codebase, producing a native app for Windows 10/11 (x64)
-   and macOS 11+.
+   and macOS 12+.
 2. One documented user-facing config API; a single `config.py` can run on both OSes.
 3. Feature parity with the *union* of keyhac-win and keyhac-mac (see
    [design-notes.md](design-notes.md)).

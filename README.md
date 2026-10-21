@@ -96,7 +96,7 @@ what it can reach, and the security model.
 
 ## Install
 
-- **macOS 11+** — download `Keyhac-<version>-macos.dmg` from
+- **macOS 12+** — download `Keyhac-<version>-macos.dmg` from
   [Releases](https://github.com/crftwr/keyhac/releases): drag Keyhac.app into
   Applications and launch it. Or install it with Homebrew:
   `brew install --cask crftwr/tap/keyhac`. Grant the Accessibility permission
