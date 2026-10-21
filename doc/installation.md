@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **macOS 15 or later**, or
+- **macOS 11 or later**, or
 - **Windows 10 / 11, 64-bit**.
 
 Keyhac runs entirely on your machine. It never connects to the internet — there is no
