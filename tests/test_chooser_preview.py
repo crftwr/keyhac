@@ -164,8 +164,7 @@ class TestDecode:
 
 class TestSourcePreviews:
 
-    def test_clipboard_text_previews_only_what_the_row_cannot_show(
-            self, keyhac_engine, tmp_path):
+    def test_clipboard_text_is_always_previewed(self, keyhac_engine, tmp_path):
         from keyhac.core.clipboard_history import ClipboardHistory
         from keyhac.core.sources import ClipboardHistorySource
         from tests.test_clipboard_snapshots import SnapshotProvider
@@ -176,7 +175,7 @@ class TestSourcePreviews:
         keymap.clipboard_history.add_item("one\ntwo\nthree")
         source = ClipboardHistorySource()
         multi, short = source.candidates()
-        assert source.preview(short) is None
+        assert source.preview(short).text == "short"
         preview = source.preview(multi)
         assert preview.text == "one\ntwo\nthree"
         assert ("Lines", "3") in preview.fields
