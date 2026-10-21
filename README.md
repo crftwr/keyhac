@@ -41,7 +41,8 @@ Keyhac 2's UI is built on [PuiKit](https://github.com/crftwr/puikit).
 - **Multi-stroke key tables**: Emacs-style prefix keys, with a balloon showing the
   armed prefix.
 - **Clipboard history**: persistent history in a popup chooser — type to filter,
-  Enter pastes into the app you came from. Plus fixed snippets and scriptable
+  Enter pastes into the app you came from, with its formatting, image or files;
+  Option/Alt-Enter pastes plain text. Plus fixed snippets and scriptable
   clipboard-transform tools.
 - **Window control**: move, snap/tile, minimize, activate and launch applications,
   multi-monitor aware.

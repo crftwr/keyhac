@@ -1,8 +1,13 @@
 """macOS clipboard provider - NSPasteboard with changeCount polling."""
 
-from AppKit import NSPasteboard, NSPasteboardTypeString
+from AppKit import (
+    NSBitmapImageRep, NSPasteboard, NSPasteboardItem, NSPasteboardTypeString,
+)
+from Foundation import NSData, NSURL
 
-from keyhac.platform.base import ClipboardProvider, main_thread_only
+from keyhac.platform.base import (
+    ClipboardProvider, ClipboardSnapshot, main_thread_only,
+)
 
 #: Pasteboard types that mark content a clipboard monitor must not keep - the
 #: nspasteboard.org conventions password managers follow.
@@ -13,6 +18,28 @@ CONCEALED_TYPES = frozenset({
 })
 #: The one this provider writes when asked to conceal.
 CONCEALED_MARKER = "org.nspasteboard.ConcealedType"
+
+TEXT_TYPE = "public.utf8-plain-text"
+FILE_TYPE = "public.file-url"
+RICH_TYPES = ("public.rtf", "public.html", "com.apple.flat-rtfd")
+#: Best first: a screenshot offers PNG and TIFF of one image, and the TIFF is
+#: the same pixels several times larger.
+IMAGE_TYPES = ("public.png", "public.jpeg", "public.tiff")
+
+#: Types that restate what is kept, or describe it, rather than add content -
+#: other spellings of the text, the legacy NS*/CorePasteboardFlavorType
+#: aliases, a browser's source URL.  Leaving one behind is not a loss.
+_RESTATING_PREFIXES = ("dyn.", "NS", "CorePasteboardFlavorType",
+                       "org.chromium.", "org.nspasteboard.")
+_RESTATING_TYPES = frozenset({
+    "public.utf16-plain-text", "public.utf16-external-plain-text",
+    "public.plain-text", "com.apple.traditional-mac-plain-text",
+    "public.url", "public.url-name", "com.apple.linkpresentation.metadata",
+})
+
+
+def _restates(t: str) -> bool:
+    return t in _RESTATING_TYPES or t.startswith(_RESTATING_PREFIXES)
 
 
 class MacClipboardProvider(ClipboardProvider):
@@ -37,6 +64,87 @@ class MacClipboardProvider(ClipboardProvider):
     def is_concealed(self) -> bool:
         types = self._pasteboard.types() or ()
         return any(str(t) in CONCEALED_TYPES for t in types)
+
+    @main_thread_only
+    def get_snapshot(self, max_format_size: int = None) -> ClipboardSnapshot | None:
+        pb_items = self._pasteboard.pasteboardItems() or ()
+        if not pb_items:
+            return None
+        items, files, dropped = [], [], False
+        image_size = None
+        has_rich = False
+        for pb_item in pb_items:
+            types = [str(t) for t in (pb_item.types() or ())]
+            wanted = [TEXT_TYPE, FILE_TYPE, *RICH_TYPES]
+            # One image per item, the most compact of those offered.
+            image_type = next((t for t in IMAGE_TYPES if t in types), None)
+            if image_type:
+                wanted.append(image_type)
+            item = {}
+            for t in types:
+                if t not in wanted:
+                    dropped = dropped or not (_restates(t) or t in IMAGE_TYPES)
+                    continue
+                data = pb_item.dataForType_(t)
+                if data is None:
+                    continue
+                data = bytes(data)
+                if max_format_size is not None and len(data) > max_format_size:
+                    dropped = True
+                    continue
+                item[t] = data
+                if t == FILE_TYPE:
+                    url = NSURL.URLWithString_(data.decode("utf-8", "replace"))
+                    if url is not None and url.path():
+                        files.append(str(url.path()))
+                elif t in RICH_TYPES:
+                    has_rich = True
+                elif t == image_type and image_size is None:
+                    rep = NSBitmapImageRep.imageRepWithData_(NSData.dataWithBytes_length_(data, len(data)))
+                    if rep is not None:
+                        image_size = (int(rep.pixelsWide()), int(rep.pixelsHigh()))
+                    else:
+                        image_size = (0, 0)
+            if item:
+                items.append(item)
+        text = self._pasteboard.stringForType_(NSPasteboardTypeString)
+        text = str(text) if text is not None else None
+        if files:
+            kind = "files"
+        elif image_size is not None:
+            kind = "image"
+        elif has_rich:
+            kind = "rich"
+        elif text:
+            kind = "text"
+        else:
+            kind = None
+        return ClipboardSnapshot(
+            kind=kind, text=text,
+            image_size=image_size if image_size != (0, 0) else None,
+            files=tuple(files), lossy=dropped, items=items)
+
+    @main_thread_only
+    def set_snapshot(self, snapshot: ClipboardSnapshot) -> None:
+        items = snapshot.items
+        if not items and snapshot.files:
+            # Back from disk, where only the paths were kept.
+            items = [{FILE_TYPE: bytes(str(NSURL.fileURLWithPath_(p).absoluteString()), "utf-8")}
+                     for p in snapshot.files]
+            if snapshot.text:
+                items[0][TEXT_TYPE] = snapshot.text.encode("utf-8")
+        if not items:
+            if snapshot.text:
+                self.set_text(snapshot.text)
+            return
+        pb_items = []
+        for item in items:
+            pb_item = NSPasteboardItem.alloc().init()
+            for t, data in item.items():
+                pb_item.setData_forType_(NSData.dataWithBytes_length_(data, len(data)), t)
+            pb_items.append(pb_item)
+        self._pasteboard.clearContents()
+        self._pasteboard.writeObjects_(pb_items)
 
     @main_thread_only
     def poll(self) -> bool:

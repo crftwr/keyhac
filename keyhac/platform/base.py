@@ -295,6 +295,49 @@ def main_thread_only(method):
     return dispatched
 
 
+#: Kinds of clipboard content, in the order a snapshot is labelled by: a copy
+#: holding both files and their names as text is a file copy, and an image
+#: that came with an <img> tag in HTML is an image.
+CLIPBOARD_KINDS = ("files", "image", "rich", "text")
+
+
+@dataclass
+class ClipboardSnapshot:
+    """What the clipboard held, as far as the history keeps it.
+
+    The provider reads a fixed set of formats - text, RTF, HTML, an image,
+    files - rather than everything on offer.  Two reasons, both Windows-shaped
+    but true of macOS too: some formats are not memory at all (GDI handles),
+    and asking for a delay-rendered format makes the source application render
+    it synchronously, which an Excel range does in dozens of formats and a hung
+    application does never.  What is not read is dropped, and `lossy` says so.
+
+    `items` is the provider's own: a list of ``{format name: bytes}``, one per
+    pasteboard item on macOS (a multi-file copy is several), always one on
+    Windows.  The core never looks inside it; it only counts its bytes and
+    hands it back.  The other fields are the portable description.
+
+    `kind` is None when the clipboard held something, but nothing kept - the
+    "cannot be shown" case.  An empty clipboard is no snapshot at all.
+    """
+    kind: str | None = "text"
+    text: str | None = None
+    image_size: tuple | None = None
+    files: tuple = ()
+    lossy: bool = False
+    items: list = field(default_factory=list)
+
+    def nbytes(self) -> int:
+        """Bytes held in `items` - what the session budget counts."""
+        return sum(len(data) for item in self.items for data in item.values())
+
+    def without_items(self) -> "ClipboardSnapshot":
+        """The same content reduced to what survives a restart: text and files."""
+        return ClipboardSnapshot(kind="files" if self.files else "text",
+                                 text=self.text, files=self.files,
+                                 lossy=bool(self.items) or self.lossy)
+
+
 class ClipboardProvider(ABC):
     """OS clipboard access + change detection (poll() driven by the app's
     periodic tick; event-driven listeners can layer on later).
@@ -332,6 +375,25 @@ class ClipboardProvider(ABC):
         Not abstract: a provider that cannot tell says False, which is what
         every provider said before this existed."""
         return False
+
+    def get_snapshot(self, max_format_size: int = None) -> "ClipboardSnapshot | None":
+        """The clipboard's content in the formats the history keeps.
+
+        `max_format_size` drops any single format larger than that (the
+        snapshot is then `lossy`).  None means an empty clipboard.
+
+        The default reads text only, which is what a provider written before
+        snapshots existed can offer."""
+        s = self.get_text()
+        return ClipboardSnapshot(text=s) if s else None
+
+    def set_snapshot(self, snapshot: "ClipboardSnapshot") -> None:
+        """Put a snapshot back on the clipboard, every format it kept.
+
+        The default restores the text, the one thing every snapshot of a
+        text-only provider has."""
+        if snapshot.text:
+            self.set_text(snapshot.text)
 
 
 class ImeProvider(ABC):

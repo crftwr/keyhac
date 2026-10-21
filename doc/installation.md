@@ -123,9 +123,11 @@ pass afterwards — see
   customizer is. Keyhac processes them in-process and stores none of them, with two
   exceptions you control: the keyboard-macro buffer (kept in memory while you record)
   and the clipboard history.
-- **Clipboard history is written to disk** (`~/.keyhac/clipboard.json`, text only,
-  at most 64 KB per entry). If you copy passwords from a password manager, consider
-  disabling persistence in config.py:
+- **Clipboard history is written to disk** (`~/.keyhac/clipboard.json`: text, at
+  most 64 KB per entry, and the paths of copied files; images and formatting stay in
+  memory). Content a password manager marks as concealed is never recorded. For
+  passwords copied from somewhere that does not mark them, consider disabling
+  persistence in config.py:
 
   ```python
   keymap.clipboard_history.persist = False   # keep history in memory only

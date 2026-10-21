@@ -134,6 +134,9 @@ def main() -> int:
     # portable install keeps its history on the stick with its config.
     keymap._clipboard_history = ClipboardHistory(
         clipboard_provider, app_paths.state_file("clipboard.json"))
+    # What is on the clipboard at start-up is the current content, though no
+    # change will report it: the provider's change counter starts from now.
+    keymap._clipboard_history.on_clipboard_changed()
 
     keymap.configure()
 

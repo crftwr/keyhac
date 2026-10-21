@@ -136,10 +136,10 @@ def preserve_clipboard():
     """Put the clipboard back the way it was.
 
     Pasting is the default write mechanism, and an action that silently
-    replaces what the user had copied is an action they stop trusting.  A
-    clipboard holding something that is not text (an image, a file promise)
-    cannot be saved this way - the restore puts back the text that was there,
-    or nothing.
+    replaces what the user had copied is an action they stop trusting.  Text,
+    rich text, an image and copied files are put back; anything else the
+    clipboard held (an application's private format, a file promise) is not -
+    the restore puts back what of it could be kept, or nothing.
 
     ```python
     with preserve_clipboard():
@@ -150,13 +150,21 @@ def preserve_clipboard():
         keymap = _keymap()
         clipboard = keymap.clipboard if keymap else None
         saved = None
+        snapshot = None
         concealed = False
         if clipboard is not None:
             try:
-                # getattr: a provider from before is_concealed() existed is
-                # still a provider, and must still get its text back.
+                # getattr: a provider from before is_concealed() and snapshots
+                # existed is still a provider, and must still get its text back.
                 is_concealed = getattr(clipboard, "is_concealed", None)
                 concealed = bool(is_concealed and is_concealed())
+                get_snapshot = getattr(clipboard, "get_snapshot", None)
+                if get_snapshot is not None and not concealed:
+                    # A concealed copy keeps the text path: a snapshot does
+                    # not carry the marker, and set_text(concealed=) does.
+                    snapshot = get_snapshot()
+                    if snapshot is not None and not snapshot.items:
+                        snapshot = None   # text only: the text path is enough
                 saved = clipboard.get_text()
             except Exception:
                 logger.debug("could not read the clipboard to save it",
@@ -164,9 +172,11 @@ def preserve_clipboard():
         try:
             yield
         finally:
-            if clipboard is not None and saved is not None:
+            if clipboard is not None and (saved is not None or snapshot is not None):
                 try:
-                    if concealed:
+                    if snapshot is not None:
+                        clipboard.set_snapshot(snapshot)
+                    elif concealed:
                         clipboard.set_text(saved, concealed=True)
                     else:
                         clipboard.set_text(saved)

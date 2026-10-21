@@ -19,7 +19,7 @@ import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
 from keyhac.core.candidate import Candidate
-from keyhac.core.const import MODKEY_SHIFT
+from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
 from keyhac.core.source import CandidateSource
 from keyhac.core import log
@@ -44,10 +44,17 @@ class _PastingSource(CandidateSource):
 
         lazydocs: ignore
         """
-        from keyhac.ui import runtime
-
         keymap = Keymap.get_instance()
         keymap.clipboard_history.set_current(text)
+        self.paste_clipboard(modifier_flags)
+
+    def paste_clipboard(self, modifier_flags: int) -> None:
+        """Paste whatever the clipboard holds now, unless Shift was held.
+
+        lazydocs: ignore
+        """
+        from keyhac.ui import runtime
+
         if modifier_flags & MODKEY_SHIFT:
             return
         if _chooser_took_focus():
@@ -72,20 +79,75 @@ def _chooser_took_focus() -> bool:
     return bool(open_entry and open_entry[2] is not None)
 
 
+#: The row standing for the clipboard's own content when the history did not
+#: record it.  Choosing it pastes without touching the clipboard.
+_CURRENT_CLIPBOARD = object()
+
+_KIND_ICONS = {"files": "📄", "image": "🖼️"}
+
+
 class ClipboardHistorySource(_PastingSource):
-    """Everything the clipboard has held, most recent first."""
+    """Everything the clipboard has held, most recent first.
+
+    Enter pastes the entry with the formatting or image it was copied with,
+    Option(Alt)-Enter pastes its text alone, and Shift sets the clipboard
+    without pasting.  When the clipboard holds something the history does not
+    keep - a password manager's copy, or a format it cannot read - a
+    "Current clipboard" row comes first, and pastes it untouched.
+    """
 
     name = "Clipboard"
 
     def candidates(self):
         """lazydocs: ignore"""
+        from keyhac.core.clipboard_history import CONCEALED, UNSUPPORTED
+
         history = Keymap.get_instance().clipboard_history
-        return [Candidate(icon="📋", display=label, payload=text)
-                for text, label in history.items()]
+        rows = []
+        current = history.current()
+        if current == CONCEALED:
+            rows.append(Candidate(icon="🔒", display="Current clipboard (hidden)",
+                                  payload=_CURRENT_CLIPBOARD))
+        elif current == UNSUPPORTED:
+            rows.append(Candidate(icon="📋",
+                                  display="Current clipboard (cannot be shown)",
+                                  payload=_CURRENT_CLIPBOARD))
+        for entry in history.entries():
+            snapshot = entry.snapshot
+            match_text = (" ".join(snapshot.files) if snapshot.files
+                          else entry.label)
+            rows.append(Candidate(
+                icon=_KIND_ICONS.get(snapshot.kind, "📋"), display=entry.label,
+                match_text=match_text, payload=entry.text,
+                extras={"entry": entry}))
+        return rows
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
-        self.paste(candidate.payload, modifier_flags)
+        history = Keymap.get_instance().clipboard_history
+        entry = candidate.extras.get("entry")
+        if entry is None:
+            if candidate.payload is _CURRENT_CLIPBOARD:
+                # Nothing to put back: what is there is what is wanted.
+                self.paste_clipboard(modifier_flags)
+            else:
+                self.paste(candidate.payload, modifier_flags)
+            return
+        if modifier_flags & MODKEY_ALT:
+            if not entry.text:
+                logger.warning("This entry has no text to paste on its own.")
+                return
+            self.paste(entry.text, modifier_flags)
+            return
+        current = history.current()
+        if getattr(current, "key", None) == entry.key:
+            # Still on the clipboard, and with everything the copy offered -
+            # including what the history does not keep.  Re-setting it from
+            # the entry would only lose that.
+            self.paste_clipboard(modifier_flags)
+            return
+        history.restore(entry)
+        self.paste_clipboard(modifier_flags)
 
 
 class SnippetsSource(_PastingSource):
@@ -152,10 +214,20 @@ class ClipboardToolsSource(_PastingSource):
 
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
+        from keyhac.core.clipboard_history import CONCEALED, UNSUPPORTED
+
         keymap = Keymap.get_instance()
-        text = keymap.clipboard_history.get_current()
+        history = keymap.clipboard_history
+        current = history.current()
+        if current is None:
+            # Not looked at yet, or empty: the newest text is the best guess.
+            text = history.get_current()
+        elif current in (CONCEALED, UNSUPPORTED):
+            text = None
+        else:
+            text = current.text
         if text is None:
-            logger.warning("The clipboard is empty; nothing to convert.")
+            logger.warning("The clipboard holds no text; nothing to convert.")
             return
         try:
             converted = candidate.payload(text)

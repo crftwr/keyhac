@@ -75,3 +75,67 @@ class TestWinClipboardProvider:
         finally:
             user32.CloseClipboard()
         assert provider.is_concealed() is concealed
+
+
+class TestWinSnapshots:
+    """Snapshots against the real clipboard: what is read back is what was
+    put there, in the kept formats, and a cut comes back as a copy."""
+
+    def _put(self, provider, formats):
+        from keyhac.platform.win.clipboard import GMEM_MOVEABLE, kernel32, user32
+        assert user32.OpenClipboard(None)
+        try:
+            user32.EmptyClipboard()
+            for name, data in formats.items():
+                handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+                ptr = kernel32.GlobalLock(handle)
+                ctypes.memmove(ptr, data, len(data))
+                kernel32.GlobalUnlock(handle)
+                user32.SetClipboardData(provider._format_number(name), handle)
+        finally:
+            user32.CloseClipboard()
+
+    def test_rich_text_round_trip(self, provider):
+        html = b"Version:0.9\r\nStartHTML:0\r\n<b>bold</b>"
+        self._put(provider, {"CF_UNICODETEXT": "bold\0".encode("utf-16-le"),
+                             "HTML Format": html,
+                             "Some Private Format": b"x"})
+        snapshot = provider.get_snapshot()
+        assert snapshot.kind == "rich" and snapshot.text == "bold"
+        assert snapshot.lossy            # the private format was not kept
+        provider.set_text("other")
+        provider.set_snapshot(snapshot)
+        again = provider.get_snapshot()
+        assert again.items[0]["HTML Format"] == html
+        assert again.text == "bold"
+
+    def test_image_size_and_round_trip(self, provider):
+        import struct
+        header = struct.pack("<IiiHHIIiiII", 40, 4, 2, 1, 32, 0, 32, 0, 0, 0, 0)
+        dib = header + b"\xff" * 32
+        self._put(provider, {"CF_DIB": dib})
+        snapshot = provider.get_snapshot()
+        assert snapshot.kind == "image" and snapshot.image_size == (4, 2)
+        provider.set_text("other")
+        provider.set_snapshot(snapshot)
+        assert provider.get_snapshot().items[0]["CF_DIB"][:40] == header
+
+    def test_a_cut_is_restored_as_a_copy(self, provider, tmp_path):
+        import struct
+        from keyhac.platform.win import clipboard as winclip
+        path = str(tmp_path / "f.txt")
+        open(path, "w").close()
+        self._put(provider, {"CF_HDROP": winclip.build_hdrop([path]),
+                             winclip.DROP_EFFECT: struct.pack("<I", winclip.DROPEFFECT_MOVE)})
+        snapshot = provider.get_snapshot()
+        assert snapshot.kind == "files" and snapshot.files == (path,)
+        provider.set_snapshot(snapshot)
+        effect = provider.get_snapshot().items[0][winclip.DROP_EFFECT]
+        assert struct.unpack("<I", effect[:4])[0] == winclip.DROPEFFECT_COPY
+
+    def test_files_from_disk_are_restored_from_their_paths(self, provider, tmp_path):
+        from keyhac.platform.base import ClipboardSnapshot
+        path = str(tmp_path / "g.txt")
+        open(path, "w").close()
+        provider.set_snapshot(ClipboardSnapshot(kind="files", files=(path,)))
+        assert provider.get_snapshot().files == (path,)
