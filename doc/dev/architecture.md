@@ -76,6 +76,7 @@ Rules:
 | `ui/tray.py` | tray icon / menu-bar extra + menu | keyhac-win `keyhac_tasktrayicon.py`, keyhac-mac `MenuView.swift` |
 | `ui/runtime.py` | holds the app's PuiKit backend for secondary windows (chooser/balloon) | new |
 | `main.py` | bootstrap (below) | both |
+| `tls.py` | HTTPS verified by the OS (`truststore`) on macOS and Windows, injected first thing in `main()` | XeFM `xefm/tls.py` (#279) |
 
 ## The key-event lifecycle
 
