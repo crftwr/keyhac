@@ -62,8 +62,6 @@ per-user directory, exactly as in 1.x. See
   the worst source of reentrancy bugs in 1.x. `ChooserAction` is the replacement.
 - **`keymap.wnd`**, the `send_input_on_tru` ini hack, and profile-mode flag
   semantics — dropped.
-- **Portable mode** (config next to keyhac.exe) — not implemented yet (tracked in
-  the issue tracker).
 
 ## Timers (delayedCall / CronTable)
 
