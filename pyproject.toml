@@ -8,7 +8,8 @@ description = "Keyhac 2 - Python-scriptable keyboard customization tool for Wind
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "craftware" }]
-keywords = ["keyboard", "hotkey", "keymap", "macro", "remap", "customization"]
+keywords = ["keyboard", "hotkey", "keymap", "macro", "remap", "customization",
+            "automation", "ui-automation", "accessibility", "mcp", "ai"]
 # version -> single-sourced from keyhac/__init__.py's __version__.
 # readme -> README.pypi.md, generated on the fly by `make build`
 # (tools/gen_pypi_readme.py): README.md with its repo-relative image/link
@@ -100,9 +101,10 @@ keyhac = "keyhac.main:main"
 keyhac-mcp-bridge = "keyhac.mcp.bridge:main"
 
 [project.urls]
-Homepage = "https://github.com/crftwr/keyhac"
+Homepage = "https://crftwr.github.io/keyhac/"
 Repository = "https://github.com/crftwr/keyhac"
 Issues = "https://github.com/crftwr/keyhac/issues"
+Documentation = "https://github.com/crftwr/keyhac/tree/main/doc"
 
 [tool.setuptools]
 packages = [

@@ -1,0 +1,49 @@
+name: Feature request
+description: Something Keyhac should be able to do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English or Japanese are both fine (日本語でも大丈夫です).
+        A change that needs a design discussion first is better started in [Discussions](https://github.com/crftwr/keyhac/discussions).
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you want to do
+      description: The task you are trying to get done, not only the feature you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today
+      description: In Keyhac (config.py, an action), with another tool (AutoHotkey, Karabiner-Elements, PowerToys, …), or by hand.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like Keyhac to do
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Could config.py or an action already do it?
+      description: Much can be written in `config.py`, or as an action an AI assistant writes through the MCP server.
+      options:
+        - Not sure
+        - No — it needs a change in Keyhac itself
+        - Partly — I have code that gets close (paste or link below)
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Both
+        - Windows
+        - macOS
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, links, a gist with your config.py code.

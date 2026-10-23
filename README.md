@@ -174,7 +174,10 @@ only), `--config PATH` uses an alternate config file (its data files live beside
 
 ## Contact & Support
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/keyhac/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/crftwr/keyhac/issues/new/choose)
+- **GitHub Discussions**: [Questions, ideas, and configs or actions to share](https://github.com/crftwr/keyhac/discussions)
+- **Security problems**: report privately — see [SECURITY.md](SECURITY.md)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **PyPI**: [pypi.org/project/keyhac](https://pypi.org/project/keyhac/) — released versions
 - **Author's X (Twitter)**: [@crftwr](https://x.com/crftwr)
 

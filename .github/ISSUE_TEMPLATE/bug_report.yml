@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Keyhac does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. English or Japanese are both fine (日本語でも大丈夫です).
+        Reports about Keyhac for Windows 1.x or Keyhac for macOS 1.x go to their own repositories; this one is Keyhac 2.
+  - type: input
+    id: version
+    attributes:
+      label: Keyhac version
+      description: "The first line of the console (**Open Console** in the tray / menu-bar icon): `Keyhac 2.x.y - …`"
+      placeholder: "2.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How Keyhac was installed
+      options:
+        - Microsoft Store (Windows)
+        - Zip from GitHub Releases (Windows)
+        - DMG from GitHub Releases (macOS)
+        - Homebrew cask (macOS)
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and keyboard
+      description: The OS version, and the keyboard layout if keys are involved (US, JIS, …).
+      placeholder: "macOS 26.1, JIS keyboard / Windows 11 26H2, US keyboard"
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Application involved
+      description: The app (and version) the keys or the action were aimed at, if any.
+      placeholder: "Google Chrome 141 / VS Code 1.105 / Excel"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, step by step, and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: The relevant part of config.py
+      description: The smallest piece of `~/.keyhac/config.py` that shows the problem. Remove anything private.
+      render: python
+  - type: textarea
+    id: log
+    attributes:
+      label: Console output
+      description: "Errors and log lines from the console around the problem (a screenshot is fine). Starting with `python -m keyhac -d` from source gives debug logging."
+      render: text
+  - type: checkboxes
+    id: ai
+    attributes:
+      label: AI integration
+      options:
+        - label: The problem involves the MCP server or an AI-authored action (Setup Guide, an MCP client, an action written through it).
