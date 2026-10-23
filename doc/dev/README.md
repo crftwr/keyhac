@@ -22,5 +22,8 @@ people working on Keyhac itself.
   they target, the five layers, the output-side primitives, MCP topologies,
   measured platform behaviour, and trace privacy. Open work on it is tracked in
   the GitHub issues under the `ai-integration` label.
+- [TRANSLATION.md](TRANSLATION.md) — the Japanese translations of the user
+  docs: file layout, the Pages language switcher, `make check-docs`, style and
+  glossary.
 
 The project guide for coding agents is [CLAUDE.md](../../CLAUDE.md) at the repo root.

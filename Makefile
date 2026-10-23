@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check skill-bundle qa \
+        api-reference api-reference-check check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -94,6 +94,8 @@ help:
 	@echo "                             quit your own Keyhac first"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
+	@echo "  make check-docs  - check the Japanese doc translations (missing, stale, links)"
+	@echo "  make fix-docs    - point translations' links at other translations, then check"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
 	@echo "  make clean-venv  - remove the virtualenv"
 	@echo ""
@@ -261,6 +263,15 @@ api-reference: $(VENV_STAMP)
 api-reference-check: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
 	$(VENV_PYTHON) tools/generate_api_reference.py --check
+
+# The Japanese translations of README.md and doc/*.md (#283): missing, stale,
+# or linking to an English page that has a translation. See
+# doc/dev/TRANSLATION.md.
+check-docs: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/check_translations.py
+
+fix-docs: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/check_translations.py --fix
 
 # `clean` sweeps everything a plain `make` rebuilds from the checkout — the
 # Python build tree plus both app-bundle build dirs. Kept out on purpose

@@ -1,19 +1,44 @@
+{%- comment -%}
+  Language (#283): a page is Japanese when its source ends in ".ja.md" — the
+  translations carry no front matter, which GitHub would render as a table.
+  Its counterpart is the same path with ".ja" added or taken away, linked in
+  the header only when that page exists. README.md and README.ja.md are the
+  two top pages.
+{%- endcomment -%}
+{%- assign is_ja = false -%}
+{%- assign path_tail = page.path | slice: -6, 6 -%}
+{%- if path_tail == ".ja.md" -%}{%- assign is_ja = true -%}{%- endif -%}
+{%- if is_ja -%}
+  {%- assign alt_path = page.path | remove: ".ja.md" | append: ".md" -%}
+{%- else -%}
+  {%- assign alt_path = page.path | remove: ".md" | append: ".ja.md" -%}
+{%- endif -%}
+{%- assign alt_page = site.pages | where: "path", alt_path | first -%}
+{%- assign is_home = false -%}
+{%- if page.url == "/" or page.path == "README.ja.md" -%}{%- assign is_home = true -%}{%- endif -%}
+{%- if is_ja -%}
+  {%- assign home_url = '/README.ja.html' | relative_url -%}
+  {%- assign description = site.description_ja | default: site.description -%}
+{%- else -%}
+  {%- assign home_url = '/' | relative_url -%}
+  {%- assign description = site.description -%}
+{%- endif -%}
 <!DOCTYPE html>
-<html lang="{{ site.lang | default: 'en-US' }}">
+<html lang="{% if is_ja %}ja{% else %}en{% endif %}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  {% if page.title and page.url != "/" %}
+  {% if page.title and is_home == false %}
   <title>{{ page.title | escape }} | {{ site.title | escape }}</title>
   {% else %}
   <title>{{ site.title | escape }}</title>
   {% endif %}
-  {% if site.description %}
-  <meta name="description" content="{{ site.description | escape }}">
-  <meta property="og:description" content="{{ site.description | escape }}">
+  {% if description %}
+  <meta name="description" content="{{ description | escape }}">
+  <meta property="og:description" content="{{ description | escape }}">
   {% endif %}
   <meta property="og:site_name" content="{{ site.title | escape }}">
-  {% if page.title and page.url != "/" %}
+  {% if page.title and is_home == false %}
   <meta property="og:title" content="{{ page.title | escape }}">
   {% else %}
   <meta property="og:title" content="{{ site.title | escape }}">
@@ -25,22 +50,60 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Keyhac &mdash; Python-scriptable keyboard customization for Windows and macOS">
   <meta name="twitter:card" content="summary_large_image">
+  {% if alt_page %}
+  {% if is_ja %}
+  <link rel="alternate" hreflang="en" href="{{ alt_page.url | absolute_url }}">
+  <link rel="alternate" hreflang="ja" href="{{ page.url | absolute_url }}">
+  <link rel="alternate" hreflang="x-default" href="{{ alt_page.url | absolute_url }}">
+  {% else %}
+  <link rel="alternate" hreflang="en" href="{{ page.url | absolute_url }}">
+  <link rel="alternate" hreflang="ja" href="{{ alt_page.url | absolute_url }}">
+  <link rel="alternate" hreflang="x-default" href="{{ page.url | absolute_url }}">
+  {% endif %}
+  {% endif %}
+  {% if page.url == "/" and alt_page %}
+  <script>
+    // The English top page sends a visitor who prefers Japanese to
+    // README.ja.html. A language picked in the header switcher wins over
+    // navigator.languages from then on. Only the top page redirects, so a
+    // link to any other page keeps the language it was shared in.
+    (function () {
+      var lang = null;
+      try { lang = localStorage.getItem('keyhac-lang'); } catch (e) {}
+      if (!lang) {
+        var prefs = navigator.languages || [navigator.language || ''];
+        for (var i = 0; i < prefs.length; i++) {
+          var primary = String(prefs[i]).toLowerCase().split('-')[0];
+          if (primary === 'ja' || primary === 'en') { lang = primary; break; }
+        }
+      }
+      if (lang === 'ja') location.replace('{{ alt_page.url | relative_url }}' + location.hash);
+    })();
+  </script>
+  {% endif %}
   <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
 </head>
 <body>
   <div class="container-lg px-3 my-5 markdown-body">
     <header class="d-flex flex-justify-between mb-4 f5">
       <span>
-        {% unless page.url == "/" %}
-        <a href="{{ '/' | relative_url }}">&larr; {{ site.title | escape }}</a>
+        {% unless is_home %}
+        <a href="{{ home_url }}">&larr; {{ site.title | escape }}</a>
         {% endunless %}
       </span>
       <span>
+        {% if alt_page %}
+        {% if is_ja %}
+        <a href="{{ alt_page.url | relative_url }}" hreflang="en" lang="en" data-lang="en">English</a> | <strong>日本語</strong> &middot;
+        {% else %}
+        <strong>English</strong> | <a href="{{ alt_page.url | relative_url }}" hreflang="ja" lang="ja" data-lang="ja">日本語</a> &middot;
+        {% endif %}
+        {% endif %}
         <a href="{{ site.github.repository_url }}">{{ site.github.repository_nwo }} on GitHub</a> &middot;
         <a href="https://sites.google.com/site/craftware/">craftware</a>
       </span>
     </header>
-    {% if page.url == "/" %}
+    {% if is_home %}
     <p><img src="{{ '/doc/images/banner.jpg' | relative_url }}" alt="Keyhac &mdash; Python-scriptable keyboard customization for Windows and macOS" width="100%"></p>
     {% endif %}
     {{ content }}
@@ -49,5 +112,22 @@
       <a href="https://sites.google.com/site/craftware/">craftware</a>
     </footer>
   </div>
+  {% if alt_page %}
+  <script>
+    // A translated pair carries an "English | 日本語" line under its title,
+    // the only switcher GitHub can show. The header has one here, so drop it.
+    document.querySelectorAll('.markdown-body > p').forEach(function (el) {
+      if (el.textContent.trim() === 'English | 日本語') el.remove();
+    });
+
+    // Picking a language in the header switcher is remembered, and wins over
+    // the browser's language on the top page's next visit.
+    document.querySelectorAll('header a[data-lang]').forEach(function (a) {
+      a.addEventListener('click', function () {
+        try { localStorage.setItem('keyhac-lang', a.getAttribute('data-lang')); } catch (e) {}
+      });
+    });
+  </script>
+  {% endif %}
 </body>
 </html>

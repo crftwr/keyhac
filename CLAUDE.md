@@ -94,6 +94,14 @@ tools/         # icon pipeline, Pages banner render, release scripts, hook_echo 
   (hook callbacks, wiring called by `main()`) carry a `lazydocs: ignore` line;
   `tools/generate_api_reference.py` explains the rules, including which
   docstring shapes lazydocs reads structurally.
+- **Japanese translations**: `README.md` and the user docs in `doc/*.md` have
+  Japanese translations next to them as `.ja.md` — not `doc/dev/`, and not the
+  generated `doc/config-api.md` / `doc/action-api.md`. English is the source.
+  When a page with a `.ja.md` changes, update the `.ja.md` **in the same
+  commit**; a new user doc gets one too. Links in a `.ja.md` point to the other
+  page's `.ja.md` where one exists (`make fix-docs` does it). Style rules and
+  the glossary are in [doc/dev/TRANSLATION.md](doc/dev/TRANSLATION.md); run
+  `make check-docs` before committing doc changes.
 - Tests: pytest (`.venv/bin/python -m pytest`). The engine is tested with scripted
   fakes (no OS needed); UI against PuiKit's `MemoryBackend`; live platform tests and
   harness patterns are described in [doc/dev/testing.md](doc/dev/testing.md).
