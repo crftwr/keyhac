@@ -1,5 +1,7 @@
 # AI Integration
 
+English \| [日本語](ai-integration.ja.md)
+
 > ## Give this page's URL to your AI agent
 >
 > Ask it to set up Keyhac's skill and MCP server, and it can do most of it

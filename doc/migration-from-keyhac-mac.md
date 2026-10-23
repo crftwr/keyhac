@@ -1,5 +1,7 @@
 # Migrating a keyhac-mac config.py to Keyhac 2
 
+English \| [日本語](migration-from-keyhac-mac.ja.md)
+
 ## Installing over 1.x
 
 Keyhac 2 ships under its own application identity (`crftwr.Keyhac2`), so macOS treats it

@@ -1,5 +1,7 @@
 # Installation
 
+English \| [日本語](installation.ja.md)
+
 ## Requirements
 
 - **macOS 12 or later**, or

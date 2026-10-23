@@ -1,5 +1,9 @@
 # Keyhac 2
 
+<!-- pypi-exclude-start -->
+English \| [日本語](README.ja.md)
+<!-- pypi-exclude-end -->
+
 Python-scriptable keyboard customization for **Windows and macOS**.
 
 Keyhac installs a system-wide keyboard hook and lets you script what your keys do in

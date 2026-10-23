@@ -1,6 +1,7 @@
 theme: jekyll-theme-primer
 title: "Keyhac"
 description: "Python-scriptable keyboard customization for Windows and macOS"
+description_ja: "Python でスクリプトできるキーボードカスタマイズ — Windows・macOS 対応"
 
 # doc/config-py-template.md renders the config template (keyhac/_config.py) as a
 # syntax-highlighted page. include_relative cannot reach ../keyhac from doc/,

@@ -1,5 +1,7 @@
 # Configuration
 
+English \| [日本語](configuration.ja.md)
+
 Keyhac is configured with one Python file: `~/.keyhac/config.py` (or, in Windows
 [portable mode](installation.md#portable-mode-windows), the `config.py` sitting next
 to `Keyhac.exe`). On first run it is
