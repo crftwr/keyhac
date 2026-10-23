@@ -1,5 +1,7 @@
 # Migrating a Keyhac-for-Windows (1.x) config.py to Keyhac 2
 
+English \| [日本語](migration-from-keyhac-win.ja.md)
+
 Keyhac 2 adopts the modernized snake_case API (introduced by Keyhac for macOS) rather
 than the 1.x camelCase one, and there is no compatibility shim — a 1.x config needs a
 translation pass. The pass is mechanical: the concepts are the same, most names map
