@@ -1096,6 +1096,7 @@ class UI:
 
         lazydocs: ignore
         """
+        from keyhac.core.uitree import StaleElement
         from keyhac.core.wait import (WaitTimeout, wait_for,
                                       _refuse_to_block_the_loop)
 
@@ -1121,7 +1122,16 @@ class UI:
             if given is not None:
                 self._hold(given, deadline, what)
             if attempts and recheck is not None:
-                recheck(attempts)
+                try:
+                    recheck(attempts)
+                except StaleElement as stale:
+                    # A navigation button removes itself as the act succeeds,
+                    # so a gone target can be the success signal. Check the
+                    # postcondition once more before calling it a failure (issue #285).
+                    try:
+                        return wait_for(holds, timeout=0.0, message=str(until))
+                    except WaitTimeout:
+                        raise stale
             act()
             attempts += 1
             window = min(retry_interval, deadline - time.monotonic())

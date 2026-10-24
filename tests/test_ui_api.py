@@ -572,6 +572,32 @@ class TestVerbs:
         assert button.pressed == 1
         assert "after 1 attempt" in str(error.value)
 
+    def test_a_gone_target_that_satisfied_the_postcondition_is_success(
+            self, ui, monkeypatch):
+        """A navigation button removes itself as the click succeeds. If the
+        recheck finds it gone, the postcondition may already hold - then the
+        act landed and there is nothing to retry or to report (issue #285)."""
+        from keyhac import StaleElement
+
+        api, element = ui
+        button = element.kids[0]
+        state = {"gone": False}
+
+        def press(name):
+            button.pressed += 1
+            element.kids.remove(button)
+        button.perform_action = press
+
+        def still_there(*args, **kwargs):
+            state["gone"] = True
+            raise StaleElement("the navigation button removed itself")
+
+        monkeypatch.setattr(api, "_still_there", still_there)
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: state["gone"],
+                  timeout=1.0, retry_interval=0.05)
+        assert button.pressed == 1
+
     def test_a_retry_presses_the_control_found_again(self, ui):
         """The old reference is not trusted even while the locator still
         matches: an inert element can answer through it. What is found now
