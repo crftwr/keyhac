@@ -139,6 +139,14 @@ that greys its button while it works is not submitted twice. When `until` never
 holds, the `WaitTimeout` says the press went in, which points at the
 postcondition rather than at the press. A control that reads disabled before
 *and* after (Safari's open panel does) is not evidence, and is retried as usual.
+
+**A control that stays enabled is pressed again.** Taken but slow looks exactly
+like taken and ignored: the same control, still enabled, `until` not yet true.
+`click` retries, because ignored presses are the reason it retries at all. So
+when a second press would do harm, set `retry_interval` longer than the result
+takes to show, or pass no `until` — one press — and wait for the result in a
+`wait()` of its own.
+
 When a "did not take" says something else was in front of the control, the
 repair is whatever is covering it — a toast, a banner, a popover — not the
 locator.
