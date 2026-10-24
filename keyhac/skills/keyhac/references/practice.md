@@ -121,12 +121,17 @@ get the retry; say nothing and you get one attempt.
 
 **A retry stops when the target has gone.** Before every attempt after the
 first, `click`, `fill` and `scroll` look for the target again, and act on what
-they find *now*. If it is no longer there — the press opened a dialog, and a
-modal makes the page behind it unreachable — they raise `StaleElement` without
-acting again, rather than timing out with "did not take". Catch it apart from
-`WaitTimeout`: the screen moved, which is a different repair from an act that
-never landed. A locator can be looked for again; a `node=` can only be asked
-whether its own reference has died, so pass a locator where there is one.
+they find *now* — provided it is the same element. If it is no longer there, or
+the locator now finds a different element (a re-rendered button, the next
+wizard step's own "Next"), they do not act again, and keep watching `until` for
+the rest of the timeout: a control the act itself took away — a wizard's
+"Next", gone with the page it was on — is a success once the next page arrives,
+so write no `except StaleElement` for it. Only when `until` never holds — the
+press opened a dialog, and a modal makes the page behind it unreachable — do
+they raise `StaleElement`, rather than timing out with "did not take". Catch it
+apart from `WaitTimeout`: the screen moved, which is a different repair from an
+act that never landed. A locator can be looked for again; a `node=` can only be
+asked whether its own reference has died, so pass a locator where there is one.
 
 **A press without `until` returns when it has pressed, not when the screen has
 answered** — and reading right after it reads the screen from before. Measured

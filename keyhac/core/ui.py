@@ -675,8 +675,13 @@ class UI:
             WaitTimeout: The target never appeared, or the postcondition never
                 held.
             StaleElement: The target was there and had gone by the time it was
-                pressed - including between one attempt and the next, when
-                nothing more is pressed.
+                pressed - including between one attempt and the next, or
+                replaced there by a different element matching the same
+                locator (a re-rendered button, the next step's "Next"). Then
+                nothing more is pressed and `until` is watched for the rest of
+                the timeout. A control the press itself took away, such as a
+                wizard's "Next", is therefore a success once `until` holds;
+                this is raised only when it never does.
         """
         from keyhac.core.act import act_on
 
@@ -799,7 +804,8 @@ class UI:
             FillFailed: Every mechanism was tried and the value did not stick.
             WaitTimeout: The field never appeared, or `until` never held.
             StaleElement: The field had gone by the time it was written, or
-                between one attempt and the next.
+                between one attempt and the next and `until` never held by
+                the timeout.
         """
         target = self._target(locator, within, node, timeout)
         target.reread()
@@ -856,7 +862,8 @@ class UI:
         Raises:
             WaitTimeout: It never showed up.
             StaleElement: The view named by `locator` or `node` had gone
-                between one turn and the next.
+                between one turn and the next, and `until` never held by the
+                timeout.
         """
         from keyhac.core.act import scroll as turn
 
@@ -1000,22 +1007,38 @@ class UI:
         retrying has already gone out, so whatever replaced the target is
         in front of the next one.
 
+        **Finding a different element is not finding it** (issue #285). The
+        locator says what to look for, not which one: every step of a wizard
+        has a "Next", and the next step's can be on the screen before
+        anything `until` would recognise. Pressing it is a step skipped and
+        nothing raised. A control the press re-rendered is a different
+        element too, and is not pressed again for the same reason - stopping
+        there is the cost, and it is the one that says so. A platform that
+        cannot say whether two references are one element is not a yes.
+
         lazydocs: ignore
         """
         from keyhac.core.uitree import StaleElement
 
+        plural = 's' if attempts != 1 else ''
         if locator is not None:
             scope = within if within is not None else self.window()
             found = (scope.find(**locator.criteria())
                      if scope is not None else None)
             if found is not None:
-                return found
+                same = getattr(found.element, "same_element", None)
+                if same is not None and same(node.element):
+                    return found
+                raise StaleElement(
+                    f"{what} stopped: what the locator found after {attempts} "
+                    f"attempt{plural} was not the element acted on, so it was "
+                    f"not acted on again - the screen has moved")
         elif not Gone(node).check(self):
             return node
         raise StaleElement(
             f"{what} stopped: the target was gone after {attempts} "
-            f"attempt{'s' if attempts != 1 else ''}, so it was not acted on "
-            f"again - something else is in front of it now")
+            f"attempt{plural}, so it was not acted on again - something else "
+            f"is in front of it now")
 
     def send_key(self, keys: str,
                  given: Condition | Callable[[], Any] = None,
@@ -1065,8 +1088,11 @@ class UI:
 
             deadline = now + timeout
             repeat:
+                if until() holds: return it         # not before the first
                 wait for given()                    # the gate
-                recheck()                           # not before the first
+                recheck()                           # not before the first;
+                                                    # gone: watch until() to
+                                                    # the deadline, act no more
                 act()                               # the one costly line
                 watch until() for retry_interval       # or until the deadline
                 if it held: return what it held with
@@ -1092,10 +1118,14 @@ class UI:
         with the number of attempts already made, before every attempt but
         the first, and expected to raise `StaleElement` when what the verb
         is acting on has gone. It raises rather than waits, which is what
-        keeps "the target went away" apart from "the act did not take".
+        keeps "the target went away" apart from "the act did not take". The
+        raise is not the verdict, though (issue #285): a control the act
+        itself removed is gone too, so the loop watches the postcondition for
+        the rest of the timeout, pressing nothing, before passing it on.
 
         lazydocs: ignore
         """
+        from keyhac.core.uitree import StaleElement
         from keyhac.core.wait import (WaitTimeout, wait_for,
                                       _refuse_to_block_the_loop)
 
@@ -1118,10 +1148,24 @@ class UI:
         holds = check or (lambda: until.check(self))
         attempts = 0
         while True:
+            if attempts:
+                # The last act may have landed after the watch ended - a
+                # transition slower than retry_interval - and acting again
+                # then is the double-act the watch exists to avoid (#285).
+                try:
+                    return wait_for(holds, timeout=0.0, message=str(until))
+                except WaitTimeout:
+                    pass
             if given is not None:
                 self._hold(given, deadline, what)
             if attempts and recheck is not None:
-                recheck(attempts)
+                try:
+                    recheck(attempts)
+                except StaleElement as stale:
+                    # Not acted on again, but not a failure yet: a control
+                    # that removes itself when the act succeeds is gone
+                    # before the screen it leads to has finished arriving.
+                    return self._after_gone(holds, until, deadline, stale)
             act()
             attempts += 1
             window = min(retry_interval, deadline - time.monotonic())
@@ -1134,6 +1178,27 @@ class UI:
                 raise WaitTimeout(
                     f"{what} did not take: waited {timeout:.0f}s for "
                     f"{until} over {attempts} attempts")
+
+    def _after_gone(self, holds, until, deadline: float, stale):
+        """Watch the postcondition for the rest of the timeout once the
+        target has gone, and fail as StaleElement only if it never holds.
+
+        A gone target is ambiguous: a modal took its place, or the act worked
+        and took the control away with the screen it was on. Only the
+        postcondition tells them apart, and the second one's next screen can
+        take longer than `retry_interval` to arrive. Waiting costs nothing in
+        presses - none is sent from here - only the time to report the first.
+
+        lazydocs: ignore
+        """
+        from keyhac.core.uitree import StaleElement
+        from keyhac.core.wait import WaitTimeout, wait_for
+
+        try:
+            return wait_for(holds, timeout=max(deadline - time.monotonic(), 0.0),
+                            message=str(until))
+        except WaitTimeout:
+            raise StaleElement(f"{stale}, and {until} never held") from None
 
     def _hold(self, given, deadline: float, what: str):
         """Wait for a precondition, and fail as a precondition.

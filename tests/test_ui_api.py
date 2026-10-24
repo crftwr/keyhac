@@ -37,6 +37,9 @@ class FakeElement:
     def identity_key(self):
         return self._key
 
+    def same_element(self, other):
+        return getattr(other, "_key", None) == self._key
+
     def get_text(self):
         return self._text
 
@@ -568,14 +571,78 @@ class TestVerbs:
 
         with pytest.raises(StaleElement) as error:
             api.click(api.Locator(role="AXButton", name="Save"),
-                      until=lambda: False, timeout=2.0, retry_interval=0.05)
+                      until=lambda: False, timeout=0.5, retry_interval=0.05)
         assert button.pressed == 1
         assert "after 1 attempt" in str(error.value)
+        assert "never held" in str(error.value)
+
+    def test_a_control_the_act_removed_is_success_when_the_screen_arrives(
+            self, ui):
+        """Issue #285: a wizard's Next removes itself as the page advances,
+        and the next page can take longer than retry_interval to arrive. The
+        gone target is not the verdict - the postcondition is - and nothing
+        is pressed while it is awaited."""
+        api, element = ui
+        button = element.kids[0]
+        pressed_at = []
+
+        def press(name):
+            button.pressed += 1
+            pressed_at.append(time.monotonic())
+            element.kids.remove(button)
+        button.perform_action = press
+
+        arrived = api.click(
+            api.Locator(role="AXButton", name="Save"),
+            until=lambda: pressed_at and time.monotonic() - pressed_at[0] > 0.3,
+            timeout=2.0, retry_interval=0.05)
+        assert arrived
+        assert button.pressed == 1
+
+    def test_an_act_that_landed_after_the_watch_is_not_repeated(
+            self, ui, monkeypatch):
+        """The postcondition is looked at once more before pressing again: a
+        transition slower than retry_interval has landed by then, and a second
+        press is a second step through a wizard whose next page has a "Next"
+        of its own."""
+        import keyhac.core.wait as wait
+
+        api, element = ui
+        button = element.kids[0]
+        watched = {"out": False}
+        real = wait.wait_for
+
+        def wait_for(condition, timeout=wait.DEFAULT_TIMEOUT, **kwargs):
+            try:
+                return real(condition, timeout=timeout, **kwargs)
+            except WaitTimeout:
+                watched["out"] = True         # the screen arrives just after
+                raise
+        monkeypatch.setattr(wait, "wait_for", wait_for)
+
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: watched["out"],
+                  timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 1
 
     def test_a_retry_presses_the_control_found_again(self, ui):
         """The old reference is not trusted even while the locator still
         matches: an inert element can answer through it. What is found now
-        is what is pressed now."""
+        is what is pressed now - as long as it is the same element."""
+        api, element = ui
+        button = element.kids[0]
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: button.pressed >= 2,
+                  timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 2
+
+    def test_a_control_replaced_under_the_press_is_not_pressed_again(
+            self, ui):
+        """Issue #285: the locator says what to look for, not which one. A
+        re-rendered button and the next wizard step's "Next" are both a
+        different element, and pressing either is not a retry."""
+        from keyhac import StaleElement
+
         api, element = ui
         old = element.kids[0]
         fresh = FakeElement("AXButton", name="Save", identifier="save",
@@ -586,10 +653,33 @@ class TestVerbs:
             element.kids[0] = fresh           # re-rendered under the press
         old.perform_action = press
 
-        api.click(api.Locator(role="AXButton", name="Save"),
-                  until=lambda: fresh.pressed >= 1,
-                  timeout=2.0, retry_interval=0.05)
-        assert (old.pressed, fresh.pressed) == (1, 1)
+        with pytest.raises(StaleElement) as error:
+            api.click(api.Locator(role="AXButton", name="Save"),
+                      until=lambda: False, timeout=0.5, retry_interval=0.05)
+        assert (old.pressed, fresh.pressed) == (1, 0)
+        assert "not the element acted on" in str(error.value)
+
+    def test_the_next_steps_next_is_not_pressed_before_its_heading(self, ui):
+        """The step skipped without anything raised: the next page's "Next"
+        is on the screen before the heading `until` waits for."""
+        api, element = ui
+        old = element.kids[0]
+        fresh = FakeElement("AXButton", name="Save", identifier="save",
+                            key="b2")
+        heading = FakeElement("AXHeading", name="Step 2", key="h2")
+
+        def press(name):
+            old.pressed += 1
+            element.kids[0] = fresh
+            threading.Timer(0.3, element.kids.append, (heading,)).start()
+        old.perform_action = press
+
+        found = api.click(
+            api.Locator(role="AXButton", name="Save"),
+            until=api.Appears(api.Locator(role="AXHeading", name="Step 2")),
+            timeout=2.0, retry_interval=0.05)
+        assert found.name == "Step 2"
+        assert (old.pressed, fresh.pressed) == (1, 0)
 
     def test_a_held_node_that_died_between_attempts_is_not_pressed_again(
             self, ui):
@@ -602,7 +692,7 @@ class TestVerbs:
         button.is_stale = lambda: button.pressed > 0
         with pytest.raises(StaleElement):
             api.click(node=api.node(button), until=lambda: False,
-                      timeout=2.0, retry_interval=0.05)
+                      timeout=0.5, retry_interval=0.05)
         assert button.pressed == 1
 
     def test_a_field_gone_between_writes_is_not_written_again(
@@ -618,7 +708,7 @@ class TestVerbs:
         monkeypatch.setattr(UINode, "set_text", set_text)
         with pytest.raises(StaleElement):
             api.fill("x", api.Locator(role="AXTextArea", name="Body"),
-                     until=lambda: False, timeout=2.0, retry_interval=0.05)
+                     until=lambda: False, timeout=0.5, retry_interval=0.05)
         assert writes == ["x"]
 
     def test_appears_hands_back_what_it_found(self, ui):
