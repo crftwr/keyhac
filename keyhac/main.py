@@ -24,6 +24,11 @@ WEBSITE_URL = "https://crftwr.github.io/keyhac/"
 
 
 def main() -> int:
+    # Before anything can open a connection, `keyhac deps` included (its pip
+    # download): HTTPS is verified by the OS on macOS and Windows (keyhac/tls.py).
+    from keyhac.tls import use_os_trust_store
+    use_os_trust_store()
+
     # `keyhac deps sync|status` - the packages ~/.keyhac/requirements.txt
     # declares. Before everything below: it starts no hook and no window, and
     # runs beside a Keyhac that is already running.

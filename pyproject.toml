@@ -72,6 +72,13 @@ dependencies = [
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
+    # HTTPS verified by the OS - Security.framework on macOS, CryptoAPI on
+    # Windows - instead of OpenSSL against a static PEM file, so a revoked
+    # certificate is refused and Keychain / certificate-store roots are
+    # trusted (issue #279, keyhac/tls.py). Keyhac.app's python.org Python
+    # otherwise looks for a CA file outside the app, missing on a Mac without
+    # that Python. Pure Python on ctypes.
+    'truststore>=0.10; sys_platform == "darwin" or sys_platform == "win32"',
     # Romaji-finds-Japanese filtering in the chooser (issue #106).  Pinned
     # rather than floated: keyhac/core/migemo.py carries a runtime patch for a
     # dictionary bug in 0.0.1 that reaches into the package's internals, so a

@@ -116,6 +116,32 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
   2.0.0, and the two versions could never coexist anyway (shared `~/.keyhac`).
   `BUNDLE_ID=` still overrides, for local experiments.
 
+## HTTPS verification: the OS, not a PEM file (#279)
+
+Python's `ssl` verifies with OpenSSL against a static CA file and checks no
+revocation. Keyhac.app's python.org `Python.framework` looks for that file at
+`/Library/Frameworks/Python.framework/Versions/3.14/etc/openssl/cert.pem`,
+outside the app: missing on a Mac without python.org's Python
+(`CERTIFICATE_VERIFY_FAILED`), and that installation's `certifi` on a Mac with
+it. The framework's own `site-packages/certifi`, copied in with it, is as old
+as the build machine's. Neither, nor `/etc/ssl/cert.pem`, refused the
+revoked eMudhra intermediates (October 2026).
+
+So `main()` calls `keyhac.tls.use_os_trust_store()` before anything else, `keyhac
+deps` included: `truststore.inject_into_ssl()` on `darwin` and `win32`, which
+replaces `ssl.SSLContext` process-wide. `urllib`, `requests` and anything else
+that builds a context afterwards verify through Security.framework / CryptoAPI:
+revocation is checked, and Keychain or certificate-store roots (corporate
+proxies, MDM) are trusted. A context built *before* the call keeps OpenSSL -
+`urllib.request.urlopen` caches its opener on first use - which is why it is
+the first thing `main()` does. On Windows it also covers the roots Windows has
+not fetched yet, which OpenSSL reading the store would not see.
+
+`truststore` is a marker-gated `[project]` dependency, so both bundles collect
+it; if it is missing (an old pip install), Keyhac logs a warning and keeps
+OpenSSL. A synced package's own `truststore` is pruned like any other
+distribution Keyhac already provides.
+
 ## Shared tooling
 
 - `tools/collect_dependencies.py` — runtime closure of pyproject.toml's
