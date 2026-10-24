@@ -447,6 +447,42 @@ class Stable(Condition):
         return f"{where!r} to stop changing for {self.quiet}s"
 
 
+class _Landed(Exception):
+    """A recheck's evidence that the last act went in: whatever it says is
+    why. Raised like StaleElement and answered the same way - nothing more is
+    sent, and the postcondition is watched for the rest of the timeout - but
+    it fails as a WaitTimeout, because the target is still there."""
+
+
+def _enabled(element) -> bool | None:
+    """Whether the platform says `element` can be used, or None when it does
+    not say. Not `sources._enabled_from`, which counts unknown as enabled for
+    a list that must not empty itself: here unknown has to stay unknown."""
+    from keyhac.core.sources import _read
+
+    values = _read(element, ("AXEnabled", "IsEnabled"))
+    for attribute in ("AXEnabled", "IsEnabled"):
+        value = values.get(attribute)
+        if value is not None:
+            return bool(value)
+    return None
+
+
+def _why_not(blocks) -> str:
+    """What a "did not take" adds when the ladder said why: a control that
+    something else was in front of is a different repair - close the toast,
+    scroll, dismiss the banner - from a press that was taken and ignored."""
+    covered = sum(1 for _acted, blocked in blocks if blocked == "covered")
+    nothing = sum(1 for acted, _blocked in blocks if not acted)
+    notes = []
+    if covered:
+        notes.append(f"something else was in front of it on {covered} of "
+                     f"them, so it was not clicked")
+    if nothing:
+        notes.append(f"nothing could act on it on {nothing}")
+    return " - " + "; ".join(notes) if notes else ""
+
+
 class UI:
     """The action-facing view of the desktop.  Reached as `keymap.ui`."""
 
@@ -673,7 +709,10 @@ class UI:
 
         Raises:
             WaitTimeout: The target never appeared, or the postcondition never
-                held.
+                held. The message says when something else was in front of
+                the control, and when the control went disabled under a press
+                - it went in, and was not pressed again while `until` was
+                watched for the rest of the timeout.
             StaleElement: The target was there and had gone by the time it was
                 pressed - including between one attempt and the next, or
                 replaced there by a different element matching the same
@@ -692,12 +731,20 @@ class UI:
         target.reread()
         what = f"clicking {locator or target!r}"
         current = [target]
+        # What the target said just before the last press: a control that
+        # read enabled then and disabled now went busy under it (#285).
+        # Only the change counts - Safari's open panel reads its OK button
+        # disabled throughout, so a disabled reading alone proves nothing.
+        enabled = [None]
 
         def recheck(attempts):
             current[0] = self._still_there(locator, within, current[0], what,
                                            attempts)
+            if enabled[0] is True and _enabled(current[0].element) is False:
+                raise _Landed("the control turned disabled after the press")
 
         def act():
+            enabled[0] = _enabled(current[0].element)
             # On this thread (issue #173): the ladder reads geometry,
             # hit-tests and injects a click, and none of that needs the loop
             # - injection is thread-safe on both OSes, and the hit test never
@@ -1147,6 +1194,7 @@ class UI:
                 f"in given= or a wait() of its own.")
         holds = check or (lambda: until.check(self))
         attempts = 0
+        blocks = []
         while True:
             if attempts:
                 # The last act may have landed after the watch ended - a
@@ -1165,9 +1213,20 @@ class UI:
                     # Not acted on again, but not a failure yet: a control
                     # that removes itself when the act succeeds is gone
                     # before the screen it leads to has finished arriving.
-                    return self._after_gone(holds, until, deadline, stale)
-            act()
+                    return self._watch_out(holds, until, deadline, StaleElement(
+                        f"{stale}, and {until} never held"))
+                except _Landed as landed:
+                    return self._watch_out(holds, until, deadline, WaitTimeout(
+                        f"{what} went in - {landed} - but {until} never held "
+                        f"within {timeout:.0f}s; it was not pressed again"))
+            outcome = act()
             attempts += 1
+            # The ladder's own account of the attempt (an `Acted`, from
+            # click): kept for the failure, which otherwise says "did not
+            # take" whether or not anything could take (#285).
+            blocked = getattr(outcome, "blocked", None)
+            if blocked is not None:
+                blocks.append((bool(outcome), blocked))
             window = min(retry_interval, deadline - time.monotonic())
             try:
                 return wait_for(holds, timeout=max(window, 0.0),
@@ -1177,28 +1236,29 @@ class UI:
             if time.monotonic() >= deadline:
                 raise WaitTimeout(
                     f"{what} did not take: waited {timeout:.0f}s for "
-                    f"{until} over {attempts} attempts")
+                    f"{until} over {attempts} attempts"
+                    + _why_not(blocks))
 
-    def _after_gone(self, holds, until, deadline: float, stale):
-        """Watch the postcondition for the rest of the timeout once the
-        target has gone, and fail as StaleElement only if it never holds.
+    def _watch_out(self, holds, until, deadline: float, failure: Exception):
+        """Watch the postcondition for the rest of the timeout once nothing
+        more is to be sent, and raise `failure` only if it never holds.
 
         A gone target is ambiguous: a modal took its place, or the act worked
-        and took the control away with the screen it was on. Only the
-        postcondition tells them apart, and the second one's next screen can
-        take longer than `retry_interval` to arrive. Waiting costs nothing in
-        presses - none is sent from here - only the time to report the first.
+        and took the control away with the screen it was on. A control gone
+        disabled is the act going in, with its result still on the way. Only
+        the postcondition settles either, and the screen it waits for can take
+        longer than `retry_interval` to arrive. Waiting costs nothing in
+        presses - none is sent from here - only the time to report a failure.
 
         lazydocs: ignore
         """
-        from keyhac.core.uitree import StaleElement
         from keyhac.core.wait import WaitTimeout, wait_for
 
         try:
             return wait_for(holds, timeout=max(deadline - time.monotonic(), 0.0),
                             message=str(until))
         except WaitTimeout:
-            raise StaleElement(f"{stale}, and {until} never held") from None
+            raise failure from None
 
     def _hold(self, given, deadline: float, what: str):
         """Wait for a precondition, and fail as a precondition.

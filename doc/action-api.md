@@ -259,7 +259,8 @@ ui.click(SAVE, within=dialog, until=ui.Appears(SAVE_PANEL))
 
 **Raises:**
  
- - <b>`WaitTimeout`</b>:  The target never appeared, or the postcondition never  held. 
+ - <b>`WaitTimeout`</b>:  The target never appeared, or the postcondition never  held. The message says when something else was in front of  the control, and when the control went disabled under a press 
+        - it went in, and was not pressed again while `until` was  watched for the rest of the timeout. 
  - <b>`StaleElement`</b>:  The target was there and had gone by the time it was  pressed - including between one attempt and the next, or  replaced there by a different element matching the same  locator (a re-rendered button, the next step's "Next"). Then  nothing more is pressed and `until` is watched for the rest of  the timeout. A control the press itself took away, such as a  wizard's "Next", is therefore a success once `until` holds;  this is raised only when it never does. 
 
 ---

@@ -681,6 +681,88 @@ class TestVerbs:
         assert found.name == "Step 2"
         assert (old.pressed, fresh.pressed) == (1, 0)
 
+    def test_a_control_gone_disabled_is_not_pressed_again(self, ui):
+        """Issue #285: a submit button that goes disabled under the press has
+        taken it, and its result is still on the way. Pressing it again when
+        it comes back is the double submit; the result is waited for."""
+        api, element = ui
+        button = element.kids[0]
+        state = {"enabled": True, "pressed_at": None}
+        button.get_attribute_value = (
+            lambda name: state["enabled"] if name == "AXEnabled" else None)
+
+        def press(name):
+            button.pressed += 1
+            state["enabled"] = False
+            state["pressed_at"] = time.monotonic()
+        button.perform_action = press
+
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: (state["pressed_at"] is not None and
+                                 time.monotonic() - state["pressed_at"] > 0.3),
+                  timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 1
+
+    def test_a_control_gone_disabled_fails_as_one_that_went_in(self, ui):
+        """Not StaleElement - the target is still there - and not "did not
+        take" either: it did, and what it led to never came."""
+        api, element = ui
+        button = element.kids[0]
+        state = {"enabled": True}
+        button.get_attribute_value = (
+            lambda name: state["enabled"] if name == "AXEnabled" else None)
+
+        def press(name):
+            button.pressed += 1
+            state["enabled"] = False
+        button.perform_action = press
+
+        with pytest.raises(WaitTimeout) as error:
+            api.click(api.Locator(role="AXButton", name="Save"),
+                      until=lambda: False, timeout=0.5, retry_interval=0.05)
+        assert button.pressed == 1
+        assert "turned disabled" in str(error.value)
+
+    def test_a_control_that_always_reads_disabled_is_still_retried(self, ui):
+        """Measured on Safari's open panel: the OK button reads disabled
+        before and after it works. Only the change is evidence."""
+        api, element = ui
+        button = element.kids[0]
+        button.get_attribute_value = (
+            lambda name: False if name == "AXEnabled" else None)
+        api.click(api.Locator(role="AXButton", name="Save"),
+                  until=lambda: button.pressed >= 2,
+                  timeout=2.0, retry_interval=0.05)
+        assert button.pressed == 2
+
+    def test_a_covered_control_says_so_when_it_does_not_take(
+            self, ui, monkeypatch):
+        """Something in front of the control is a different repair from a
+        press that was taken and ignored, so the failure says which."""
+        import keyhac.core.act as act
+        from keyhac.core.act import Acted
+
+        api, element = ui
+        monkeypatch.setattr(act, "act_on",
+                            lambda element: Acted("pressed", "covered"))
+        with pytest.raises(WaitTimeout) as error:
+            api.click(api.Locator(role="AXButton", name="Save"),
+                      until=lambda: False, timeout=0.3, retry_interval=0.05)
+        assert "something else was in front of it" in str(error.value)
+
+    def test_a_control_nothing_could_act_on_says_so(self, ui, monkeypatch):
+        import keyhac.core.act as act
+        from keyhac.core.act import Acted
+
+        api, element = ui
+        monkeypatch.setattr(act, "act_on",
+                            lambda element: Acted("", "offscreen"))
+        with pytest.raises(WaitTimeout) as error:
+            api.click(api.Locator(role="AXButton", name="Save"),
+                      until=lambda: False, timeout=0.3, retry_interval=0.05)
+        assert "nothing could act on it" in str(error.value)
+        assert "in front" not in str(error.value)
+
     def test_a_held_node_that_died_between_attempts_is_not_pressed_again(
             self, ui):
         """node= has no description to look for again, so it is asked what
