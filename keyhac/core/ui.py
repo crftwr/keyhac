@@ -472,12 +472,16 @@ def _why_not(blocks) -> str:
     """What a "did not take" adds when the ladder said why: a control that
     something else was in front of is a different repair - close the toast,
     scroll, dismiss the banner - from a press that was taken and ignored."""
-    covered = sum(1 for _acted, blocked in blocks if blocked == "covered")
+    covered = sum(1 for acted, blocked in blocks
+                  if acted and blocked == "covered")
     nothing = sum(1 for acted, _blocked in blocks if not acted)
     notes = []
     if covered:
+        # Measured on Chrome: a button under an overlay is not clicked, but
+        # the platform's press behind the click still reaches it.
         notes.append(f"something else was in front of it on {covered} of "
-                     f"them, so it was not clicked")
+                     f"them, so it was pressed through the platform rather "
+                     f"than clicked")
     if nothing:
         notes.append(f"nothing could act on it on {nothing}")
     return " - " + "; ".join(notes) if notes else ""
