@@ -18,20 +18,40 @@ what `make run` does - with two things added once the tray is up:
 
 On the way out the endpoint is stopped first, so mcp.json is removed rather
 than left naming a port nothing answers on.
+
+In a VM (qa/guest.py) there is no pipe to hold: Keyhac is started in the
+guest's desktop session by `open` or a scheduled task. There the runner sets
+KEYHAC_QA_QUIT_FILE, and the file appearing is "done".
 """
 
 import os
 import pathlib
 import sys
 import threading
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+#: The file whose appearance means "done", when there is no pipe to watch.
+QUIT_FILE = os.environ.get("KEYHAC_QA_QUIT_FILE")
+
 #: Taken before Keyhac starts: the console redirects the standard streams, and
 #: what is watched here is the pipe the runner holds, not whatever sys.stdin
-#: becomes.
-_RUNNER = os.dup(0)
+#: becomes. Not taken with a quit file: a scheduled task may have no stdin.
+_RUNNER = None if QUIT_FILE else os.dup(0)
+
+
+def _wait_for_the_runner() -> None:
+    if QUIT_FILE:
+        while not os.path.exists(QUIT_FILE):
+            time.sleep(0.5)
+        return
+    try:
+        while os.read(_RUNNER, 1024):
+            pass
+    except OSError:
+        pass
 
 
 def _arm(console, keymap) -> None:
@@ -51,11 +71,7 @@ def _arm(console, keymap) -> None:
         console.quit()
 
     def wait_for_the_runner():
-        try:
-            while os.read(_RUNNER, 1024):
-                pass
-        except OSError:
-            pass
+        _wait_for_the_runner()
         print("qa: runner done - quitting Keyhac", flush=True)
         on_main_thread(quit_keyhac)
 
@@ -63,12 +79,14 @@ def _arm(console, keymap) -> None:
                      name="qa-quit").start()
 
 
-def main() -> int:
-    import keyhac.ui.tray as tray
+def arm_at_tray(tray) -> None:
+    """Make keyhac.ui.tray's install_tray arm the endpoint once the tray is up.
 
-    # The last thing main() wires before the loop runs, and it is handed the
-    # console and the keymap - so the endpoint opens on a Keyhac that is
-    # otherwise exactly the one `make run` starts.
+    The last thing main() wires before the loop runs, and it is handed the
+    console and the keymap - so the endpoint opens on a Keyhac that is
+    otherwise exactly the one `make run` starts. Also called by the guest
+    bootstrap (qa/guest_boot/sitecustomize.py), where Keyhac.app runs main().
+    """
     install_tray = tray.install_tray
 
     def install_tray_and_arm(console, keymap, hook):
@@ -77,6 +95,11 @@ def main() -> int:
         return result
 
     tray.install_tray = install_tray_and_arm
+
+
+def main() -> int:
+    import keyhac.ui.tray as tray
+    arm_at_tray(tray)
 
     from keyhac.main import main as keyhac_main
     sys.argv = ["keyhac"] + sys.argv[1:]

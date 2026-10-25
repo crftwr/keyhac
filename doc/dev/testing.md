@@ -70,6 +70,33 @@ make qa CASE=11                        # attached; quit your own Keyhac first
 .venv/bin/quality-loop findings        # new / still there / gone / back
 ```
 
+**In a VM** (#271), the run's Keyhac is off this machine's keyboard and
+screen, and your own Keyhac can keep running. Set `KEYHAC_QA_GUEST` to an
+SSH host alias for the VM, and `KEYHAC_QA_SHARE` to a folder the VM shares,
+as `<host path>=<guest path>`. Optionally, set `KEYHAC_QA_GUEST_KEYHAC` to
+Keyhac in the guest.
+
+```
+KEYHAC_QA_GUEST=keyhac-mac \
+KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \
+make qa CASE=13
+```
+
+Claude stays on the host: the room, the operator, the evidence and
+`cleanroom/`. The run's home and a copy of this working tree go on the
+share. Keyhac is started in the guest's desktop session, and its endpoint is
+forwarded over SSH, so the host's own bridge reaches it. `qa/guest.py` has
+the details.
+
+- **macOS:** done for a Tart guest, with `tart run --dir=qa:<host path>`.
+  Keyhac.app runs the staged code, since the guest's Accessibility grant is
+  the app's.
+- **Windows:** wired but not run yet. The bundle's `runtime\python.exe` runs
+  it, from a scheduled task. VMware Tools for Windows on Arm has no Shared
+  Folders, so the share has to be SMB.
+- **Not yet:** screens still open on the host, so only scenarios with no
+  screen run in a VM for now.
+
 `qa/quality-loop.toml` names `qa/run.py` as the adapter for the
 `quality-loop` command. The **conductor skill**
 (`.claude/skills/quality-loop/`, installed and upgraded only by

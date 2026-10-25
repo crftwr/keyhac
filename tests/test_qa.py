@@ -226,3 +226,58 @@ def test_a_run_s_home_is_its_own_and_only_made_when_a_run_needs_it():
         assert stand_in.home == home.keyhac and stand_in.marker == home.stand_in
     finally:
         product.home.remove()
+
+
+def test_a_guest_run_s_home_is_on_the_share_and_reached_through_this_host_s_bridge(
+        tmp_path, monkeypatch):
+    run = _run_module()
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "some-vm")
+    monkeypatch.setenv("KEYHAC_QA_SHARE", f"{tmp_path}=/Volumes/My Shared Files/qa")
+    product = run.Keyhac()
+    product.guest._windows = False  # not asked over SSH
+    assert "--platform mac" in product.evidence_help
+    try:
+        home = product.home
+        assert home.remote and tmp_path.resolve() in home.root.parents
+        assert product.guest.path(home.config) == (
+            f"/Volumes/My Shared Files/qa/{home.root.name}/.keyhac/config.py")
+        # The guest's mcp.json names the guest's bridge, or none: the room
+        # gets this venv's, which reads the same file through the share.
+        monkeypatch.setattr(run, "endpoint", lambda _home: {"port": 1, "pid": 2})
+        session = product.session(tmp_path / "13_ctrl_x_ctrl_s.mcp")
+        bridge = session.mcp_servers["keyhac"]["command"]
+        assert pathlib.Path(bridge).parent == pathlib.Path(sys.executable).parent
+    finally:
+        product.home.remove()
+
+
+def test_a_windows_guest_s_paths_are_windows_paths(tmp_path):
+    from guest import Guest
+    guest = Guest("some-vm", tmp_path, r"C:\keyhac-qa")
+    guest._windows = True
+    assert guest.path(tmp_path / "home" / ".keyhac") == r"C:\keyhac-qa\home\.keyhac"
+    assert guest.keyhac == r"C:\Program Files\Keyhac"
+
+
+def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
+    from guest import Guest
+    monkeypatch.delenv("KEYHAC_QA_GUEST", raising=False)
+    assert Guest.from_environment() is None
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "some-vm")
+    monkeypatch.setenv("KEYHAC_QA_SHARE", "/only/the/host/side")
+    with pytest.raises(SystemExit):
+        Guest.from_environment()
+
+
+def test_the_daemon_quits_when_the_quit_file_appears(tmp_path, monkeypatch):
+    import threading
+    import daemon
+    quit_file = tmp_path / "quit"
+    monkeypatch.setattr(daemon, "QUIT_FILE", str(quit_file))
+    waiter = threading.Thread(target=daemon._wait_for_the_runner, daemon=True)
+    waiter.start()
+    waiter.join(1.0)
+    assert waiter.is_alive(), "returned before the file appeared"
+    quit_file.touch()
+    waiter.join(5.0)
+    assert not waiter.is_alive()

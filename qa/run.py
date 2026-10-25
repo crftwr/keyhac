@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(HERE))
 
 import configs  # noqa: E402
+import guest as guests  # noqa: E402
 import keyhac  # noqa: E402
 from quality_loop import adapter, audit, runner, screens, session, standin  # noqa: E402
 
@@ -84,10 +85,13 @@ SCREENS = {
 class Home:
     """The run's own home: HOME for its Keyhac, and so its ~/.keyhac and
     ~/Desktop. A temporary directory, outside the checkout (which a room must
-    not reach) and outside the run's directory (likewise)."""
+    not reach) and outside the run's directory (likewise). With Keyhac in a VM
+    (qa/guest.py), on the folder the VM shares, and ``remote`` is True."""
 
-    def __init__(self):
-        self.root = pathlib.Path(tempfile.mkdtemp(prefix="keyhac-qa-home-")).resolve()
+    def __init__(self, guest: guests.Guest | None = None):
+        self.remote = guest is not None
+        self.root = (guest.mkdtemp("keyhac-qa-home-") if guest else
+                     pathlib.Path(tempfile.mkdtemp(prefix="keyhac-qa-home-")).resolve())
         self.keyhac = self.root / ".keyhac"
         self.config = self.keyhac / "config.py"
         self.extensions = self.keyhac / "extensions"
@@ -120,8 +124,10 @@ def endpoint(home: Home) -> dict | None:
     published = home.keyhac / "mcp.json"
     try:
         info = json.loads(published.read_text(encoding="utf-8"))
-        # Not os.kill(pid, 0) on Windows: there it is TerminateProcess.
-        if os.name != "nt":
+        # Not os.kill(pid, 0) on Windows: there it is TerminateProcess. Nor
+        # for a Keyhac in a VM, whose pid is the guest's: the port, forwarded
+        # to the host, is what says it is there.
+        if os.name != "nt" and not home.remote:
             os.kill(info["pid"], 0)
         with socket.socket() as probe:
             probe.settimeout(1.0)
@@ -269,7 +275,7 @@ class Keyhac(adapter.Adapter):
     evidence = {"keyhac": {
         "argv": [sys.executable, str(HERE / "evidence.py")],
         "help": "replay | bindings | preserved | calls | writes | events | records | expected | rules"}}
-    evidence_help = (
+    _evidence_help = (
         "`keyhac` is qa/evidence.py. `replay <room> --app Code --keys F1,Fn-F1` loads "
         "the room's config.py in Keyhac's own engine, focuses that application, "
         "presses the keys and answers what the application received; --before uses "
@@ -291,13 +297,25 @@ class Keyhac(adapter.Adapter):
     def __init__(self):
         self._foreign: set[str] = set()
         self._home: Home | None = None
+        #: Where the run's Keyhac runs: a VM (qa/guest.py), or None for here.
+        self.guest = guests.Guest.from_environment()
+
+    @property
+    def evidence_help(self) -> str:
+        """Asked when a run starts, not when the adapter is loaded: which OS
+        a VM runs is asked of the VM."""
+        if self.guest is None:
+            return self._evidence_help
+        return (self._evidence_help +
+                f" This run's Keyhac ran in a {self.guest.platform} VM, not on this "
+                f"machine: replay it with --platform {self.guest.platform}.")
 
     @property
     def home(self) -> Home:
         """The run's home, made when a run first needs it - not when the
         adapter is merely loaded to list or check scenarios."""
         if self._home is None:
-            self._home = Home()
+            self._home = Home(self.guest)
         return self._home
 
     def bundle(self) -> pathlib.Path:
@@ -314,6 +332,12 @@ class Keyhac(adapter.Adapter):
 
     def session(self, room) -> session.Session:
         info = endpoint(self.home)
+        if self.guest is not None and info is not None:
+            # The bridge it publishes is the guest's. This host's own reads
+            # the same mcp.json, on the share, and reaches the forwarded port.
+            bridge = pathlib.Path(sys.executable).parent / (
+                "keyhac-mcp-bridge.exe" if os.name == "nt" else "keyhac-mcp-bridge")
+            info = dict(info, bridge=str(bridge))
         if info is None or "bridge" not in info:
             raise SystemExit("Keyhac's endpoint is not answering, or publishes no bridge")
         # The variant - the scenario's `access` - is the room's label after the
@@ -344,6 +368,10 @@ class Keyhac(adapter.Adapter):
             leaked_skill=lambda command: "keyhac" in command)
 
     def product(self):
+        if self.guest is not None:
+            return guests.GuestKeyhacUp(self.guest, self.home,
+                                        configs.config(configs.DEFAULT),
+                                        self.rooms / "keyhac.log")
         return KeyhacUp(self.home, self.rooms / "keyhac.log")
 
     def alive(self) -> bool:
