@@ -226,7 +226,24 @@ class Guest:
         (stage / "qa").mkdir()
         shutil.copy2(HERE / "daemon.py", stage / "qa" / "daemon.py")
         shutil.copytree(HERE / "guest_boot", stage / "boot", ignore=ignore)
+        # quality-loop's own screen backends, for qa/guest_boot/screen_agent.py:
+        # the package's __init__ and screens/, which need nothing else.
+        import quality_loop
+        package = pathlib.Path(quality_loop.__file__).parent
+        (stage / "ql" / "quality_loop").mkdir(parents=True)
+        shutil.copy2(package / "__init__.py", stage / "ql" / "quality_loop" / "__init__.py")
+        shutil.copytree(package / "screens", stage / "ql" / "quality_loop" / "screens",
+                        ignore=ignore)
         return stage
+
+    @property
+    def python(self) -> str:
+        """The guest's interpreter, for a script a terminal screen runs:
+        Keyhac's own, since a clean guest has no other."""
+        if self.windows:
+            return ntpath.join(self.keyhac, "runtime", "python.exe")
+        return posixpath.join(self.keyhac, "Contents/Frameworks/Python.framework/"
+                                           "Versions/Current/bin/python3")
 
     def start(self, home_root: pathlib.Path, stage: pathlib.Path, log: pathlib.Path,
               quit_file: pathlib.Path) -> None:
@@ -268,23 +285,40 @@ class Guest:
                      ntpath.join(self.keyhac, "app")],
         }
         (stage / "boot" / "env.json").write_text(json.dumps(settings), encoding="utf-8")
-        (stage / "boot" / "task.xml").write_text(_task_xml(
-            ntpath.join(self.keyhac, "runtime", "pythonw.exe"),
-            f'-s "{self.path(stage / "boot" / "winstart.py")}"'), encoding="utf-16")
-        task = _ps_quote(self._task(stage))
-        said = self.ssh(f"schtasks /create /tn {task} /xml "
-                        f"{_ps_quote(self.path(stage / 'boot' / 'task.xml'))} /f; "
-                        f"schtasks /run /tn {task}")
+        said = self.run_in_session(stage, self._task(stage),
+                                   stage / "boot" / "winstart.py")
         if "SUCCESS: Attempted to run" not in said.stdout:
             raise SystemExit(f"could not start Keyhac in the VM:\n{said.stdout}{said.stderr}")
+
+    def run_in_session(self, stage: pathlib.Path, task: str, script: pathlib.Path,
+                       *arguments: str) -> subprocess.CompletedProcess:
+        """Windows: start ``script`` (on the stage) with the bundle's
+        pythonw.exe in the logged-in user's desktop session, and return.
+
+        A scheduled task, run interactively, is how a process gets into that
+        session from SSH, where a window it opens is seen and EnumWindows
+        finds it. pythonw opens no console window on that desktop. The task
+        is XML, not schtasks /tr: the program and its arguments stay apart,
+        so nothing has to survive PowerShell's quoting of a native command
+        line - and the ScheduledTasks cmdlets need CIM, which refuses a
+        standard user over SSH. The task is left defined; forget_task
+        removes it."""
+        definition = stage / "boot" / f"{task}.xml"
+        definition.write_text(_task_xml(
+            ntpath.join(self.keyhac, "runtime", "pythonw.exe"),
+            " ".join(f'"{a}"' for a in ("-s", self.path(script), *arguments))),
+            encoding="utf-16")
+        quoted = _ps_quote(task)
+        return self.ssh(f"schtasks /create /tn {quoted} /xml "
+                        f"{_ps_quote(self.path(definition))} /f; schtasks /run /tn {quoted}")
 
     @staticmethod
     def _task(stage: pathlib.Path) -> str:
         return f"keyhac-qa-{stage.name}"
 
-    def forget_task(self, stage: pathlib.Path) -> None:
+    def forget_task(self, stage: pathlib.Path, task: str | None = None) -> None:
         if self.windows:
-            self.ssh(f"schtasks /delete /tn {_ps_quote(self._task(stage))} /f")
+            self.ssh(f"schtasks /delete /tn {_ps_quote(task or self._task(stage))} /f")
 
     def kill(self, pid: int) -> None:
         if self.windows:
@@ -480,6 +514,17 @@ def _task_xml(command: str, arguments: str) -> str:
 """
 
 
+def _end_tunnels(stage: pathlib.Path) -> None:
+    """The reverse tunnels qa/guest_screens.py started for the screens'
+    pages: it records each one's pid on the stage, and the operator that
+    started them is gone by now."""
+    for pid_file in (stage / "tunnels").glob("*.pid"):
+        try:
+            os.kill(int(pid_file.read_text()), 15)
+        except (OSError, ValueError):
+            pass
+
+
 def _listening(port: int) -> bool:
     with socket.socket() as probe:
         probe.settimeout(1.0)
@@ -564,6 +609,7 @@ class GuestKeyhacUp:
                 self.log.parent.mkdir(parents=True, exist_ok=True)
                 self.log.write_text(self._said(), encoding="utf-8")
                 self.guest.forget_task(self.stage)
+                _end_tunnels(self.stage)
                 shutil.rmtree(self.stage, ignore_errors=True)
             self.home.remove()
         return False

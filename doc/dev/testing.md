@@ -141,8 +141,25 @@ above. What the clean state needs, found the hard way:
   authentication awkward), screen lock and sleep off, and firewall rules
   for SSH and SMB that allow only the host's network.
 
-**Not yet:** screens still open on the host, so only scenarios with no
-screen run in a VM for now.
+**Screens go up in the guest.** The adapter's `screen_backend()` hands the
+operator `qa/guest_screens.py` in place of this machine's backend. Each
+`screen_open` / `screen_close` runs quality-loop's own Safari / Terminal or
+Edge / Windows Terminal code in the guest, from the run's stage
+(`qa/guest_boot/screen_agent.py`). On macOS that goes over SSH; on Windows it
+goes through a scheduled task in the desktop session. The pages stay served on
+the host's `127.0.0.1`, and a reverse tunnel (`ssh -R`, same port) makes that
+address the guest's too, so the page's events come back unchanged. A
+terminal screen's script runs with Keyhac's own interpreter in the guest.
+
+What the clean state needs for screens:
+
+- **Windows:** Edge's first-run welcome must not cover the page. The
+  `HideFirstRunExperience` policy (`HKLM\SOFTWARE\Policies\Microsoft\Edge`,
+  DWORD 1) in the snapshot does that.
+- **macOS:** the guest has to allow Apple Events from SSH to Safari and
+  Terminal. Answer the Automation prompts once in the base image, by hand:
+  macOS's consent dialog is not in the accessibility tree, so the guest's
+  Keyhac cannot press it.
 
 `qa/quality-loop.toml` names `qa/run.py` as the adapter for the
 `quality-loop` command. The **conductor skill**

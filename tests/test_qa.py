@@ -9,6 +9,7 @@ that answers wrongly on a room whose outcome is known.
 import json
 import pathlib
 import subprocess
+import types
 import sys
 
 import pytest
@@ -346,3 +347,34 @@ def test_a_secret_is_read_from_the_keychain_only_when_it_says_so(monkeypatch):
     assert guest._secret("plain") == "plain" and asked == []
     assert guest._secret("keychain:some-item") == "s3cret"
     assert asked == [["security", "find-generic-password", "-s", "some-item", "-w"]]
+
+
+def test_in_a_guest_the_screens_go_up_there_and_the_operator_is_told_its_os(
+        tmp_path, monkeypatch):
+    run = _run_module()
+    monkeypatch.setenv("KEYHAC_QA_GUESTS", str(tmp_path / "none.toml"))
+    monkeypatch.delenv("KEYHAC_QA_GUEST", raising=False)
+    local = run.Keyhac()
+    assert local.screen_backend() is None and local.platform() == sys.platform
+
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "some-vm")
+    monkeypatch.setenv("KEYHAC_QA_SHARE", f"{tmp_path}=C:\\qa")
+    product = run.Keyhac()
+    product.guest._windows = True
+    assert product.screen_backend() is None, "nothing to point at before Keyhac is up"
+    product._guest_up = types.SimpleNamespace(stage=tmp_path / "stage")
+    spec = product.screen_backend()
+    assert pathlib.Path(spec["path"]).name == "guest_screens.py"
+    assert spec["settings"]["windows"] is True
+    assert spec["settings"]["stage"] == str(tmp_path / "stage")
+    assert product.platform() == "win32"
+
+
+def test_a_terminal_screen_runs_the_guest_s_own_interpreter(tmp_path):
+    from guest import Guest
+    win = Guest("some-vm", tmp_path, r"C:\qa", r"C:\Program Files\Keyhac")
+    win._windows = True
+    assert win.python == r"C:\Program Files\Keyhac\runtime\python.exe"
+    mac = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa", "/Applications/Keyhac.app")
+    mac._windows = False
+    assert mac.python.startswith("/Applications/Keyhac.app/Contents/Frameworks/")

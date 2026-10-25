@@ -380,7 +380,29 @@ class Keyhac(adapter.Adapter):
             with guests.GuestKeyhacUp(self.guest, self.home,
                                       configs.config(configs.DEFAULT),
                                       self.rooms / "keyhac.log") as up:
-                yield up
+                self._guest_up = up
+                try:
+                    yield up
+                finally:
+                    self._guest_up = None
+
+    def screen_backend(self):
+        """In a VM, the screens go up on the guest's desktop, where the run's
+        Keyhac reads the screen (qa/guest_screens.py)."""
+        up = getattr(self, "_guest_up", None)
+        if self.guest is None or up is None:
+            return None
+        return {"path": str(HERE / "guest_screens.py"),
+                "settings": {"alias": self.guest.alias, "hostname": self.guest.hostname,
+                             "host_share": str(self.guest.host_share),
+                             "guest_share": self.guest.guest_share,
+                             "keyhac": self.guest.keyhac, "windows": self.guest.windows,
+                             "stage": str(up.stage)}}
+
+    def platform(self) -> str:
+        if self.guest is None:
+            return sys.platform
+        return "win32" if self.guest.windows else "darwin"
 
     def alive(self) -> bool:
         return endpoint(self.home) is not None
