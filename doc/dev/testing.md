@@ -216,6 +216,80 @@ calibrates it both ways: the hand-written examples pass, and
   way the frame in the registry already is — this is what kept the bundle pass
   from ever running.
 
+## Driving a Windows VM from the Mac over SSH
+
+A Windows guest in VMware Fusion can be built, run and checked from the Mac
+without touching its desktop: `build.ps1`, a Keyhac.exe launch, and a result
+file to collect. Everything here addresses the guest as **`keyhac-win`**, an
+SSH host alias. Its address, user and key are per machine and live only in
+`~/.ssh/config`, never in this repository.
+
+**Why not `vmrun`.** A Windows 11 guest has a vTPM, which makes Fusion
+encrypt the VM partially, and `vmrun` then refuses every operation without
+the encryption password, `checkToolsState` included. SSH needs no password
+on the command line and works the same for any VM product.
+
+**Guest setup, once.** In an elevated PowerShell:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd; Set-Service sshd -StartupType Automatic
+
+# The rule the capability creates covers the Private profile only, and a
+# VM's network is usually Public. Widen it to every profile, but only for
+# the host's subnet.
+Set-NetFirewallRule -Name OpenSSH-Server-In-TCP -Profile Any -RemoteAddress <host subnet>/24
+
+# An administrator logs in with this file, not ~/.ssh/authorized_keys.
+$f = "$env:ProgramData\ssh\administrators_authorized_keys"
+Add-Content -Path $f -Value '<public key>' -Encoding ascii
+icacls $f /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+
+New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell `
+  -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
+Restart-Service sshd
+```
+
+`Add-WindowsCapability` downloads from Windows Update and can sit at a full
+progress bar for many minutes. `Get-WindowsCapability -Online -Name
+OpenSSH.Server*` in another window says whether it has finished. If it
+reports `Installed` while the first window still sits there, interrupt it
+and carry on from `Start-Service`.
+
+**Host setup, once.** A key of its own (`ssh-keygen -t ed25519 -f
+~/.ssh/<key>`), whose `.pub` is the `<public key>` above, and:
+
+```
+Host keyhac-win
+    HostName <guest IP>
+    User <guest user>
+    IdentityFile ~/.ssh/<key>
+    IdentitiesOnly yes
+```
+
+**Finding the guest's IP.** A bridged guest gets it from DHCP, so it can
+move. Read the MAC from the `.vmx` (`ethernet0.generatedAddress`), ping the
+subnet once so the ARP table fills, and look the MAC up in `arp -an`. A
+guest with the Public profile does not answer ping, but the ARP entry is
+there anyway.
+
+**Running things.**
+
+- `ssh keyhac-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
+  code with quotes in it does not survive the ssh-to-PowerShell trip; `scp`
+  a script file and run that.
+- An SSH session has no desktop, and Keyhac.exe needs one. Start it through
+  a scheduled task that runs in the logged-in user's session:
+  `schtasks /create /tn <name> /tr "<path>\Keyhac.exe" /sc once /st 00:00
+  /it /f`, then `schtasks /run /tn <name>`. Delete the task afterwards. The
+  warning that the start time has passed does not matter, since `/run`
+  starts it now.
+- To read a result without pressing keys, have the check run at config load
+  in a thread and write a file, then `Get-Content` it. Keep a copy of the
+  guest's `config.py` and put it back afterwards.
+
+The #279 entry in the live verification record below used this setup.
+
 ## macOS testing lessons (encoded in `tests/test_mac_window.py` etc.)
 
 - AX requests into *our own* process are serviced by the run loop we would be
@@ -1186,6 +1260,25 @@ found.
   System Settings; 27 no longer takes that from the command line. And its
   44 GB disk filled within minutes from the macOS update downloading in the
   background, so turn automatic downloads off first.
+- **Does HTTPS go through the OS trust store in the bundles?** (2026-10-25,
+  issue #279, main at d208836. macOS 27.0 in the Tart VM above, with no
+  python.org Python. Windows 11 Arm in VMware Fusion, driven over SSH as
+  described in "Driving a Windows VM from the Mac over SSH".) **Yes, on
+  both.** The check from the issue ran at config load: `ssl.SSLContext` is
+  truststore's, `pypi.org` is fetched, and both eMudhra test hosts
+  (`dv-g3b-emudhra` and `dv-g3b-aaa-emudhra` at we-have-a-problem.com) are
+  refused. The control was the bundle's own Python run with `-I`, without
+  the injection. On macOS it fails every host, `pypi.org` included,
+  because the CA file it looks for is python.org's, outside the bundle. On
+  Windows it accepts `dv-g3b-aaa-emudhra`.
+
+  The refusal reads differently on each. Windows says "The certificate is
+  revoked." macOS 27 says the certificate "is blocked", where the
+  development Mac had said "revoked". The guess is that Apple's own
+  blocklist now catches these hosts before the revocation check does. The
+  issue's check therefore marks the macOS refusals WARN, not PASS. Both are
+  refusals of the certificate itself, which is what the check is about, and
+  neither is an unknown-issuer failure.
 
 
 ## The interactive pass before a release
