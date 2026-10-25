@@ -91,8 +91,8 @@ from a clean state and puts it away afterwards. The table's format is in
   password, which `vmrun` needs for a VM with a vTPM) and `smb`,
   `smb_password`. The run reverts to the snapshot, resumes the VM with
   `vmrun start nogui`, mounts the share again (a revert drops it), and waits
-  for the guest's clock. Quit the Fusion app first, or `vmrun` cannot start
-  the VM.
+  for the guest's clock. Afterwards it unmounts the share and shuts the VM
+  down. Quit the Fusion app first, or `vmrun` cannot start the VM.
 - **Passwords:** a value written as `keychain:<service>` is read from the
   login Keychain when the run needs it.
 
