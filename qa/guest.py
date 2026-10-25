@@ -1,6 +1,6 @@
 """The run's Keyhac in a VM: off the host's keyboard and screen (issue #271).
 
-    KEYHAC_QA_GUEST=keyhac-mac \\
+    KEYHAC_QA_GUEST=keyhac-qa-mac \\
     KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \\
     make qa CASE=13
 
