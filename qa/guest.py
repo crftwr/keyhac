@@ -217,7 +217,7 @@ class GuestKeyhacUp:
     """
 
     def __init__(self, guest: Guest, home, config_text: str, log: pathlib.Path,
-                 patience: float = 180.0, grace: float = 20.0):
+                 patience: float = 180.0, grace: float = 45.0):
         self.guest, self.home, self.config_text = guest, home, config_text
         self.log, self.patience, self.grace = log, patience, grace
         self.stage = None
@@ -298,10 +298,12 @@ class GuestKeyhacUp:
         except (OSError, ValueError):
             pid = None
         (self.stage / "quit").touch()
-        # mcp.json goes first on the way out (qa/daemon.py), then the process.
+        # Keyhac says "stopped" as the last thing it logs. Not mcp.json's
+        # absence: on an SMB share the host's view of a deleted file lags.
+        # The grace covers a Windows guest running the x64 bundle emulated.
         deadline = time.monotonic() + self.grace
         while time.monotonic() < deadline:
-            if not published.exists() and "stopped" in self._said():
+            if "Keyhac 2 stopped." in self._said():
                 print("keyhac:  quit")
                 return
             time.sleep(0.5)
