@@ -20,11 +20,15 @@ the way it reaches a local one:
 - **The code is this working tree.** keyhac/ and qa/daemon.py are copied to
   a stage on the share. macOS: Keyhac.app runs them, through
   qa/guest_boot/sitecustomize.py, because the guest's Accessibility grant
-  is the app's. Windows: the bundle's runtime\\python.exe runs
-  qa/daemon.py, which needs no grant.
+  is the app's. Windows: the bundle's runtime\\pythonw.exe runs
+  qa/daemon.py through qa/guest_boot/winstart.py, which needs no grant.
 - **It runs in the desktop session**, where the hook sees input and windows
   can take focus - not in the SSH session, which has neither. macOS starts it
-  with `open`, Windows with a scheduled task run as the logged-in user.
+  with `open -g`, Windows with a scheduled task run as the logged-in user.
+- **It leaves the foreground where it was.** A room's first get_focus should
+  find the desktop - Finder, or Explorer - not Keyhac's console: `open -g`
+  never brings it forward, and on Windows qa/daemon.py hands the foreground
+  back once the console is up.
 - **It quits when a file appears** (KEYHAC_QA_QUIT_FILE, qa/daemon.py): there
   is no stdin to close across a VM.
 
@@ -32,7 +36,11 @@ KEYHAC_QA_GUEST is an SSH host alias; its address, user and key are in
 ~/.ssh/config and never here (doc/dev/testing.md, "Driving a Windows VM from
 the Mac over SSH"). KEYHAC_QA_GUEST_KEYHAC is Keyhac in the guest: Keyhac.app
 on macOS (default /Applications/Keyhac.app), the bundle directory build.ps1
-makes on Windows (default C:\\Program Files\\Keyhac).
+makes on Windows (default C:\\Program Files\\Keyhac) - its interpreter and
+third-party packages, which the staged keyhac/ runs on.
+
+The VM is expected to be clean when a run starts: a Tart clone of a base
+image, or a VMware snapshot reverted to. Doing that is not this module's yet.
 
 Screens are not moved yet: a scenario that puts one up would put it on the
 host. Run those locally for now.
