@@ -281,3 +281,68 @@ def test_the_daemon_quits_when_the_quit_file_appears(tmp_path, monkeypatch):
     quit_file.touch()
     waiter.join(5.0)
     assert not waiter.is_alive()
+
+
+def test_a_guest_s_settings_come_from_its_table_and_name_its_machine(tmp_path, monkeypatch):
+    import guest
+    share = tmp_path / "share"
+    share.mkdir()
+    settings = tmp_path / "guests.toml"
+    settings.write_text(f"""
+[some-mac]
+share = "{share}=/Volumes/My Shared Files/qa"
+tart = "base"
+
+[some-win]
+share = "{share}=C:\\\\qa"
+vmx = "~/vm.vmx"
+snapshot = "clean"
+keyhac = "D:\\\\Keyhac"
+""", encoding="utf-8")
+    monkeypatch.setenv("KEYHAC_QA_GUESTS", str(settings))
+    monkeypatch.delenv("KEYHAC_QA_SHARE", raising=False)
+    monkeypatch.delenv("KEYHAC_QA_GUEST_KEYHAC", raising=False)
+
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "some-mac")
+    mac = guest.Guest.from_environment()
+    assert mac.guest_share == "/Volumes/My Shared Files/qa"
+    assert isinstance(mac.machine(), guest.TartMachine)
+    assert mac.machine().name.startswith("base-run-")
+
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "some-win")
+    win = guest.Guest.from_environment()
+    win._windows = True
+    assert win.keyhac == r"D:\Keyhac"
+    machine = win.machine()
+    assert isinstance(machine, guest.VMwareMachine)
+    assert machine.snapshot == "clean" and not machine.vmx.startswith("~")
+
+    # The environment still wins, and a guest with no table runs as it is.
+    monkeypatch.setenv("KEYHAC_QA_GUEST", "elsewhere")
+    monkeypatch.setenv("KEYHAC_QA_SHARE", f"{share}=/x")
+    plain = guest.Guest.from_environment()
+    assert plain.guest_share == "/x" and plain.settings == {}
+    assert not isinstance(plain.machine(), (guest.TartMachine, guest.VMwareMachine))
+
+
+def test_a_clone_is_reached_at_its_own_address_under_the_alias_s_host_key(tmp_path):
+    from guest import Guest
+    guest = Guest("some-vm", tmp_path, "/x")
+    assert guest._ssh_options() == []
+    guest.hostname = "192.0.2.7"
+    options = guest._ssh_options()
+    assert "HostName=192.0.2.7" in options and "HostKeyAlias=some-vm" in options
+
+
+def test_a_secret_is_read_from_the_keychain_only_when_it_says_so(monkeypatch):
+    import guest
+    asked = []
+
+    def run(argv, **kwargs):
+        asked.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="s3cret\n", stderr="")
+
+    monkeypatch.setattr(guest.subprocess, "run", run)
+    assert guest._secret("plain") == "plain" and asked == []
+    assert guest._secret("keychain:some-item") == "s3cret"
+    assert asked == [["security", "find-generic-password", "-s", "some-item", "-w"]]

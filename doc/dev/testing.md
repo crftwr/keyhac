@@ -72,15 +72,32 @@ make qa CASE=11                        # attached; quit your own Keyhac first
 
 **In a VM** (#271), the run's Keyhac is off this machine's keyboard and
 screen, and your own Keyhac can keep running. Set `KEYHAC_QA_GUEST` to an
-SSH host alias for the VM, and `KEYHAC_QA_SHARE` to a folder the VM shares,
-as `<host path>=<guest path>`. Optionally, set `KEYHAC_QA_GUEST_KEYHAC` to
-Keyhac in the guest.
+SSH host alias for the VM:
 
 ```
-KEYHAC_QA_GUEST=keyhac-qa-mac \
-KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \
-make qa CASE=13
+KEYHAC_QA_GUEST=keyhac-qa-mac make qa CASE=13
 ```
+
+What that alias means on this machine goes in
+`~/.config/keyhac-qa/guests.toml`, outside the repository: the shared folder
+as `<host path>=<guest path>`, and the VM itself, so that the run starts it
+from a clean state and puts it away afterwards. The table's format is in
+`qa/guest.py`'s `Guest`.
+
+- **Tart:** `tart = "<base VM>"`. The run clones the base, starts the clone
+  with the share as `--dir`, reaches it at the clone's own address, and
+  deletes it afterwards.
+- **VMware Fusion:** `vmx`, `snapshot`, `vm_password` (the VM's encryption
+  password, which `vmrun` needs for a VM with a vTPM) and `smb`,
+  `smb_password`. The run reverts to the snapshot, resumes the VM with
+  `vmrun start nogui`, mounts the share again (a revert drops it), and waits
+  for the guest's clock. Quit the Fusion app first, or `vmrun` cannot start
+  the VM.
+- **Passwords:** a value written as `keychain:<service>` is read from the
+  login Keychain when the run needs it.
+
+Without a VM in the table, the guest is used as it is, already running.
+`KEYHAC_QA_SHARE` and `KEYHAC_QA_GUEST_KEYHAC` override the table.
 
 Claude stays on the host: the room, the operator, the evidence and
 `cleanroom/`. The run's home and a copy of this working tree go on the
@@ -108,8 +125,8 @@ Both have run scenarios end to end (13 on both, 12 on macOS):
 
 **The guest is the test environment.** Start each run from a clean
 state: a Tart clone of a base image, deleted afterwards, or a VMware
-snapshot taken while the VM was running, reverted to before the run. That
-is manual for now. What the clean state needs, found the hard way:
+snapshot taken while the VM was running, reverted to before the run, as
+above. What the clean state needs, found the hard way:
 
 - A user that signs in automatically and has nothing else open. The room
   reads the screen through Keyhac's tools, and its first `get_focus`

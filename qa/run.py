@@ -28,6 +28,7 @@ what a room may reach, the stand-in, the screens and the evidence tools.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pathlib
@@ -369,10 +370,17 @@ class Keyhac(adapter.Adapter):
 
     def product(self):
         if self.guest is not None:
-            return guests.GuestKeyhacUp(self.guest, self.home,
-                                        configs.config(configs.DEFAULT),
-                                        self.rooms / "keyhac.log")
+            return self._in_the_guest()
         return KeyhacUp(self.home, self.rooms / "keyhac.log")
+
+    @contextlib.contextmanager
+    def _in_the_guest(self):
+        # The VM first: a revert unmounts the share the home is made on.
+        with self.guest.machine():
+            with guests.GuestKeyhacUp(self.guest, self.home,
+                                      configs.config(configs.DEFAULT),
+                                      self.rooms / "keyhac.log") as up:
+                yield up
 
     def alive(self) -> bool:
         return endpoint(self.home) is not None
