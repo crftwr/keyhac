@@ -42,6 +42,40 @@ QUIT_FILE = os.environ.get("KEYHAC_QA_QUIT_FILE")
 _RUNNER = None if QUIT_FILE else os.dup(0)
 
 
+def _foreground_keeper():
+    """What gives the foreground back once the console has taken it, or None.
+
+    Windows guest only (KEYHAC_QA_KEEP_FOCUS, set by qa/guest.py). A room's
+    first look at the screen should find the desktop, as a Mac guest's finds
+    Finder: there `open -g` starts Keyhac without bringing it forward. A
+    scheduled task cannot, so the window in front before Keyhac started -
+    the desktop's, when there is none - is put back in front, from Keyhac's
+    own process, which Windows lets hand the foreground on while it has it.
+    """
+    if sys.platform != "win32" or os.environ.get("KEYHAC_QA_KEEP_FOCUS") != "1":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetShellWindow.argtypes = []
+    user32.GetShellWindow.restype = wintypes.HWND
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    before = user32.GetForegroundWindow() or user32.GetShellWindow()
+
+    def give_back():
+        if before and user32.SetForegroundWindow(before):
+            print("qa: foreground given back", flush=True)
+
+    return give_back
+
+
+#: Taken before Keyhac starts, so "before" is not Keyhac's console.
+_GIVE_BACK = _foreground_keeper()
+
+
 def _wait_for_the_runner() -> None:
     if QUIT_FILE:
         while not os.path.exists(QUIT_FILE):
@@ -77,6 +111,10 @@ def _arm(console, keymap) -> None:
 
     threading.Thread(target=wait_for_the_runner, daemon=True,
                      name="qa-quit").start()
+
+    if _GIVE_BACK is not None:
+        # The console is shown when the loop starts, after this returns.
+        threading.Timer(2.0, on_main_thread, args=(_GIVE_BACK,)).start()
 
 
 def arm_at_tray(tray) -> None:

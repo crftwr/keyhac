@@ -1,6 +1,6 @@
 """The run's Keyhac in a VM: off the host's keyboard and screen (issue #271).
 
-    KEYHAC_QA_GUEST=keyhac-mac \\
+    KEYHAC_QA_GUEST=keyhac-qa-mac \\
     KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \\
     make qa CASE=13
 
@@ -20,11 +20,15 @@ the way it reaches a local one:
 - **The code is this working tree.** keyhac/ and qa/daemon.py are copied to
   a stage on the share. macOS: Keyhac.app runs them, through
   qa/guest_boot/sitecustomize.py, because the guest's Accessibility grant
-  is the app's. Windows: the bundle's runtime\\python.exe runs
-  qa/daemon.py, which needs no grant.
+  is the app's. Windows: the bundle's runtime\\pythonw.exe runs
+  qa/daemon.py through qa/guest_boot/winstart.py, which needs no grant.
 - **It runs in the desktop session**, where the hook sees input and windows
   can take focus - not in the SSH session, which has neither. macOS starts it
-  with `open`, Windows with a scheduled task run as the logged-in user.
+  with `open -g`, Windows with a scheduled task run as the logged-in user.
+- **It leaves the foreground where it was.** A room's first get_focus should
+  find the desktop - Finder, or Explorer - not Keyhac's console: `open -g`
+  never brings it forward, and on Windows qa/daemon.py hands the foreground
+  back once the console is up.
 - **It quits when a file appears** (KEYHAC_QA_QUIT_FILE, qa/daemon.py): there
   is no stdin to close across a VM.
 
@@ -32,7 +36,11 @@ KEYHAC_QA_GUEST is an SSH host alias; its address, user and key are in
 ~/.ssh/config and never here (doc/dev/testing.md, "Driving a Windows VM from
 the Mac over SSH"). KEYHAC_QA_GUEST_KEYHAC is Keyhac in the guest: Keyhac.app
 on macOS (default /Applications/Keyhac.app), the bundle directory build.ps1
-makes on Windows (default C:\\Program Files\\Keyhac).
+makes on Windows (default C:\\Program Files\\Keyhac) - its interpreter and
+third-party packages, which the staged keyhac/ runs on.
+
+The VM is expected to be clean when a run starts: a Tart clone of a base
+image, or a VMware snapshot reverted to. Doing that is not this module's yet.
 
 Screens are not moved yet: a scenario that puts one up would put it on the
 host. Run those locally for now.
@@ -151,28 +159,41 @@ class Guest:
     def _start_windows(self, home: str, stage: pathlib.Path, log: pathlib.Path,
                        quit_at: str) -> None:
         # A scheduled task, run interactively, is how a process gets into the
-        # logged-in user's desktop session from SSH. Its command is a .cmd on
-        # the stage that sets the environment the task cannot.
-        python = ntpath.join(self.keyhac, "runtime", "python.exe")
-        script = "\r\n".join([
-            "@echo off",
-            f'set "HOME={home}"',
-            f'set "USERPROFILE={home}"',
-            f'set "KEYHAC_QA_QUIT_FILE={quit_at}"',
-            'set "PYTHONIOENCODING=utf-8"',
-            f'"{python}" "{self.path(stage / "qa" / "daemon.py")}" > "{self.path(log)}" 2>&1',
-            ""])
-        (stage / "start.cmd").write_bytes(script.encode("utf-8"))
-        task = f"keyhac-qa-{stage.name}"
-        said = self.ssh(
-            f"schtasks /create /tn '{task}' /tr 'cmd /c \"\"{self.path(stage / 'start.cmd')}\"\"' "
-            f"/sc once /st 00:00 /it /f; schtasks /run /tn '{task}'")
+        # logged-in user's desktop session from SSH. It runs pythonw.exe, which
+        # opens no console window on that desktop; qa/guest_boot/winstart.py
+        # sets up from env.json what a task cannot pass.
+        settings = {
+            "log": self.path(log),
+            "daemon": self.path(stage / "qa" / "daemon.py"),
+            "environ": {"HOME": home, "USERPROFILE": home,
+                        "KEYHAC_QA_QUIT_FILE": quit_at, "KEYHAC_QA_KEEP_FOCUS": "1",
+                        "PYTHONIOENCODING": "utf-8"},
+            # The bundle's interpreter alone finds only the standard library:
+            # Keyhac.exe builds the rest of the path itself (windows_app/src/
+            # launcher.c), and build.ps1 removes the embeddable's ._pth. So the
+            # same two entries, in the launcher's order; daemon.py then puts
+            # the stage in front of app\, so the staged keyhac wins.
+            "path": [ntpath.join(self.keyhac, r"Lib\site-packages"),
+                     ntpath.join(self.keyhac, "app")],
+        }
+        (stage / "boot" / "env.json").write_text(json.dumps(settings), encoding="utf-8")
+        (stage / "boot" / "task.xml").write_text(_task_xml(
+            ntpath.join(self.keyhac, "runtime", "pythonw.exe"),
+            f'-s "{self.path(stage / "boot" / "winstart.py")}"'), encoding="utf-16")
+        task = _ps_quote(self._task(stage))
+        said = self.ssh(f"schtasks /create /tn {task} /xml "
+                        f"{_ps_quote(self.path(stage / 'boot' / 'task.xml'))} /f; "
+                        f"schtasks /run /tn {task}")
         if "SUCCESS: Attempted to run" not in said.stdout:
             raise SystemExit(f"could not start Keyhac in the VM:\n{said.stdout}{said.stderr}")
 
+    @staticmethod
+    def _task(stage: pathlib.Path) -> str:
+        return f"keyhac-qa-{stage.name}"
+
     def forget_task(self, stage: pathlib.Path) -> None:
         if self.windows:
-            self.ssh(f"schtasks /delete /tn 'keyhac-qa-{stage.name}' /f")
+            self.ssh(f"schtasks /delete /tn {_ps_quote(self._task(stage))} /f")
 
     def kill(self, pid: int) -> None:
         if self.windows:
@@ -192,6 +213,42 @@ def _sh_quote(word: str) -> str:
     return "'" + word.replace("'", "'\\''") + "'"
 
 
+def _ps_quote(word: str) -> str:
+    """A PowerShell single-quoted literal."""
+    return "'" + word.replace("'", "''") + "'"
+
+
+def _task_xml(command: str, arguments: str) -> str:
+    """A scheduled task that runs ``command`` in the creating user's desktop
+    session (InteractiveToken), with no time limit. XML, not schtasks /tr:
+    the program and its arguments stay apart, so nothing has to survive
+    PowerShell's quoting of a native command line."""
+    from xml.sax.saxutils import escape
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{escape(command)}</Command>
+      <Arguments>{escape(arguments)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+
+
 def _listening(port: int) -> bool:
     with socket.socket() as probe:
         probe.settimeout(1.0)
@@ -208,7 +265,7 @@ class GuestKeyhacUp:
     """
 
     def __init__(self, guest: Guest, home, config_text: str, log: pathlib.Path,
-                 patience: float = 180.0, grace: float = 20.0):
+                 patience: float = 180.0, grace: float = 45.0):
         self.guest, self.home, self.config_text = guest, home, config_text
         self.log, self.patience, self.grace = log, patience, grace
         self.stage = None
@@ -289,10 +346,12 @@ class GuestKeyhacUp:
         except (OSError, ValueError):
             pid = None
         (self.stage / "quit").touch()
-        # mcp.json goes first on the way out (qa/daemon.py), then the process.
+        # Keyhac says "stopped" as the last thing it logs. Not mcp.json's
+        # absence: on an SMB share the host's view of a deleted file lags.
+        # The grace covers a Windows guest running the x64 bundle emulated.
         deadline = time.monotonic() + self.grace
         while time.monotonic() < deadline:
-            if not published.exists() and "stopped" in self._said():
+            if "Keyhac 2 stopped." in self._said():
                 print("keyhac:  quit")
                 return
             time.sleep(0.5)

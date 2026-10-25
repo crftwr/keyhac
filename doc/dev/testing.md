@@ -77,7 +77,7 @@ as `<host path>=<guest path>`. Optionally, set `KEYHAC_QA_GUEST_KEYHAC` to
 Keyhac in the guest.
 
 ```
-KEYHAC_QA_GUEST=keyhac-mac \
+KEYHAC_QA_GUEST=keyhac-qa-mac \
 KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \
 make qa CASE=13
 ```
@@ -88,14 +88,44 @@ share. Keyhac is started in the guest's desktop session, and its endpoint is
 forwarded over SSH, so the host's own bridge reaches it. `qa/guest.py` has
 the details.
 
-- **macOS:** done for a Tart guest, with `tart run --dir=qa:<host path>`.
-  Keyhac.app runs the staged code, since the guest's Accessibility grant is
-  the app's.
-- **Windows:** wired but not run yet. The bundle's `runtime\python.exe` runs
-  it, from a scheduled task. VMware Tools for Windows on Arm has no Shared
-  Folders, so the share has to be SMB.
-- **Not yet:** screens still open on the host, so only scenarios with no
-  screen run in a VM for now.
+Both have run scenarios end to end (13 on both, 12 on macOS):
+
+- **macOS (Tart):** the share is `tart run --dir=qa:<host path>`, mounted
+  in the guest under `/Volumes/My Shared Files/`. Keyhac.app runs the
+  staged code through `qa/guest_boot/sitecustomize.py`, since the guest's
+  Accessibility grant is the app's, and `open -g` starts it without taking
+  the foreground.
+- **Windows (VMware Fusion):** VMware Tools for Windows on Arm has no
+  Shared Folders, so the guest shares a folder over SMB and the host mounts
+  it. The bundle's `pythonw.exe` runs the staged code through
+  `qa/guest_boot/winstart.py`, from a scheduled task. It uses `pythonw`
+  because `cmd.exe` would put a terminal window on the desktop. The task is
+  XML because the ScheduledTasks cmdlets need CIM, which refuses a standard
+  user over SSH. Once the console is up, Keyhac gives the foreground back to
+  the desktop. The bundle (`build.ps1`'s output) provides the interpreter
+  and the third-party packages, so the guest needs no Python and no build
+  tools.
+
+**The guest is the test environment.** Start each run from a clean
+state: a Tart clone of a base image, deleted afterwards, or a VMware
+snapshot taken while the VM was running, reverted to before the run. That
+is manual for now. What the clean state needs, found the hard way:
+
+- A user that signs in automatically and has nothing else open. The room
+  reads the screen through Keyhac's tools, and its first `get_focus`
+  answers whatever window is in front: a leftover PowerShell window, or a
+  system prompt.
+- Keyhac.app's Accessibility grant given, and its Local Network prompt
+  already answered (macOS). An unanswered prompt keeps the focus for the
+  whole run.
+- No developer tools and no source checkout on the guest's screen. The
+  room must not be able to read the source off the display.
+- On Windows, a local account (a Microsoft account makes SMB
+  authentication awkward), screen lock and sleep off, and firewall rules
+  for SSH and SMB that allow only the host's network.
+
+**Not yet:** screens still open on the host, so only scenarios with no
+screen run in a VM for now.
 
 `qa/quality-loop.toml` names `qa/run.py` as the adapter for the
 `quality-loop` command. The **conductor skill**
@@ -247,7 +277,7 @@ calibrates it both ways: the hand-written examples pass, and
 
 A Windows guest in VMware Fusion can be built, run and checked from the Mac
 without touching its desktop: `build.ps1`, a Keyhac.exe launch, and a result
-file to collect. Everything here addresses the guest as **`keyhac-win`**, an
+file to collect. Everything here addresses the guest as **`keyhac-qa-win`**, an
 SSH host alias. Its address, user and key are per machine and live only in
 `~/.ssh/config`, never in this repository.
 
@@ -287,7 +317,7 @@ and carry on from `Start-Service`.
 ~/.ssh/<key>`), whose `.pub` is the `<public key>` above, and:
 
 ```
-Host keyhac-win
+Host keyhac-qa-win
     HostName <guest IP>
     User <guest user>
     IdentityFile ~/.ssh/<key>
@@ -302,7 +332,7 @@ there anyway.
 
 **Running things.**
 
-- `ssh keyhac-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
+- `ssh keyhac-qa-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
   code with quotes in it does not survive the ssh-to-PowerShell trip; `scp`
   a script file and run that.
 - An SSH session has no desktop, and Keyhac.exe needs one. Start it through
