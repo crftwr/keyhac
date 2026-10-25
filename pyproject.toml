@@ -68,7 +68,7 @@ dependencies = [
     # no longer does) - and ListView scrolling an assigned selection into view
     # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
     # develop against a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.11.0",
+    "puikit>=1.15.1",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
