@@ -395,7 +395,9 @@ class VMwareMachine:
     A snapshot taken while the VM was running comes back running, signed in
     and with SSH up, after `vmrun start`. The SMB share that was mounted on
     the host does not survive the revert, so it is mounted again. The VM is
-    left running afterwards; the next run reverts it anyway. ``visible`` has
+    shut down afterwards, its share unmounted first: the next run reverts it
+    anyway, and a VM `vmrun` left running headless is one the Fusion app
+    cannot open. ``visible`` has
     no say here: `vmrun` can only resume it without a window. ``vm_password``
     is the VM's encryption password, which `vmrun` needs for a VM with a
     vTPM.
@@ -410,7 +412,7 @@ class VMwareMachine:
         self.snapshot = settings["snapshot"]
         self.password = settings.get("vm_password")
 
-    def _vmrun(self, *args) -> None:
+    def _vmrun(self, *args, check: bool = True) -> bool:
         command = [self.VMRUN, "-T", "fusion"]
         if self.password:
             command += ["-vp", _secret(self.password)]
@@ -420,8 +422,9 @@ class VMwareMachine:
             said = subprocess.run(command + list(args), stdin=subprocess.DEVNULL,
                                   stdout=output, stderr=subprocess.STDOUT, text=True)
             output.seek(0)
-            if said.returncode != 0:
+            if said.returncode != 0 and check:
                 raise SystemExit(f"vmrun {args[0]}: {output.read().strip()}")
+            return said.returncode == 0
 
     def __enter__(self):
         self._vmrun("revertToSnapshot", self.vmx, self.snapshot)
@@ -471,6 +474,13 @@ class VMwareMachine:
         print("vm:      the guest's clock is still off - carrying on")
 
     def __exit__(self, *exc):
+        if self.guest.settings.get("smb"):
+            subprocess.run(["umount", str(self.guest.host_share)], capture_output=True)
+        # hard: the snapshot it is reverted to next time is all that counts.
+        if self._vmrun("stop", self.vmx, "hard", check=False):
+            print(f"vm:      {self.guest.alias} stopped")
+        else:
+            print(f"vm:      could not stop {self.guest.alias} - stop it before opening Fusion")
         return False
 
 

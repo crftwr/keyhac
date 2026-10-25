@@ -326,6 +326,21 @@ keyhac = "D:\\\\Keyhac"
     assert not isinstance(plain.machine(), (guest.TartMachine, guest.VMwareMachine))
 
 
+def test_a_vmware_guest_is_shut_down_after_the_run(tmp_path, monkeypatch):
+    # Left running headless, it is a VM the Fusion app cannot open.
+    import guest
+    share = tmp_path / "share"
+    machine = guest.VMwareMachine(guest.Guest(
+        "some-win", share, r"C:\qa", None,
+        {"vmx": "w.vmx", "snapshot": "clean", "smb": "//qa@host/qa"}))
+    ran = []
+    monkeypatch.setattr(guest.subprocess, "run",
+                        lambda command, **_: ran.append(command) or types.SimpleNamespace(returncode=0))
+    machine.__exit__(None, None, None)
+    assert ran[0] == ["umount", str(share)]
+    assert ran[1][-3:] == ["stop", "w.vmx", "hard"]
+
+
 def test_a_clone_is_reached_at_its_own_address_under_the_alias_s_host_key(tmp_path):
     from guest import Guest
     guest = Guest("some-vm", tmp_path, "/x")
