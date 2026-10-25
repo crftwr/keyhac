@@ -77,7 +77,7 @@ as `<host path>=<guest path>`. Optionally, set `KEYHAC_QA_GUEST_KEYHAC` to
 Keyhac in the guest.
 
 ```
-KEYHAC_QA_GUEST=keyhac-mac \
+KEYHAC_QA_GUEST=keyhac-qa-mac \
 KEYHAC_QA_SHARE="$HOME/.cache/keyhac-qa-guest=/Volumes/My Shared Files/qa" \
 make qa CASE=13
 ```
