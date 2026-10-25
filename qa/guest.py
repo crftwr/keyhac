@@ -151,38 +151,41 @@ class Guest:
     def _start_windows(self, home: str, stage: pathlib.Path, log: pathlib.Path,
                        quit_at: str) -> None:
         # A scheduled task, run interactively, is how a process gets into the
-        # logged-in user's desktop session from SSH. Its command is a .cmd on
-        # the stage that sets the environment the task cannot.
-        python = ntpath.join(self.keyhac, "runtime", "python.exe")
-        # The bundle's python.exe alone finds only the standard library:
-        # Keyhac.exe builds the rest of the path itself (windows_app/src/
-        # launcher.c), and build.ps1 removes the embeddable's ._pth. So the
-        # same two entries, in the launcher's order; daemon.py then puts the
-        # stage in front of app\, so the staged keyhac wins over the bundle's.
-        search = ";".join(ntpath.join(self.keyhac, part)
-                          for part in (r"Lib\site-packages", "app"))
-        script = "\r\n".join([
-            "@echo off",
-            f'set "HOME={home}"',
-            f'set "USERPROFILE={home}"',
-            f'set "KEYHAC_QA_QUIT_FILE={quit_at}"',
-            f'set "PYTHONPATH={search}"',
-            'set "PYTHONNOUSERSITE=1"',
-            'set "KEYHAC_QA_KEEP_FOCUS=1"',
-            'set "PYTHONIOENCODING=utf-8"',
-            f'"{python}" "{self.path(stage / "qa" / "daemon.py")}" > "{self.path(log)}" 2>&1',
-            ""])
-        (stage / "start.cmd").write_bytes(script.encode("utf-8"))
-        task = f"keyhac-qa-{stage.name}"
-        said = self.ssh(
-            f"schtasks /create /tn '{task}' /tr 'cmd /c \"\"{self.path(stage / 'start.cmd')}\"\"' "
-            f"/sc once /st 00:00 /it /f; schtasks /run /tn '{task}'")
+        # logged-in user's desktop session from SSH. It runs pythonw.exe, which
+        # opens no console window on that desktop; qa/guest_boot/winstart.py
+        # sets up from env.json what a task cannot pass.
+        settings = {
+            "log": self.path(log),
+            "daemon": self.path(stage / "qa" / "daemon.py"),
+            "environ": {"HOME": home, "USERPROFILE": home,
+                        "KEYHAC_QA_QUIT_FILE": quit_at, "KEYHAC_QA_KEEP_FOCUS": "1",
+                        "PYTHONIOENCODING": "utf-8"},
+            # The bundle's interpreter alone finds only the standard library:
+            # Keyhac.exe builds the rest of the path itself (windows_app/src/
+            # launcher.c), and build.ps1 removes the embeddable's ._pth. So the
+            # same two entries, in the launcher's order; daemon.py then puts
+            # the stage in front of app\, so the staged keyhac wins.
+            "path": [ntpath.join(self.keyhac, r"Lib\site-packages"),
+                     ntpath.join(self.keyhac, "app")],
+        }
+        (stage / "boot" / "env.json").write_text(json.dumps(settings), encoding="utf-8")
+        (stage / "boot" / "task.xml").write_text(_task_xml(
+            ntpath.join(self.keyhac, "runtime", "pythonw.exe"),
+            f'-s "{self.path(stage / "boot" / "winstart.py")}"'), encoding="utf-16")
+        task = _ps_quote(self._task(stage))
+        said = self.ssh(f"schtasks /create /tn {task} /xml "
+                        f"{_ps_quote(self.path(stage / 'boot' / 'task.xml'))} /f; "
+                        f"schtasks /run /tn {task}")
         if "SUCCESS: Attempted to run" not in said.stdout:
             raise SystemExit(f"could not start Keyhac in the VM:\n{said.stdout}{said.stderr}")
 
+    @staticmethod
+    def _task(stage: pathlib.Path) -> str:
+        return f"keyhac-qa-{stage.name}"
+
     def forget_task(self, stage: pathlib.Path) -> None:
         if self.windows:
-            self.ssh(f"schtasks /delete /tn 'keyhac-qa-{stage.name}' /f")
+            self.ssh(f"schtasks /delete /tn {_ps_quote(self._task(stage))} /f")
 
     def kill(self, pid: int) -> None:
         if self.windows:
@@ -200,6 +203,42 @@ class Guest:
 
 def _sh_quote(word: str) -> str:
     return "'" + word.replace("'", "'\\''") + "'"
+
+
+def _ps_quote(word: str) -> str:
+    """A PowerShell single-quoted literal."""
+    return "'" + word.replace("'", "''") + "'"
+
+
+def _task_xml(command: str, arguments: str) -> str:
+    """A scheduled task that runs ``command`` in the creating user's desktop
+    session (InteractiveToken), with no time limit. XML, not schtasks /tr:
+    the program and its arguments stay apart, so nothing has to survive
+    PowerShell's quoting of a native command line."""
+    from xml.sax.saxutils import escape
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{escape(command)}</Command>
+      <Arguments>{escape(arguments)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
 
 
 def _listening(port: int) -> bool:
