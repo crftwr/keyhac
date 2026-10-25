@@ -154,11 +154,20 @@ class Guest:
         # logged-in user's desktop session from SSH. Its command is a .cmd on
         # the stage that sets the environment the task cannot.
         python = ntpath.join(self.keyhac, "runtime", "python.exe")
+        # The bundle's python.exe alone finds only the standard library:
+        # Keyhac.exe builds the rest of the path itself (windows_app/src/
+        # launcher.c), and build.ps1 removes the embeddable's ._pth. So the
+        # same two entries, in the launcher's order; daemon.py then puts the
+        # stage in front of app\, so the staged keyhac wins over the bundle's.
+        search = ";".join(ntpath.join(self.keyhac, part)
+                          for part in (r"Lib\site-packages", "app"))
         script = "\r\n".join([
             "@echo off",
             f'set "HOME={home}"',
             f'set "USERPROFILE={home}"',
             f'set "KEYHAC_QA_QUIT_FILE={quit_at}"',
+            f'set "PYTHONPATH={search}"',
+            'set "PYTHONNOUSERSITE=1"',
             'set "PYTHONIOENCODING=utf-8"',
             f'"{python}" "{self.path(stage / "qa" / "daemon.py")}" > "{self.path(log)}" 2>&1',
             ""])
