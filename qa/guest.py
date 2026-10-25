@@ -168,6 +168,7 @@ class Guest:
             f'set "KEYHAC_QA_QUIT_FILE={quit_at}"',
             f'set "PYTHONPATH={search}"',
             'set "PYTHONNOUSERSITE=1"',
+            'set "KEYHAC_QA_KEEP_FOCUS=1"',
             'set "PYTHONIOENCODING=utf-8"',
             f'"{python}" "{self.path(stage / "qa" / "daemon.py")}" > "{self.path(log)}" 2>&1',
             ""])
