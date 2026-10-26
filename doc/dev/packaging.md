@@ -145,11 +145,16 @@ distribution Keyhac already provides.
 ## Shared tooling
 
 - `tools/collect_dependencies.py` — runtime closure of pyproject.toml's
-  `[project]` dependencies; markers gate pyobjc off Windows.
+  `[project]` dependencies; markers gate pyobjc off Windows. Fails the build
+  when an installed version does not satisfy its requirement — the bundle
+  ships whatever the venv holds, PuiKit included, so a venv older than the
+  `puikit>=` pin would otherwise ship the old PuiKit unnoticed.
 - `tools/generate_third_party_notices.py` — license aggregation; fails on a bundled
   dist without discoverable license text.
 - Makefile targets: `windows-app` / `windows-zip` / `macos-app` / `macos-dmg`,
-  `install-*` / `uninstall-*`, `clean-*`.
+  `install-*` / `uninstall-*`, `clean-*`. The bundle builds depend on the venv
+  stamp, so a changed `pyproject.toml` refreshes the venv before they copy
+  from it.
 
 ## Release pipeline
 
