@@ -150,7 +150,8 @@ check-venv:
 # Install PuiKit into $(VENV) from the source chosen by PUIKIT_DIR: a local
 # editable checkout when PUIKIT_DIR is set (live edits, no reinstall), otherwise
 # the released build from PyPI. Idempotent — skips the install when PuiKit is
-# already present from the selected source. Run standalone to switch an existing
+# already present from the selected source (for PyPI, at a version the
+# puikit>= pin accepts: an older one is upgraded, never kept). Run standalone to switch an existing
 # venv between the two; also run automatically by venv / install.
 install-puikit: check-venv
 	@info=$$($(VENV_PIP) show puikit 2>/dev/null); \
@@ -170,11 +171,12 @@ install-puikit: check-venv
 			$(VENV_PIP) install -e "$(PUIKIT_DIR)"; \
 		fi; \
 	else \
-		if [ -n "$$info" ] && [ -z "$$editloc" ]; then \
-			echo "PuiKit already installed from PyPI; skipping."; \
+		req=$$($(VENV_PYTHON) -c 'import tomllib, pathlib; print(next(r for r in tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["dependencies"] if r.startswith("puikit")))'); \
+		if [ -n "$$info" ] && [ -z "$$editloc" ] && \
+		   $(VENV_PYTHON) -c 'import sys, importlib.metadata as m; from packaging.requirements import Requirement; sys.exit(not Requirement(sys.argv[1]).specifier.contains(m.version("puikit"), prereleases=True))' "$$req" 2>/dev/null; then \
+			echo "PuiKit from PyPI already satisfies $$req; skipping."; \
 		else \
-			echo "Installing PuiKit from PyPI..."; \
-			req=$$($(VENV_PYTHON) -c 'import tomllib, pathlib; print(next(r for r in tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["dependencies"] if r.startswith("puikit")))'); \
+			echo "Installing PuiKit ($$req) from PyPI..."; \
 			$(VENV_PIP) install --force-reinstall --no-deps "$$req"; \
 		fi; \
 	fi
@@ -537,7 +539,7 @@ release-status:
 # Delegate to macos_app/build.sh (launcher compile, Python.framework embed,
 # signing/notarization via macos_app/signing.env) and create_dmg.sh.
 
-macos-app:
+macos-app: $(VENV_STAMP)
 	@echo "Building macOS application bundle..."
 	@cd macos_app && ./build.sh
 
@@ -659,7 +661,10 @@ WINDOWS_APP_BUNDLE := windows_app/build/Keyhac/Keyhac.exe
 # than a "no rule to make target" error.
 #
 # PuiKit is deliberately absent: it ships in the bundle but comes from outside
-# this tree, so changes there still need an explicit 'make windows-app'.
+# this tree, so changes there still need an explicit 'make windows-app'. The
+# venv stamp is a prerequisite instead, so a pyproject.toml change (a raised
+# puikit>= pin) refreshes the venv before the bundle copies from it, and
+# tools/collect_dependencies.py fails the build if the venv still falls short.
 WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard windows_app/resources/Keyhac.rc) \
                        $(wildcard windows_app/resources/Keyhac.manifest) \
@@ -670,16 +675,16 @@ WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard keyhac/platform/win/*.py) \
                        $(wildcard keyhac/ui/*.py)
 
-$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES)
+$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES) $(VENV_STAMP)
 	@echo "Windows app bundle missing or stale; building it first..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
 
-windows-app:
+windows-app: $(VENV_STAMP)
 	@echo "Building Windows application bundle..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
 
 # Named for the artifact it produces, matching macos-dmg on the macOS side.
-windows-zip:
+windows-zip: $(VENV_STAMP)
 	@echo "Building Windows application bundle (+ zip)..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
 

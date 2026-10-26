@@ -168,6 +168,61 @@ def resolve_runtime_closure(seed_names):
     return resolved
 
 
+def verify_versions(pyproject_file, resolved):
+    """
+    Check that what the venv has installed satisfies what is declared.
+
+    The bundle ships whatever the build venv holds, so a venv that predates a
+    raised pin (``puikit>=`` bumped, venv never refreshed) builds a bundle with
+    the old version and nothing else notices: 2.7.0's first Windows zip shipped
+    puikit 1.15.1 against a ``puikit>=1.15.2`` pin. Every ``[project]``
+    requirement must be installed at a matching version, and so must each
+    requirement a collected distribution declares. Returns True when all are.
+    """
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:
+        log_error("'packaging' is not installed in the build venv, so dependency "
+                  "versions cannot be verified. Run: make install")
+        return False
+
+    with open(pyproject_file, "rb") as handle:
+        declared = tomllib.load(handle).get("project", {}).get("dependencies", [])
+
+    checks = [("pyproject.toml", req_str, True) for req_str in declared]
+    for dist in resolved.values():
+        for req_str in (dist.requires or []):
+            checks.append((dist.metadata["Name"], req_str, False))
+
+    problems = []
+    for origin, req_str, required in checks:
+        try:
+            req = Requirement(req_str)
+            # An extra is never active here; a marker that cannot be evaluated
+            # gates the requirement out rather than failing the build on it.
+            if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+                continue
+        except Exception:
+            continue
+        dist = resolved.get(_canonical(req.name))
+        if dist is None:
+            if required:
+                problems.append(f"{req.name} is not installed ({origin} requires {req_str})")
+            continue
+        if not req.specifier.contains(dist.version, prereleases=True):
+            problems.append(f"{dist.metadata['Name']} {dist.version} is installed, "
+                            f"but {origin} requires {req_str}")
+
+    if problems:
+        for problem in problems:
+            log_error(problem)
+        log_error("The build venv is out of date with pyproject.toml. Update it "
+                  "(make install-puikit && make install), then rebuild.")
+        return False
+    log_success("Installed versions satisfy every declared requirement")
+    return True
+
+
 def _should_skip_file(rel_path):
     """
     Skip files that must not be copied into the bundle:
@@ -284,6 +339,9 @@ def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None):
     log_info("Resolving runtime dependency closure...")
     resolved = resolve_runtime_closure(seeds + sorted(deps_only))
     log_info(f"Runtime closure: {len(resolved)} distribution(s)")
+
+    if not verify_versions(pyproject_file, resolved):
+        return False
 
     total_files = 0
     failed = []

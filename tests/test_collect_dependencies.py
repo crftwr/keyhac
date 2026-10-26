@@ -39,3 +39,44 @@ class TestShouldSkipFile:
         assert _skip(Path("PyObjCTest/arrayint.cpython-313-darwin.so"))
         assert _skip(Path("PyObjCTest/NULL.cpython-313-darwin.so.dSYM/"
                           "Contents/Resources/DWARF/NULL.cpython-313-darwin.so"))
+
+
+class _Dist:
+    """The slice of importlib.metadata.Distribution verify_versions reads."""
+
+    def __init__(self, name, version, requires=None):
+        self.metadata = {"Name": name}
+        self.version = version
+        self.requires = requires
+
+
+class TestVerifyVersions:
+
+    def _verify(self, tmp_path, dependencies, dists):
+        pyproject = tmp_path / "pyproject.toml"
+        listed = ", ".join(f"'{d}'" for d in dependencies)  # TOML literal strings
+        pyproject.write_text(f"[project]\ndependencies = [{listed}]\n")
+        resolved = {collect_dependencies._canonical(d.metadata["Name"]): d for d in dists}
+        return collect_dependencies.verify_versions(str(pyproject), resolved)
+
+    def test_satisfied_pins_pass(self, tmp_path):
+        assert self._verify(tmp_path, ["puikit>=1.15.2"], [_Dist("puikit", "1.15.2")])
+
+    def test_venv_older_than_the_pin_fails(self, tmp_path):
+        # 2.7.0's first Windows zip: the venv had 1.15.1 against >=1.15.2.
+        assert not self._verify(tmp_path, ["puikit>=1.15.2"], [_Dist("puikit", "1.15.1")])
+
+    def test_missing_declared_requirement_fails(self, tmp_path):
+        assert not self._verify(tmp_path, ["puikit>=1.15.2"], [])
+
+    def test_off_platform_requirement_is_ignored(self, tmp_path):
+        assert self._verify(tmp_path, ['nosuchdist>=1; sys_platform == "nosuchos"'], [])
+
+    def test_transitive_requirement_is_checked(self, tmp_path):
+        dists = [_Dist("puikit", "1.15.2", ["numpy>=2"]), _Dist("numpy", "1.26.0")]
+        assert not self._verify(tmp_path, ["puikit>=1.15.2"], dists)
+
+    def test_extra_only_requirement_is_ignored(self, tmp_path):
+        dists = [_Dist("puikit", "1.15.2", ['numpy>=2; extra == "fast"']),
+                 _Dist("numpy", "1.26.0")]
+        assert self._verify(tmp_path, ["puikit>=1.15.2"], dists)
