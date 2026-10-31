@@ -7,6 +7,9 @@ import pytest
 if sys.platform != "win32":
     pytest.skip("Windows-only platform layer", allow_module_level=True)
 
+# Takes focus, opens windows or sends real input: a VM's, not your desktop (conftest).
+pytestmark = pytest.mark.desktop
+
 from keyhac.platform.base import Window  # noqa: E402
 from keyhac.platform.win.window import WinWindow, WinWindowProvider  # noqa: E402
 

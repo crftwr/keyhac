@@ -14,6 +14,15 @@ live on each OS.
 - **Platform (live)**: `tests/test_win_*.py` / `tests/test_mac_*.py` drive the real
   OS APIs — they need a desktop session, and on macOS the Accessibility permission.
   Tests marked `slow` launch real third-party apps; skip with `-m 'not slow'`.
+- **Desktop tests run in a VM, not on your machine.** The ones that take the
+  foreground, open, move or resize windows, send real keys and mouse events,
+  switch the input source or replace the clipboard are marked `desktop`. They
+  get in the way of whatever you are doing, and what you are doing gets in the
+  way of them, so `pytest` skips them unless it is given `--desktop` - in a
+  VM, which is what the VM test run (#293) is for. A new test of that kind
+  gets the mark: a whole module with `pytestmark = pytest.mark.desktop`,
+  otherwise the class or the function. A test that only reads the OS (the
+  keyboard layout, a timing) stays unmarked.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 

@@ -118,6 +118,7 @@ def own_window(provider, helper):
     return window
 
 
+@pytest.mark.desktop
 class TestWindowIdentity:
 
     def test_active_window_reports_its_fields(self, provider):
@@ -148,6 +149,7 @@ class TestWindowIdentity:
         assert parent.get_attribute_value("AXRole") == "AXApplication"
 
 
+@pytest.mark.desktop
 class TestEnumeration:
 
     def test_own_window_is_listed(self, provider, own_window):
@@ -191,6 +193,7 @@ class TestEnumeration:
         assert result["frames"] and result["screens"]
 
 
+@pytest.mark.desktop
 class TestFindWindow:
 
     def test_matches_by_title_with_wildcards(self, provider, own_window):
@@ -212,6 +215,7 @@ class TestFindWindow:
         assert provider.find_window(app="no-such-application-xyz") is None
 
 
+@pytest.mark.desktop
 class TestFrameWrites:
 
     def test_set_frame_moves_without_resizing(self, own_window):
@@ -238,6 +242,7 @@ class TestFrameWrites:
             "window did not deminiaturize"
 
 
+@pytest.mark.desktop
 class TestSnapLive:
 
     def test_snap_left_covers_the_left_half_of_the_work_area(
@@ -280,6 +285,7 @@ class TestSnapLive:
             f"frame {own_window.get_frame()} never approached {expected}"
 
 
+@pytest.mark.desktop
 class TestActivate:
 
     def test_activate_brings_helper_app_frontmost(self, provider, helper, own_window):
@@ -426,6 +432,7 @@ def normal_window(own_window):
     settle()
 
 
+@pytest.mark.desktop
 class TestMaximize:
 
     def test_maximize_fills_and_restore_returns(
@@ -478,6 +485,7 @@ class TestMaximize:
         assert not window.is_maximized()
 
 
+@pytest.mark.desktop
 class TestFullScreen:
 
     def test_full_screen_round_trip_is_not_maximized(

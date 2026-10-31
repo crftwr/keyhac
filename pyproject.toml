@@ -159,4 +159,5 @@ readme = { file = ["README.pypi.md"], content-type = "text/markdown" }
 testpaths = ["tests"]
 markers = [
     "slow: drives a real third-party app (launches it, waits on its UI); run with -m 'not slow' to skip",
+    "desktop: touches the live desktop (focus, windows, real input, input source, clipboard); skipped unless --desktop, which is for a VM",
 ]
