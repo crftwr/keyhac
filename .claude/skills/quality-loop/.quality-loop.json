@@ -1,7 +1,7 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "files": {
-    "SKILL.md": "f659ee1558828468ac1b046d8e8c6c9daf4fd12c93ebe6d5f1d857e9e35fd71d",
+    "SKILL.md": "53e49260828635af8c3584f66a9e8d890b5e478aa5f7e75eadcbdf9ff41a3ecb",
     "references/filing.md": "7ba080855333d4baac4c934abc4ac7f0b97269036fae3bcabac1e5cb48f2551d",
     "references/setup.md": "6c4682e40aef679667f7cb0d9f1f798574d6b9409755ab8fbb9882ee1dcd780a"
   }
