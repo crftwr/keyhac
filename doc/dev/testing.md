@@ -75,7 +75,7 @@ screen, and your own Keyhac can keep running. Set `KEYHAC_QA_GUEST` to an
 SSH host alias for the VM:
 
 ```
-KEYHAC_QA_GUEST=keyhac-qa-mac make qa CASE=13
+KEYHAC_QA_GUEST=qa-mac make qa CASE=13
 ```
 
 The VM layer is quality-loop's (`quality_loop.guest`, its
@@ -316,7 +316,7 @@ calibrates it both ways: the hand-written examples pass, and
 
 A Windows guest in VMware Fusion can be built, run and checked from the Mac
 without touching its desktop: `build.ps1`, a Keyhac.exe launch, and a result
-file to collect. Everything here addresses the guest as **`keyhac-qa-win`**, an
+file to collect. Everything here addresses the guest as **`qa-win`**, an
 SSH host alias. Its address, user and key are per machine and live only in
 `~/.ssh/config`, never in this repository.
 
@@ -356,7 +356,7 @@ and carry on from `Start-Service`.
 ~/.ssh/<key>`), whose `.pub` is the `<public key>` above, and:
 
 ```
-Host keyhac-qa-win
+Host qa-win
     HostName <guest IP>
     User <guest user>
     IdentityFile ~/.ssh/<key>
@@ -371,7 +371,7 @@ there anyway.
 
 **Running things.**
 
-- `ssh keyhac-qa-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
+- `ssh qa-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
   code with quotes in it does not survive the ssh-to-PowerShell trip; `scp`
   a script file and run that.
 - An SSH session has no desktop, and Keyhac.exe needs one. Start it through
