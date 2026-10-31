@@ -80,6 +80,7 @@ def install_tray(console, keymap, hook) -> None:
         console.panel.render()
 
     package_sync = PackageSync(keymap)
+    capture = SamplingCapture(keymap)
 
     items = (
         MenuItem("Open Console", on_select=console.backend.show_main_window),
@@ -118,6 +119,12 @@ def install_tray(console, keymap, hook) -> None:
             # here.
             MenuItem("Sync Python Packages", on_select=package_sync.start,
                      enabled=lambda: not package_sync.running),
+        )),
+        # For a slowness that comes and goes (#292): chosen while it is
+        # happening, rather than reproduced later under a profiler.
+        MenuItem("Performance", submenu=Menu(
+            MenuItem("Capture Sampling Data", on_select=capture.start,
+                     enabled=lambda: not capture.running),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
@@ -254,6 +261,35 @@ class PackageSync:
         logger.info("Packages already imported keep their old version until "
                     "Keyhac restarts.")
         self._keymap.configure()
+
+
+class SamplingCapture:
+    """Capture Sampling Data: ten seconds of the main thread's stacks
+    (keyhac.core.sampling), then the folder they went into is opened, ready
+    to attach to an issue."""
+
+    def __init__(self, keymap, capture=None):
+        from keyhac.core import sampling
+        self._keymap = keymap
+        self._capture = capture or sampling.Capture(
+            os.path.dirname(self._keymap.extensions_dir))
+
+    @property
+    def running(self) -> bool:
+        return self._capture.running
+
+    def start(self) -> None:
+        self._capture.start(lambda folder, error: self._keymap.call_on_main_thread(
+            lambda: self._finish(folder, error)))
+
+    def _finish(self, folder: str, error) -> None:
+        if error is not None:
+            logger.error(f"Capture Sampling Data failed: {error!r}")
+            return
+        logger.info(f"Sampling data captured: {folder}")
+        if self._keymap.app_control is not None:
+            # A folder opens in Finder / Explorer; open_url hands it to the shell.
+            self._keymap.app_control.open_url(folder)
 
 
 def _cancel(name: str) -> None:
