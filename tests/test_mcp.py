@@ -3069,3 +3069,17 @@ def test_the_default_window_is_still_read_at_start_time(engine, monkeypatch):
     while keymap.mcp_server_running and time.monotonic() < deadline:
         time.sleep(0.02)
     assert keymap.mcp_server_running is False
+
+
+def test_a_write_keeps_the_file_s_own_last_byte(configurable, tmp_path):
+    """#301: a read does not show whether config.py ended with a newline, so
+    a whole-file write follows the file it replaces at the very end."""
+    config = tmp_path / "config.py"
+    config.write_text("x = 1")                                   # no newline
+    configurable.call("write_config", {"source": "x = 1\ny = 2\n"})
+    assert config.read_text() == "x = 1\ny = 2"
+    config.write_text("x = 1\n")                                 # a newline
+    configurable.call("write_config", {"source": "x = 1\ny = 2"})
+    assert config.read_text() == "x = 1\ny = 2\n"
+    configurable.call("write_config", {"source": "x = 1\ny = 2\n\n"})
+    assert config.read_text() == "x = 1\ny = 2\n\n", "only the very end is followed"

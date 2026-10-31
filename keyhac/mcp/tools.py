@@ -1468,6 +1468,10 @@ class ToolRegistry:
             return f"could not read {path}: {error}"
 
     def _write_file(self, path: str, source: str, what: str) -> str:
+        """Replace ``path`` with ``source``, which must parse, keeping a
+        backup. The file keeps its own last byte: whether it ended with a
+        newline is invisible in a read (#301), so whatever the caller sent at
+        the very end is set to match the file it replaces."""
         try:
             compile(source, path, "exec")
         except SyntaxError as error:
@@ -1480,6 +1484,7 @@ class ToolRegistry:
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as handle:
                     previous = handle.read()
+                source = _keep_final_newline(previous, source)
                 permissions.copy_private(
                     path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
                 _prune_backups(path)
@@ -1659,6 +1664,22 @@ _LOADING = "INFO [keyhac.Keymap] Loading configuration script."
 #: the directory the operator opens to read their own actions.  Not a `.py`, so
 #: nothing importable is being left behind.
 _BACKUPS_KEPT = 5
+
+
+def _keep_final_newline(previous: str | None, source: str) -> str:
+    """``source`` ending as ``previous`` did: with one newline or without.
+
+    An agent reads a file as text and cannot see whether its last line ended
+    in a newline, so a whole-file write would otherwise flip that byte on a
+    guess (#301). Only the very end is touched, and only when there is a
+    previous file to follow; the lines themselves are what was sent."""
+    if not previous or not source:
+        return source
+    if previous.endswith("\n") and not source.endswith("\n"):
+        return source + "\n"
+    if not previous.endswith("\n") and source.endswith("\n"):
+        return source[:-1]
+    return source
 
 
 def _prune_backups(path: str) -> None:
