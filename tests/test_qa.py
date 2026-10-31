@@ -252,12 +252,16 @@ def test_a_guest_run_s_home_is_on_the_share_and_reached_through_this_host_s_brid
         product.home.remove()
 
 
-def test_a_windows_guest_s_paths_are_windows_paths(tmp_path):
+def test_a_windows_guest_s_paths_are_windows_paths_and_its_python_the_image_s(tmp_path):
     from guest import Guest
+    from quality_loop.guest import GuestError
     guest = Guest("some-vm", tmp_path, r"C:\keyhac-qa")
     guest._windows = True
     assert guest.path(tmp_path / "home" / ".keyhac") == r"C:\keyhac-qa\home\.keyhac"
-    assert guest.keyhac == r"C:\Program Files\Keyhac"
+    with pytest.raises(GuestError, match="python ="):
+        guest.python  # no Keyhac in the image: its Python has to be named
+    guest.settings["python"] = r"C:\Python314\python.exe"
+    assert guest.python == r"C:\Python314\python.exe"
 
 
 def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
@@ -268,6 +272,21 @@ def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
     monkeypatch.setenv("KEYHAC_QA_SHARE", "/only/the/host/side")
     with pytest.raises(SystemExit):
         Guest.from_environment()
+
+
+def test_the_guest_installs_what_is_not_ours_and_stages_what_is(tmp_path):
+    import guest
+    requirements = guest.third_party_requirements()
+    assert not any(r.lower().startswith("puikit") for r in requirements)
+    assert any(r.startswith("pillow") for r in requirements)
+    assert any("sys_platform" in r for r in requirements), "markers are left to pip"
+    assert any(r.startswith("numpy") for r in requirements), "what PuiKit needs too"
+    assert not any("extra ==" in r for r in requirements)
+    stage = guest.Guest("some-vm", tmp_path, r"C:\qa").stage()
+    assert (stage / "keyhac" / "__init__.py").exists()
+    assert (stage / "qa" / "daemon.py").exists()
+    assert (stage / "lib" / "puikit" / "__init__.py").exists()
+    assert (stage / "ql" / "quality_loop" / "guest" / "boot" / "launch.py").exists()
 
 
 def test_the_daemon_quits_when_the_quit_file_appears(tmp_path, monkeypatch):
@@ -298,7 +317,7 @@ tart = "base"
 share = "{share}=C:\\\\qa"
 vmx = "~/vm.vmx"
 snapshot = "clean"
-keyhac = "D:\\\\Keyhac"
+python = "D:\\\\Python\\\\python.exe"
 """, encoding="utf-8")
     monkeypatch.setenv("KEYHAC_QA_GUESTS", str(settings))
     monkeypatch.delenv("KEYHAC_QA_SHARE", raising=False)
@@ -313,7 +332,7 @@ keyhac = "D:\\\\Keyhac"
     monkeypatch.setenv("KEYHAC_QA_GUEST", "some-win")
     win = guest.Guest.from_environment()
     win._windows = True
-    assert win.keyhac == r"D:\Keyhac"
+    assert win.python == r"D:\Python\python.exe"
     machine = win.machine()
     assert isinstance(machine, guest.VMwareMachine)
     assert machine.snapshot == "clean" and not machine.vmx.startswith("~")
@@ -331,10 +350,10 @@ def test_a_vmware_guest_is_shut_down_after_the_run(tmp_path, monkeypatch):
     import guest
     share = tmp_path / "share"
     machine = guest.VMwareMachine(guest.Guest(
-        "some-win", share, r"C:\qa", None,
+        "some-win", share, r"C:\qa",
         {"vmx": "w.vmx", "snapshot": "clean", "smb": "//qa@host/qa"}))
     ran = []
-    monkeypatch.setattr(guest.subprocess, "run",
+    monkeypatch.setattr(guest.ql.subprocess, "run",
                         lambda command, **_: ran.append(command) or types.SimpleNamespace(returncode=0))
     machine.__exit__(None, None, None)
     assert ran[0] == ["umount", str(share)]
@@ -344,9 +363,9 @@ def test_a_vmware_guest_is_shut_down_after_the_run(tmp_path, monkeypatch):
 def test_a_clone_is_reached_at_its_own_address_under_the_alias_s_host_key(tmp_path):
     from guest import Guest
     guest = Guest("some-vm", tmp_path, "/x")
-    assert guest._ssh_options() == []
+    assert guest.ssh_options() == []
     guest.hostname = "192.0.2.7"
-    options = guest._ssh_options()
+    options = guest.ssh_options()
     assert "HostName=192.0.2.7" in options and "HostKeyAlias=some-vm" in options
 
 
@@ -358,9 +377,9 @@ def test_a_secret_is_read_from_the_keychain_only_when_it_says_so(monkeypatch):
         asked.append(argv)
         return subprocess.CompletedProcess(argv, 0, stdout="s3cret\n", stderr="")
 
-    monkeypatch.setattr(guest.subprocess, "run", run)
-    assert guest._secret("plain") == "plain" and asked == []
-    assert guest._secret("keychain:some-item") == "s3cret"
+    monkeypatch.setattr(guest.ql.subprocess, "run", run)
+    assert guest.ql.secret("plain") == "plain" and asked == []
+    assert guest.ql.secret("keychain:some-item") == "s3cret"
     assert asked == [["security", "find-generic-password", "-s", "some-item", "-w"]]
 
 
@@ -376,20 +395,22 @@ def test_in_a_guest_the_screens_go_up_there_and_the_operator_is_told_its_os(
     monkeypatch.setenv("KEYHAC_QA_SHARE", f"{tmp_path}=C:\\qa")
     product = run.Keyhac()
     product.guest._windows = True
+    product.guest.settings["python"] = r"C:\Python314\python.exe"
     assert product.screen_backend() is None, "nothing to point at before Keyhac is up"
     product._guest_up = types.SimpleNamespace(stage=tmp_path / "stage")
     spec = product.screen_backend()
-    assert pathlib.Path(spec["path"]).name == "guest_screens.py"
+    assert pathlib.Path(spec["path"]).as_posix().endswith("quality_loop/guest/screens.py")
+    assert spec["settings"]["terminal_python"] == r"C:\Python314\python.exe"
     assert spec["settings"]["windows"] is True
     assert spec["settings"]["stage"] == str(tmp_path / "stage")
     assert product.platform() == "win32"
 
 
-def test_a_terminal_screen_runs_the_guest_s_own_interpreter(tmp_path):
+def test_a_mac_guest_without_a_named_python_runs_keyhac_app_s(tmp_path, monkeypatch):
     from guest import Guest
-    win = Guest("some-vm", tmp_path, r"C:\qa", r"C:\Program Files\Keyhac")
-    win._windows = True
-    assert win.python == r"C:\Program Files\Keyhac\runtime\python.exe"
-    mac = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa", "/Applications/Keyhac.app")
+    monkeypatch.delenv("KEYHAC_QA_GUEST_KEYHAC", raising=False)
+    mac = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa")
     mac._windows = False
     assert mac.python.startswith("/Applications/Keyhac.app/Contents/Frameworks/")
+    mac.settings["python"] = "/usr/local/bin/python3.14"
+    assert mac.python == "/usr/local/bin/python3.14"
