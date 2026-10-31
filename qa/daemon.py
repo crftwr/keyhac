@@ -48,31 +48,31 @@ def _foreground_keeper():
     Windows guest only (KEYHAC_QA_KEEP_FOCUS, set by qa/guest.py). A room's
     first look at the screen should find the desktop, as a Mac guest's finds
     Finder: there `open -g` starts Keyhac without bringing it forward. A
-    scheduled task cannot, so the window in front before Keyhac started -
-    the desktop's, when there is none - is put back in front, from Keyhac's
-    own process, which Windows lets hand the foreground on while it has it.
+    scheduled task cannot, so the desktop is put in front, from Keyhac's own
+    process, which Windows lets hand the foreground on while it has it.
+
+    The desktop, not the window in front before Keyhac started: on a guest
+    just reverted that was Explorer's hidden tray overflow window, which a
+    room cannot see or use. The clean state has nothing else open anyway.
     """
     if sys.platform != "win32" or os.environ.get("KEYHAC_QA_KEEP_FOCUS") != "1":
         return None
     import ctypes
     from ctypes import wintypes
     user32 = ctypes.WinDLL("user32", use_last_error=True)
-    user32.GetForegroundWindow.argtypes = []
-    user32.GetForegroundWindow.restype = wintypes.HWND
     user32.GetShellWindow.argtypes = []
     user32.GetShellWindow.restype = wintypes.HWND
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     user32.SetForegroundWindow.restype = wintypes.BOOL
-    before = user32.GetForegroundWindow() or user32.GetShellWindow()
 
     def give_back():
-        if before and user32.SetForegroundWindow(before):
+        desktop = user32.GetShellWindow()
+        if desktop and user32.SetForegroundWindow(desktop):
             print("qa: foreground given back", flush=True)
 
     return give_back
 
 
-#: Taken before Keyhac starts, so "before" is not Keyhac's console.
 _GIVE_BACK = _foreground_keeper()
 
 
@@ -90,8 +90,10 @@ def _wait_for_the_runner() -> None:
 
 def _arm(console, keymap) -> None:
     """Endpoint on, and a thread that quits Keyhac when the runner lets go."""
-    keymap.start_mcp_server(timeout=None)
-    print("qa: MCP server on, no timeout", flush=True)
+
+    def endpoint_on():
+        keymap.start_mcp_server(timeout=None)
+        print("qa: MCP server on, no timeout", flush=True)
 
     def on_main_thread(func):
         backend = console.backend
@@ -112,9 +114,19 @@ def _arm(console, keymap) -> None:
     threading.Thread(target=wait_for_the_runner, daemon=True,
                      name="qa-quit").start()
 
-    if _GIVE_BACK is not None:
-        # The console is shown when the loop starts, after this returns.
-        threading.Timer(2.0, on_main_thread, args=(_GIVE_BACK,)).start()
+    if _GIVE_BACK is None:
+        endpoint_on()
+        return
+
+    def give_back_then_endpoint_on():
+        _GIVE_BACK()
+        endpoint_on()
+
+    # The console is shown when the loop starts, after this returns. The
+    # endpoint waits for the desktop to be in front: the focus Keyhac answers
+    # is read once and kept until a key event, so a get_focus before the
+    # hand-back would go on answering Keyhac's console.
+    threading.Timer(2.0, on_main_thread, args=(give_back_then_endpoint_on,)).start()
 
 
 def arm_at_tray(tray) -> None:
