@@ -327,12 +327,16 @@ kt_cx["Ctrl-S"] = f"{MOD2}-S"      # Ctrl held through: Ctrl-X Ctrl-S
 kt_cx["S"] = f"{MOD2}-S"           # Ctrl let go: Ctrl-X S
 ```
 
-The prefix key itself no longer does what it did — here Ctrl-X stops being Cut in
-every application the table applies to. To keep it reachable, give it a second stroke
-of its own; pressing the prefix twice is the usual choice:
+The prefix key itself no longer does what it did, in every application the table
+applies to — here Ctrl-X stops being Cut on Windows, and on macOS stops being whatever
+the application made of it (Cut is Cmd-X there; a text field takes Ctrl-X as an Emacs
+key, or ignores it). To keep it reachable, give it a second stroke of its own;
+pressing the prefix twice is the usual choice. Sending the prefix itself gives the key
+back as it was on each system, which is not the same thing on both — say so in the
+comment rather than calling it Cut:
 
 ```python
-kt_cx["Ctrl-X"] = "Ctrl-X"         # Ctrl-X Ctrl-X: Cut, as before
+kt_cx["Ctrl-X"] = "Ctrl-X"         # Ctrl-X Ctrl-X: Ctrl-X as before (Cut on Windows)
 ```
 
 ## Remapping and user modifiers
