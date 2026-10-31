@@ -275,7 +275,14 @@ def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
 
 
 def test_the_guest_installs_what_is_not_ours_and_stages_what_is(tmp_path):
+    import importlib.metadata
     import guest
+    try:
+        importlib.metadata.distribution("puikit")
+    except importlib.metadata.PackageNotFoundError:
+        # In a VM test run PuiKit is staged, not installed (tools/vm_test.py),
+        # and what it needs is read from the installed one.
+        pytest.skip("PuiKit is staged here, not installed")
     requirements = guest.third_party_requirements()
     assert not any(r.lower().startswith("puikit") for r in requirements)
     assert any(r.startswith("pillow") for r in requirements)

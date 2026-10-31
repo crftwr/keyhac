@@ -334,6 +334,8 @@ def test_the_switch_reads_back_on_a_live_application():
     import ApplicationServices as AS
     from keyhac.platform.mac.uielement import UIElement
 
+    if not AS.AXIsProcessTrusted():
+        pytest.skip("no Accessibility permission in this environment")
     for name, pid in UIElement.get_running_applications():
         if name == "Finder":
             break
