@@ -228,6 +228,11 @@ class TestFrameWrites:
         assert (nw, nh) == (w, h)  # w/h omitted -> move only
 
     def test_set_frame_resizes_when_given_a_size(self, own_window):
+        # Room below and to the right first: earlier tests leave the window
+        # wherever they moved it, and on a small screen (a VM's 1280x740)
+        # macOS clamps a frame that would cross the bottom edge.
+        assert own_window.set_frame(100, 100)
+        assert _wait_for(lambda: own_window.get_frame()[:2] == (100, 100))
         x, y, w, h = own_window.get_frame()
         assert own_window.set_frame(x, y, w + 40, h + 30)
         assert _wait_for(
