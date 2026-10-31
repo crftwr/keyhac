@@ -78,11 +78,14 @@ SSH host alias for the VM:
 KEYHAC_QA_GUEST=keyhac-qa-mac make qa CASE=13
 ```
 
-What that alias means on this machine goes in
-`~/.config/keyhac-qa/guests.toml`, outside the repository: the shared folder
-as `<host path>=<guest path>`, and the VM itself, so that the run starts it
-from a clean state and puts it away afterwards. The table's format is in
-`qa/guest.py`'s `Guest`.
+The VM layer is quality-loop's (`quality_loop.guest`, its
+`docs/guests.md`), shared with XeFM (xefm#750); `qa/guest.py` keeps only
+what is Keyhac's: what is staged and how Keyhac starts. What that alias
+means on this machine goes in `~/.config/quality-loop/guests.toml`
+(`KEYHAC_QA_GUESTS` names another file), outside the repository: the shared
+folder as `<host path>=<guest path>`, the image's interpreter as `python`
+(required for a Windows guest), and the VM itself, so that the run starts it
+from a clean state and puts it away afterwards.
 
 - **Tart:** `tart = "<base VM>"`. The run clones the base, starts the clone
   with the share as `--dir`, reaches it at the clone's own address, and
@@ -114,14 +117,16 @@ Both have run scenarios end to end (13 on both, 12 on macOS):
   the foreground.
 - **Windows (VMware Fusion):** VMware Tools for Windows on Arm has no
   Shared Folders, so the guest shares a folder over SMB and the host mounts
-  it. The bundle's `pythonw.exe` runs the staged code through
-  `qa/guest_boot/winstart.py`, from a scheduled task. It uses `pythonw`
-  because `cmd.exe` would put a terminal window on the desktop. The task is
-  XML because the ScheduledTasks cmdlets need CIM, which refuses a standard
-  user over SSH. Once the console is up, Keyhac gives the foreground back to
-  the desktop. The bundle (`build.ps1`'s output) provides the interpreter
-  and the third-party packages, so the guest needs no Python and no build
-  tools.
+  it. No Keyhac is installed in the image: its Python (3.14, fixed per
+  image) gets a fresh venv for the run with the third-party packages -
+  pyproject.toml's and PuiKit's - from a pip cache on the share. PuiKit is
+  ours, so it is staged from this checkout's environment, not installed.
+  `pythonw.exe` runs `qa/daemon.py` from a scheduled task, through
+  quality-loop's launcher; `pythonw` because `cmd.exe` would put a terminal
+  window on the desktop. The task is XML because the ScheduledTasks cmdlets
+  need CIM, which refuses a standard user over SSH. Once the console is up,
+  Keyhac gives the foreground back to the desktop. A first run takes about
+  70s from revert to Keyhac's endpoint.
 
 **The guest is the test environment.** Start each run from a clean
 state: a Tart clone of a base image, deleted afterwards, or a VMware
@@ -142,14 +147,14 @@ above. What the clean state needs, found the hard way:
   for SSH and SMB that allow only the host's network.
 
 **Screens go up in the guest.** The adapter's `screen_backend()` hands the
-operator `qa/guest_screens.py` in place of this machine's backend. Each
-`screen_open` / `screen_close` runs quality-loop's own Safari / Terminal or
-Edge / Windows Terminal code in the guest, from the run's stage
-(`qa/guest_boot/screen_agent.py`). On macOS that goes over SSH; on Windows it
+operator `quality_loop.guest.screens` in place of this machine's backend.
+Each `screen_open` / `screen_close` runs quality-loop's own Safari / Terminal
+or Edge / Windows Terminal code in the guest, from the run's stage. On macOS that goes over SSH; on Windows it
 goes through a scheduled task in the desktop session. The pages stay served on
 the host's `127.0.0.1`, and a reverse tunnel (`ssh -R`, same port) makes that
 address the guest's too, so the page's events come back unchanged. A
-terminal screen's script runs with Keyhac's own interpreter in the guest.
+terminal screen's script runs with the image's interpreter in the guest
+(Keyhac.app's on a macOS guest without one).
 
 What the clean state needs for screens:
 
