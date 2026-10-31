@@ -77,11 +77,11 @@ def room(tmp_path):
             '    kt_cx["Ctrl-S"] = f"{MOD2}-S"\n')
     for part in ("before", "after", "desktop"):
         (tmp_path / "evidence" / part).mkdir(parents=True)
-    (tmp_path / "evidence" / "before" / "config.py").write_text(base)
-    (tmp_path / "evidence" / "after" / "config.py").write_text(base.replace(anchor, edit + anchor, 1))
+    (tmp_path / "evidence" / "before" / "config.py").write_text(base, encoding="utf-8")
+    (tmp_path / "evidence" / "after" / "config.py").write_text(base.replace(anchor, edit + anchor, 1), encoding="utf-8")
     rows = "".join(f"REC-{n:03d},item {n},{37 * n}\n" for n in range(1, 9))
     (tmp_path / "evidence" / "desktop" / "orders.csv").write_text(
-        "id,name,amount\n" + rows + "REC-001,item 1,37\n")
+        "id,name,amount\n" + rows + "REC-001,item 1,37\n", encoding="utf-8")
     return tmp_path
 
 
@@ -217,7 +217,9 @@ def test_a_run_s_home_is_its_own_and_only_made_when_a_run_needs_it():
     assert product._home is None, "listing or checking scenarios makes no home"
     try:
         home = product.home
-        assert pathlib.Path.home() not in home.root.parents
+        # Not the user's own ~/.keyhac (on Windows the temp directory is under
+        # the home, so being under it proves nothing).
+        assert pathlib.Path.home() / ".keyhac" not in home.root.parents
         assert ROOT not in home.root.parents, "a room must not reach the checkout"
         rules = product.rules()
         assert str(home.extensions) in rules and str(home.desktop) in rules
@@ -317,11 +319,11 @@ def test_a_guest_s_settings_come_from_its_table_and_name_its_machine(tmp_path, m
     settings = tmp_path / "guests.toml"
     settings.write_text(f"""
 [some-mac]
-share = "{share}=/Volumes/My Shared Files/qa"
+share = "{share.as_posix()}=/Volumes/My Shared Files/qa"
 tart = "base"
 
 [some-win]
-share = "{share}=C:\\\\qa"
+share = "{share.as_posix()}=C:\\\\qa"
 vmx = "~/vm.vmx"
 snapshot = "clean"
 python = "D:\\\\Python\\\\python.exe"
