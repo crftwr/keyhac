@@ -61,18 +61,35 @@ def _name(requirement: str) -> str:
     return head.strip().lower()
 
 
+def _requires(name: str) -> list[str]:
+    """``name``'s requirements, markers and all. An editable install's
+    metadata is as old as the install, so a checkout's (../puikit's) are read
+    from its pyproject.toml instead."""
+    import importlib.metadata
+    import urllib.parse
+    distribution = importlib.metadata.distribution(name)
+    direct = json.loads(distribution.read_text("direct_url.json") or "{}")
+    if direct.get("dir_info", {}).get("editable"):
+        checkout = pathlib.Path(urllib.parse.urlsplit(direct["url"]).path)
+        with (checkout / "pyproject.toml").open("rb") as f:
+            project = tomllib.load(f)["project"]
+        requires = list(project.get("dependencies", []))
+        for extra, lines in project.get("optional-dependencies", {}).items():
+            requires += [f'{line}; extra == "{extra}"' for line in lines]
+        return requires
+    return list(distribution.requires or ())
+
+
 def third_party_requirements() -> list[str]:
     """What the guest installs: pyproject.toml's dependencies that are not
     ours, and those of what we stage (PuiKit's numpy, say - the first Windows
     run without them stopped at `import numpy`), markers and all: pip in the
     guest leaves out what is for another OS. An extra's (``extra == "dev"``)
     is not the run's."""
-    import importlib.metadata
     with (ROOT / "pyproject.toml").open("rb") as f:
         wanted = list(tomllib.load(f)["project"]["dependencies"])
     for name in STAGED:
-        wanted += [r for r in importlib.metadata.requires(name) or ()
-                   if "extra ==" not in r]
+        wanted += [r for r in _requires(name) if "extra ==" not in r]
     out = []
     for requirement in wanted:
         if _name(requirement) not in STAGED and requirement not in out:

@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check check-docs fix-docs skill-bundle qa \
+        test-vm api-reference api-reference-check check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -69,6 +69,7 @@ help:
 	@echo "  make install-puikit - (re)install PuiKit into the venv: editable from"
 	@echo "                     PUIKIT_DIR if set, else the released build from PyPI"
 	@echo "  make test        - run the engine test suite (no permissions needed)"
+	@echo "  make test-vm GUEST=qa-win - the suite in a VM, desktop tests included"
 	@echo "  make run         - run Keyhac with ~/.keyhac/config.py"
 	@echo "  make run-debug   - run Keyhac with debug logging (key events, dispatch)"
 	@echo "  make run-sandbox - run Keyhac with a sandbox config ($(SANDBOX_CONFIG)),"
@@ -183,6 +184,12 @@ install-puikit: check-venv
 
 test: $(VENV_STAMP)
 	$(VENV_PYTHON) -m pytest
+
+# The suite in a VM, the tests marked desktop included (tools/vm_test.py):
+# GUEST= names one in ~/.config/quality-loop/guests.toml, ARGS= is for pytest.
+test-vm: $(VENV_STAMP)
+	@test -n "$(GUEST)" || { echo "GUEST= names the VM (qa-win, qa-mac)"; exit 1; }
+	$(VENV_PYTHON) tools/vm_test.py $(GUEST) $(ARGS)
 
 run: $(VENV_STAMP)
 	$(VENV_PYTHON) -m keyhac $(ARGS)

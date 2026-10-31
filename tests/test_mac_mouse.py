@@ -240,6 +240,7 @@ def test_mouse_batch_does_not_touch_the_key_flight_ledger(m):
 
 # -- live (skips without Accessibility) --------------------------------------
 
+@pytest.mark.desktop  # a real event tap, and the real cursor moved
 class TestLive:
     """Posts real events: the cursor genuinely jumps 30 px and is restored."""
 
