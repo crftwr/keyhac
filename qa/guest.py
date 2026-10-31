@@ -1,6 +1,6 @@
 """The run's Keyhac in a VM: off the host's keyboard and screen (issue #271).
 
-    KEYHAC_QA_GUEST=keyhac-qa-mac make qa CASE=13
+    KEYHAC_QA_GUEST=qa-mac make qa CASE=13
 
 The VM layer - the guest over SSH, the shared folder, Tart and VMware
 machines, the venv, the desktop session, the screens - is quality-loop's
@@ -138,6 +138,11 @@ class Guest(ql.Guest):
         if self.windows:
             self._start_windows(home, stage, log, quit_at)
             return
+        # A clone just booted shows Installer Progress for a few seconds, in
+        # front. Keyhac reads the focus once and keeps it until a key event,
+        # so a get_focus in those seconds would go on answering the installer.
+        self.ssh("for i in $(seq 60); do pgrep -qf 'Installer Progress.app' || exit 0; "
+                 "sleep 1; done", timeout=90)
         env = {"HOME": home, "PYTHONPATH": self.path(stage / "boot"),
                "KEYHAC_QA_STAGE": self.path(stage), "KEYHAC_QA_QUIT_FILE": quit_at}
         # -n: a new instance even if one is up, so it gets this environment.
