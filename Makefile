@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        test-vm api-reference api-reference-check check-docs fix-docs skill-bundle qa \
+        test-vm api-reference api-reference-check release-review check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -96,6 +96,7 @@ help:
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make check-docs  - check the Japanese doc translations (missing, stale, links)"
+	@echo "  make release-review - review the last tag..origin/main against CLAUDE.md's rules"
 	@echo "  make fix-docs    - point translations' links at other translations, then check"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
 	@echo "  make clean-venv  - remove the virtualenv"
@@ -272,6 +273,15 @@ api-reference: $(VENV_STAMP)
 api-reference-check: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
 	$(VENV_PYTHON) tools/generate_api_reference.py --check
+
+# What is about to ship, against CLAUDE.md's rules: the mechanical ones as
+# findings, the judgment calls as pointers (tools/release_review.py). Reports
+# only; the keyhac-release skill runs it before tagging. ARGS= takes --base /
+# --head.
+release-review: $(VENV_STAMP)
+	@$(VENV_PIP) install --quiet lazydocs
+	git fetch -q origin
+	$(VENV_PYTHON) tools/release_review.py $(ARGS)
 
 # The Japanese translations of README.md and doc/*.md (#283): missing, stale,
 # or linking to an English page that has a translation. See
