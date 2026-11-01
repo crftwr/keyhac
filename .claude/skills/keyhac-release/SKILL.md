@@ -47,8 +47,19 @@ invoking any of that, do the checks preflight cannot:
 - `git log v<current>..origin/main --oneline` — everything meant for this
   release is merged, nothing unexpected rode along. This list is also the raw
   material for the release note.
-- `make api-reference-check` and `make icons-check` — the committed generated
-  artifacts (`doc/config-api.md`, the rendered icons) must match their
+- `make release-review` — reviews `v<current>..origin/main` against
+  CLAUDE.md's rules (`tools/release_review.py`; it includes
+  `api-reference-check` and `check-docs`). Report it to the user; fix nothing
+  here, the user decides what is fixed before tagging.
+  - **Findings** (exit 1) are the mechanical rules — OS imports in core/ui,
+    ctypes prototypes, camelCase, and the public API compared against the
+    last tag (an entry or parameter removed, a parameter added with no
+    default: additive-only, so each is a stop unless the user moves it to
+    `doc/dev/next-major.md`). List them as they are.
+  - **For review** lines are pointers, not violations: read each site and
+    give a verdict per line. Its API additions also check step 1 — any of
+    them means at least a minor bump — and are the note's raw material.
+- `make icons-check` — the committed rendered icons must match their SVG
   sources before they ship.
 - **The standing interactive pass** — `doc/dev/testing.md`, "The interactive
   pass before a release". These are live checks no automated harness covers

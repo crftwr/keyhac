@@ -178,6 +178,30 @@ from the Makefile; the cask is only a URL and a sha256 pointing at that DMG). Su
 `tools/{release_preflight,bump_version,_version_source}.py`. The version lives in
 `keyhac/__init__.py` (`__version__`), one number for both OSes.
 
+**`make release-review`** (`tools/release_review.py`) runs before `make tag`,
+from the release skill's step 2, and reports what is about to ship against
+CLAUDE.md's rules; it fixes nothing. Keyhac has no CI and most changes land
+through the maintainer's own sessions, so this one pass over the last
+tag..`origin/main` is where drift across many small changes shows.
+
+- **Findings** (exit 1), judged on the lines the range added: an OS module
+  imported under `keyhac/core/`, or AppKit / Win32 under `keyhac/ui/`; a
+  Windows DLL function called with no `restype` declared in its file;
+  camelCase in the public API; the public API compared tag to head through
+  the generated `doc/config-api.md` and `doc/action-api.md` - an entry or a
+  parameter that shipped and is gone, a new parameter with no default - and
+  the `api-reference-check` and `check-docs` results. Comparing across the
+  release sees what no single PR does: an entry added and removed again
+  inside it is fine, one that shipped is not.
+- **For review**, pointers that never set the exit status: new modules, new
+  root files and tests outside `tests/`, new or moved dependencies, core
+  reaching into `platform/mac|win` or `ui`, changed hooks (against
+  [design-notes.md](design-notes.md)'s load-bearing list), lines near
+  UINode's identity and lifetime, the MCP tool surface, user docstrings that
+  name keyhac-mac / keyhac-win (migration help, or porting history for a
+  comment?), and every API addition - the release note's material, and the
+  reason a release with any is at least a minor.
+
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
 the skill bundles - one zip per folder in `keyhac/skills/`, all attached to the
 GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
