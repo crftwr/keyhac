@@ -37,7 +37,11 @@ live on each OS.
   (`qa-mac-2026-10-31-2`) grants python.org's Python and
   `sshd-keygen-wrapper` "Device Control and Data Access" (macOS 27's
   Accessibility and Input Monitoring) and has Japanese Romaji input, so the
-  window, mouse and IME tests run there.
+  window, mouse and IME tests run there. The stage is copied from the working
+  tree once the VM is up, not when the command starts: do not switch branches
+  or edit files until it is (about the first minute) - a checkout half way
+  through the copy stages a mix of both branches, and the run then fails in
+  ways neither has. The same holds for a quality-loop run in a guest.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 
