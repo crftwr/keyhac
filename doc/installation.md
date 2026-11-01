@@ -110,9 +110,18 @@ Everything lives under `~/.keyhac/` on both OSes:
 | `extensions/` | On `sys.path` — put your own Python modules here and import them from config.py |
 | `clipboard.json` | Persisted clipboard history |
 | `settings.json` | App state (console visibility etc.) |
+| `performance/` | Sampling data you captured, one folder per capture (see below) |
 
 Running with `--config PATH` keeps `clipboard.json` and `settings.json` beside that
 config file instead — handy for a sandboxed or experimental setup.
+
+**If Keyhac is slow or busy** (high CPU while idle, keys lagging), choose
+**Performance > Capture Sampling Data** in the tray / menu-bar menu while it is
+happening. For ten seconds Keyhac records where its main thread spends its time,
+then opens the folder it wrote under `~/.keyhac/performance/`. Attach that folder
+to a [GitHub issue](https://github.com/crftwr/keyhac/issues). `summary.txt` is the
+part to read first. On macOS the folder also holds the native stacks
+(`native-sample.txt`, from the system's `sample` tool).
 
 ### Portable mode (Windows)
 

@@ -105,9 +105,18 @@ Keyhac は単一インスタンスで動きます。実行中にもう一度起�
 | `extensions/` | `sys.path` に含まれます。自作の Python モジュールをここに置き、config.py から import します |
 | `clipboard.json` | 永続化されたクリップボード履歴 |
 | `settings.json` | アプリの状態（コンソールの表示状態など） |
+| `performance/` | 取得したサンプリングデータ。1 回の取得ごとに 1 フォルダ（下記参照） |
 
 `--config PATH` を付けて実行すると、`clipboard.json` と `settings.json` はその設定ファイルの隣に置かれます。
 サンドボックス化した環境や実験用の環境に便利です。
+
+**Keyhac が重い・忙しいとき**（何もしていないのに CPU 使用率が高い、キー入力が遅れるなど）は、
+その状態のうちにトレイ／メニューバーのメニューで **Performance > Capture Sampling Data** を選びます。
+Keyhac は 10 秒間、メインスレッドが何に時間を使っているかを記録し、
+`~/.keyhac/performance/` の下に書き出したフォルダを開きます。
+そのフォルダを [GitHub の Issue](https://github.com/crftwr/keyhac/issues) に添付してください。
+最初に読むべきなのは `summary.txt` です。
+macOS では、ネイティブのスタック（システムの `sample` ツールによる `native-sample.txt`）も同じフォルダに入ります。
 
 ### ポータブルモード (Windows)
 
