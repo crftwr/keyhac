@@ -508,9 +508,11 @@ closes it.
 Entries keep more than their text. Rich text (RTF/HTML), images and copied files
 are pasted back the way they were copied. **Option-Enter** (Alt-Enter on Windows)
 pastes an entry's text alone, without its formatting; Option-Shift-Enter sets it
-without pasting. An entry marked *(text only)* came from a copy the history could
-keep only the text of, such as spreadsheet cells. Choosing the entry that is still
-on the clipboard pastes it untouched, with everything the copy offered.
+without pasting. A copy that offers a picture of itself along with its text, such
+as spreadsheet cells, is listed by its text, and its preview shows both. An entry
+marked *(text only)* came from a copy the history could keep only the text of.
+Choosing the entry that is still on the clipboard pastes it untouched, with
+everything the copy offered.
 
 Rich text and images last for the session (`max_session_data_size`, 64 MB by
 default; past it the oldest fall back to their text). Text and file paths are saved
