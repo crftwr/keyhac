@@ -84,6 +84,17 @@ On the Windows machine, from the same checkout at the tag:
 Store, not the GitHub Release, and certification proceeds asynchronously
 (poll with `msstore submission status`).
 
+The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
+not installed from a package index — an editable PuiKit included — or outside
+a requirement (`tools/collect_dependencies.py`). Before `release-macos-dmg`
+and the Windows targets, put the released PuiKit in with `make install-puikit
+PUIKIT_DIR=`, and pass `PUIKIT_DIR=` to the bundle targets too, so a venv
+refresh on the way does not reinstall the checkout. For anything else the
+error names, `pip install --force-reinstall --no-deps <name>`. Never set
+`KEYHAC_BUNDLE_ALLOW_LOCAL` for a release build; it is for local development
+builds. Switch back with `make install-puikit` afterwards if the user develops
+against the checkout.
+
 - `make tag` commits directly to `main` — sanctioned for release commits only.
 - Each target is independently re-runnable; `release-github` is idempotent.
   The DMG/zip file targets do **not** rebuild an existing artifact (so a
@@ -153,7 +164,9 @@ finished and get a yes before uploading.
    artifacts must be built from the tagged code, not from whatever `main`
    has become.
 3. `make release-windows-zip` — builds the bundle and the portable zip, and
-   attaches the zip to the GitHub Release.
+   attaches the zip to the GitHub Release. If the collector refuses the venv
+   (a local install, a version below a requirement), bring it to the released
+   versions as in step 3 and rebuild with `make windows-zip`.
 4. Ask whether to also submit to the Microsoft Store this time:
    `make release-windows-msix`. It is a separate publication with its own
    asynchronous certification (`msstore submission status`), not a Release

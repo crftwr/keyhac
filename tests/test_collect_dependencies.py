@@ -3,6 +3,7 @@ what lands in a bundle. A wrong answer here is expensive in both directions:
 dropping a runtime file breaks the shipped app, and keeping a test suite pays
 for it in bundle size and per-binary codesigning."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -80,3 +81,65 @@ class TestVerifyVersions:
         dists = [_Dist("puikit", "1.15.2", ['numpy>=2; extra == "fast"']),
                  _Dist("numpy", "1.26.0")]
         assert self._verify(tmp_path, ["puikit>=1.15.2"], dists)
+
+
+class _InstalledDist(_Dist):
+    """A _Dist with the PEP 610 direct_url.json a non-index install carries."""
+
+    def __init__(self, name, version, direct_url=None, requires=None):
+        super().__init__(name, version, requires)
+        self._direct_url = direct_url
+
+    def read_text(self, filename):
+        if filename == "direct_url.json" and self._direct_url is not None:
+            return json.dumps(self._direct_url)
+        return None
+
+
+_EDITABLE = {"url": "file:///Users/dev/puikit", "dir_info": {"editable": True}}
+_LOCAL_WHEEL = {"url": "file:///tmp/puikit-1.17.0-py3-none-any.whl", "archive_info": {}}
+_VCS = {"url": "https://github.com/x/y", "vcs_info": {"vcs": "git", "commit_id": "abc"}}
+
+
+class TestVerifySources:
+
+    def _verify(self, monkeypatch, dists, allow=""):
+        monkeypatch.setenv("KEYHAC_BUNDLE_ALLOW_LOCAL", allow)
+        resolved = {collect_dependencies._canonical(d.metadata["Name"]): d for d in dists}
+        return collect_dependencies.verify_sources(resolved)
+
+    def test_index_installs_pass(self, monkeypatch):
+        assert self._verify(monkeypatch, [_InstalledDist("puikit", "1.17.0"),
+                                          _InstalledDist("numpy", "2.1.0")]) == (True, set())
+
+    def test_editable_puikit_is_refused(self, monkeypatch):
+        # A ../puikit checkout would ship as it stands, released or not.
+        ok, _ = self._verify(monkeypatch, [_InstalledDist("puikit", "1.17.0", _EDITABLE)])
+        assert not ok
+
+    def test_local_wheel_and_vcs_are_refused(self, monkeypatch):
+        assert not self._verify(monkeypatch, [_InstalledDist("puikit", "1.17.0", _LOCAL_WHEEL)])[0]
+        assert not self._verify(monkeypatch, [_InstalledDist("numpy", "2.1.0", _VCS)])[0]
+
+    def test_allowed_editable_puikit_passes_and_goes_unversioned(self, monkeypatch):
+        ok, unversioned = self._verify(
+            monkeypatch, [_InstalledDist("PuiKit", "1.17.0", _EDITABLE)], allow="puikit")
+        assert ok and unversioned == {"puikit"}
+
+    def test_allowed_local_wheel_keeps_its_version_check(self, monkeypatch):
+        ok, unversioned = self._verify(
+            monkeypatch, [_InstalledDist("puikit", "1.17.0", _LOCAL_WHEEL)], allow="puikit")
+        assert ok and unversioned == set()
+
+    def test_other_editable_is_refused_even_when_allowed(self, monkeypatch):
+        # Its RECORD holds only the shim, so the package would not be copied.
+        ok, _ = self._verify(monkeypatch, [_InstalledDist("numpy", "2.1.0", _EDITABLE)],
+                             allow="numpy")
+        assert not ok
+
+    def test_skipped_distribution_goes_unchecked(self, tmp_path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\ndependencies = ['puikit>=1.17.0']\n")
+        resolved = {"puikit": _Dist("puikit", "1.15.0")}
+        assert collect_dependencies.verify_versions(str(pyproject), resolved, skip={"puikit"})
+        assert not collect_dependencies.verify_versions(str(pyproject), resolved)

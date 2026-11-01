@@ -148,7 +148,16 @@ distribution Keyhac already provides.
   `[project]` dependencies; markers gate pyobjc off Windows. Fails the build
   when an installed version does not satisfy its requirement — the bundle
   ships whatever the venv holds, PuiKit included, so a venv older than the
-  `puikit>=` pin would otherwise ship the old PuiKit unnoticed.
+  `puikit>=` pin would otherwise ship the old PuiKit unnoticed. It also
+  refuses anything not installed from a package index (an editable or
+  local-directory install, a local wheel, a VCS URL: a PEP 610
+  `direct_url.json`), PuiKit included, since each may be a build no one
+  released. A release build takes PuiKit from PyPI (`make install-puikit
+  PUIKIT_DIR=`); a local development build against the checkout names it in
+  `KEYHAC_BUNDLE_ALLOW_LOCAL=puikit` (comma-separated), and that editable
+  PuiKit's version then goes unchecked, as its metadata is as old as its
+  install. An editable install other than PuiKit is refused regardless: only
+  its shim would be copied.
 - `tools/generate_third_party_notices.py` — license aggregation; fails on a bundled
   dist without discoverable license text.
 - Makefile targets: `windows-app` / `windows-zip` / `macos-app` / `macos-dmg`,
