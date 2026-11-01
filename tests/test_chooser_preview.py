@@ -180,6 +180,22 @@ class TestSourcePreviews:
         assert preview.text == "one\ntwo\nthree"
         assert ("Lines", "3") in preview.fields
 
+    def test_clipboard_text_with_an_image_previews_both(self, keyhac_engine,
+                                                         tmp_path, monkeypatch):
+        from keyhac.core.clipboard_history import ClipboardHistory
+        from keyhac.core.sources import ClipboardHistorySource
+        from tests.test_clipboard_snapshots import SnapshotProvider, cells, copy
+        keymap = keyhac_engine.keymap
+        provider = SnapshotProvider()
+        history = ClipboardHistory(provider, str(tmp_path / "c.json"))
+        keymap._clipboard_history = history
+        monkeypatch.setattr(provider, "image_data",
+                            lambda snapshot: snapshot.items[0]["public.png"])
+        copy((provider, history), cells("a\tb"))
+        source = ClipboardHistorySource()
+        preview = source.preview(source.candidates()[0])
+        assert preview.text == "a\tb" and preview.image == b"px" * 10
+
     def test_a_tool_previews_its_result(self, keyhac_engine, tmp_path):
         from keyhac.actions import ShowClipboardTools
         from keyhac.core.clipboard_history import ClipboardHistory

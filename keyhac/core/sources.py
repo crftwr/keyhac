@@ -86,14 +86,16 @@ def _chooser_took_focus() -> bool:
 _PREVIEW_LINES = 40
 _PREVIEW_CHARS = 4000
 
-def _text_preview(text: str, title: str = None, fields=()) -> CandidatePreview:
+def _text_preview(text: str, title: str = None, fields=(),
+                  image=None) -> CandidatePreview:
     """A text, its head only, with its size."""
     lines = text.split("\n")
     shown = "\n".join(lines[:_PREVIEW_LINES])[:_PREVIEW_CHARS]
     if len(shown) < len(text):
         shown += "\n…"
     size = (("Lines", f"{len(lines):,}"), ("Characters", f"{len(text):,}"))
-    return CandidatePreview(title=title, text=shown, fields=tuple(fields) + size)
+    return CandidatePreview(title=title, image=image, text=shown,
+                            fields=tuple(fields) + size)
 
 
 def _when(stamp: float) -> str:
@@ -161,7 +163,11 @@ class ClipboardHistorySource(_PastingSource):
             fields.insert(0, ("Format", "Rich text, shown plain"))
         elif snapshot.lossy:
             fields.insert(0, ("Format", "Text only - the rest was not kept"))
-        return _text_preview(entry.text, fields=fields)
+        # The picture an Excel range or a slide offers of itself, above its
+        # text.
+        clipboard = Keymap.get_instance().clipboard
+        image = clipboard.image_data(snapshot) if clipboard and snapshot.items else None
+        return _text_preview(entry.text, fields=fields, image=image)
 
     def candidates(self):
         """lazydocs: ignore"""
