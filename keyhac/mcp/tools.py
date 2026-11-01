@@ -928,9 +928,10 @@ class ToolRegistry:
         return "\n".join(["('*' marks the focused window)"] + lines)
 
     def get_focus(self) -> str:
-        # read_focus rather than the snapshot: the snapshot is empty from a
-        # config reload until the next key event, and an agent has just
-        # reloaded and cannot press one (issue #196).
+        # read_focus rather than the snapshot: the snapshot is as old as the
+        # last key event - empty after a reload (issue #196), the old window
+        # after a focus change with no key pressed (issue #313) - and an
+        # agent cannot press one.
         def read():
             focus = self.keymap.read_focus()
             if focus is None:
