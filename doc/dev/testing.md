@@ -27,7 +27,10 @@ live on each OS.
   and `USERPROFILE` at a fresh temporary directory for the whole run, so no
   test reads the runner's own `~/.keyhac` (its `config.py`, `settings.json`,
   extensions) and passes or fails with what that machine holds. A test that
-  needs a home of its own still sets one itself.
+  needs a home of its own still sets one itself. A test that starts another
+  application passes it the `real_home_environ` fixture: Windows' Notepad,
+  started with `USERPROFILE` pointing at the empty home, crashes within
+  seconds.
 - **`make test-vm GUEST=qa-win` / `GUEST=qa-mac`** runs the whole suite with
   `--desktop` in a VM from the shared images (`~/.config/quality-loop/guests.toml`):
   the working tree and PuiKit staged, the third-party packages installed into
@@ -37,7 +40,13 @@ live on each OS.
   (`qa-mac-2026-10-31-2`) grants python.org's Python and
   `sshd-keygen-wrapper` "Device Control and Data Access" (macOS 27's
   Accessibility and Input Monitoring) and has Japanese Romaji input, so the
-  window, mouse and IME tests run there. The stage is copied from the working
+  window, mouse and IME tests run there. The Windows image (`QA-2026-11-01`)
+  is a snapshot of the VM shut down, so each run boots it, as each Tart
+  clone does: python.org's 3.14 x64, the Japanese Microsoft IME, automatic
+  sign-in for `qa`, and "Suggest ways to finish setting up my device" off,
+  whose full-screen page would otherwise cover the desktop at sign-in. A
+  run takes about three minutes on macOS and six on Windows, boot included.
+  The stage is copied from the working
   tree once the VM is up, not when the command starts: do not switch branches
   or edit files until it is (about the first minute) - a checkout half way
   through the copy stages a mix of both branches, and the run then fails in
@@ -1403,6 +1412,29 @@ found.
   issue's check therefore marks the macOS refusals WARN, not PASS. Both are
   refusals of the certificate itself, which is what the check is about, and
   neither is an unknown-issuer failure.
+- **The whole suite, desktop tests included, in a VM on each OS** (2026-11-01,
+  issue #293, `make test-vm`. macOS 27.0 in the Tart image
+  `qa-mac-2026-10-31-2`; Windows 11 Arm in VMware Fusion from the snapshot
+  `QA-2026-11-01`.) **Both clean.** macOS: 1503 passed, 23 skipped.
+  Windows: 1582 passed, 101 skipped. Every skip is the other OS's test or a
+  platform difference (POSIX mode bits, PuiKit staged rather than
+  installed). These are the first full runs of the `test_mac_*` and
+  `test_win_*` tests from a clean state rather than on a development
+  machine.
+
+  The Notepad tests failed in the VM until three things were found, none
+  of them Keyhac's. Notepad crashed within seconds of starting, because
+  the suite's empty home (#308) was its `USERPROFILE`. That looked at
+  first like an application too slow for the 250 ms UI Automation bound,
+  then like a first window that goes away, and then like a broken
+  snapshot. A Notepad that did not crash was the classic one, not the
+  packaged WinUI one the status-bar test is written for, though the same
+  `notepad.exe` typed in the guest's PowerShell opened the packaged one;
+  the tests now start the packaged app by its app ID. And a desktop just
+  signed in to has no foreground window, which one test had depended on.
+  On the way the Windows image moved to a powered-off snapshot, so each
+  run boots it (quality-loop's guest layer waits for the automatic
+  sign-in).
 
 
 ## The interactive pass before a release

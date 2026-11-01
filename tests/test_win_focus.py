@@ -29,6 +29,8 @@ from keyhac.platform.win.uielement import (UIElement, _same_element,  # noqa: E4
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 user32.GetDesktopWindow.restype = wintypes.HWND
 user32.GetForegroundWindow.restype = wintypes.HWND
+user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+user32.FindWindowW.restype = wintypes.HWND
 
 
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
@@ -51,6 +53,36 @@ def _notepad_hwnds():
     from keyhac.platform.win.window import WinWindowProvider
     return {int(w.hwnd) for w in WinWindowProvider().list_windows()
             if w.class_name == "Notepad"}
+
+
+NOTEPAD_APP_ID = r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"
+
+
+def _start_notepad(environ):
+    """Start Windows 11's packaged Notepad where it is installed, else
+    notepad.exe.
+
+    By its app ID, not by notepad.exe: System32's notepad.exe hands off to
+    the packaged app only sometimes. From this suite in a VM it ran the
+    classic Notepad every time, while the same command typed in the guest's
+    PowerShell opened the packaged one (#293). With USERPROFILE pointing at
+    the suite's empty home, Notepad crashed within seconds, so it gets the
+    runner's own.
+    """
+    import subprocess
+    packages = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                            "WindowsApps")
+    try:
+        packaged = any(name.startswith("Microsoft.WindowsNotepad_")
+                       for name in os.listdir(packages))
+    except OSError:     # standard users may not list WindowsApps
+        packaged = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "[bool](Get-AppxPackage Microsoft.WindowsNotepad)"],
+            capture_output=True, text=True, env=environ).stdout.strip() == "True"
+    if packaged:
+        return subprocess.Popen(["explorer.exe", NOTEPAD_APP_ID], env=environ)
+    return subprocess.Popen(["notepad.exe"], env=environ)
 
 
 def _close_window(hwnd, timeout=3.0):
@@ -350,7 +382,7 @@ class TestUIAPatternsAgainstNotepad:
     """
 
     @pytest.fixture
-    def edit(self, automation):
+    def edit(self, automation, real_home_environ):
         import subprocess
         import time
         from keyhac.platform.win.window import WinWindow
@@ -368,7 +400,7 @@ class TestUIAPatternsAgainstNotepad:
         # close. Both are answered by the window that was not there before.
         before = _notepad_hwnds()
         try:
-            process = subprocess.Popen(["notepad.exe"])
+            process = _start_notepad(real_home_environ)
         except OSError:
             pytest.skip("notepad.exe unavailable")
         window = None
@@ -621,10 +653,13 @@ class TestCompareElements:
 
     def test_two_different_windows_do_not(self, automation):
         desktop = UIElement.from_hwnd(user32.GetDesktopWindow())
-        foreground = UIElement.from_hwnd(user32.GetForegroundWindow())
-        if foreground is None:
-            pytest.skip("no foreground window")
-        assert _same_element(desktop._ptr, foreground._ptr) is False
+        # Any window but the desktop will do. A desktop just signed in to (a
+        # VM's, every run) has none in front, so the taskbar stands in.
+        other = (UIElement.from_hwnd(user32.GetForegroundWindow())
+                 or UIElement.from_hwnd(user32.FindWindowW("Shell_TrayWnd", None)))
+        if other is None:
+            pytest.skip("no window but the desktop")
+        assert _same_element(desktop._ptr, other._ptr) is False
 
     def test_an_unanswerable_comparison_is_none_not_false(self, automation):
         # None, not False: "could not compare" and "different" have to stay
@@ -750,7 +785,7 @@ class TestSetFocusAgainstNotepadsWinUIStatusBar:
     """
 
     @pytest.fixture
-    def status_text(self, automation):
+    def status_text(self, automation, real_home_environ):
         import subprocess
         import time
         from keyhac.platform.win.uielement import (
@@ -758,7 +793,7 @@ class TestSetFocusAgainstNotepadsWinUIStatusBar:
 
         before = _notepad_hwnds()
         try:
-            process = subprocess.Popen(["notepad.exe"])
+            process = _start_notepad(real_home_environ)
         except OSError:
             pytest.skip("notepad.exe unavailable")
         window = None
