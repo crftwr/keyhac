@@ -23,6 +23,11 @@ live on each OS.
   gets the mark: a whole module with `pytestmark = pytest.mark.desktop`,
   otherwise the class or the function. A test that only reads the OS (the
   keyboard layout, a timing) stays unmarked.
+- **The suite runs under an empty home.** `tests/conftest.py` points `HOME`
+  and `USERPROFILE` at a fresh temporary directory for the whole run, so no
+  test reads the runner's own `~/.keyhac` (its `config.py`, `settings.json`,
+  extensions) and passes or fails with what that machine holds. A test that
+  needs a home of its own still sets one itself.
 - **`make test-vm GUEST=qa-win` / `GUEST=qa-mac`** runs the whole suite with
   `--desktop` in a VM from the shared images (`~/.config/quality-loop/guests.toml`):
   the working tree and PuiKit staged, the third-party packages installed into

@@ -1,6 +1,41 @@
+import os
+import shutil
 import sys
+import tempfile
 
 import pytest
+
+
+# --- an empty home for the whole run ----------------------------------------
+#
+# Keyhac's defaults read ~/.keyhac: config.py, settings.json, clipboard.json,
+# the extensions and packages folders. A test that forgets to pass its own
+# path would read the runner's, and pass or fail with what that machine holds
+# (XeFM's make tag stopped twice for this). Set in pytest_configure rather
+# than a fixture so it is in place at collection time too; realpath because
+# macOS hands out /var/..., a symlink to /private/var/.... A test that needs a
+# home of its own still sets HOME itself.
+
+_saved_home_env = {}
+_fake_home = None
+
+
+def pytest_configure(config):
+    global _fake_home
+    _fake_home = os.path.realpath(tempfile.mkdtemp(prefix="keyhac-test-home-"))
+    for name in ("HOME", "USERPROFILE"):
+        _saved_home_env[name] = os.environ.get(name)
+        os.environ[name] = _fake_home
+
+
+def pytest_unconfigure(config):
+    for name, value in _saved_home_env.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    if _fake_home is not None:
+        shutil.rmtree(_fake_home, ignore_errors=True)
 
 
 # --- tests that touch the live desktop --------------------------------------
