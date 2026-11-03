@@ -40,6 +40,7 @@ import os
 import pathlib
 import posixpath
 import shutil
+import subprocess
 import time
 import tomllib
 
@@ -52,6 +53,13 @@ ROOT = HERE.parent
 #: Ours, so staged from this checkout's environment rather than installed:
 #: the packages a run tests along with Keyhac.
 STAGED = ("puikit",)
+
+#: Ours that only the test suite needs - staged too in a development test run.
+TEST_STAGED = ("quality_loop",)
+
+#: Where a test run's packages of ours come from: this checkout's environment,
+#: or PyPI as pyproject.toml names them (a release's run, #316).
+PACKAGES = ("local", "pypi")
 
 
 def _name(requirement: str) -> str:
@@ -80,21 +88,38 @@ def _requires(name: str) -> list[str]:
     return list(distribution.requires or ())
 
 
-def third_party_requirements() -> list[str]:
-    """What the guest installs: pyproject.toml's dependencies that are not
-    ours, and those of what we stage (PuiKit's numpy, say - the first Windows
-    run without them stopped at `import numpy`), markers and all: pip in the
-    guest leaves out what is for another OS. An extra's (``extra == "dev"``)
-    is not the run's."""
+def third_party_requirements(tests: bool = False, packages: str = "local") -> list[str]:
+    """What the guest installs. With ``packages="pypi"``, pyproject.toml's
+    dependencies as they read - PuiKit from PyPI too, what a user's pip gets.
+    With ``"local"``, those that are not ours, and those of what we stage
+    (PuiKit's numpy, say - the first Windows run without them stopped at
+    `import numpy`), markers and all: pip in the guest leaves out what is for
+    another OS. An extra's (``extra == "dev"``) is not the run's. With
+    ``tests``, the dev extra too - pytest and quality-loop, whose plugin the
+    suite loads - and in a local run quality-loop's own requirements."""
     with (ROOT / "pyproject.toml").open("rb") as f:
-        wanted = list(tomllib.load(f)["project"]["dependencies"])
-    for name in STAGED:
-        wanted += [r for r in _requires(name) if "extra ==" not in r]
+        project = tomllib.load(f)["project"]
+    wanted = list(project["dependencies"])
+    if tests:
+        wanted += project["optional-dependencies"]["dev"]
+    if packages == "pypi":
+        return list(dict.fromkeys(wanted))
+    staged = STAGED + (TEST_STAGED if tests else ())
+    for name in staged:
+        wanted += [r for r in _requires(name.replace("_", "-")) if "extra ==" not in r]
     out = []
     for requirement in wanted:
-        if _name(requirement) not in STAGED and requirement not in out:
+        if _name(requirement).replace("-", "_") not in staged and requirement not in out:
             out.append(requirement)
     return out
+
+
+def working_tree() -> list[str]:
+    """This checkout's files as git sees them: tracked, and untracked but not
+    ignored - so .venv and cleanroom/ stay behind."""
+    said = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=ROOT,
+                          capture_output=True, text=True, check=True)
+    return [p for p in said.stdout.split("\0") if p and (ROOT / p).is_file()]
 
 
 class Guest(ql.Guest):
@@ -103,6 +128,14 @@ class Guest(ql.Guest):
     def __init__(self, alias, host_share, guest_share, settings=None):
         super().__init__(alias, host_share, guest_share, settings)
         self._keyhac = os.environ.get("KEYHAC_QA_GUEST_KEYHAC") or self.settings.get("keyhac")
+
+    @classmethod
+    def for_alias(cls, alias: str) -> "Guest":
+        try:
+            return cls.from_settings(alias, ql.settings_for(alias, os.environ.get("KEYHAC_QA_GUESTS")),
+                                     os.environ.get("KEYHAC_QA_SHARE"))
+        except GuestError as error:
+            raise SystemExit(f"{alias}: {error}") from None
 
     @classmethod
     def from_environment(cls) -> "Guest | None":
@@ -146,6 +179,23 @@ class Guest(ql.Guest):
         for name in STAGED:
             package = pathlib.Path(__import__(name).__file__).parent
             shutil.copytree(package, lib / name, ignore=ignore)
+        return stage
+
+    def test_stage(self, packages: str = "local") -> pathlib.Path:
+        """For the test suite: quality-loop's stage, with this working tree as
+        git sees it in <stage>/tree and, in a development run, our packages in
+        <stage>/lib (PuiKit, quality-loop)."""
+        stage = ql.Guest.stage(self, "keyhac-test-")
+        for name in working_tree():
+            target = stage / "tree" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, target)
+        (stage / "lib").mkdir()
+        if packages == "local":
+            ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
+            for name in STAGED + TEST_STAGED:
+                package = pathlib.Path(__import__(name).__file__).parent
+                shutil.copytree(package, stage / "lib" / name, ignore=ignore)
         return stage
 
     def start(self, home_root: pathlib.Path, stage: pathlib.Path, log: pathlib.Path,

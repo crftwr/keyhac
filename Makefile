@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        test-vm api-reference api-reference-check release-review check-docs fix-docs skill-bundle qa \
+        test-vm run-vm release-test api-reference api-reference-check release-review check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -70,6 +70,10 @@ help:
 	@echo "                     PUIKIT_DIR if set, else the released build from PyPI"
 	@echo "  make test        - run the engine test suite (no permissions needed)"
 	@echo "  make test-vm GUEST=qa-win - the suite in a VM, desktop tests included"
+	@echo "                     (PACKAGES=pypi: PuiKit and quality-loop from PyPI)"
+	@echo "  make run-vm GUEST=qa-mac  - this tree's Keyhac up in a VM, for a hand check"
+	@echo "  make release-test - what a release is tested on: --host-only here, the"
+	@echo "                     suite in every VM on PyPI packages"
 	@echo "  make run         - run Keyhac with ~/.keyhac/config.py"
 	@echo "  make run-debug   - run Keyhac with debug logging (key events, dispatch)"
 	@echo "  make run-sandbox - run Keyhac with a sandbox config ($(SANDBOX_CONFIG)),"
@@ -186,11 +190,34 @@ install-puikit: check-venv
 test: $(VENV_STAMP)
 	$(VENV_PYTHON) -m pytest
 
-# The suite in a VM, the tests marked desktop included (tools/vm_test.py):
-# GUEST= names one in ~/.config/quality-loop/guests.toml, ARGS= is for pytest.
+# The VMs (tools/vm.py, doc/dev/testing.md "In a VM"): GUEST= names one in
+# ~/.config/quality-loop/guests.toml (qa-win, qa-mac, shared with XeFM).
+# test-vm runs the suite with --desktop, ARGS= for pytest; PACKAGES=local (the
+# default) stages this checkout's PuiKit and quality-loop, pypi installs them
+# as pyproject.toml names them. run-vm starts this tree's Keyhac there for a
+# hand check - desktop tests and hand checks happen in a VM, never here.
+PACKAGES ?= local
+GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the VM (qa-win, qa-mac)"; exit 1; }
+
 test-vm: $(VENV_STAMP)
-	@test -n "$(GUEST)" || { echo "GUEST= names the VM (qa-win, qa-mac)"; exit 1; }
-	$(VENV_PYTHON) tools/vm_test.py $(GUEST) $(ARGS)
+	$(GUEST_CHECK)
+	$(VENV_PYTHON) tools/vm.py test --packages $(PACKAGES) $(GUEST) $(ARGS)
+
+run-vm: $(VENV_STAMP)
+	$(GUEST_CHECK)
+	$(VENV_PYTHON) tools/vm.py run $(GUEST)
+
+# What a release is tested on (#316): the host runs only the tests of its own
+# tooling (--host-only); the suite runs in every VM on PuiKit and quality-loop
+# as PyPI has them - what a user's pip installs. One VM after another.
+RELEASE_GUESTS ?= qa-mac qa-win
+
+release-test: $(VENV_STAMP)
+	$(VENV_PYTHON) -m pytest --host-only
+	@for guest in $(RELEASE_GUESTS); do \
+		$(VENV_PYTHON) tools/vm.py test --packages pypi $$guest || exit 1; \
+	done
+	@echo "release-test: passed on the host's tooling and in $(RELEASE_GUESTS)"
 
 run: $(VENV_STAMP)
 	$(VENV_PYTHON) -m keyhac $(ARGS)
@@ -384,7 +411,7 @@ endef
 tag: $(VENV_STAMP)
 	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make tag VERSION=2.0.0a1"; exit 1; }
 	$(VENV_PYTHON) tools/release_preflight.py "$(VERSION)"
-	$(VENV_PYTHON) -m pytest
+	@$(MAKE) --no-print-directory release-test
 	$(VENV_PYTHON) tools/bump_version.py "$(VERSION)"
 	git add keyhac/__init__.py
 	git commit -m "Releasing $(VERSION)"

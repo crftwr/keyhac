@@ -26,5 +26,5 @@ README.pypi.md
 # `git add -f` a room worth keeping.
 cleanroom/
 
-# make test-vm keeps each run's log and JUnit XML here (tools/vm_test.py).
+# make test-vm keeps each run's log and JUnit XML here (tools/vm.py).
 temp/
