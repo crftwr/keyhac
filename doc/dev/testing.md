@@ -22,7 +22,13 @@ live on each OS.
   VM, which is what the VM test run (#293) is for. A new test of that kind
   gets the mark: a whole module with `pytestmark = pytest.mark.desktop`,
   otherwise the class or the function. A test that only reads the OS (the
-  keyboard layout, a timing) stays unmarked.
+  keyboard layout, a timing) stays unmarked. The mark is quality-loop's pytest
+  plugin (`addopts` in pyproject.toml), shared with XeFM, and so is
+  **`host_only`**: a test of the host-side tooling - what stages a VM run -
+  which a guest skips; `pytest --host-only` runs those alone.
+- **Where the suite runs** (#316, the same policy as XeFM's): during
+  development, a test or a file on your machine is fine; a release runs the
+  suite in the VMs, not here (below).
 - **The suite runs under an empty home.** `tests/conftest.py` points `HOME`
   and `USERPROFILE` at a fresh temporary directory for the whole run, so no
   test reads the runner's own `~/.keyhac` (its `config.py`, `settings.json`,
@@ -33,10 +39,13 @@ live on each OS.
   seconds.
 - **`make test-vm GUEST=qa-win` / `GUEST=qa-mac`** runs the whole suite with
   `--desktop` in a VM from the shared images (`~/.config/quality-loop/guests.toml`):
-  the working tree and PuiKit staged, the third-party packages installed into
-  a fresh venv, pytest in the desktop session (Windows: a scheduled task with
-  `python.exe`; macOS: SSH). `ARGS=` is for pytest; the log and the JUnit XML
-  land in `temp/vm-test-<guest>-<time>/` (`tools/vm_test.py`). The macOS image
+  the working tree, PuiKit and quality-loop staged, the third-party packages
+  installed into a fresh venv, pytest in the desktop session through
+  quality-loop's runner (Windows: a scheduled task with `python.exe`; macOS:
+  SSH). `ARGS=` is for pytest; the log and the JUnit XML land in
+  `temp/vm-test-<guest>-<time>/` (`tools/vm.py`). `PACKAGES=pypi` installs
+  PuiKit and quality-loop from PyPI as pyproject.toml names them instead of
+  staging this checkout's - what a user's pip gets. The macOS image
   (`qa-mac-2026-10-31-2`) grants python.org's Python and
   `sshd-keygen-wrapper` "Device Control and Data Access" (macOS 27's
   Accessibility and Input Monitoring) and has Japanese Romaji input, so the
@@ -51,6 +60,15 @@ live on each OS.
   or edit files until it is (about the first minute) - a checkout half way
   through the copy stages a mix of both branches, and the run then fails in
   ways neither has. The same holds for a quality-loop run in a guest.
+- **`make release-test`** is what a release is tested on, and what `make
+  tag` gates on: `pytest --host-only` here, then the whole suite with
+  `--desktop` in `qa-mac` and `qa-win` on PyPI packages, one after the other.
+  The VMs are shared with XeFM: a `run-vm` left open in either product holds
+  them.
+- **`make run-vm GUEST=qa-mac`** is a hand check in a VM: this working tree's
+  Keyhac started in the guest's desktop session (on macOS through Keyhac.app,
+  which holds the grants) with an empty home on the stage, until Enter. Hand
+  checks go there rather than on your machine.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 

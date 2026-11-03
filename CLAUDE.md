@@ -105,6 +105,10 @@ tools/         # icon pipeline, Pages banner render, release scripts, hook_echo 
 - Tests: pytest (`.venv/bin/python -m pytest`). The engine is tested with scripted
   fakes (no OS needed); UI against PuiKit's `MemoryBackend`; live platform tests and
   harness patterns are described in [doc/dev/testing.md](doc/dev/testing.md).
+  A test that takes focus, moves windows, sends real input or changes the
+  clipboard or input source is marked `desktop` and runs only in a VM; a test
+  of the host-side tooling is `host_only`. A release runs the suite in the VMs
+  (`make release-test`), not here.
 - **Subtle inherited behaviors are load-bearing** — do not "simplify" them. The list
   (L/R-agnostic `KeyCondition.__eq__`, `force_LR` output, never-emitted user
   modifiers, unmatched-consume in multi-stroke, pass-through-on-error, the three

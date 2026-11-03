@@ -61,6 +61,15 @@ invoking any of that, do the checks preflight cannot:
     them means at least a minor bump — and are the note's raw material.
 - `make icons-check` — the committed rendered icons must match their SVG
   sources before they ship.
+- **`make release-test`** runs inside `make tag` (#316): `pytest
+  --host-only` here, then the whole suite with `--desktop` in `qa-mac` (Tart)
+  and `qa-win` (VMware) on PuiKit and quality-loop **as PyPI has them** -
+  about ten minutes, so tell the user before starting it. It needs Tart and
+  VMware Fusion on this Mac, and neither VM held by a `run-vm` here or in
+  XeFM. Since the VMs install PuiKit from PyPI, a release relying on
+  unreleased PuiKit fails here: release PuiKit first. A failure stops the
+  tag: report it with the log under `temp/vm-test-<guest>-<time>/`, never
+  retry it away. Running it on its own ahead of `make tag` is fine.
 - **The standing interactive pass** — `doc/dev/testing.md`, "The interactive
   pass before a release". These are live checks no automated harness covers
   (tray menu and console interactions, IME driving the chooser, mouse feel,
@@ -75,7 +84,7 @@ invoking any of that, do the checks preflight cannot:
 ## 3. The Makefile pipeline
 
 ```
-make tag VERSION=x.y.z    # preflight → pytest → bump __version__ → commit
+make tag VERSION=x.y.z    # preflight → release-test → bump __version__ → commit
                           # "Releasing x.y.z" → tag vx.y.z → build gate
                           # (sdist+wheel+twine check) → push commit and tag
 make release-github       # create the Release (auto body — replaced in step 4)

@@ -61,22 +61,9 @@ def pytest_unconfigure(config):
 # keys and mouse events, switch the input source or replace the clipboard.
 # On the developer's own machine that gets in the way of whatever they are
 # doing, and what they are doing gets in the way of the test. They are marked
-# `desktop` and run only with --desktop, which is for a VM (#293).
-
-def pytest_addoption(parser):
-    parser.addoption("--desktop", action="store_true",
-                     help="also run the tests marked desktop, which take focus, move "
-                          "windows and send real input: for a VM, not your machine")
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--desktop"):
-        return
-    skip = pytest.mark.skip(reason="touches the live desktop: run it in a VM "
-                                   "(#293), or pass --desktop")
-    for item in items:
-        if "desktop" in item.keywords:
-            item.add_marker(skip)
+# `desktop` and run only with --desktop, which is for a VM (#293). The mark,
+# and host_only for the host-side tooling, are quality-loop's pytest plugin
+# (pyproject.toml's addopts), shared with XeFM (#316).
 
 from keyhac.core.vk import init_key_names, get_key_names
 from keyhac.core.keymap import Keymap

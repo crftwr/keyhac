@@ -276,15 +276,9 @@ def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
         Guest.from_environment()
 
 
+@pytest.mark.host_only  # what it reads is the host's install; a guest stages PuiKit (#316)
 def test_the_guest_installs_what_is_not_ours_and_stages_what_is(tmp_path):
-    import importlib.metadata
     import guest
-    try:
-        importlib.metadata.distribution("puikit")
-    except importlib.metadata.PackageNotFoundError:
-        # In a VM test run PuiKit is staged, not installed (tools/vm_test.py),
-        # and what it needs is read from the installed one.
-        pytest.skip("PuiKit is staged here, not installed")
     requirements = guest.third_party_requirements()
     assert not any(r.lower().startswith("puikit") for r in requirements)
     assert any(r.startswith("pillow") for r in requirements)
@@ -423,3 +417,17 @@ def test_a_mac_guest_without_a_named_python_runs_keyhac_app_s(tmp_path, monkeypa
     assert mac.python.startswith("/Applications/Keyhac.app/Contents/Frameworks/")
     mac.settings["python"] = "/usr/local/bin/python3.14"
     assert mac.python == "/usr/local/bin/python3.14"
+
+
+@pytest.mark.host_only
+def test_a_release_run_installs_ours_from_pypi_as_pyproject_names_them():
+    """#316: a release's VM run gets what a user's pip gets."""
+    import tomllib
+    import guest
+    requirements = guest.third_party_requirements(tests=True, packages="pypi")
+    with (ROOT / "pyproject.toml").open("rb") as f:
+        project = tomllib.load(f)["project"]
+    assert [r for r in project["dependencies"] if r.startswith("puikit")][0] in requirements
+    assert any(r.startswith("quality-loop") for r in requirements)
+    local = guest.third_party_requirements(tests=True)
+    assert not any(r.lower().startswith(("puikit", "quality-loop")) for r in local)
