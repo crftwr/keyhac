@@ -1002,6 +1002,39 @@ The console's dropdown filters by level; `-d`/`--debug` on the command line enab
 debug logging from startup. The console also shows the last key event and the live
 focus path — the two things you need when writing new bindings.
 
+## Profiling
+
+To find out what a binding or an action costs, or why Keyhac is busy, choose
+**Advanced > Start Profiling** in the tray / menu-bar menu, do the slow thing, and
+choose **Advanced > Stop Profiling**. A capture nobody stops ends after ten minutes.
+Keyhac then opens a new folder under `~/.keyhac/diagnostics/`:
+
+| File | Content |
+|---|---|
+| `summary.txt` | The part to read: your code, key handling, and each thread |
+| `python-stacks.txt` | Every Python stack seen, in the folded format flame-graph tools read |
+| `native-sample.txt` | macOS only: native stacks from the system's `sample` tool |
+
+`summary.txt` has these sections:
+
+- **Your code**: time with `config.py` or a module from `extensions/` on the stack,
+  by function and by line, per thread.
+- **Key handling**: for each binding, how many key events it handled, their total
+  time, and the slowest. The operating system holds the keyboard until a key handler
+  returns, so anything slow here should move to a
+  [`ThreadedAction`](#background-work-threadedaction).
+- **One section per thread**: time by origin (your code, packages, Keyhac, PuiKit,
+  the standard library) and the most common frames and stacks.
+
+Times are wall-clock. A thread that is waiting still shows as time, in the call it
+waits in: the event loop's own call on the main thread, a queue or a lock on a worker.
+
+Stacks are sampled every few milliseconds, so a short handler can fall between
+samples. Key handling is measured on every key event and does not miss it.
+
+The report names your bindings, functions and files. It holds no typed text: keys
+with no binding are counted together, not one by one.
+
 ## Runtime API summary
 
 | API | Notes |
