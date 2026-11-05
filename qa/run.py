@@ -32,6 +32,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import socket
@@ -324,7 +325,11 @@ class Keyhac(adapter.Adapter):
                               cwd=ROOT, capture_output=True, text=True)
         if done.returncode != 0:
             raise SystemExit(f"the skill bundle did not build:\n{done.stdout}{done.stderr}")
-        return ROOT / "dist" / f"keyhac-{keyhac.__version__}-skill.zip"
+        # The name carries a dev version off a release tag, so ask the build.
+        built = re.search(r"^Wrote (\S+-skill\.zip) ", done.stdout, re.M)
+        if built is None:
+            raise SystemExit(f"the skill bundle build named no zip:\n{done.stdout}")
+        return ROOT / built[1]
 
     def rules(self) -> str:
         return (HERE / "RULES.md").read_text(encoding="utf-8").format(

@@ -20,11 +20,18 @@ The version is stamped into SKILL.md on the way in. A skill describes one
 version's API - it names methods and reports measured behaviour - and an
 uploaded copy is a snapshot that cannot know the package underneath it changed.
 Stamping is what makes that visible to a reader instead of silently wrong.
+
+Off a release tag, or with uncommitted changes, the stamp is a dev version
+(`2.7.0+dev.g<sha>`), because `__version__` still names the last release while
+the prose may describe newer API (#280). SKILL.md's version check compares major
+and minor only, so such a bundle passes it against the same release. That is
+accepted: dev bundles are for developers and quality-loop.
 """
 
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import zipfile
 
@@ -77,8 +84,8 @@ GENERATED = {
 #: bundle since, the scoring rules of the clean room included.
 EXCLUDE = {"README.md", "__pycache__"}
 
-STAMP = (f"\n\n---\n\nPackaged from Keyhac {keyhac.__version__}. This skill "
-         f"describes that version's API; re-upload it after upgrading Keyhac.\n")
+STAMP = ("\n\n---\n\nPackaged from Keyhac {VERSION}. This skill "
+         "describes that version's API; re-upload it after upgrading Keyhac.\n")
 
 #: Resolved on the way into the bundle, the same treatment and for the same
 #: reason as STAMP: the skill's prose links to files that live in the
@@ -88,9 +95,12 @@ STAMP = (f"\n\n---\n\nPackaged from Keyhac {keyhac.__version__}. This skill "
 #: rewrites exactly one line on purpose, and a second place to bump is a place
 #: to drift.
 VERSION_TOKEN = "{VERSION}"
+#: How the skill's links spell a tag. A dev version is not a tag, so links get
+#: the commit instead - see identity().
+TAG_TOKEN = "v{VERSION}"
 TEXT_SUFFIXES = {".md", ".py", ".txt"}
 
-#: A link into this repository must name a tag. `main` drifts out from under an
+#: A link into this repository must name a tag or a commit. `main` drifts out from under an
 #: uploaded skill, and a mistyped token ships as literal text in a URL that
 #: 404s quietly - the failure this is here to make loud, because the reader is
 #: a model that will report what it fetched rather than that it fetched
@@ -102,7 +112,45 @@ TEXT_SUFFIXES = {".md", ".py", ".txt"}
 MOVING_REF = re.compile(
     r"(?:github\.com/crftwr/keyhac/(?:tree|blob|raw)/"
     r"|raw\.githubusercontent\.com/crftwr/keyhac/)"
-    r"(?!v\d)(?P<ref>[^/\s)]+)")
+    r"(?!v\d|[0-9a-f]{40}[/\s)])(?P<ref>[^/\s)]+)")
+
+
+def _git(*args: str) -> str | None:
+    """One git answer about this tree, or None when it cannot give one."""
+    # Checked first because git would otherwise search upward: an unpacked sdist
+    # inside somebody's repository would report that repository's state.
+    if not (ROOT / ".git").exists():
+        return None
+    try:
+        return subprocess.run(["git", "-C", str(ROOT), *args], check=True,
+                              capture_output=True, text=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def identity(git=_git) -> tuple[str, str]:
+    """The version to stamp, and the ref the skill's links should name.
+
+    With no git to ask (a build from an sdist) this is the plain version, as it
+    was before dev versions. A commit named in a link exists on GitHub only once
+    pushed, which is accepted for a dev bundle.
+    """
+    version = keyhac.__version__
+    tag = f"v{version}"
+    head = git("rev-parse", "HEAD")
+    if not head:
+        return version, tag
+    status = git("status", "--porcelain")
+    if head == git("rev-parse", "--verify", "--quiet", f"{tag}^{{commit}}") \
+            and status == "":
+        return version, tag
+    # `.dirty` because the sha alone would claim the bundle is that commit.
+    dirty = "" if status == "" else ".dirty"
+    return f"{version}+dev.g{head[:9]}{dirty}", head
+
+
+def _resolve_tokens(text: str, version: str, ref: str) -> str:
+    return text.replace(TAG_TOKEN, ref).replace(VERSION_TOKEN, version)
 
 
 def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
@@ -112,7 +160,8 @@ def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
     # are indistinguishable without opening the zip, and the second one
     # silently overwrites the first. Keeping the `-skill.zip` tail means the
     # release globs still match on the suffix rather than on the whole shape.
-    output = ROOT / "dist" / f"{skill.name}-{keyhac.__version__}-skill.zip"
+    version, ref = identity()
+    output = ROOT / "dist" / f"{skill.name}-{version}-skill.zip"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     written = []
@@ -129,13 +178,13 @@ def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
             # which is all SKILL.md's links need.
             name = path.relative_to(skill).as_posix()
             if path.suffix in TEXT_SUFFIXES:
-                text = path.read_text(encoding="utf-8").replace(
-                    VERSION_TOKEN, keyhac.__version__)
+                text = _resolve_tokens(path.read_text(encoding="utf-8"),
+                                       version, ref)
                 problems += [f"{name}: link to a moving ref {m['ref']!r} - "
-                             f"the bundle must point at a tag"
+                             f"the bundle must point at a tag or commit"
                              for m in MOVING_REF.finditer(text)]
                 if path.name == "SKILL.md":
-                    text += STAMP
+                    text += _resolve_tokens(STAMP, version, ref)
                 bundle.writestr(name, text)
             else:
                 bundle.write(path, name)
@@ -146,10 +195,10 @@ def build(skill: pathlib.Path) -> tuple[list[str], list[str], pathlib.Path]:
                 problems.append(f"{source.relative_to(ROOT)} is missing - run "
                                 f"'make api-reference'")
                 continue
-            text = source.read_text(encoding="utf-8").replace(
-                VERSION_TOKEN, keyhac.__version__)
+            text = _resolve_tokens(source.read_text(encoding="utf-8"),
+                                   version, ref)
             problems += [f"{name}: link to a moving ref {m['ref']!r} - "
-                         f"the bundle must point at a tag"
+                         f"the bundle must point at a tag or commit"
                          for m in MOVING_REF.finditer(text)]
             bundle.writestr(name, text)
             written.append(name)
