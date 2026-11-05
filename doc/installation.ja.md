@@ -105,9 +105,17 @@ Keyhac は単一インスタンスで動きます。実行中にもう一度起�
 | `extensions/` | `sys.path` に含まれます。自作の Python モジュールをここに置き、config.py から import します |
 | `clipboard.json` | 永続化されたクリップボード履歴 |
 | `settings.json` | アプリの状態（コンソールの表示状態など） |
+| `diagnostics/` | **Advanced** メニューから出力したレポート。1 回ごとに 1 フォルダです。Keyhac が削除することはありません |
 
 `--config PATH` を付けて実行すると、`clipboard.json` と `settings.json` はその設定ファイルの隣に置かれます。
 サンドボックス化した環境や実験用の環境に便利です。
+
+**Keyhac が重い・忙しいとき**（何もしていないのに CPU 使用率が高い、キー入力が遅れるなど）は、
+その状態のうちにトレイ／メニューバーのメニューで **Advanced > Start Profiling** を選び、
+数秒待ってから **Advanced > Stop Profiling** を選びます。
+Keyhac は `~/.keyhac/diagnostics/` の下に書き出したフォルダを開くので、
+そのフォルダを [GitHub の Issue](https://github.com/crftwr/keyhac/issues) に添付してください。
+レポートの内容は[プロファイリング](configuration.ja.md#プロファイリング)を参照してください。
 
 ### ポータブルモード (Windows)
 

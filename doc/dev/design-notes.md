@@ -1891,6 +1891,52 @@ notch, 1710×1112) against TextEdit, Chrome and the test helper.
   never be turned on, and a TSF-only IME that does not answer IMM32 is the one
   path to `None`.
 
+## Developer reports
+
+The **Advanced** menu writes reports to `diagnostics/`, for working on Keyhac and for
+working on a config. There is no config API or MCP tool for them: the menu is the
+whole surface. User-facing description: [configuration.md](../configuration.md#profiling).
+
+**What may touch the process.** The main thread runs the keyboard hook, and a stopped
+process holds up the whole keyboard. Longest stall of a 1 ms heartbeat in a process
+with a 90 MB heap, macOS, measured 2026-11-05:
+
+| Tool | Longest stall |
+|---|---|
+| nothing (idle) | 1.6 ms |
+| `footprint` | 1.6 ms |
+| `sample`, one stack per 10 ms | 7.5 ms |
+| `sample`, default 1 ms | 18 ms |
+| `vmmap --summary` | 740 ms |
+| `heap -s` | 950 ms |
+| `leaks` | 990 ms |
+
+So a capture runs `sample` at 10 ms. The last three stay something a person chooses
+to run from a terminal. `sample` and `footprint` both work on the signed bundle, where
+py-spy is refused: they are Apple-signed with the right to inspect a process.
+
+**Profiling (#323).**
+
+- *Samples are weighted by elapsed time.* The sampler needs the GIL to take a sample.
+  A main thread busy in Python gets about 40 samples a second instead of the 200 asked
+  for, and a C call holding the GIL gets next to none, so counting samples
+  under-reports exactly the worst cases. Each sample carries the time since the
+  previous one, and the sample taken on stopping accounts for a GIL held up to then.
+  The time lands on the stack as it is when the GIL comes back, which can be just after
+  the slow call: right function, sometimes the next line.
+- *A tight loop of GIL-holding C calls can starve every other thread*, the sampler and
+  timers included, for far longer than any one call. (A test doing that took minutes.)
+  The report then has few samples, but its times still add up.
+- *Key handling is timed on top of sampling*, because a handler of a few milliseconds
+  falls between samples and is what a config author asks about. `Keymap.on_key_handled`
+  is None outside a capture, so an ordinary key pays for one attribute read.
+- *Origin goes by module name for Keyhac, PuiKit and the stdlib*, not by path: a bundle's
+  bytecode is compiled at build time and its `co_filename` is still the build machine's.
+  config.py and extensions are compiled at run time from real paths.
+- *No typed text, since these get attached to issues.* Only bound keys are named. A
+  key sending keys is one row whatever the key, and a bound object is named by its
+  type, since a `partial`'s repr holds its arguments.
+
 ## Data directory and Windows portable mode
 
 `keyhac/core/paths.py` is the single place that decides where `config.py` and the

@@ -80,6 +80,7 @@ def install_tray(console, keymap, hook) -> None:
         console.panel.render()
 
     package_sync = PackageSync(keymap)
+    profiling = Profiling(keymap)
 
     items = (
         MenuItem("Open Console", on_select=console.backend.show_main_window),
@@ -118,6 +119,13 @@ def install_tray(console, keymap, hook) -> None:
             # here.
             MenuItem("Sync Python Packages", on_select=package_sync.start,
                      enabled=lambda: not package_sync.running),
+            SEPARATOR,
+            # Two items, not a toggle: a capture is stopped once and can take
+            # seconds to write, and a tick would not say which of those it is.
+            MenuItem("Start Profiling", on_select=profiling.start,
+                     enabled=lambda: profiling.can_start),
+            MenuItem("Stop Profiling", on_select=profiling.stop,
+                     enabled=lambda: profiling.can_stop),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
@@ -254,6 +262,50 @@ class PackageSync:
         logger.info("Packages already imported keep their old version until "
                     "Keyhac restarts.")
         self._keymap.configure()
+
+
+class Profiling:
+    """Start / Stop Profiling (keyhac.core.profiler): the capture runs until it
+    is stopped, then the folder it wrote is opened."""
+
+    def __init__(self, keymap, profiler=None):
+        from keyhac import platform
+        from keyhac.core import profiler as module
+        self._keymap = keymap
+        home = os.path.dirname(keymap.extensions_dir)
+        self._profiler = profiler or module.Profiler(
+            home, module.Origins(keymap._config_path, home),
+            native=platform.native_sampler())
+
+    @property
+    def can_start(self) -> bool:
+        return not self._profiler.running
+
+    @property
+    def can_stop(self) -> bool:
+        return self._profiler.running and not self._profiler.stopping
+
+    def start(self) -> None:
+        self._keymap.on_key_handled = self._profiler.record_key
+        logger.info("Profiling. Do what is slow, then choose Advanced > Stop "
+                    f"Profiling. It stops by itself after {self._profiler.limit:g} s.")
+        self._profiler.start(lambda folder, error: self._keymap.call_on_main_thread(
+            lambda: self._finish(folder, error)))
+
+    def stop(self) -> None:
+        self._keymap.on_key_handled = None
+        logger.info("Stopping the profile and writing it out...")
+        self._profiler.stop()
+
+    def _finish(self, folder: str, error) -> None:
+        self._keymap.on_key_handled = None
+        if error is not None:
+            logger.error(f"Profiling failed: {error!r}")
+            return
+        logger.info(f"Profile written: {folder}")
+        if self._keymap.app_control is not None:
+            # A folder opens in Finder / Explorer; open_url hands it to the shell.
+            self._keymap.app_control.open_url(folder)
 
 
 def _cancel(name: str) -> None:

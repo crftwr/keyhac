@@ -242,6 +242,8 @@ class Keymap:
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
         self.on_mouse_button = None         # callable() - see on_mouse_event
+        self.on_key_handled = None          # callable(binding, seconds) - see on_key_event
+        self._handled_binding = None
         self._main_thread_dispatcher = None  # callable(callback) - see below
 
         from keyhac.core.replay import KeyReplayBuffer
@@ -797,6 +799,21 @@ class Keymap:
 
         lazydocs: ignore
         """
+        # on_key_handled is set only during a profile (keyhac.core.profiler),
+        # so an ordinary key pays for reading one attribute. What it is told
+        # names a binding and never an unbound key: a profile gets attached to
+        # issues, and per-key counts of those are most of what someone typed.
+        observer = self.on_key_handled
+        if observer is None:
+            return self._on_key_event(event)
+        self._handled_binding = None
+        started = time.perf_counter()
+        try:
+            return self._on_key_event(event)
+        finally:
+            observer(self._handled_binding, time.perf_counter() - started)
+
+    def _on_key_event(self, event: KeyEvent) -> bool:
         # Before the keytable, so Esc reaches a running action whether or not
         # the active table binds it - and outside the engine lock, because
         # this runs inside the hook's deadline and cancel_all() only sets an
@@ -1048,6 +1065,11 @@ class Keymap:
         if callable(action):
             action_name = getattr(action, "__name__", None) or repr(action)
             logger.debug(f"CALL     : {action_name}")
+            if self.on_key_handled is not None:
+                # The type rather than the repr action_name may be: a partial's
+                # repr holds its arguments, and that can be text to type.
+                name = getattr(action, "__name__", None) or type(action).__name__
+                self._handled_binding = f"{key}: {name}"
             self._cancel_oneshot_win_alt()
             try:
                 action()
@@ -1068,6 +1090,7 @@ class Keymap:
                 action = [action]
 
             logger.debug(f"OUTPUT   : {action}")
+            self._handled_binding = "(a key sending keys)"
 
             with self.get_input_context() as ctx:
                 for item in action:

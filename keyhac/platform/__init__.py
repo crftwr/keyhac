@@ -30,3 +30,13 @@ def worker_thread_context():
             yield
     else:
         yield
+
+
+def native_sampler():
+    """What records this process's native stacks, for keyhac.core.profiler:
+    ``sampler(stop_event, limit_seconds, path)`` returning what went wrong or
+    None. None if this OS has nothing built in that can."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.diagnostics import sample_native
+        return sample_native
+    return None

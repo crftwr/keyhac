@@ -63,6 +63,7 @@ Rules:
 | `core/config.py` | config loading: copy template on first run, compile+exec, `configure(keymap)` call, reload | both |
 | `core/log.py` | `getLogger`, stdout/stderr redirection into the console ring buffer | keyhac-mac `keyhac_console.py`, keyhac-win `Log` |
 | `core/python_packages.py` | `requirements.txt` → `site-packages/X.Y`: offline stamp check + `sys.path` activation on every config load, and the user-started pip sync (tray menu, `keyhac deps`) | XeFM `xefm/python_packages.py` (#272) |
+| `core/profiler.py`, `core/diagnostics.py` | Advanced > Start Profiling: all-thread stack sampling and per-binding key timing, written to a folder | new (#323) |
 | `core/settings.py` | persisted app state (console visibility, flags) as JSON — replaces keyhac.ini | keyhac-win `keyhac_ini.py` (concept) |
 | `core/vk.py`, `core/const.py` | key-name tables, modifier constants | both |
 | `actions.py` | action objects needing platform/UI wiring: `MoveWindow`, `SnapWindow`, `ActivateWindow`, mouse actions, `ChooserAction` + clipboard choosers | keyhac-mac `keyhac_action.py` + keyhac-win commands |
