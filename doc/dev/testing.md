@@ -1534,9 +1534,9 @@ found.
   `embed-arm64` itself ships as x64. Not exercised: a Store submission of the
   bundle, and the x64 payload on real x64 hardware. `make test-vm GUEST=qa-win
   ARCH=arm64` passes 1691 tests with 105 skipped under the native ARM64 Python.
-  One fails on either architecture for a reason of the image's:
-  `test_the_real_git_answers_mean_what_identity_expects` wants `git`, and
-  `QA-2026-11-03` has none.
+  `test_the_real_git_answers_mean_what_identity_expects` failed there and on x64
+  because `QA-2026-11-03` has no `git`, and is now `host_only`, as the tooling it
+  tests is. The x64 suite then passes whole: 1691 passed, 106 skipped.
 
 
 ## The interactive pass before a release

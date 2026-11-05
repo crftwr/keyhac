@@ -113,6 +113,7 @@ def test_a_dev_bundle_stamps_its_version_and_links_the_commit(tmp_path, monkeypa
     assert "tree/v" not in actions and "+dev" not in actions
 
 
+@pytest.mark.host_only  # bundles are built on the host; a VM's image need not have git
 def test_the_real_git_answers_mean_what_identity_expects(tmp_path, monkeypatch):
     def git(*args):
         subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=t",
