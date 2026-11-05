@@ -1055,11 +1055,15 @@ there when you first notice a problem. To read a report, ask in this order:
 1. **Is it growing, and since when?** The history in **Process** has both the process
    total and Python's allocated blocks.
 2. **Is it Python or native?** If the process grows and the Python blocks do not, the
-   memory is native: Python cannot see it, and **Native** says what kind it is on macOS.
-   On Windows, **Process** also lists handles and GDI and USER objects.
+   memory is native or in a few large Python buffers, since a block is one allocation
+   whatever its size. On macOS, **Native** says what kind of memory it is and how much
+   each kind changed since the previous report. On Windows, **Process** also lists
+   handles and GDI and USER objects.
 3. **If it is Python, what is it?** **Types that grew** compares against shortly after
    startup and against the previous report, so two reports some hours apart show the
-   most. **What Keyhac holds on to** lists Keyhac's own stores against their limits.
+   most. It lists the types by bytes and by count: a type holding native memory weighs
+   little, so look for a count that matches how many times you repeated something.
+   **What Keyhac holds on to** lists Keyhac's own stores against their limits.
 
 Types cannot show strings or bytes. To see those, and which line of code allocated
 what is still alive, tick **Advanced > Track Python Allocations**, and write a report

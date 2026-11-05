@@ -8,6 +8,7 @@ reports") has the measurements.
 
 import ctypes
 import os
+import re
 import resource
 import signal
 import subprocess
@@ -110,3 +111,24 @@ def write_footprint(path: str) -> str | None:
     with open(path, "w", encoding="utf-8") as out:
         out.write(done.stdout)
     return None
+
+
+_FOOTPRINT_ROW = re.compile(
+    r"\s*([\d.]+) (B|KB|MB|GB)\s+[\d.]+ \w+\s+[\d.]+ \w+\s+\d+\s+(.+)$")
+
+_FOOTPRINT_UNIT = {"B": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30}
+
+
+def footprint_categories(path: str) -> dict:
+    """The dirty bytes per category of a report `write_footprint` wrote.
+
+    Returns:
+        {category: bytes}, without the total.
+    """
+    categories = {}
+    with open(path, encoding="utf-8", errors="replace") as report:
+        for line in report:
+            row = _FOOTPRINT_ROW.match(line)
+            if row and row[3].strip() != "TOTAL":
+                categories[row[3].strip()] = round(float(row[1]) * _FOOTPRINT_UNIT[row[2]])
+    return categories

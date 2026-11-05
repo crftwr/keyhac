@@ -320,6 +320,7 @@ class MemoryReports:
         self._reporter = reporter or memory_report.MemoryReporter(
             os.path.dirname(keymap.extensions_dir), platform.process_memory,
             native_report=platform.native_memory_report(),
+            native_categories=platform.native_memory_categories(),
             stores=memory_report.keyhac_stores(keymap))
 
     @property
