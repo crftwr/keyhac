@@ -32,6 +32,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import socket
@@ -308,8 +309,8 @@ class Keyhac(adapter.Adapter):
         if self.guest is None:
             return self._evidence_help
         return (self._evidence_help +
-                f" This run's Keyhac ran in a {self.guest.platform} VM, not on this "
-                f"machine: replay it with --platform {self.guest.platform}.")
+                f" This run's Keyhac ran in a {self.guest.os_name} VM, not on this "
+                f"machine: replay it with --platform {self.guest.os_name}.")
 
     @property
     def home(self) -> Home:
@@ -324,7 +325,11 @@ class Keyhac(adapter.Adapter):
                               cwd=ROOT, capture_output=True, text=True)
         if done.returncode != 0:
             raise SystemExit(f"the skill bundle did not build:\n{done.stdout}{done.stderr}")
-        return ROOT / "dist" / f"keyhac-{keyhac.__version__}-skill.zip"
+        # The name carries a dev version off a release tag, so ask the build.
+        built = re.search(r"^Wrote (\S+-skill\.zip) ", done.stdout, re.M)
+        if built is None:
+            raise SystemExit(f"the skill bundle build named no zip:\n{done.stdout}")
+        return ROOT / built[1]
 
     def rules(self) -> str:
         return (HERE / "RULES.md").read_text(encoding="utf-8").format(
@@ -388,21 +393,18 @@ class Keyhac(adapter.Adapter):
 
     def screen_backend(self):
         """In a VM, the screens go up on the guest's desktop, where the run's
-        Keyhac reads the screen (qa/guest_screens.py)."""
+        Keyhac reads the screen (quality_loop.guest.screens)."""
         up = getattr(self, "_guest_up", None)
         if self.guest is None or up is None:
             return None
-        return {"path": str(HERE / "guest_screens.py"),
-                "settings": {"alias": self.guest.alias, "hostname": self.guest.hostname,
-                             "host_share": str(self.guest.host_share),
-                             "guest_share": self.guest.guest_share,
-                             "keyhac": self.guest.keyhac, "windows": self.guest.windows,
-                             "stage": str(up.stage)}}
+        from quality_loop.guest import screens as guest_screens
+        return {"path": guest_screens.__file__,
+                "settings": guest_screens.settings(self.guest, up.stage)}
 
     def platform(self) -> str:
         if self.guest is None:
             return sys.platform
-        return "win32" if self.guest.windows else "darwin"
+        return self.guest.platform
 
     def alive(self) -> bool:
         return endpoint(self.home) is not None

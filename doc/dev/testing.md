@@ -14,6 +14,61 @@ live on each OS.
 - **Platform (live)**: `tests/test_win_*.py` / `tests/test_mac_*.py` drive the real
   OS APIs — they need a desktop session, and on macOS the Accessibility permission.
   Tests marked `slow` launch real third-party apps; skip with `-m 'not slow'`.
+- **Desktop tests run in a VM, not on your machine.** The ones that take the
+  foreground, open, move or resize windows, send real keys and mouse events,
+  switch the input source or replace the clipboard are marked `desktop`. They
+  get in the way of whatever you are doing, and what you are doing gets in the
+  way of them, so `pytest` skips them unless it is given `--desktop` - in a
+  VM, which is what the VM test run (#293) is for. A new test of that kind
+  gets the mark: a whole module with `pytestmark = pytest.mark.desktop`,
+  otherwise the class or the function. A test that only reads the OS (the
+  keyboard layout, a timing) stays unmarked. The mark is quality-loop's pytest
+  plugin (`addopts` in pyproject.toml), shared with XeFM, and so is
+  **`host_only`**: a test of the host-side tooling - what stages a VM run -
+  which a guest skips; `pytest --host-only` runs those alone.
+- **Where the suite runs** (#316, the same policy as XeFM's): during
+  development, a test or a file on your machine is fine; a release runs the
+  suite in the VMs, not here (below).
+- **The suite runs under an empty home.** `tests/conftest.py` points `HOME`
+  and `USERPROFILE` at a fresh temporary directory for the whole run, so no
+  test reads the runner's own `~/.keyhac` (its `config.py`, `settings.json`,
+  extensions) and passes or fails with what that machine holds. A test that
+  needs a home of its own still sets one itself. A test that starts another
+  application passes it the `real_home_environ` fixture: Windows' Notepad,
+  started with `USERPROFILE` pointing at the empty home, crashes within
+  seconds.
+- **`make test-vm GUEST=qa-win` / `GUEST=qa-mac`** runs the whole suite with
+  `--desktop` in a VM from the shared images (`~/.config/quality-loop/guests.toml`):
+  the working tree, PuiKit and quality-loop staged, the third-party packages
+  installed into a fresh venv, pytest in the desktop session through
+  quality-loop's runner (Windows: a scheduled task with `python.exe`; macOS:
+  SSH). `ARGS=` is for pytest; the log and the JUnit XML land in
+  `temp/vm-test-<guest>-<time>/` (`tools/vm.py`). `PACKAGES=pypi` installs
+  PuiKit and quality-loop from PyPI as pyproject.toml names them instead of
+  staging this checkout's - what a user's pip gets. The macOS image
+  (`qa-mac-2026-10-31-2`) grants python.org's Python and
+  `sshd-keygen-wrapper` "Device Control and Data Access" (macOS 27's
+  Accessibility and Input Monitoring) and has Japanese Romaji input, so the
+  window, mouse and IME tests run there. The Windows image (`QA-2026-11-01`)
+  is a snapshot of the VM shut down, so each run boots it, as each Tart
+  clone does: python.org's 3.14 x64, the Japanese Microsoft IME, automatic
+  sign-in for `qa`, and "Suggest ways to finish setting up my device" off,
+  whose full-screen page would otherwise cover the desktop at sign-in. A
+  run takes about three minutes on macOS and six on Windows, boot included.
+  The stage is copied from the working
+  tree once the VM is up, not when the command starts: do not switch branches
+  or edit files until it is (about the first minute) - a checkout half way
+  through the copy stages a mix of both branches, and the run then fails in
+  ways neither has. The same holds for a quality-loop run in a guest.
+- **`make release-test`** is what a release is tested on, and what `make
+  tag` gates on: `pytest --host-only` here, then the whole suite with
+  `--desktop` in `qa-mac` and `qa-win` on PyPI packages, one after the other.
+  The VMs are shared with XeFM: a `run-vm` left open in either product holds
+  them.
+- **`make run-vm GUEST=qa-mac`** is a hand check in a VM: this working tree's
+  Keyhac started in the guest's desktop session (on macOS through Keyhac.app,
+  which holds the grants) with an empty home on the stage, until Enter. Hand
+  checks go there rather than on your machine.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 
@@ -75,14 +130,17 @@ screen, and your own Keyhac can keep running. Set `KEYHAC_QA_GUEST` to an
 SSH host alias for the VM:
 
 ```
-KEYHAC_QA_GUEST=keyhac-qa-mac make qa CASE=13
+KEYHAC_QA_GUEST=qa-mac make qa CASE=13
 ```
 
-What that alias means on this machine goes in
-`~/.config/keyhac-qa/guests.toml`, outside the repository: the shared folder
-as `<host path>=<guest path>`, and the VM itself, so that the run starts it
-from a clean state and puts it away afterwards. The table's format is in
-`qa/guest.py`'s `Guest`.
+The VM layer is quality-loop's (`quality_loop.guest`, its
+`docs/guests.md`), shared with XeFM (xefm#750); `qa/guest.py` keeps only
+what is Keyhac's: what is staged and how Keyhac starts. What that alias
+means on this machine goes in `~/.config/quality-loop/guests.toml`
+(`KEYHAC_QA_GUESTS` names another file), outside the repository: the shared
+folder as `<host path>=<guest path>`, the image's interpreter as `python`
+(required for a Windows guest), and the VM itself, so that the run starts it
+from a clean state and puts it away afterwards.
 
 - **Tart:** `tart = "<base VM>"`. The run clones the base, starts the clone
   with the share as `--dir`, reaches it at the clone's own address, and
@@ -91,8 +149,8 @@ from a clean state and puts it away afterwards. The table's format is in
   password, which `vmrun` needs for a VM with a vTPM) and `smb`,
   `smb_password`. The run reverts to the snapshot, resumes the VM with
   `vmrun start nogui`, mounts the share again (a revert drops it), and waits
-  for the guest's clock. Quit the Fusion app first, or `vmrun` cannot start
-  the VM.
+  for the guest's clock. Afterwards it unmounts the share and shuts the VM
+  down. Quit the Fusion app first, or `vmrun` cannot start the VM.
 - **Passwords:** a value written as `keychain:<service>` is read from the
   login Keychain when the run needs it.
 
@@ -114,14 +172,16 @@ Both have run scenarios end to end (13 on both, 12 on macOS):
   the foreground.
 - **Windows (VMware Fusion):** VMware Tools for Windows on Arm has no
   Shared Folders, so the guest shares a folder over SMB and the host mounts
-  it. The bundle's `pythonw.exe` runs the staged code through
-  `qa/guest_boot/winstart.py`, from a scheduled task. It uses `pythonw`
-  because `cmd.exe` would put a terminal window on the desktop. The task is
-  XML because the ScheduledTasks cmdlets need CIM, which refuses a standard
-  user over SSH. Once the console is up, Keyhac gives the foreground back to
-  the desktop. The bundle (`build.ps1`'s output) provides the interpreter
-  and the third-party packages, so the guest needs no Python and no build
-  tools.
+  it. No Keyhac is installed in the image: its Python (3.14, fixed per
+  image) gets a fresh venv for the run with the third-party packages -
+  pyproject.toml's and PuiKit's - from a pip cache on the share. PuiKit is
+  ours, so it is staged from this checkout's environment, not installed.
+  `pythonw.exe` runs `qa/daemon.py` from a scheduled task, through
+  quality-loop's launcher; `pythonw` because `cmd.exe` would put a terminal
+  window on the desktop. The task is XML because the ScheduledTasks cmdlets
+  need CIM, which refuses a standard user over SSH. Once the console is up,
+  Keyhac gives the foreground back to the desktop. A first run takes about
+  70s from revert to Keyhac's endpoint.
 
 **The guest is the test environment.** Start each run from a clean
 state: a Tart clone of a base image, deleted afterwards, or a VMware
@@ -142,14 +202,14 @@ above. What the clean state needs, found the hard way:
   for SSH and SMB that allow only the host's network.
 
 **Screens go up in the guest.** The adapter's `screen_backend()` hands the
-operator `qa/guest_screens.py` in place of this machine's backend. Each
-`screen_open` / `screen_close` runs quality-loop's own Safari / Terminal or
-Edge / Windows Terminal code in the guest, from the run's stage
-(`qa/guest_boot/screen_agent.py`). On macOS that goes over SSH; on Windows it
+operator `quality_loop.guest.screens` in place of this machine's backend.
+Each `screen_open` / `screen_close` runs quality-loop's own Safari / Terminal
+or Edge / Windows Terminal code in the guest, from the run's stage. On macOS that goes over SSH; on Windows it
 goes through a scheduled task in the desktop session. The pages stay served on
 the host's `127.0.0.1`, and a reverse tunnel (`ssh -R`, same port) makes that
 address the guest's too, so the page's events come back unchanged. A
-terminal screen's script runs with Keyhac's own interpreter in the guest.
+terminal screen's script runs with the image's interpreter in the guest
+(Keyhac.app's on a macOS guest without one).
 
 What the clean state needs for screens:
 
@@ -311,7 +371,7 @@ calibrates it both ways: the hand-written examples pass, and
 
 A Windows guest in VMware Fusion can be built, run and checked from the Mac
 without touching its desktop: `build.ps1`, a Keyhac.exe launch, and a result
-file to collect. Everything here addresses the guest as **`keyhac-qa-win`**, an
+file to collect. Everything here addresses the guest as **`qa-win`**, an
 SSH host alias. Its address, user and key are per machine and live only in
 `~/.ssh/config`, never in this repository.
 
@@ -351,7 +411,7 @@ and carry on from `Start-Service`.
 ~/.ssh/<key>`), whose `.pub` is the `<public key>` above, and:
 
 ```
-Host keyhac-qa-win
+Host qa-win
     HostName <guest IP>
     User <guest user>
     IdentityFile ~/.ssh/<key>
@@ -366,7 +426,7 @@ there anyway.
 
 **Running things.**
 
-- `ssh keyhac-qa-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
+- `ssh qa-win '<PowerShell>'` runs in Windows PowerShell 5.1. Python
   code with quotes in it does not survive the ssh-to-PowerShell trip; `scp`
   a script file and run that.
 - An SSH session has no desktop, and Keyhac.exe needs one. Start it through
@@ -1370,6 +1430,29 @@ found.
   issue's check therefore marks the macOS refusals WARN, not PASS. Both are
   refusals of the certificate itself, which is what the check is about, and
   neither is an unknown-issuer failure.
+- **The whole suite, desktop tests included, in a VM on each OS** (2026-11-01,
+  issue #293, `make test-vm`. macOS 27.0 in the Tart image
+  `qa-mac-2026-10-31-2`; Windows 11 Arm in VMware Fusion from the snapshot
+  `QA-2026-11-01`.) **Both clean.** macOS: 1503 passed, 23 skipped.
+  Windows: 1582 passed, 101 skipped. Every skip is the other OS's test or a
+  platform difference (POSIX mode bits, PuiKit staged rather than
+  installed). These are the first full runs of the `test_mac_*` and
+  `test_win_*` tests from a clean state rather than on a development
+  machine.
+
+  The Notepad tests failed in the VM until three things were found, none
+  of them Keyhac's. Notepad crashed within seconds of starting, because
+  the suite's empty home (#308) was its `USERPROFILE`. That looked at
+  first like an application too slow for the 250 ms UI Automation bound,
+  then like a first window that goes away, and then like a broken
+  snapshot. A Notepad that did not crash was the classic one, not the
+  packaged WinUI one the status-bar test is written for, though the same
+  `notepad.exe` typed in the guest's PowerShell opened the packaged one;
+  the tests now start the packaged app by its app ID. And a desktop just
+  signed in to has no foreground window, which one test had depended on.
+  On the way the Windows image moved to a powered-off snapshot, so each
+  run boots it (quality-loop's guest layer waits for the automatic
+  sign-in).
 
 
 ## The interactive pass before a release

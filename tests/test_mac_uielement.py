@@ -325,6 +325,7 @@ def test_a_chromium_bundle_is_recognised_by_its_renderer_helper(tmp_path):
     assert _ships_a_renderer(str(tmp_path / "Gone.app")) is False
 
 
+@pytest.mark.desktop  # AX calls into the running Finder
 def test_the_switch_reads_back_on_a_live_application():
     """Live: the value the flag reports is the value that was written, which is
     what lets describe_screen tell "not asked" from "asked, and the document is
@@ -333,6 +334,8 @@ def test_the_switch_reads_back_on_a_live_application():
     import ApplicationServices as AS
     from keyhac.platform.mac.uielement import UIElement
 
+    if not AS.AXIsProcessTrusted():
+        pytest.skip("no Accessibility permission in this environment")
     for name, pid in UIElement.get_running_applications():
         if name == "Finder":
             break

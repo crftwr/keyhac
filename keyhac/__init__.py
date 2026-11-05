@@ -3,7 +3,7 @@
 Configuration files do `from keyhac import *` and get the user-facing API.
 """
 
-__version__ = "2.6.0"
+__version__ = "2.7.0"
 
 from keyhac.core.keymap import Keymap
 from keyhac.core.key import KeyCondition, KeyTable
@@ -55,7 +55,12 @@ from keyhac.actions import (
 )
 from keyhac.platform.base import Focus, KeyEvent
 
+# The one list of what a config or an extension can import. Its order is
+# doc/config-api.md's, grouped the way doc/configuration.md introduces the API, so
+# someone reading top to bottom meets the keymap first and the leaf actions last.
+# tools/public_api.py derives the rest, and tests/test_public_api.py checks it.
 __all__ = [
+    # The engine and its collaborators
     "Keymap",
     "KeyTable",
     "KeyCondition",
@@ -63,15 +68,31 @@ __all__ = [
     "InputContext",
     "Focus",
     "KeyEvent",
+    # Actions
     "ThreadedAction",
-    "LaunchApplication",
     "InputText",
+    "LaunchApplication",
+    "ActivateApplication",
+    "ActivateWindow",
+    "MoveWindow",
+    "SnapWindow",
+    "MouseMove",
+    "MouseButtonDown",
+    "MouseButtonUp",
+    "MouseButtonClick",
+    "MouseWheel",
+    "MouseHorizontalWheel",
     "StartRecordingKeys",
     "StopRecordingKeys",
     "ToggleRecordingKeys",
     "PlaybackRecordedKeys",
+    # Clipboard
     "ClipboardHistory",
+    # Candidate window: sources are values, so several share one hotkey.
+    "ChooserAction",
+    "ShowCandidates",
     "Candidate",
+    "CandidatePreview",
     "CandidateSource",
     "CallableSource",
     "ChooserPage",
@@ -82,30 +103,20 @@ __all__ = [
     "WindowControlsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
+    "ShowClipboardHistory",
+    "ShowClipboardSnippets",
+    "ShowClipboardTools",
+    "DateTimeSnippet",
+    # Logging and diagnostics
+    "getLogger",
+    "Console",
+    "ReportCaretAnchor",
+    # The action API, documented in doc/action-api.md
     "UINode",
     "WaitTimeout",
     "FillFailed",
     "ActionCancelled",
     "StaleElement",
     "Unresponsive",
-    "ChooserAction",
-    "MouseButtonClick",
-    "MouseButtonDown",
-    "MouseButtonUp",
-    "MouseHorizontalWheel",
-    "MouseMove",
-    "MouseWheel",
-    "MoveWindow",
-    "ReportCaretAnchor",
-    "SnapWindow",
-    "ActivateApplication",
-    "ActivateWindow",
-    "ShowCandidates",
-    "ShowClipboardHistory",
-    "ShowClipboardSnippets",
-    "ShowClipboardTools",
-    "DateTimeSnippet",
-    "getLogger",
-    "Console",
     "__version__",
 ]

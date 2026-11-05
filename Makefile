@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        api-reference api-reference-check check-docs fix-docs skill-bundle qa \
+        test-vm run-vm release-test api-reference api-reference-check release-review check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -69,6 +69,11 @@ help:
 	@echo "  make install-puikit - (re)install PuiKit into the venv: editable from"
 	@echo "                     PUIKIT_DIR if set, else the released build from PyPI"
 	@echo "  make test        - run the engine test suite (no permissions needed)"
+	@echo "  make test-vm GUEST=qa-win - the suite in a VM, desktop tests included"
+	@echo "                     (PACKAGES=pypi: PuiKit and quality-loop from PyPI)"
+	@echo "  make run-vm GUEST=qa-mac  - this tree's Keyhac up in a VM, for a hand check"
+	@echo "  make release-test - what a release is tested on: --host-only here, the"
+	@echo "                     suite in every VM on PyPI packages"
 	@echo "  make run         - run Keyhac with ~/.keyhac/config.py"
 	@echo "  make run-debug   - run Keyhac with debug logging (key events, dispatch)"
 	@echo "  make run-sandbox - run Keyhac with a sandbox config ($(SANDBOX_CONFIG)),"
@@ -95,6 +100,7 @@ help:
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
 	@echo "  make check-docs  - check the Japanese doc translations (missing, stale, links)"
+	@echo "  make release-review - review the last tag..origin/main against CLAUDE.md's rules"
 	@echo "  make fix-docs    - point translations' links at other translations, then check"
 	@echo "  make clean       - remove build artifacts and caches (keeps $(VENV)/)"
 	@echo "  make clean-venv  - remove the virtualenv"
@@ -150,7 +156,8 @@ check-venv:
 # Install PuiKit into $(VENV) from the source chosen by PUIKIT_DIR: a local
 # editable checkout when PUIKIT_DIR is set (live edits, no reinstall), otherwise
 # the released build from PyPI. Idempotent — skips the install when PuiKit is
-# already present from the selected source. Run standalone to switch an existing
+# already present from the selected source (for PyPI, at a version the
+# puikit>= pin accepts: an older one is upgraded, never kept). Run standalone to switch an existing
 # venv between the two; also run automatically by venv / install.
 install-puikit: check-venv
 	@info=$$($(VENV_PIP) show puikit 2>/dev/null); \
@@ -170,17 +177,47 @@ install-puikit: check-venv
 			$(VENV_PIP) install -e "$(PUIKIT_DIR)"; \
 		fi; \
 	else \
-		if [ -n "$$info" ] && [ -z "$$editloc" ]; then \
-			echo "PuiKit already installed from PyPI; skipping."; \
+		req=$$($(VENV_PYTHON) -c 'import tomllib, pathlib; print(next(r for r in tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["dependencies"] if r.startswith("puikit")))'); \
+		if [ -n "$$info" ] && [ -z "$$editloc" ] && \
+		   $(VENV_PYTHON) -c 'import sys, importlib.metadata as m; from packaging.requirements import Requirement; sys.exit(not Requirement(sys.argv[1]).specifier.contains(m.version("puikit"), prereleases=True))' "$$req" 2>/dev/null; then \
+			echo "PuiKit from PyPI already satisfies $$req; skipping."; \
 		else \
-			echo "Installing PuiKit from PyPI..."; \
-			req=$$($(VENV_PYTHON) -c 'import tomllib, pathlib; print(next(r for r in tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["dependencies"] if r.startswith("puikit")))'); \
+			echo "Installing PuiKit ($$req) from PyPI..."; \
 			$(VENV_PIP) install --force-reinstall --no-deps "$$req"; \
 		fi; \
 	fi
 
 test: $(VENV_STAMP)
 	$(VENV_PYTHON) -m pytest
+
+# The VMs (tools/vm.py, doc/dev/testing.md "In a VM"): GUEST= names one in
+# ~/.config/quality-loop/guests.toml (qa-win, qa-mac, shared with XeFM).
+# test-vm runs the suite with --desktop, ARGS= for pytest; PACKAGES=local (the
+# default) stages this checkout's PuiKit and quality-loop, pypi installs them
+# as pyproject.toml names them. run-vm starts this tree's Keyhac there for a
+# hand check - desktop tests and hand checks happen in a VM, never here.
+PACKAGES ?= local
+GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the VM (qa-win, qa-mac)"; exit 1; }
+
+test-vm: $(VENV_STAMP)
+	$(GUEST_CHECK)
+	$(VENV_PYTHON) tools/vm.py test --packages $(PACKAGES) $(GUEST) $(ARGS)
+
+run-vm: $(VENV_STAMP)
+	$(GUEST_CHECK)
+	$(VENV_PYTHON) tools/vm.py run $(GUEST)
+
+# What a release is tested on (#316): the host runs only the tests of its own
+# tooling (--host-only); the suite runs in every VM on PuiKit and quality-loop
+# as PyPI has them - what a user's pip installs. One VM after another.
+RELEASE_GUESTS ?= qa-mac qa-win
+
+release-test: $(VENV_STAMP)
+	$(VENV_PYTHON) -m pytest --host-only
+	@for guest in $(RELEASE_GUESTS); do \
+		$(VENV_PYTHON) tools/vm.py test --packages pypi $$guest || exit 1; \
+	done
+	@echo "release-test: passed on the host's tooling and in $(RELEASE_GUESTS)"
 
 run: $(VENV_STAMP)
 	$(VENV_PYTHON) -m keyhac $(ARGS)
@@ -263,6 +300,15 @@ api-reference: $(VENV_STAMP)
 api-reference-check: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
 	$(VENV_PYTHON) tools/generate_api_reference.py --check
+
+# What is about to ship, against CLAUDE.md's rules: the mechanical ones as
+# findings, the judgment calls as pointers (tools/release_review.py). Reports
+# only; the keyhac-release skill runs it before tagging. ARGS= takes --base /
+# --head.
+release-review: $(VENV_STAMP)
+	@$(VENV_PIP) install --quiet lazydocs
+	git fetch -q origin
+	$(VENV_PYTHON) tools/release_review.py $(ARGS)
 
 # The Japanese translations of README.md and doc/*.md (#283): missing, stale,
 # or linking to an English page that has a translation. See
@@ -365,7 +411,7 @@ endef
 tag: $(VENV_STAMP)
 	@test -n "$(VERSION)" || { echo "ERROR: set VERSION, e.g. make tag VERSION=2.0.0a1"; exit 1; }
 	$(VENV_PYTHON) tools/release_preflight.py "$(VERSION)"
-	$(VENV_PYTHON) -m pytest
+	@$(MAKE) --no-print-directory release-test
 	$(VENV_PYTHON) tools/bump_version.py "$(VERSION)"
 	git add keyhac/__init__.py
 	git commit -m "Releasing $(VERSION)"
@@ -537,7 +583,7 @@ release-status:
 # Delegate to macos_app/build.sh (launcher compile, Python.framework embed,
 # signing/notarization via macos_app/signing.env) and create_dmg.sh.
 
-macos-app:
+macos-app: $(VENV_STAMP)
 	@echo "Building macOS application bundle..."
 	@cd macos_app && ./build.sh
 
@@ -659,7 +705,10 @@ WINDOWS_APP_BUNDLE := windows_app/build/Keyhac/Keyhac.exe
 # than a "no rule to make target" error.
 #
 # PuiKit is deliberately absent: it ships in the bundle but comes from outside
-# this tree, so changes there still need an explicit 'make windows-app'.
+# this tree, so changes there still need an explicit 'make windows-app'. The
+# venv stamp is a prerequisite instead, so a pyproject.toml change (a raised
+# puikit>= pin) refreshes the venv before the bundle copies from it, and
+# tools/collect_dependencies.py fails the build if the venv still falls short.
 WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard windows_app/resources/Keyhac.rc) \
                        $(wildcard windows_app/resources/Keyhac.manifest) \
@@ -670,16 +719,16 @@ WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard keyhac/platform/win/*.py) \
                        $(wildcard keyhac/ui/*.py)
 
-$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES)
+$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES) $(VENV_STAMP)
 	@echo "Windows app bundle missing or stale; building it first..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
 
-windows-app:
+windows-app: $(VENV_STAMP)
 	@echo "Building Windows application bundle..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
 
 # Named for the artifact it produces, matching macos-dmg on the macOS side.
-windows-zip:
+windows-zip: $(VENV_STAMP)
 	@echo "Building Windows application bundle (+ zip)..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
 

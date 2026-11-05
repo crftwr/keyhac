@@ -797,8 +797,9 @@ class TestDescribeKeymap:
 
     def _focused(self, engine, app="Google Chrome"):
         e = engine(self._config)
-        e.keymap._focus = Focus(app_name=app, window_title="w",
-                                class_name="", path="/App/Window")
+        e.focus_provider.focus = Focus(app_name=app, window_title="w",
+                                       class_name="", path="/App/Window")
+        e.keymap.read_focus()
         return e.keymap
 
     def test_it_reports_the_focus_path_a_pattern_is_written_against(self, engine):
@@ -845,13 +846,16 @@ class TestDescribeKeymap:
         assert "focus now: Google Chrome" in text and "  *  chrome" in text
         assert e.keymap.focus.app_name == "Google Chrome", "the snapshot is filled"
 
-    def test_a_snapshot_already_there_is_not_read_again(self, engine):
-        """Only the empty snapshot is filled: a read per call would make this
-        report disagree with the tables the hook last merged."""
+    def test_a_focus_that_moved_without_a_key_is_read(self, engine):
+        """Issue #313: a snapshot already there is as old as the last key, so
+        after the focus moves with no key pressed it names the old window.
+        The read re-merges the tables, so the report still agrees with them."""
         keymap = self._focused(engine, app="Finder")
         keymap._focus_provider.focus = Focus(app_name="Google Chrome", pid=1,
-                                             window_title="w", path="/x")
-        assert "focus now: Finder" in keymap.describe_keymap()
+                                             window_title="w", path="/Chrome/w")
+        text = keymap.describe_keymap()
+        assert "focus now: Google Chrome" in text and "  *  chrome" in text
+        assert keymap.focus.app_name == "Google Chrome", "the snapshot is refreshed"
 
 
 class TestFailedReload:

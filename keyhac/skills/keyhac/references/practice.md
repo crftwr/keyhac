@@ -8,11 +8,11 @@ generated from the docstrings. This file is the other half: which call to reach
 for, what each one costs, and which of them fail without telling you. Nothing
 here can be generated, which is why it is written by hand and why it is short.
 
-The whole import list, and there is nothing else to reach for:
+The whole import list for an action, and there is nothing else to reach for:
 
 ```python
 from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
-                    StaleElement, UINode, getLogger)
+                    StaleElement, Unresponsive, UINode, getLogger)
 
 logger = getLogger("MyAction")     # `logger` is NOT importable - make one
 ```

@@ -55,6 +55,14 @@ def image(seed=b"px", size=(64, 32)):
                              items=[{"public.png": seed * 10}])
 
 
+def cells(text, seed=b"px"):
+    """A range copied from Excel: text, HTML, and a picture of the cells."""
+    return ClipboardSnapshot(kind="rich", text=text, image_size=(64, 32),
+                             items=[{"public.utf8-plain-text": text.encode(),
+                                     "public.html": b"<table>",
+                                     "public.png": seed * 10}])
+
+
 def files(*paths):
     return ClipboardSnapshot(kind="files", files=tuple(paths),
                              items=[{"public.file-url": p.encode()} for p in paths])
@@ -83,6 +91,13 @@ class TestEntries:
         assert entry.label == "Image 64 × 32"
         # items() is the text API, and an image has none.
         assert list(history.items()) == []
+
+    def test_text_with_a_picture_of_itself_is_listed_as_its_text(self, board):
+        _provider, history = board
+        copy(board, cells("a\tb"))
+        entry = next(history.entries())
+        assert entry.label == "a b"
+        assert list(history.items()) == [("a\tb", "a b")]
 
     def test_files_are_labelled_by_name_and_keyed_by_path(self, board):
         _provider, history = board
@@ -290,6 +305,8 @@ class TestWindowsFormats:
         assert winclip.describe({"CF_HDROP": winclip.build_hdrop(["C:\\x"])},
                                 None, False).kind == "files"
         assert winclip.describe({"PNG": b""}, None, False).kind == "image"
+        assert winclip.describe({"PNG": b"", "CF_UNICODETEXT": b""},
+                                "t", False).kind == "rich"
         assert winclip.describe({"HTML Format": b"x", "CF_UNICODETEXT": b""},
                                 "t", False).kind == "rich"
         assert winclip.describe({}, None, True).kind is None

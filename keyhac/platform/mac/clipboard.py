@@ -111,12 +111,12 @@ class MacClipboardProvider(ClipboardProvider):
         text = str(text) if text is not None else None
         if files:
             kind = "files"
+        elif text:
+            # Text first: an Excel range or a slide offers a picture of itself
+            # too, and is still the text the user copied.
+            kind = "rich" if has_rich or image_size is not None else "text"
         elif image_size is not None:
             kind = "image"
-        elif has_rich:
-            kind = "rich"
-        elif text:
-            kind = "text"
         else:
             kind = None
         return ClipboardSnapshot(

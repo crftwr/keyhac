@@ -27,10 +27,27 @@ bundle separately by each build script (its editable shim would be broken on the
 target machine), so it is intentionally not collected here. Pass
 ``--include-deps-of puikit`` to still pull in PuiKit's own runtime deps (e.g.
 ``numpy``, which the Windows Direct2D backend imports) without copying PuiKit.
+
+The bundle ships what the venv holds, so two checks stop the collection
+before anything is copied, PuiKit included:
+
+- **Not from a package index.** A distribution installed editable, from a
+  local directory, a local wheel or a VCS URL (it has a PEP 610
+  ``direct_url.json``) may be a build no one released: a ``../puikit``
+  checkout with uncommitted edits or past its last release. For a
+  development build, ``KEYHAC_BUNDLE_ALLOW_LOCAL`` names the ones to let
+  through (comma-separated, e.g. ``puikit``). That lets an editable PuiKit
+  through, as the build scripts copy PuiKit from its source, but no other
+  editable install, whose package would not be copied at all.
+- **Outside a requirement.** Every pyproject requirement, and every
+  requirement a collected distribution declares, must be satisfied by what is
+  installed. An allowed editable PuiKit is the exception: its metadata keeps
+  the version current when ``pip install -e`` ran, so it says nothing.
 """
 
 import argparse
 import importlib.metadata as importlib_metadata
+import json
 import os
 import re
 import shutil
@@ -168,6 +185,136 @@ def resolve_runtime_closure(seed_names):
     return resolved
 
 
+#: Distributions the build scripts copy from their source rather than through
+#: this collector, so an editable install of one still ships whole.
+_COPIED_FROM_SOURCE = {"puikit"}
+
+
+def _local_source(dist):
+    """Where *dist* was installed from when that was not a package index - an
+    editable checkout, a local directory or wheel, a VCS URL, per its PEP 610
+    ``direct_url.json`` - else None."""
+    try:
+        raw = dist.read_text("direct_url.json")
+        info = json.loads(raw) if raw else None
+    except Exception:
+        return None
+    if not info:
+        return None
+    url = info.get("url", "?")
+    if (info.get("dir_info") or {}).get("editable"):
+        return f"editable from {url}"
+    if "vcs_info" in info:
+        return f"{info['vcs_info'].get('vcs', 'VCS')} {url}"
+    return url
+
+
+def _allowed_local():
+    """Canonical names ``KEYHAC_BUNDLE_ALLOW_LOCAL`` lets through though they
+    were not installed from a package index."""
+    raw = os.environ.get("KEYHAC_BUNDLE_ALLOW_LOCAL", "")
+    return {_canonical(n) for n in raw.split(",") if n.strip()}
+
+
+def verify_sources(resolved):
+    """
+    Check that every distribution came from a package index.
+
+    Returns ``(ok, unversioned)``: *unversioned* is the set of canonical names
+    whose installed version cannot be trusted (an allowed editable PuiKit),
+    for ``verify_versions`` to skip.
+    """
+    allowed = _allowed_local()
+    refused = {}
+    unversioned = set()
+    for cname in sorted(resolved):
+        src = _local_source(resolved[cname])
+        if not src:
+            continue
+        name = resolved[cname].metadata["Name"]
+        editable = src.startswith("editable ")
+        if editable and cname not in _COPIED_FROM_SOURCE:
+            # Its RECORD names only the .dist-info and the shim: the package
+            # itself would be missing from the bundle, allowed or not.
+            refused[cname] = f"{src} (an editable install cannot be bundled)"
+        elif cname in allowed:
+            log_warning(f"{name} is not from a package index ({src}); bundled anyway, "
+                        f"as KEYHAC_BUNDLE_ALLOW_LOCAL names it")
+            if editable:
+                unversioned.add(cname)
+        else:
+            refused[cname] = src
+
+    if refused:
+        log_error("Not installed from a package index, so the bundle could ship a "
+                  "build no one released:")
+        for cname, src in refused.items():
+            log_error(f"  {resolved[cname].metadata['Name']}: {src}")
+        log_error("Install the released versions first (for PuiKit: make install-puikit "
+                  "PUIKIT_DIR=), or, for a development build only, name them in "
+                  f"KEYHAC_BUNDLE_ALLOW_LOCAL={','.join(refused)}")
+        return False, unversioned
+    return True, unversioned
+
+
+def verify_versions(pyproject_file, resolved, skip=()):
+    """
+    Check that what the venv has installed satisfies what is declared.
+
+    The bundle ships whatever the build venv holds, so a venv that predates a
+    raised pin (``puikit>=`` bumped, venv never refreshed) builds a bundle with
+    the old version and nothing else notices: 2.7.0's first Windows zip shipped
+    puikit 1.15.1 against a ``puikit>=1.15.2`` pin. Every ``[project]``
+    requirement must be installed at a matching version, and so must each
+    requirement a collected distribution declares. Distributions in *skip* are
+    not checked. Returns True when all are.
+    """
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:
+        log_error("'packaging' is not installed in the build venv, so dependency "
+                  "versions cannot be verified. Run: make install")
+        return False
+
+    with open(pyproject_file, "rb") as handle:
+        declared = tomllib.load(handle).get("project", {}).get("dependencies", [])
+
+    checks = [("pyproject.toml", req_str, True) for req_str in declared]
+    for dist in resolved.values():
+        for req_str in (dist.requires or []):
+            checks.append((dist.metadata["Name"], req_str, False))
+
+    problems = []
+    for origin, req_str, required in checks:
+        try:
+            req = Requirement(req_str)
+            # An extra is never active here; a marker that cannot be evaluated
+            # gates the requirement out rather than failing the build on it.
+            if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+                continue
+        except Exception:
+            continue
+        if _canonical(req.name) in skip:
+            continue
+        dist = resolved.get(_canonical(req.name))
+        if dist is None:
+            if required:
+                problems.append(f"{req.name} is not installed ({origin} requires {req_str})")
+            continue
+        if not req.specifier.contains(dist.version, prereleases=True):
+            problems.append(f"{dist.metadata['Name']} {dist.version} is installed, "
+                            f"but {origin} requires {req_str}")
+
+    if problems:
+        for problem in problems:
+            log_error(problem)
+        log_error("The build venv is out of date with pyproject.toml. Update it "
+                  "(make install-puikit && make install), then rebuild.")
+        return False
+    log_success("Installed versions satisfy every declared requirement")
+    return True
+
+
 def _should_skip_file(rel_path):
     """
     Skip files that must not be copied into the bundle:
@@ -284,6 +431,12 @@ def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None):
     log_info("Resolving runtime dependency closure...")
     resolved = resolve_runtime_closure(seeds + sorted(deps_only))
     log_info(f"Runtime closure: {len(resolved)} distribution(s)")
+
+    sources_ok, unversioned = verify_sources(resolved)
+    if not sources_ok:
+        return False
+    if not verify_versions(pyproject_file, resolved, skip=unversioned):
+        return False
 
     total_files = 0
     failed = []

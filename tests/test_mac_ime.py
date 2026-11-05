@@ -13,6 +13,9 @@ import pytest
 if sys.platform != "darwin":
     pytest.skip("macOS-only platform layer", allow_module_level=True)
 
+# Takes focus, opens windows or sends real input: a VM's, not your desktop (conftest).
+pytestmark = pytest.mark.desktop
+
 from keyhac.platform.mac.ime import MacImeProvider, _tis_api  # noqa: E402
 
 

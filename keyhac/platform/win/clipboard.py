@@ -154,14 +154,16 @@ def describe(item: dict, text: str | None, dropped: bool) -> ClipboardSnapshot:
             size = image_size(name, item[name])
             if size:
                 break
+    has_image = any(name in item for name in IMAGE_FORMATS)
     if files:
         kind = "files"
-    elif any(name in item for name in IMAGE_FORMATS):
-        kind = "image"
-    elif any(name in item for name in RICH_FORMATS):
-        kind = "rich"
     elif text:
-        kind = "text"
+        # Text first: an Excel range offers a picture of itself too, and is
+        # still the text the user copied.
+        rich = has_image or any(name in item for name in RICH_FORMATS)
+        kind = "rich" if rich else "text"
+    elif has_image:
+        kind = "image"
     else:
         kind = None
     return ClipboardSnapshot(kind=kind, text=text or None, image_size=size,

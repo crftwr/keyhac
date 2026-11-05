@@ -553,7 +553,9 @@ that can be handed documents can be handed these. What that does not buy is the
 provides.
 
 (Building it from a source checkout, if you are working on Keyhac itself:
-`make skill-bundle` writes the same zip into `dist/`.)
+`make skill-bundle` writes the same zip into `dist/`. Off a release tag, or with
+uncommitted changes, it carries a dev version such as `2.7.0+dev.g<sha>` in its
+name and in the stamp inside.)
 
 **A skill is not the connection, and neither step implies the other.** A skill
 is knowledge — rules and an API reference, with no way to reach your machine;
@@ -578,7 +580,7 @@ coordinates, or bindings it never checked.
 | `list_extensions` | the files in `extensions/`, including helpers with no action class |
 | `read_extension` | read a module as it is on disk |
 | `write_extension` | save a module — the whole file |
-| `delete_extension` | retire a module — renamed to a backup beside it, not erased |
+| `delete_extension` | retire a module — renamed to a backup beside it; only a module created since the endpoint opened can be erased, on request |
 | `reload_config` | re-read your `config.py` after you edit it, and report any error |
 
 None of these has a permission of its own, and that is the design rather than
@@ -683,9 +685,14 @@ don't type passwords or show private material while recording.
   is what rules out paths and traversal — and `config.py` itself. Neither is
   replaced silently: the previous version is kept as a `.bak-<timestamp>`
   beside it, and every write is logged to the console with a `+N/-M` line
-  count. **Nothing is erased**, either: `delete_extension` retires a module by
-  renaming it to the same `.bak-<timestamp>`, so tidying up after a session is
-  undone by renaming it back.
+  count. **A module you already had is not erased**, either: `delete_extension`
+  retires a module by renaming it to the same `.bak-<timestamp>`, so tidying up
+  after a session is undone by renaming it back. The exception is a throwaway:
+  an agent can ask to erase a module created since the endpoint opened, and
+  every backup under its name, whatever the backup's age, with
+  `keep_backup=False`. That includes a backup left by an earlier module of the
+  same name. An older module is still renamed. A file you created yourself while the endpoint
+  was open counts as new, because Keyhac goes by creation time.
 - **`write_config` is the one thing that outlives the hour.** Everything else
   an agent does here expires when the endpoint closes; a key binding written
   into `config.py` keeps working, which is the point of writing it. It is a

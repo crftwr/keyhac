@@ -198,7 +198,7 @@ header is fixed, and the two names that look like they should exist do not:
 """One line: what this drives, on which platform, tree inspected when."""
 
 from keyhac import (ThreadedAction, WaitTimeout, FillFailed, ActionCancelled,
-                    StaleElement, UINode, getLogger)
+                    StaleElement, Unresponsive, UINode, getLogger)
 
 logger = getLogger("OpenIssues")     # there is no importable `logger`
 ```
@@ -304,7 +304,10 @@ that has never executed is a guess.
    `delete_extension("wrong_name")` retires a module — it renames it to a
    `.bak-` beside itself rather than erasing it, so this is reversible. Use it
    for a module you wrote under a name you then abandoned, or a helper you
-   folded back into the action. **Only for what you created in this
+   folded back into the action. For a throwaway such as a probe, add
+   `keep_backup=False`: it erases the module and its backups, leaving nothing
+   behind, if it was created since the MCP server started. Anything older is
+   still renamed. **Only for what you created in this
    conversation**: anything else in `extensions/` is the operator's, and it is
    theirs to remove. If the reply says `config.py` mentions the module, read
    that file and offer to take the lines out — leaving them there means their

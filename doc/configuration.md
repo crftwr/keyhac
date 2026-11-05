@@ -327,12 +327,16 @@ kt_cx["Ctrl-S"] = f"{MOD2}-S"      # Ctrl held through: Ctrl-X Ctrl-S
 kt_cx["S"] = f"{MOD2}-S"           # Ctrl let go: Ctrl-X S
 ```
 
-The prefix key itself no longer does what it did — here Ctrl-X stops being Cut in
-every application the table applies to. To keep it reachable, give it a second stroke
-of its own; pressing the prefix twice is the usual choice:
+The prefix key itself no longer does what it did, in every application the table
+applies to — here Ctrl-X stops being Cut on Windows, and on macOS stops being whatever
+the application made of it (Cut is Cmd-X there; a text field takes Ctrl-X as an Emacs
+key, or ignores it). To keep it reachable, give it a second stroke of its own;
+pressing the prefix twice is the usual choice. Sending the prefix itself gives the key
+back as it was on each system, which is not the same thing on both — say so in the
+comment rather than calling it Cut:
 
 ```python
-kt_cx["Ctrl-X"] = "Ctrl-X"         # Ctrl-X Ctrl-X: Cut, as before
+kt_cx["Ctrl-X"] = "Ctrl-X"         # Ctrl-X Ctrl-X: Ctrl-X as before (Cut on Windows)
 ```
 
 ## Remapping and user modifiers
@@ -504,9 +508,11 @@ closes it.
 Entries keep more than their text. Rich text (RTF/HTML), images and copied files
 are pasted back the way they were copied. **Option-Enter** (Alt-Enter on Windows)
 pastes an entry's text alone, without its formatting; Option-Shift-Enter sets it
-without pasting. An entry marked *(text only)* came from a copy the history could
-keep only the text of, such as spreadsheet cells. Choosing the entry that is still
-on the clipboard pastes it untouched, with everything the copy offered.
+without pasting. A copy that offers a picture of itself along with its text, such
+as spreadsheet cells, is listed by its text, and its preview shows both. An entry
+marked *(text only)* came from a copy the history could keep only the text of.
+Choosing the entry that is still on the clipboard pastes it untouched, with
+everything the copy offered.
 
 Rich text and images last for the session (`max_session_data_size`, 64 MB by
 default; past it the oldest fall back to their text). Text and file paths are saved

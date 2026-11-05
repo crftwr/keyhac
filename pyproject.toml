@@ -68,7 +68,7 @@ dependencies = [
     # no longer does) - and ListView scrolling an assigned selection into view
     # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
     # develop against a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.11.0",
+    "puikit>=1.15.2",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
@@ -100,7 +100,7 @@ dependencies = [
 # quality-loop runs qa/ (`make qa`): the skill bundle tried by an isolated
 # agent, reported on by an operator agent. Development only; nothing at
 # runtime imports it.
-dev = ["pytest>=8", "quality-loop>=0.3.0"]
+dev = ["pytest>=8", "quality-loop>=0.5.0"]
 
 [project.scripts]
 keyhac = "keyhac.main:main"
@@ -157,6 +157,9 @@ readme = { file = ["README.pypi.md"], content-type = "text/markdown" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# quality-loop's plugin gives the desktop mark (skipped unless --desktop,
+# which is for a VM) and host_only (skipped in a guest) - #316.
+addopts = ["-p", "quality_loop.pytest_plugin"]
 markers = [
     "slow: drives a real third-party app (launches it, waits on its UI); run with -m 'not slow' to skip",
 ]

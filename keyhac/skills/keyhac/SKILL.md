@@ -67,9 +67,12 @@ was.
   `.keyhac` in their home folder - on macOS it is hidden, and **⌘⇧.**
   (Cmd-Shift-period) shows it in the folder picker. Dragging the `.keyhac`
   folder into the conversation works too. Whether you wait for it or carry
-  on with Keyhac's tools below is yours to judge; either way the user should
-  leave knowing these steps, since the folder is for their next task too, and
-  what their next session will allow is something they can see and you cannot.
+  on with Keyhac's tools below is yours to judge.
+- **Either way, your reply names those steps** - the **+** / **Add folder**
+  steps, and **⌘⇧.** on macOS - even when the task got done through Keyhac's
+  tools. This part is not a judgement call: the folder is for their next task
+  too, and what their next session will allow is something they can see and
+  you cannot.
 - **Until then, or if that does not work, use Keyhac's tools**: `read_config` /
   `write_config` for `config.py`, `read_extension` / `write_extension` /
   `list_extensions` for `extensions/`. They replace whole files, so read a

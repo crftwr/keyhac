@@ -1,6 +1,69 @@
+import os
+import shutil
 import sys
+import tempfile
 
 import pytest
+
+
+# --- an empty home for the whole run ----------------------------------------
+#
+# Keyhac's defaults read ~/.keyhac: config.py, settings.json, clipboard.json,
+# the extensions and packages folders. A test that forgets to pass its own
+# path would read the runner's, and pass or fail with what that machine holds
+# (XeFM's make tag stopped twice for this). Set in pytest_configure rather
+# than a fixture so it is in place at collection time too; realpath because
+# macOS hands out /var/..., a symlink to /private/var/.... A test that needs a
+# home of its own still sets HOME itself.
+
+_saved_home_env = {}
+_fake_home = None
+
+
+def pytest_configure(config):
+    global _fake_home
+    _fake_home = os.path.realpath(tempfile.mkdtemp(prefix="keyhac-test-home-"))
+    for name in ("HOME", "USERPROFILE"):
+        _saved_home_env[name] = os.environ.get(name)
+        os.environ[name] = _fake_home
+
+
+@pytest.fixture
+def real_home_environ():
+    """The environment with the runner's own HOME and USERPROFILE, for
+    starting another application.
+
+    The empty home is this suite's, not the desktop's: Windows' Notepad,
+    started with USERPROFILE pointing at it, crashes within seconds (#293).
+    """
+    environ = dict(os.environ)
+    for name, value in _saved_home_env.items():
+        if value is None:
+            environ.pop(name, None)
+        else:
+            environ[name] = value
+    return environ
+
+
+def pytest_unconfigure(config):
+    for name, value in _saved_home_env.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    if _fake_home is not None:
+        shutil.rmtree(_fake_home, ignore_errors=True)
+
+
+# --- tests that touch the live desktop --------------------------------------
+#
+# Some platform tests take the foreground, move and resize windows, send real
+# keys and mouse events, switch the input source or replace the clipboard.
+# On the developer's own machine that gets in the way of whatever they are
+# doing, and what they are doing gets in the way of the test. They are marked
+# `desktop` and run only with --desktop, which is for a VM (#293). The mark,
+# and host_only for the host-side tooling, are quality-loop's pytest plugin
+# (pyproject.toml's addopts), shared with XeFM (#316).
 
 from keyhac.core.vk import init_key_names, get_key_names
 from keyhac.core.keymap import Keymap

@@ -50,7 +50,9 @@ reviewed one-off.
    interface. See [doc/dev/platform-layer.md](doc/dev/platform-layer.md).
 3. **Config API**: keyhac-mac's snake_case API is the base, extended with portable
    focus conditions (`app=`, `title=`) and the keyhac-win features it lacked. One
-   `config.py` runs on both OSes; keyhac-win configs require migration.
+   `config.py` runs on both OSes; keyhac-win configs require migration. There is no
+   separate public API layer between a config and the core, unlike XeFM's. See
+   [The public API stays thin](doc/dev/design-notes.md#the-public-api-stays-thin).
 4. **PuiKit is extended additively** per its compatibility policy; everything Keyhac2
    needs is in the PyPI release `pyproject.toml` pins. See
    [doc/dev/puikit.md](doc/dev/puikit.md).
@@ -105,6 +107,10 @@ tools/         # icon pipeline, Pages banner render, release scripts, hook_echo 
 - Tests: pytest (`.venv/bin/python -m pytest`). The engine is tested with scripted
   fakes (no OS needed); UI against PuiKit's `MemoryBackend`; live platform tests and
   harness patterns are described in [doc/dev/testing.md](doc/dev/testing.md).
+  A test that takes focus, moves windows, sends real input or changes the
+  clipboard or input source is marked `desktop` and runs only in a VM; a test
+  of the host-side tooling is `host_only`. A release runs the suite in the VMs
+  (`make release-test`), not here.
 - **Subtle inherited behaviors are load-bearing** — do not "simplify" them. The list
   (L/R-agnostic `KeyCondition.__eq__`, `force_LR` output, never-emitted user
   modifiers, unmatched-consume in multi-stroke, pass-through-on-error, the three

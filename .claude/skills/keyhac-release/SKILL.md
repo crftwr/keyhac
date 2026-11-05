@@ -47,9 +47,29 @@ invoking any of that, do the checks preflight cannot:
 - `git log v<current>..origin/main --oneline` — everything meant for this
   release is merged, nothing unexpected rode along. This list is also the raw
   material for the release note.
-- `make api-reference-check` and `make icons-check` — the committed generated
-  artifacts (`doc/config-api.md`, the rendered icons) must match their
+- `make release-review` — reviews `v<current>..origin/main` against
+  CLAUDE.md's rules (`tools/release_review.py`; it includes
+  `api-reference-check` and `check-docs`). Report it to the user; fix nothing
+  here, the user decides what is fixed before tagging.
+  - **Findings** (exit 1) are the mechanical rules — OS imports in core/ui,
+    ctypes prototypes, camelCase, and the public API compared against the
+    last tag (an entry or parameter removed, a parameter added with no
+    default: additive-only, so each is a stop unless the user moves it to
+    `doc/dev/next-major.md`). List them as they are.
+  - **For review** lines are pointers, not violations: read each site and
+    give a verdict per line. Its API additions also check step 1 — any of
+    them means at least a minor bump — and are the note's raw material.
+- `make icons-check` — the committed rendered icons must match their SVG
   sources before they ship.
+- **`make release-test`** runs inside `make tag` (#316): `pytest
+  --host-only` here, then the whole suite with `--desktop` in `qa-mac` (Tart)
+  and `qa-win` (VMware) on PuiKit and quality-loop **as PyPI has them** -
+  about ten minutes, so tell the user before starting it. It needs Tart and
+  VMware Fusion on this Mac, and neither VM held by a `run-vm` here or in
+  XeFM. Since the VMs install PuiKit from PyPI, a release relying on
+  unreleased PuiKit fails here: release PuiKit first. A failure stops the
+  tag: report it with the log under `temp/vm-test-<guest>-<time>/`, never
+  retry it away. Running it on its own ahead of `make tag` is fine.
 - **The standing interactive pass** — `doc/dev/testing.md`, "The interactive
   pass before a release". These are live checks no automated harness covers
   (tray menu and console interactions, IME driving the chooser, mouse feel,
@@ -64,7 +84,7 @@ invoking any of that, do the checks preflight cannot:
 ## 3. The Makefile pipeline
 
 ```
-make tag VERSION=x.y.z    # preflight → pytest → bump __version__ → commit
+make tag VERSION=x.y.z    # preflight → release-test → bump __version__ → commit
                           # "Releasing x.y.z" → tag vx.y.z → build gate
                           # (sdist+wheel+twine check) → push commit and tag
 make release-github       # create the Release (auto body — replaced in step 4)
@@ -83,6 +103,17 @@ On the Windows machine, from the same checkout at the tag:
 `make release-windows-msix` is the odd one out — it submits to the Microsoft
 Store, not the GitHub Release, and certification proceeds asynchronously
 (poll with `msstore submission status`).
+
+The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
+not installed from a package index — an editable PuiKit included — or outside
+a requirement (`tools/collect_dependencies.py`). Before `release-macos-dmg`
+and the Windows targets, put the released PuiKit in with `make install-puikit
+PUIKIT_DIR=`, and pass `PUIKIT_DIR=` to the bundle targets too, so a venv
+refresh on the way does not reinstall the checkout. For anything else the
+error names, `pip install --force-reinstall --no-deps <name>`. Never set
+`KEYHAC_BUNDLE_ALLOW_LOCAL` for a release build; it is for local development
+builds. Switch back with `make install-puikit` afterwards if the user develops
+against the checkout.
 
 - `make tag` commits directly to `main` — sanctioned for release commits only.
 - Each target is independently re-runnable; `release-github` is idempotent.
@@ -153,7 +184,9 @@ finished and get a yes before uploading.
    artifacts must be built from the tagged code, not from whatever `main`
    has become.
 3. `make release-windows-zip` — builds the bundle and the portable zip, and
-   attaches the zip to the GitHub Release.
+   attaches the zip to the GitHub Release. If the collector refuses the venv
+   (a local install, a version below a requirement), bring it to the released
+   versions as in step 3 and rebuild with `make windows-zip`.
 4. Ask whether to also submit to the Microsoft Store this time:
    `make release-windows-msix`. It is a separate publication with its own
    asynchronous certification (`msstore submission status`), not a Release

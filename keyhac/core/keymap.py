@@ -1351,15 +1351,19 @@ class Keymap:
         return self._focus
 
     def read_focus(self) -> Focus | None:
-        """`focus`, read from the platform when no key event has filled it.
+        """`focus`, read from the platform now rather than at the last key.
 
-        configure() empties the snapshot and only a key event fills it again,
-        so right after a reload `focus` is None with a window plainly in
-        front - exactly when an agent that has just written a key table asks
-        whether it applies there, and an agent cannot press a key to find out
-        (issue #196). This is the read the next key event would have made, so
-        it fills the snapshot and re-merges the tables for it, and that key
-        no longer has to make it.
+        The snapshot is as old as the last key event: configure() empties it
+        (issue #196), and a focus that moves with no key pressed - an action
+        brought up another window, the operator clicked into one - leaves it
+        naming the old window (issue #313). An agent asking where the
+        operator is cannot press a key to refresh it. This is the read the
+        next key down would have made, so it refreshes the snapshot and
+        re-merges the tables for it, and what it reports agrees with the
+        tables that key will be matched against.
+
+        Only the MCP tools call it. The key path reads through
+        `_check_focus_change` itself, so this adds no reads per key.
 
         Call it on the main thread, beside the key dispatch that also writes
         the snapshot.
@@ -1367,13 +1371,12 @@ class Keymap:
         lazydocs: ignore
         """
         with self._lock:
-            if self._focus is None:
-                with one_timeout_per_key_event():
-                    try:
-                        self._check_focus_change()
-                    except Exception:
-                        logger.error(f"Reading the focus failed:\n"
-                                     f"{traceback.format_exc()}")
+            with one_timeout_per_key_event():
+                try:
+                    self._check_focus_change()
+                except Exception:
+                    logger.error(f"Reading the focus failed:\n"
+                                 f"{traceback.format_exc()}")
             return self._focus
 
     # ------------------------------------------------------------------
