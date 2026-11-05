@@ -5,7 +5,7 @@ English \| [日本語](installation.ja.md)
 ## Requirements
 
 - **macOS 12 or later**, or
-- **Windows 10 / 11, 64-bit**.
+- **Windows 10 / 11, 64-bit**, x64 or Arm.
 
 Keyhac runs entirely on your machine. It never connects to the internet — there is no
 update check and no telemetry. The one exception is a step you take yourself:
@@ -58,13 +58,15 @@ terminal:
 winget install --id 9P8H1PG6PRHH --source msstore
 ```
 
-The Store package updates automatically, shows no SmartScreen warning, and is
+The Store delivers the build that matches your device, x64 or Arm. The package
+updates automatically, shows no SmartScreen warning, and is
 set to **start at login by default** — toggle that under
 Settings → Apps → Startup.
 
 ### Zip package
 
-1. Download `Keyhac-<version>-win64.zip` from
+1. Download `Keyhac-<version>-win64.zip` (x64) or
+   `Keyhac-<version>-winarm64.zip` (Arm) from
    [Releases](https://github.com/crftwr/keyhac/releases) and unzip it anywhere
    (for example `C:\Program Files\Keyhac` or a folder in your home directory).
 2. Run `Keyhac.exe`.

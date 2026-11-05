@@ -25,8 +25,19 @@ shipped PuiKit app, the standard to follow for build infra.
   from PyConfig alone. `install_zip.ps1` installs a built zip.
 - Layout: `Keyhac.exe` + `runtime\` (CPython) + `Lib\site-packages\` +
   `app\{keyhac,puikit}`.
-- Distribution: `Keyhac-<version>-win64.zip` via `make windows-zip`, and the
-  Microsoft Store as an MSIX (below).
+- Distribution: `Keyhac-<version>-win64.zip` via `make windows-zip`,
+  `Keyhac-<version>-winarm64.zip` via `make windows-zip ARCH=arm64`, and the
+  Microsoft Store as one `.msixbundle` of both (below).
+- **Two architectures** (issue #318). `build.ps1 -Arch x64|arm64` writes to
+  `build\Keyhac` or `build\arm64\Keyhac`. Either builds on one machine with one
+  venv, whatever its architecture. When the venv does not match the target, the
+  embeddable, the headers and import library (NuGet's `python` / `pythonarm64`)
+  and the dependency wheels (`collect_dependencies.py --target-platform`, at the
+  versions the venv holds) are fetched for the target, and MSVC cross-compiles;
+  that needs the ARM64 or x64 C++ build tools component. A universal binary is
+  not an option: python.org builds neither `python3XX.dll` nor the stdlib `.pyd`
+  files as ARM64X. A zip of both would double the download for a choice people
+  can make themselves.
 
 ### Microsoft Store (MSIX)
 
@@ -36,8 +47,11 @@ route exists because it makes Windows code signing free: the package is uploaded
 **unsigned** and Microsoft re-signs it during certification — no certificate to
 buy, no SmartScreen warning, and a `winget install --source msstore` line for free.
 
-- `build_msix.ps1` — wraps the `windows_app\build\Keyhac` bundle into
-  `build\Keyhac-<version>.0-x64.msix` (the Store requires 4-part versions with
+- `build_msix.ps1 -Arch x64|arm64` — wraps that architecture's bundle into
+  `build\Keyhac-<version>.0-<arch>.msix`, and `-Bundle` combines the two into
+  `build\Keyhac-<version>.0.msixbundle` (`make windows-msixbundle`), which is
+  what goes to the Store: one listing and one install command, and the device
+  gets the payload that matches it (the Store requires requires 4-part versions with
   major ≥ 1 and revision 0, so `__version__` 2.0.0 packages as 2.0.0.0, derived
   not hardcoded). Emits `AppxManifest.xml` at pack time: `runFullTrust`
   (classic Win32 desktop app — the hook, `SendInput` and UIA all work
@@ -203,6 +217,7 @@ tag..`origin/main` is where drift across many small changes shows.
   reason a release with any is at least a minor.
 
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
+`Keyhac-<ver>-winarm64.zip`,
 the skill bundles - one zip per folder in `keyhac/skills/`, all attached to the
 GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
 versioned/released independently on PyPI; Keyhac2 pins a minimum in

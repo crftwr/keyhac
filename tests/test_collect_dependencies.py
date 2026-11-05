@@ -143,3 +143,30 @@ class TestVerifySources:
         resolved = {"puikit": _Dist("puikit", "1.15.0")}
         assert collect_dependencies.verify_versions(str(pyproject), resolved, skip={"puikit"})
         assert not collect_dependencies.verify_versions(str(pyproject), resolved)
+
+
+class TestInstallForPlatform:
+
+    def test_exact_versions_from_wheels_for_the_target(self, tmp_path, monkeypatch):
+        seen = []
+
+        def run(command):
+            seen.append(command)
+            (tmp_path / "bin").mkdir()
+            return collect_dependencies.subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(collect_dependencies.subprocess, "run", run)
+        dists = [_Dist("Pillow", "13.0.0"), _Dist("numpy", "2.5.4")]
+        assert collect_dependencies.install_for_platform(dists, tmp_path, "win_arm64")
+        command = seen[0]
+        assert command[command.index("--platform") + 1] == "win_arm64"
+        assert "--no-deps" in command and "--only-binary=:all:" in command
+        assert command[-2:] == ["Pillow==13.0.0", "numpy==2.5.4"]
+        assert not (tmp_path / "bin").exists()     # console scripts stay behind
+
+    def test_a_version_with_no_wheel_fails_the_build(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            collect_dependencies.subprocess, "run",
+            lambda command: collect_dependencies.subprocess.CompletedProcess(command, 1))
+        assert not collect_dependencies.install_for_platform(
+            [_Dist("numpy", "2.5.4")], tmp_path, "win_arm64")

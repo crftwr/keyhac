@@ -4,10 +4,15 @@
     distribution). Ported from XeFM's windows_app/build_msix.ps1.
 
 .DESCRIPTION
-    Wraps the existing windows_app\build\Keyhac bundle (produced by build.ps1)
+    Wraps the existing windows_app\build\Keyhac bundle (arm64:
+    windows_app\build\arm64\Keyhac; both produced by build.ps1)
     into an installable .msix:
 
       (default)   stage payload + tiles + AppxManifest -> makeappx pack
+      -Arch       the architecture to pack: x64 (default) or arm64
+      -Bundle     combine the x64 and arm64 packages already built into one
+                  .msixbundle - what goes to the Store, which delivers the payload
+                  that matches the device
       -Sign       also self-sign the package for LOCAL testing
       -Install    trust the self-signed cert (elevates) + Add-AppxPackage (per-user)
       -Uninstall  Remove-AppxPackage + delete the throwaway signing certs (elevates)
@@ -50,7 +55,9 @@ param(
     [string]$IdentityName,                                # Package/Identity/Name
     [string]$Publisher,                                   # Publisher (CN=...)
     [string]$PublisherDisplayName,                        # Package/Properties/PublisherDisplayName
+    [ValidateSet("x64", "arm64")]
     [string]$Arch                 = "x64",
+    [switch]$Bundle,                                      # x64 + arm64 -> .msixbundle; with -Install/-Uninstall, that bundle
     [switch]$Sign,                                        # self-sign for local install test
     [switch]$Install,                                     # trust cert + install locally
     [switch]$Uninstall,                                   # remove the package + throwaway certs
@@ -77,7 +84,9 @@ if (-not $env:TMP) { $env:TMP = $env:TEMP }
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $projectRoot = Split-Path -Parent $ScriptDir
-if (-not $PayloadSource) { $PayloadSource = Join-Path $ScriptDir 'build\Keyhac' }
+if (-not $PayloadSource) {
+    $PayloadSource = Join-Path $ScriptDir $(if ($Arch -eq 'x64') { 'build\Keyhac' } else { "build\$Arch\Keyhac" })
+}
 if (-not $OutDir)        { $OutDir        = Join-Path $ScriptDir 'build' }
 
 # Resolve the package version from keyhac/__init__.py's __version__ -- the
@@ -147,6 +156,8 @@ $msix    = "$OutDir\Keyhac-$Version-$Arch.msix"
 # .msix extension (before .building) because signtool refuses to sign a file
 # whose extension it doesn't recognize as an app package.
 $msixTmp = "$OutDir\Keyhac-$Version-$Arch.building.msix"
+$bundleFile    = "$OutDir\Keyhac-$Version.msixbundle"
+$bundleTmp     = "$OutDir\Keyhac-$Version.building.msixbundle"
 $pfx     = "$OutDir\Keyhac-proto-test.pfx"
 $cer     = "$OutDir\Keyhac-proto-test.cer"
 $pfxPassword = "prototest"
@@ -163,14 +174,22 @@ function Find-SdkTool([string]$name) {
     ) | Where-Object { $_ -notlike '\*' } | Select-Object -Unique
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
-        $hits = @(Get-ChildItem -Path $root -Recurse -Filter $name -ErrorAction SilentlyContinue |
-                  Where-Object { $_.FullName -match "\\x64\\$([regex]::Escape($name))$" })
+        # The architecture here is the tool's, not the package's: x64 tools pack
+        # either, and run on any machine this builds on. An SDK on Windows on
+        # Arm may have only its arm64 ones.
+        $all = @(Get-ChildItem -Path $root -Recurse -Filter $name -ErrorAction SilentlyContinue)
+        $hostDir = 'x64'
+        $hits = @($all | Where-Object { $_.FullName -match "\\x64\\$([regex]::Escape($name))$" })
+        if (-not $hits.Count) {
+            $hostDir = 'arm64'
+            $hits = @($all | Where-Object { $_.FullName -match "\\arm64\\$([regex]::Escape($name))$" })
+        }
         if (-not $hits.Count) { continue }
         # Prefer the newest bin\10.0.xxxxx.0\x64 copy: the top-level bin\x64
         # dir (pre-1703 SDK layout) can hold an ancient signtool that does not
         # recognize the MSIX format, and a plain descending name sort would
         # pick it ('x64' sorts after '10.0.26100.0').
-        $versioned = @($hits | Where-Object { $_.FullName -match '\\10\.[0-9.]+\\x64\\' } |
+        $versioned = @($hits | Where-Object { $_.FullName -match "\\10\.[0-9.]+\\$hostDir\\" } |
                        Sort-Object { [version]([regex]::Match($_.FullName, '\\(10\.[0-9.]+)\\').Groups[1].Value) } -Descending)
         if ($versioned.Count) { return $versioned[0].FullName }
         return ($hits | Sort-Object FullName -Descending | Select-Object -First 1).FullName
@@ -254,9 +273,11 @@ if ($Uninstall) {
 }
 
 # ===========================================================================
-# Action: -Install — trust the cert (elevates) then install per-user.
+# Action: -Install — trust the cert (elevates) then install per-user. With
+# -Bundle, the bundle rather than this architecture's package.
 # ===========================================================================
 if ($Install) {
+    if ($Bundle) { $msix = $bundleFile }
     if (-not (Test-Path $msix)) { throw "Package not found: $msix. Run 'make windows-msix' first." }
     if (-not (Test-Path $cer))  { throw "Signing cert not found: $cer. Run 'make windows-msix' first." }
 
@@ -282,14 +303,60 @@ if ($Install) {
     return
 }
 
+function New-ThrowawayCert {
+    Write-Host "[INFO] Creating self-signed cert (Subject must equal Publisher)..."
+    # Drop any prior private-key certs with the same subject so CurrentUser\My
+    # does not accumulate a duplicate on every rebuild (trust lives in the
+    # machine store via the .cer, so removing these here is safe).
+    Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Subject -eq $Publisher } | Remove-Item -Force -ErrorAction SilentlyContinue
+    $cert = New-SelfSignedCertificate -Type Custom -CertStoreLocation Cert:\CurrentUser\My `
+        -Subject $Publisher -KeyUsage DigitalSignature -FriendlyName "Keyhac MSIX prototype" `
+        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
+    $securePw = ConvertTo-SecureString -String $pfxPassword -Force -AsPlainText
+    Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $securePw | Out-Null
+    Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+}
+
 # ===========================================================================
-# Default action: build (and optionally -Sign) the package.
+# Default action: build (and optionally -Sign) the package, or with -Bundle
+# combine two that are built.
 # ===========================================================================
 $makeappx = Find-SdkTool "makeappx.exe"
 Write-Host "[INFO] makeappx: $makeappx"
 if ($Sign) {
     $signtool = Find-SdkTool "signtool.exe"
     Write-Host "[INFO] signtool: $signtool"
+}
+
+if ($Bundle) {
+    # The two packages share an identity and a version, and differ only in
+    # ProcessorArchitecture. Atomic like the pack below. Packages inside a signed
+    # bundle need no signature of their own; the Store takes it all unsigned.
+    $bundleInputs = "$OutDir\msixbundle-inputs"
+    foreach ($stale in @($bundleFile, $bundleTmp, $bundleInputs, $pfx, $cer)) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale }
+    }
+    New-Item -ItemType Directory -Force -Path $bundleInputs | Out-Null
+    foreach ($a in @('x64', 'arm64')) {
+        $one = "$OutDir\Keyhac-$Version-$a.msix"
+        if (-not (Test-Path $one)) { throw "Package not found: $one. Run 'make windows-msix ARCH=$a' first." }
+        Copy-Item -Force $one $bundleInputs
+    }
+    if ($Sign) { New-ThrowawayCert }
+    Write-Host "[INFO] Bundling -> $bundleTmp"
+    & $makeappx bundle /d $bundleInputs /p $bundleTmp /bv $Version /o
+    if ($LASTEXITCODE -ne 0) { throw "makeappx bundle failed ($LASTEXITCODE)" }
+    if ($Sign) {
+        Write-Host "[INFO] Signing bundle..."
+        & $signtool sign /fd SHA256 /f $pfx /p $pfxPassword $bundleTmp
+        if ($LASTEXITCODE -ne 0) { throw "signtool sign failed ($LASTEXITCODE)" }
+    }
+    Remove-Item -Recurse -Force $bundleInputs
+    Move-Item -Force $bundleTmp $bundleFile
+    Write-Host ""
+    Write-Host "[DONE] Bundle: $bundleFile" -ForegroundColor Green
+    return
 }
 
 if (-not (Test-Path $PayloadSource))              { throw "Payload source not found: $PayloadSource. Run 'make windows-app' first." }
@@ -436,20 +503,7 @@ foreach ($stale in @($msix, $msixTmp, $pfx, $cer)) {
 # When signing, mint the cert FIRST: it is the cheap, most-likely-to-fail step
 # (cert policy, missing signtool), so failing before the slow pack is cheaper
 # and never leaves a packed-but-unsigned artifact behind.
-if ($Sign) {
-    Write-Host "[INFO] Creating self-signed cert (Subject must equal Publisher)..."
-    # Drop any prior private-key certs with the same subject so CurrentUser\My
-    # does not accumulate a duplicate on every rebuild (trust lives in the
-    # machine store via the .cer, so removing these here is safe).
-    Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
-        Where-Object { $_.Subject -eq $Publisher } | Remove-Item -Force -ErrorAction SilentlyContinue
-    $cert = New-SelfSignedCertificate -Type Custom -CertStoreLocation Cert:\CurrentUser\My `
-        -Subject $Publisher -KeyUsage DigitalSignature -FriendlyName "Keyhac MSIX prototype" `
-        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3")
-    $securePw = ConvertTo-SecureString -String $pfxPassword -Force -AsPlainText
-    Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $securePw | Out-Null
-    Export-Certificate -Cert $cert -FilePath $cer | Out-Null
-}
+if ($Sign) { New-ThrowawayCert }
 
 Write-Host "[INFO] Packing -> $msixTmp"
 & $makeappx pack /d $staging /p $msixTmp /o

@@ -1,6 +1,7 @@
 """This working tree in a VM: the test suite, or Keyhac up for a hand check.
 
-    python3 tools/vm.py test [--packages pypi] <guest> [pytest args...]   # make test-vm GUEST=...
+    python3 tools/vm.py test [--packages pypi] [--arch arm64] <guest> [pytest args...]
+                                                                          # make test-vm GUEST=...
     python3 tools/vm.py run <guest>                                       # make run-vm GUEST=...
 
 <guest> is an SSH host alias with a table in ~/.config/quality-loop/guests.toml
@@ -17,7 +18,10 @@ desktop. Windows runs pytest in the desktop session from a scheduled task,
 with python.exe; macOS over SSH. ``--packages pypi`` installs PuiKit and
 quality-loop from PyPI as pyproject.toml names them - a release's run (#316) -
 instead of staging this checkout's. The log and the JUnit XML are kept in
-temp/vm-test-<guest>-<time>/; the exit code is pytest's.
+temp/vm-test-<guest>-<time>/; the exit code is pytest's. The Windows image's
+Python is x64, emulated on that Arm VM; ``--arch arm64`` runs the suite under a
+native ARM64 Python of the same version instead, put in the guest for the run
+(qa/guest.py).
 
 **run** starts this working tree's Keyhac in the VM's desktop session - on
 macOS through Keyhac.app, which holds the Accessibility grant - with a home of
@@ -44,13 +48,16 @@ from quality_loop import guest as ql  # noqa: E402
 from quality_loop.guest import suite  # noqa: E402
 
 
-def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str) -> int:
+def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str,
+              arch: str = "x64") -> int:
     guest = keyhac_guest.Guest.for_alias(alias)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    results = ROOT / "temp" / f"vm-test-{alias}-{stamp}"
+    results = ROOT / "temp" / f"vm-test-{alias}{'-arm64' if arch == 'arm64' else ''}-{stamp}"
     started = time.monotonic()
     code = 3
     with guest.machine():
+        if arch == "arm64":
+            guest.use_arm64_python()
         stage = guest.test_stage(packages)
         try:
             print(f"vm:      installing the third-party packages in the guest "
@@ -114,6 +121,9 @@ def main() -> int:
     test = commands.add_parser("test", help="run the test suite in the VM")
     test.add_argument("--packages", choices=keyhac_guest.PACKAGES, default="local",
                       help="ours from this checkout (local, the default) or PyPI")
+    test.add_argument("--arch", choices=("x64", "arm64"), default="x64",
+                      help="a Windows guest's Python: the image's x64 (the default) "
+                           "or native ARM64")
     test.add_argument("--patience", type=float, default=3600,
                       help="seconds to wait for pytest to end (default 3600)")
     test.add_argument("guest")
@@ -123,7 +133,7 @@ def main() -> int:
     running.add_argument("guest")
     args = parser.parse_args()
     if args.command == "test":
-        return run_tests(args.guest, args.pytest_args, args.patience, args.packages)
+        return run_tests(args.guest, args.pytest_args, args.patience, args.packages, args.arch)
     return run_keyhac(args.guest)
 
 

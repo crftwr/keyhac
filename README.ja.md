@@ -93,10 +93,10 @@ def configure(keymap):
   `Keyhac-<version>-macos.dmg` をダウンロードし、Keyhac.app をアプリケーションフォルダーにドラッグして起動します。
   Homebrew でもインストールできます:
   `brew install --cask crftwr/tap/keyhac`。求められたらアクセシビリティ権限を許可してください（キーボードフックに必要です）。
-- **Windows 10/11 (x64)**: [Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH)
+- **Windows 10/11 (x64 / Arm)**: [Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH)
   からインストールします（または `winget install --id 9P8H1PG6PRHH --source msstore`）。自動更新され、
-  SmartScreen の警告も出ません。あるいは [Releases](https://github.com/crftwr/keyhac/releases) から
-  `Keyhac-<version>-win64.zip` をダウンロードし、任意の場所に展開して `Keyhac.exe` を実行します。
+  SmartScreen の警告も出ません。Store はデバイスに合ったビルドを配信します。あるいは [Releases](https://github.com/crftwr/keyhac/releases) から
+  `Keyhac-<version>-win64.zip`（x64）または `Keyhac-<version>-winarm64.zip`（Arm）をダウンロードし、任意の場所に展開して `Keyhac.exe` を実行します。
 
 詳細、データの保存場所、プライバシーに関する注意: [doc/installation.ja.md](doc/installation.ja.md)。
 

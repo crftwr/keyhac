@@ -112,7 +112,7 @@ class TestCheck:
 
     def test_another_platform_is_not_loaded(self, layout):
         # One config runs on both OSes, so ~/.keyhac may come from the other.
-        synced(layout, "requests\n", platform="cpython-314-win32-amd64")
+        synced(layout, "requests\n", platform="cpython-314-otheros-amd64")
         status = pp.check(layout, HOST)
         assert (status.state, status.loaded) == (pp.FOREIGN, False)
 
@@ -517,3 +517,24 @@ class TestTraySync:
             keymap, sync=lambda layout, log: pp.SyncResult([], [], pending_restart=True))
         self.run(package_sync)
         assert keymap.reloads == 0
+
+
+class TestPlatformTag:
+
+    @pytest.mark.parametrize("interpreter, machine", [
+        ("win-amd64", "amd64"),   # x64, on x64 or emulated on Arm
+        ("win-arm64", "arm64"),
+    ])
+    def test_on_windows_the_machine_is_the_interpreters(self, monkeypatch, interpreter,
+                                                        machine):
+        # Under emulation platform.machine() says ARM64, the OS's, and an x64
+        # package does not load in the native build or the other way round.
+        monkeypatch.setattr(pp.sys, "platform", "win32")
+        monkeypatch.setattr(pp.sysconfig, "get_platform", lambda: interpreter)
+        monkeypatch.setattr(pp.platform, "machine", lambda: "ARM64")
+        assert f"-win32-{machine}" in pp.platform_tag()
+
+    def test_elsewhere_it_is_the_machines(self, monkeypatch):
+        monkeypatch.setattr(pp.sys, "platform", "darwin")
+        monkeypatch.setattr(pp.platform, "machine", lambda: "arm64")
+        assert "-darwin-arm64" in pp.platform_tag()
