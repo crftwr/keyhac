@@ -62,3 +62,12 @@ def native_memory_report():
         from keyhac.platform.mac.diagnostics import write_footprint
         return write_footprint
     return None
+
+
+def native_memory_categories():
+    """What reads the report `native_memory_report` wrote as {category: bytes},
+    so that two reports can be compared. None where that has no report."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.diagnostics import footprint_categories
+        return footprint_categories
+    return None

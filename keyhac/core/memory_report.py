@@ -51,6 +51,7 @@ TRACEMALLOC_FRAMES = 10
 _CENSUS_SWITCH_INTERVAL = 60
 
 _TOP = 30
+_TOP_BY_COUNT = 15
 _TOP_TRACEBACKS = 10
 _SUMMARY_ROWS = 24
 _NATIVE_LINES = 20
@@ -168,12 +169,15 @@ class MemoryReporter:
     is written; the caller takes it to the main thread.
     """
 
-    def __init__(self, data_dir: str, process_memory, native_report=None, stores=(),
+    def __init__(self, data_dir: str, process_memory, native_report=None,
+                 native_categories=None, stores=(),
                  interval: float = HISTORY_INTERVAL,
                  baseline_delay: float = BASELINE_DELAY):
         self._data_dir = data_dir
         self._process_memory = process_memory
         self._native_report = native_report
+        self._native_categories = native_categories
+        self._previous_native = None    # {category: bytes}, of the last report
         self._stores = stores
         self._interval, self._baseline_delay = interval, baseline_delay
         self._lock = threading.Lock()   # the history and the censuses
@@ -293,6 +297,7 @@ class MemoryReporter:
         lines += self._stores_section()
         if native is not None:
             lines += ["", "== Native (native-footprint.txt) ==", "", *native]
+            lines += self._native_growth(os.path.join(folder, "native-footprint.txt"))
         if baseline[0] != now:
             lines += self._growth_section("since shortly after startup", census, baseline, now)
         if previous is not None:
@@ -306,11 +311,12 @@ class MemoryReporter:
     def _reading_guide() -> list:
         return [
             "",
-            "If the process total grows and Python's allocated blocks do not, the",
-            "memory is native: look at Native. If both grow, it is Python: look at the",
-            "types that grew, and for what they cannot show, switch on Advanced > Track",
-            "Python Allocations and write a report a while later. Two reports some",
-            "hours apart show more than one: the first is what the second compares to.",
+            "If the process total does not grow, nothing is accumulating. If it does, and",
+            "Python's allocated blocks grow with it, look at the types that grew. If the",
+            "blocks stay flat, the memory is native or in a few large Python buffers,",
+            "since a block is one allocation whatever its size: look at Native, and tell",
+            "the two apart with Advanced > Track Python Allocations. Two reports some hours",
+            "apart show more than one: the first is what the second compares to.",
         ]
 
     def _process_section(self, process: ProcessMemory, rows: list) -> list:
@@ -368,6 +374,24 @@ class MemoryReporter:
         with open(path, encoding="utf-8", errors="replace") as source:
             return [line.rstrip() for line in source][:_NATIVE_LINES]
 
+    def _native_growth(self, path: str) -> list:
+        if self._native_categories is None or not os.path.exists(path):
+            return []
+        try:
+            now = self._native_categories(path)
+        except Exception as e:
+            logger.warning(f"Could not read {path}: {e!r}")
+            return []
+        previous, self._previous_native = self._previous_native, now
+        if previous is None:
+            return []
+        changes = sorted(((now.get(name, 0) - previous.get(name, 0), name)
+                          for name in now.keys() | previous.keys()), reverse=True)
+        lines = ["", "Changed since the previous report:", ""]
+        changed = [(change, name) for change, name in changes if abs(change) >= _MB]
+        lines += [f"{_signed_size(change):>12}  {name}" for change, name in changed]
+        return lines if changed else lines + ["Nothing by a megabyte or more."]
+
     @staticmethod
     def _growth_section(since: str, census: dict, then: tuple, now: float) -> list:
         lines = ["", f"== Types that grew {since} ==", "",
@@ -375,9 +399,16 @@ class MemoryReporter:
         grown = _growth(census, then[1])
         if not grown:
             return lines + ["None."]
-        lines.append(f"{'objects':>10}  {'bytes':>12}  type")
-        lines += [f"{objects:+10,d}  {_signed_size(size):>12}  {name}"
-                  for name, objects, size in grown[:_TOP]]
+        def table(rows):
+            return [f"{'objects':>10}  {'bytes':>12}  type",
+                    *(f"{objects:+10,d}  {_signed_size(size):>12}  {name}"
+                      for name, objects, size in rows)]
+
+        lines += table(grown[:_TOP])
+        lines += ["", "Most objects first. A type holding native memory or a large buffer weighs",
+                  "little here, so look for a count that matches how many times something was",
+                  "repeated:", ""]
+        lines += table(sorted(grown, key=lambda row: -row[1])[:_TOP_BY_COUNT])
         return lines
 
     @staticmethod

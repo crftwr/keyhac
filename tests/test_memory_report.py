@@ -76,6 +76,24 @@ def test_the_second_report_shows_what_grew_since_the_first(tmp_path):
     del kept
 
 
+def test_a_few_objects_are_found_among_the_ones_that_weigh_more(tmp_path):
+    """What matters about an NSWindow is not what sys.getsizeof says of it."""
+    reporter = _reporter(tmp_path)
+    _write(reporter)
+    kept = [AccumulatingThing() for _ in range(400)]
+    summary = _read(_write(reporter))
+    section = summary[summary.index("since the previous report"):]
+    by_count = section[section.index("Most objects first"):section.index("== Largest")]
+    assert "+400" in next(l for l in by_count.splitlines() if "AccumulatingThing" in l)
+    del kept
+
+
+def test_flat_blocks_are_not_called_native_outright(tmp_path):
+    """A large buffer is one block: flat blocks can still be Python's."""
+    summary = _read(_write(_reporter(tmp_path)))
+    assert "native or in a few large Python buffers" in summary
+
+
 def test_garbage_is_collected_before_it_can_read_as_growth(tmp_path):
     reporter = _reporter(tmp_path)
     _write(reporter)
@@ -158,6 +176,23 @@ class TestNative:
         folder = _write(_reporter(tmp_path, native_report=native))
         assert "523 MB CoreAnimation" in _read(folder)
         assert "523 MB CoreAnimation" in _read(folder, "native-footprint.txt")
+
+    def test_the_second_report_shows_what_changed(self, tmp_path):
+        sizes = [{"CoreAnimation": 100 * _MB, "Stack": _MB, "Gone": 50 * _MB},
+                 {"CoreAnimation": 150 * _MB, "Stack": _MB + 1}]
+
+        def native(path):
+            with open(path, "w") as out:
+                out.write("report\n")
+
+        reporter = _reporter(tmp_path, native_report=native,
+                             native_categories=lambda path: sizes.pop(0))
+        assert "Changed since the previous report" not in _read(_write(reporter))
+        section = _read(_write(reporter)).split("Changed since the previous report:")[1]
+        section = section.split("==")[0]
+        assert "+50.00 MB  CoreAnimation" in section
+        assert "-50.00 MB  Gone" in section
+        assert "Stack" not in section
 
     def test_a_failure_is_said_and_the_rest_is_kept(self, tmp_path):
         summary = _read(_write(_reporter(tmp_path, native_report=lambda path: "not permitted")))
@@ -290,6 +325,10 @@ def test_the_real_footprint(tmp_path):
     assert write_footprint(str(path)) is None
     report = path.read_text()
     assert "phys_footprint" in report
+    from keyhac.platform.mac.diagnostics import footprint_categories
+    categories = footprint_categories(str(path))
+    assert categories and "TOTAL" not in categories
+    assert all(size >= 0 for size in categories.values())
     # The number the history records agrees with the system tool's: this is
     # what says the hand-written rusage_info layout is right.
     footprint_mb = int(next(line for line in report.splitlines()
