@@ -1255,6 +1255,92 @@ def test_a_deleted_module_stops_being_listed(writable):
         "and the backup beside it is not a .py, so nothing importable is left"
 
 
+# -- delete_extension(keep_backup=False) -------------------------------------
+#
+# Issue #250. The rule under all of these: only a module created since the server
+# started can be erased, so the operator's own modules keep the rename.
+
+needs_birthtime = pytest.mark.skipif(
+    not hasattr(os.stat(__file__), "st_birthtime"),
+    reason="this platform reports no creation time")
+
+
+def _session_began_before_now(registry):
+    registry._started = time.time() - 60
+
+
+def _session_began_after_now(registry):
+    registry._started = time.time() + 60
+
+
+@needs_birthtime
+def test_a_throwaway_of_this_session_is_erased_with_its_backups(writable):
+    _session_began_before_now(writable)
+    for source in ("x = 1\n", "x = 2\n"):
+        writable.call("write_extension", {"name": "probe", "source": source})
+
+    result = writable.call("delete_extension",
+                           {"name": "probe", "keep_backup": False})
+
+    assert list(extensions(writable).glob("probe*")) == []
+    assert "no backup" in result and "1 backup(s)" in result
+
+
+@needs_birthtime
+def test_an_older_module_is_still_only_renamed_and_the_reply_says_so(writable):
+    write_action(writable, name="theirs", source="x = 1\n")
+    _session_began_after_now(writable)
+
+    result = writable.call("delete_extension",
+                           {"name": "theirs", "keep_backup": False})
+
+    backups = list(extensions(writable).glob("theirs.py.bak-*"))
+    assert [b.read_text() for b in backups] == ["x = 1\n"]
+    assert "keep_backup=false did not apply" in result
+
+
+@needs_birthtime
+def test_every_backup_goes_with_the_throwaway_whatever_its_age(writable, monkeypatch):
+    """A backup older than the session goes too: the rule is the module's age."""
+    write_action(writable, name="thing", source="old = 1\n")
+    writable.call("delete_extension", {"name": "thing"})
+    assert len(list(extensions(writable).glob("thing.py.bak-*"))) == 1
+
+    _session_began_after_now(writable)
+    real_created_since = tools_module._created_since
+    monkeypatch.setattr(
+        tools_module, "_created_since",
+        lambda path, moment: path.endswith("thing.py")
+        or real_created_since(path, moment))
+    write_action(writable, name="thing", source="new = 1\n")
+    result = writable.call("delete_extension",
+                           {"name": "thing", "keep_backup": False})
+
+    assert list(extensions(writable).glob("thing*")) == []
+    assert "erased 1 backup(s)" in result
+
+
+def test_no_creation_time_means_the_rename(writable, monkeypatch):
+    """Not being able to tell must not read as permission to erase."""
+    write_action(writable, name="thing", source="x = 1\n")
+    monkeypatch.setattr(tools_module, "_created_since", lambda *_: False)
+    writable.call("delete_extension", {"name": "thing", "keep_backup": False})
+    assert len(list(extensions(writable).glob("thing.py.bak-*"))) == 1
+
+
+@needs_birthtime
+def test_erasing_still_warns_about_config_and_announces_itself(
+        configurable, tmp_path, caplog):
+    (tmp_path / "config.py").write_text("import probe\n")
+    _session_began_before_now(configurable)
+    write_action(configurable, name="probe", source="x = 1\n")
+    with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
+        result = configurable.call("delete_extension",
+                                   {"name": "probe", "keep_backup": False})
+    assert "config.py mentions probe" in result
+    assert any("outright" in r.getMessage() for r in caplog.records)
+
+
 def test_the_write_is_announced_on_the_console(writable, caplog):
     with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
         writable.call("write_extension", {"name": "thing", "source": "x = 1\n"})

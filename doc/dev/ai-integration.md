@@ -563,7 +563,9 @@ What exists instead:
   truncated — half a read feeding a whole-file write is how the other half
   disappears.
 - **`delete_extension`** is a rename into the same `.bak-` scheme, so the tool
-  that sounds destructive is the only one here that destroys nothing. It
+  that sounds destructive destroys nothing by default. `keep_backup=False`
+  erases a throwaway, but only one whose creation time is after the server
+  started; an older file falls back to the rename (#250). It
   deliberately does **not** touch `config.py`: deleting a module the operator
   bound to a key stops their file loading, and editing their file to match would
   be worse than warning about it, so the reply carries a loose `\bname\b` search
