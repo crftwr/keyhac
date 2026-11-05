@@ -108,7 +108,9 @@ def configure(keymap):
     # if it is behind, on to its next window if it is already in front, and
     # launched if it is not running.  With Shift the walk runs the other way.
     # macOS reports the *localized* application name, which is why both
-    # spellings are listed.
+    # spellings are listed.  On Windows, launch= also takes the name the Start
+    # menu shows, which is how to reach a Microsoft Store application:
+    # launch="Calculator".
     TERMINAL = "Terminal|ターミナル|WindowsTerminal"
     TERMINAL_APP = "Terminal.app" if mac else "wt.exe"
     kt[f"O-R{MOD2}"] = ActivateApplication(app=TERMINAL, launch=TERMINAL_APP)
