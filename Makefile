@@ -60,7 +60,7 @@ VENV_STAMP := $(VENV)/.installed
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
         windows-app windows-zip install-windows-zip uninstall-windows-zip release-windows-zip \
-        windows-msix install-windows-msix uninstall-windows-msix release-windows-msix
+        windows-msix windows-msixbundle install-windows-msix uninstall-windows-msix release-windows-msix
 
 help:
 	@echo "Keyhac 2 utility commands:"
@@ -70,7 +70,8 @@ help:
 	@echo "                     PUIKIT_DIR if set, else the released build from PyPI"
 	@echo "  make test        - run the engine test suite (no permissions needed)"
 	@echo "  make test-vm GUEST=qa-win - the suite in a VM, desktop tests included"
-	@echo "                     (PACKAGES=pypi: PuiKit and quality-loop from PyPI)"
+	@echo "                     (PACKAGES=pypi: PuiKit and quality-loop from PyPI;"
+	@echo "                     ARCH=arm64 with qa-win: under a native ARM64 Python)"
 	@echo "  make run-vm GUEST=qa-mac  - this tree's Keyhac up in a VM, for a hand check"
 	@echo "  make release-test - what a release is tested on: --host-only here, the"
 	@echo "                     suite in every VM on PyPI packages"
@@ -115,6 +116,8 @@ help:
 	@echo "  App bundles:"
 	@echo "  make macos-app / macos-dmg           - (on macOS)   build Keyhac.app / its DMG"
 	@echo "  make windows-app / windows-zip       - (on Windows) build the bundle / its zip"
+	@echo "                                         (ARCH=arm64 for these and the MSIX targets)"
+	@echo "  make windows-msixbundle              - (on Windows) x64 + arm64 in one .msixbundle"
 	@echo "  make windows-msix                    - (on Windows) pack the bundle as an unsigned"
 	@echo "                                         MSIX (Store submission form; SIGN=1 to self-sign)"
 	@echo "  make install-macos-dmg / install-windows-zip     - install the built artifact"
@@ -129,8 +132,8 @@ help:
 	@echo "  make release-whl       - upload sdist + wheel to PyPI, and to the Release"
 	@echo "  make release-skill     - attach the AI authoring skill bundle to the Release"
 	@echo "  make release-macos-dmg   - (on macOS)   attach Keyhac-<ver>-macos.dmg"
-	@echo "  make release-windows-zip - (on Windows) attach Keyhac-<ver>-win64.zip"
-	@echo "  make release-windows-msix - (on Windows) submit the MSIX to the Microsoft Store"
+	@echo "  make release-windows-zip - (on Windows) attach the -win64 and -winarm64 zips"
+	@echo "  make release-windows-msix - (on Windows) submit the x64+arm64 .msixbundle to the Microsoft Store"
 	@echo "  make release-status    - show which artifacts have landed so far"
 	@echo "  Supporting: make build (sdist + wheel into dist/, also a tag gate),"
 	@echo "  make publish-testpypi (rehearsal upload to TestPyPI)."
@@ -197,11 +200,13 @@ test: $(VENV_STAMP)
 # as pyproject.toml names them. run-vm starts this tree's Keyhac there for a
 # hand check - desktop tests and hand checks happen in a VM, never here.
 PACKAGES ?= local
+# Which Windows architecture a Windows target builds and test-vm tests: x64 or arm64.
+ARCH ?= x64
 GUEST_CHECK = @test -n "$(GUEST)" || { echo "GUEST= names the VM (qa-win, qa-mac)"; exit 1; }
 
 test-vm: $(VENV_STAMP)
 	$(GUEST_CHECK)
-	$(VENV_PYTHON) tools/vm.py test --packages $(PACKAGES) $(GUEST) $(ARGS)
+	$(VENV_PYTHON) tools/vm.py test --packages $(PACKAGES) --arch $(ARCH) $(GUEST) $(ARGS)
 
 run-vm: $(VENV_STAMP)
 	$(GUEST_CHECK)
@@ -209,7 +214,9 @@ run-vm: $(VENV_STAMP)
 
 # What a release is tested on (#316): the host runs only the tests of its own
 # tooling (--host-only); the suite runs in every VM on PuiKit and quality-loop
-# as PyPI has them - what a user's pip installs. One VM after another.
+# as PyPI has them - what a user's pip installs. One VM after another; the
+# Windows VM twice, because its image's Python is x64 under emulation and native
+# ARM64 ships too.
 RELEASE_GUESTS ?= qa-mac qa-win
 
 release-test: $(VENV_STAMP)
@@ -217,6 +224,7 @@ release-test: $(VENV_STAMP)
 	@for guest in $(RELEASE_GUESTS); do \
 		$(VENV_PYTHON) tools/vm.py test --packages pypi $$guest || exit 1; \
 	done
+	$(VENV_PYTHON) tools/vm.py test --packages pypi --arch arm64 qa-win
 	@echo "release-test: passed on the host's tooling and in $(RELEASE_GUESTS)"
 
 run: $(VENV_STAMP)
@@ -349,8 +357,8 @@ clean-venv:
 #   make release-status        any machine  what has landed so far
 #
 #   make release-macos-dmg     macOS        Keyhac-<ver>-macos.dmg -> the Release
-#   make release-windows-zip   Windows      Keyhac-<ver>-win64.zip -> the Release
-#   make release-windows-msix  Windows      Keyhac-<ver>.0-x64.msix -> the Microsoft Store
+#   make release-windows-zip   Windows      Keyhac-<ver>-win64.zip, -winarm64.zip -> the Release
+#   make release-windows-msix  Windows      Keyhac-<ver>.0.msixbundle -> the Microsoft Store
 #
 # Order matters only twice: `tag` first (everything else names the tag it
 # creates), then `release-github` (the release-<artifact> targets upload into
@@ -361,7 +369,7 @@ clean-venv:
 #
 # release-windows-msix is the odd one out: it publishes to the Microsoft Store,
 # not the GitHub Release, so it needs no `release-github` — and it always
-# repacks rather than reusing an existing .msix, since the Store rejects a
+# repacks rather than reusing an existing package, since the Store rejects a
 # resubmitted package version anyway (each submission must be strictly higher).
 #
 # The version's single source of truth is keyhac/__init__.py's __version__;
@@ -697,7 +705,9 @@ uninstall-macos-dmg:
 # inside a packaging script. It also rebuilds when any bundled input is newer,
 # which stops a packaging target from silently shipping a stale .exe.
 # 'make windows-app' still forces an unconditional rebuild.
-WINDOWS_APP_BUNDLE := windows_app/build/Keyhac/Keyhac.exe
+WINDOWS_APP_BUNDLE_x64 := windows_app/build/Keyhac/Keyhac.exe
+WINDOWS_APP_BUNDLE_arm64 := windows_app/build/arm64/Keyhac/Keyhac.exe
+WINDOWS_APP_BUNDLE := $(WINDOWS_APP_BUNDLE_$(ARCH))
 
 # Inputs compiled or copied into the bundle. keyhac.ico is here because it is
 # compiled into Keyhac.exe as a resource, so an icon change has to reach the
@@ -719,38 +729,48 @@ WINDOWS_APP_SOURCES := $(wildcard windows_app/src/*.c) \
                        $(wildcard keyhac/platform/win/*.py) \
                        $(wildcard keyhac/ui/*.py)
 
-$(WINDOWS_APP_BUNDLE): $(WINDOWS_APP_SOURCES) $(VENV_STAMP)
-	@echo "Windows app bundle missing or stale; building it first..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
+$(WINDOWS_APP_BUNDLE_x64): $(WINDOWS_APP_SOURCES) $(VENV_STAMP)
+	@echo "Windows x64 app bundle missing or stale; building it first..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch x64
+
+$(WINDOWS_APP_BUNDLE_arm64): $(WINDOWS_APP_SOURCES) $(VENV_STAMP)
+	@echo "Windows arm64 app bundle missing or stale; building it first..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch arm64
 
 windows-app: $(VENV_STAMP)
-	@echo "Building Windows application bundle..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1
+	@echo "Building Windows application bundle ($(ARCH))..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch $(ARCH)
 
 # Named for the artifact it produces, matching macos-dmg on the macOS side.
 windows-zip: $(VENV_STAMP)
-	@echo "Building Windows application bundle (+ zip)..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Zip
+	@echo "Building Windows application bundle ($(ARCH), + zip)..."
+	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch $(ARCH) -Zip
 
-# Filename mirrors build.ps1's own naming (Keyhac-<version>-win64.zip), derived
+# Filename mirrors build.ps1's own naming (Keyhac-<version>-win64.zip, -winarm64), derived
 # from the same version literal as KEYHAC_VERSION, so the two cannot drift.
-WINDOWS_ZIP := windows_app/build/Keyhac-$(KEYHAC_VERSION)-win64.zip
+WINDOWS_ZIP_x64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-win64.zip
+WINDOWS_ZIP_arm64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-winarm64.zip
+WINDOWS_ZIP := $(WINDOWS_ZIP_$(ARCH))
 
 # File target so the upload/install builds the zip on demand when it is missing
 # (e.g. after 'make clean-windows'). An existing zip is NOT rebuilt; run
 # 'make windows-zip' to force a fresh one.
-$(WINDOWS_ZIP):
+$(WINDOWS_ZIP_x64):
 	@echo "Windows zip not found at $@; building it first..."
-	@$(MAKE) windows-zip
+	@$(MAKE) windows-zip ARCH=x64
 
-# Attach the portable zip to the GitHub Release for this version. The zip is
+$(WINDOWS_ZIP_arm64):
+	@echo "Windows zip not found at $@; building it first..."
+	@$(MAKE) windows-zip ARCH=arm64
+
+# Attach both portable zips to the GitHub Release for this version. They are
 # unsigned, so Windows shows the usual Mark-of-the-Web / SmartScreen prompt.
 # Prereq: an authenticated `gh` (gh auth login).
-release-windows-zip: $(WINDOWS_ZIP)
+release-windows-zip: $(WINDOWS_ZIP_x64) $(WINDOWS_ZIP_arm64)
 	@$(call check_release_exists)
-	@echo "Uploading $(WINDOWS_ZIP) to GitHub Release v$(KEYHAC_VERSION)..."
-	gh release upload v$(KEYHAC_VERSION) "$(WINDOWS_ZIP)" --clobber
-	@echo "Uploaded $(notdir $(WINDOWS_ZIP)) to release v$(KEYHAC_VERSION)"
+	@echo "Uploading the Windows zips to GitHub Release v$(KEYHAC_VERSION)..."
+	gh release upload v$(KEYHAC_VERSION) "$(WINDOWS_ZIP_x64)" "$(WINDOWS_ZIP_arm64)" --clobber
+	@echo "Uploaded $(notdir $(WINDOWS_ZIP_x64)) and $(notdir $(WINDOWS_ZIP_arm64)) to release v$(KEYHAC_VERSION)"
 
 # --- install-windows-zip: install what we actually ship ---------------------
 # The counterpart of install-macos-dmg: expands the portable zip a user would
@@ -788,20 +808,27 @@ uninstall-windows-zip:
 # identity that sideloads fine but cannot be submitted.
 windows-msix: $(WINDOWS_APP_BUNDLE)
 	@echo "Packaging Windows app as MSIX$(if $(SIGN), (self-signed, local testing), (unsigned, Store submission))..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 $(if $(SIGN),-Sign)
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) $(if $(SIGN),-Sign)
+
+# Both architectures in one .msixbundle: one Store listing, and the Store
+# delivers the payload that matches the device.
+windows-msixbundle: $(WINDOWS_APP_BUNDLE_x64) $(WINDOWS_APP_BUNDLE_arm64)
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch x64
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch arm64
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Bundle $(if $(SIGN),-Sign)
 
 # Trust the self-signed cert (self-elevates via UAC) then install per-user.
 #
 # Always re-packs with -Sign first rather than reusing whatever .msix is on
 # disk: both this and 'windows-msix' write the same
-# build\Keyhac-<version>-x64.msix, so an unsigned pack may have overwritten a
+# build\Keyhac-<version>-<arch>.msix, so an unsigned pack may have overwritten a
 # signed one. Add-AppxPackage cannot install an unsigned package, so packing
 # here is what guarantees the artifact it installs is actually signed.
 install-windows-msix: $(WINDOWS_APP_BUNDLE)
 	@echo "Packaging + self-signing MSIX for local install..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Sign
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) -Sign
 	@echo "Installing MSIX package locally..."
-	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Install
+	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Arch $(ARCH) -Install
 
 # Removes the package (per-user) and the throwaway signing cert; untrusting the
 # machine-store cert self-elevates via UAC.
@@ -810,9 +837,9 @@ uninstall-windows-msix:
 	@powershell -ExecutionPolicy Bypass -File windows_app/build_msix.ps1 -Uninstall
 
 # --- release-windows-msix: submit the MSIX to the Microsoft Store -----------
-# Packs first via the 'windows-msix' target, not the file: signed and unsigned
+# Packs first via the 'windows-msixbundle' target, not the file: signed and unsigned
 # packs write the same path, and Partner Center takes only the UNSIGNED form,
-# so repacking is what guarantees the upload is not a leftover self-signed
+# so repacking is what guarantees the upload holds no leftover self-signed
 # .msix from 'install-windows-msix'. The msstore CLI then uploads the package,
 # creates a new submission carrying the listing metadata of the previous one,
 # and commits it -- certification proceeds exactly as for a browser submission.
@@ -828,9 +855,9 @@ uninstall-windows-msix:
 # Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
 # __version__ literal as KEYHAC_VERSION, plus the Store-required ".0" revision,
 # so this is the path the pack above just wrote.
-WINDOWS_MSIX := windows_app/build/Keyhac-$(KEYHAC_VERSION).0-x64.msix
+WINDOWS_MSIXBUNDLE := windows_app/build/Keyhac-$(KEYHAC_VERSION).0.msixbundle
 
-release-windows-msix: windows-msix
+release-windows-msix: windows-msixbundle
 	@command -v msstore >/dev/null 2>&1 || { \
 		echo "ERROR: msstore CLI not found on PATH."; \
 		echo "       Install: winget install \"Microsoft Store Developer CLI\", then run 'msstore reconfigure'."; \
@@ -844,11 +871,11 @@ release-windows-msix: windows-msix
 		echo "ERROR: KEYHAC_STORE_PRODUCT_ID is not set in windows_app/store.env."; \
 		echo "       Add the listing's 9N... product ID (see store.env.example)."; \
 		exit 1; }; \
-	test -f "$(WINDOWS_MSIX)" || { \
-		echo "ERROR: $(WINDOWS_MSIX) missing after packing."; \
+	test -f "$(WINDOWS_MSIXBUNDLE)" || { \
+		echo "ERROR: $(WINDOWS_MSIXBUNDLE) missing after packing."; \
 		exit 1; }; \
-	echo "Submitting $(WINDOWS_MSIX) to the Microsoft Store ($$KEYHAC_STORE_PRODUCT_ID)..."; \
-	msstore publish "$(WINDOWS_MSIX)" -id "$$KEYHAC_STORE_PRODUCT_ID"
+	echo "Submitting $(WINDOWS_MSIXBUNDLE) to the Microsoft Store ($$KEYHAC_STORE_PRODUCT_ID)..."; \
+	msstore publish "$(WINDOWS_MSIXBUNDLE)" -id "$$KEYHAC_STORE_PRODUCT_ID"
 
 # Everything the Windows build machinery generates. Plain rm rather than
 # `build.ps1 -Clean` (identical effect) so this works on any OS and

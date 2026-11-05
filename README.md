@@ -107,10 +107,12 @@ what it can reach, and the security model.
   Applications and launch it. Or install it with Homebrew:
   `brew install --cask crftwr/tap/keyhac`. Grant the Accessibility permission
   when prompted (required for the keyboard hook).
-- **Windows 10/11 (x64)** — install from the
+- **Windows 10/11 (x64 and Arm)** — install from the
   [Microsoft Store](https://apps.microsoft.com/detail/9P8H1PG6PRHH)
   (or `winget install --id 9P8H1PG6PRHH --source msstore`) — automatic updates, no
-  SmartScreen warning. Alternatively, download `Keyhac-<version>-win64.zip` from
+  SmartScreen warning; the Store delivers the build that matches your device.
+  Alternatively, download `Keyhac-<version>-win64.zip` (x64) or
+  `Keyhac-<version>-winarm64.zip` (Arm) from
   [Releases](https://github.com/crftwr/keyhac/releases), unzip anywhere and run
   `Keyhac.exe`.
 

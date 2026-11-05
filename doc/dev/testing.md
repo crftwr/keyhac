@@ -51,7 +51,9 @@ live on each OS.
   Accessibility and Input Monitoring) and has Japanese Romaji input, so the
   window, mouse and IME tests run there. The Windows image (`QA-2026-11-01`)
   is a snapshot of the VM shut down, so each run boots it, as each Tart
-  clone does: python.org's 3.14 x64, the Japanese Microsoft IME, automatic
+  clone does: python.org's 3.14 x64 (emulated, the VM being Arm;
+  `ARCH=arm64` runs the suite under a native ARM64 Python of the same version
+  instead, and `make release-test` does both), the Japanese Microsoft IME, automatic
   sign-in for `qa`, and "Suggest ways to finish setting up my device" off,
   whose full-screen page would otherwise cover the desktop at sign-in. A
   run takes about three minutes on macOS and six on Windows, boot included.
@@ -1464,6 +1466,77 @@ found.
   about 150 ms after that, in emulated x64 Python. A Store application
   coexisting with a same-named command on `PATH` is covered by the scripted
   tests only.
+- **Windows on Arm: the x64 build under emulation** (2026-11-05, issue #318,
+  `tools/win_hook_latency_pass.py`, Windows 11 Arm 10.0.26300 in VMware Fusion
+  on Apple Silicon, 4 logical processors, snapshot `QA-2026-11-03`, the same
+  Python 3.14.10 from python.org as x64 and as ARM64 - the ARM64 one from
+  NuGet's `pythonarm64`, in the same VM.) The whole of `_hook_proc`, in ms, the
+  real hook, engine and focus provider, with other processes' windows in front:
+
+  | Keys, target | x64 emulated p50 / p95 / max | ARM64 native p50 / p95 / max |
+  |---|---|---|
+  | First key after a focus change, Win32 | 5.1 / 10.0 / 10.0 | 5.0 / 6.5 / 6.5 |
+  | First key after a focus change, Notepad | 4.7 / 6.5 / 6.5 | 5.0 / 6.5 / 6.5 |
+  | First key after a focus change, Edge | 5.1 / 37.1 / 37.1 | 5.6 / 9.8 / 9.8 |
+  | 30 keys/s, Win32 | 1.2 / 4.7 / 29.5 | 1.2 / 4.2 / 11.8 |
+  | 30 keys/s, Notepad | 1.4 / 4.6 / 6.0 | 1.2 / 4.5 / 6.1 |
+  | 30 keys/s, Edge | 1.8 / 5.1 / 12.3 | 1.3 / 4.7 / 6.4 |
+  | Every core busy, Edge | 1.1 / 1.5 / 2.7 | 1.1 / 1.4 / 2.0 |
+  | CPU-bound Python thread in-process, Edge | 2.1 / 132.8 / 140.4 | 15.4 / 103.3 / 134.8 |
+
+  **The hook is comfortably fast under emulation, so native ARM64 is not a fix
+  for anything; it was shipped for the people who notice what is left.** No event in the pass reached the 200 ms
+  warning, none was lost, and `check_health` re-installed nothing. A
+  callback's time is mostly in the OS calls and the other process, which is why
+  the two columns match although the interpreter does not: 2M rounds of pure
+  Python took 236 ms emulated and 79 ms native, and a new process importing the
+  engine, numpy and PuiKit 250 ms warm (786 cold) against 160 (307 cold). So
+  emulation costs CPU-bound Python about 3x, and start-up about 1.5x.
+
+  The one case that overran is not new. `tests/test_win_typing_load.py`, with
+  the keys going to its own process's window under emulated x64: p50 0.2-0.55
+  ms and p95 under 1.5 ms in ordinary use, but one CPU-bound Python thread
+  reached a **max of 360 ms**, past `LowLevelHooksTimeout`, as the entry above
+  on typing latency says it can. That module was not run natively, so whether
+  emulation widens it is not measured; the pass's own GIL rows (max 120-159 ms
+  emulated, 135-145 ms native) show no difference.
+
+  Limits: one run of each, a VM, and input from `SendInput` rather than a
+  keyboard. Only the hook, the engine and UIA ran natively here, not PuiKit's
+  windows or a native bundle. The pass does not cover a window that pumps
+  slowly, which costs what the application costs on either architecture.
+  `platform.machine()` says `ARM64` in the emulated process too (the pass prints
+  `sysconfig.get_platform()` to tell them apart). `python_packages.platform_tag()`
+  was keeping x64 and ARM64 packages together on one machine for that reason, and
+  now uses the interpreter's architecture on Windows.
+- **Native ARM64 bundles** (2026-11-05, issue #318, the same VM with VS Build
+  Tools added for the run; `build.ps1` from an x64 venv, with both ARM64- and
+  x64-hosted compilers). Both bundles were started as real `Keyhac.exe`
+  processes with Notepad in front, and timed from `SendInput(F13)` to the
+  remapped F14 reaching a low-level hook in the measuring process, which is x64
+  in both columns. 500 taps at about 30 keys/s, none lost:
+
+  | | x64 emulated | ARM64 native |
+  |---|---|---|
+  | F13 to F14, p50 / p95 / p99 / max ms | 4.81 / 6.18 / 7.73 / 30.83 | 3.10 / 5.26 / 6.29 / 11.45 |
+  | First launch after build, to first remap | 1.09 s | 0.6 s |
+
+  So the whole trip through the hook, engine and injection is about 1.7 ms
+  shorter at the median, which the callback timings above did not show because
+  they stop at the callback's edges. Later launches measure the same at 0.5 s,
+  but the probe retried every 0.2 s, so that is no finer than its step.
+  `tools/bundle_pass.py` passes 11/11 on the ARM64 bundle. The signed
+  `.msixbundle` installs on this Arm machine as `Keyhac.Prototype_..._arm64`,
+  starts from `C:\Program Files\WindowsApps`, and `keyhac-mcp-bridge.exe`
+  resolves through its alias. `Add-AppxPackage` over SSH fails with 0x80070005
+  and works from a scheduled task in the desktop session. Every PE in the ARM64
+  bundle is ARM64 except `runtime\vcruntime140_1.dll`, which python.org's
+  `embed-arm64` itself ships as x64. Not exercised: a Store submission of the
+  bundle, and the x64 payload on real x64 hardware. `make test-vm GUEST=qa-win
+  ARCH=arm64` passes 1691 tests with 105 skipped under the native ARM64 Python.
+  One fails on either architecture for a reason of the image's:
+  `test_the_real_git_answers_mean_what_identity_expects` wants `git`, and
+  `QA-2026-11-03` has none.
 
 
 ## The interactive pass before a release

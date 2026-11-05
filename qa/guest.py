@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import time
 import tomllib
+import urllib.request
 
 from quality_loop import guest as ql
 from quality_loop.guest import GuestError, TartMachine, VMwareMachine  # noqa: F401
@@ -164,6 +165,34 @@ class Guest(ql.Guest):
             return super().python
         return posixpath.join(self.keyhac, "Contents/Frameworks/Python.framework/"
                                            "Versions/Current/bin/python3")
+
+    def use_arm64_python(self) -> None:
+        """From here on, a native ARM64 Python of the image's version instead of
+        the image's x64 one, which that Arm VM emulates. NuGet's package is the
+        whole interpreter in a zip, with no installer to run in a session with
+        no desktop. It lands on the guest's disk, which the next revert drops."""
+        if not self.windows:
+            raise SystemExit(f"{self.alias}: --arch arm64 is for a Windows guest")
+        said = self.ssh(f"& {ql.ps_quote(self.python)} -c \"import platform; "
+                        f"print(platform.python_version())\"")
+        version = said.stdout.strip()
+        package = self.host_share / f"pythonarm64-{version}.zip"
+        url = f"https://www.nuget.org/api/v2/package/pythonarm64/{version}"
+        print(f"vm:      fetching {url}", flush=True)
+        urllib.request.urlretrieve(url, package)
+        where = r"$env:LOCALAPPDATA\keyhac-python-arm64"
+        python = rf"{where}\tools\python.exe"
+        said = self.ssh(f"Expand-Archive -Force -Path {ql.ps_quote(self.path(package))} "
+                        f"-DestinationPath \"{where}\"; "
+                        f"Write-Output \"{python}\"; "
+                        f"& \"{python}\" -c \"import sysconfig; print(sysconfig.get_platform())\"",
+                        timeout=300)
+        package.unlink()
+        lines = said.stdout.strip().splitlines()
+        if len(lines) < 2 or lines[-1].strip() != "win-arm64":
+            raise SystemExit(f"{self.alias}: no ARM64 Python in the guest:\n"
+                             f"{said.stdout}{said.stderr}")
+        self.settings["python"] = lines[-2].strip()
 
     def stage(self, prefix: str = "keyhac-qa-stage-") -> pathlib.Path:
         """This working tree's Keyhac, copied onto the share, beside what

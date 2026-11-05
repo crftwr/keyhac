@@ -49,6 +49,7 @@ import shutil
 import site
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import urllib.request
 from dataclasses import dataclass, field
@@ -76,9 +77,16 @@ def platform_tag() -> str:
     """Interpreter, OS and machine: what decides whether a compiled package in
     the directory can load here at all. ``~/.keyhac`` travels with dotfiles,
     and one config runs on both OSes, so the directory may have been synced on
-    another machine."""
+    another machine.
+
+    On Windows the machine is the interpreter's, not the OS's: on Windows on
+    Arm, ``platform.machine()`` says ARM64 in an x64 Python under emulation
+    too, and an x64 package cannot load in the native ARM64 build."""
+    machine = platform.machine().lower()
+    if sys.platform == "win32":
+        machine = sysconfig.get_platform().rpartition("-")[2]
     return "-".join(filter(None, (sys.implementation.cache_tag, sys.platform,
-                                  platform.machine().lower(),
+                                  machine,
                                   getattr(sys, "abiflags", ""))))
 
 

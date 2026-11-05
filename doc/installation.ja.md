@@ -5,7 +5,7 @@
 ## 動作環境
 
 - **macOS 12 以降**、または
-- **Windows 10 / 11（64 ビット）**。
+- **Windows 10 / 11（64 ビット）**、x64 または Arm。
 
 Keyhac はすべてお使いのマシン上で動きます。インターネットには一切接続しません。更新の確認もテレメトリもありません。
 唯一の例外は、自分で行う操作です。トレイメニューの
@@ -53,13 +53,13 @@ Keyhac は更新を確認しないので、`brew upgrade --cask keyhac` を使�
 winget install --id 9P8H1PG6PRHH --source msstore
 ```
 
-Store 版のパッケージは自動で更新され、SmartScreen の警告も出ず、
+Store はデバイスに合ったビルド（x64 または Arm）を配信します。Store 版のパッケージは自動で更新され、SmartScreen の警告も出ず、
 **既定でログイン時に起動** するよう設定されます。この設定は
 Settings → Apps → Startup で切り替えます。
 
 ### zip パッケージ
 
-1. [Releases](https://github.com/crftwr/keyhac/releases) から `Keyhac-<version>-win64.zip` を
+1. [Releases](https://github.com/crftwr/keyhac/releases) から `Keyhac-<version>-win64.zip`（x64）または `Keyhac-<version>-winarm64.zip`（Arm）を
    ダウンロードし、任意の場所に展開します
    （たとえば `C:\Program Files\Keyhac` やホームディレクトリ内のフォルダー）。
 2. `Keyhac.exe` を実行します。

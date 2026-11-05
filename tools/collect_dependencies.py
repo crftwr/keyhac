@@ -28,6 +28,12 @@ target machine), so it is intentionally not collected here. Pass
 ``--include-deps-of puikit`` to still pull in PuiKit's own runtime deps (e.g.
 ``numpy``, which the Windows Direct2D backend imports) without copying PuiKit.
 
+``--target-platform`` is for a bundle of another architecture than the venv's
+(``win_arm64`` from an x64 venv): the venv still decides what is shipped and at
+which versions, and those versions' wheels for the target are installed in
+place of the venv's files. A version with no wheel for the target fails the
+build.
+
 The bundle ships what the venv holds, so two checks stop the collection
 before anything is copied, PuiKit included:
 
@@ -51,6 +57,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tomllib
 from importlib.metadata import PackageNotFoundError
@@ -387,6 +394,29 @@ def copy_distribution(dist, dest_dir):
     return copied
 
 
+def install_for_platform(dists, dest_dir, target_platform):
+    """
+    Install *dists*' exact versions into *dest_dir* from wheels for
+    *target_platform*. --no-deps because the closure is already resolved.
+    Returns True on success.
+    """
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+               "--no-deps", "--only-binary=:all:", "--implementation", "cp",
+               "--python-version", version, "--platform", target_platform,
+               "--target", str(dest_dir)]
+    command += [f"{dist.metadata['Name']}=={dist.version}" for dist in dists]
+    log_info(f"Installing {len(dists)} distribution(s) for {target_platform}")
+    if subprocess.run(command).returncode != 0:
+        log_error(f"pip could not install every distribution for {target_platform}")
+        return False
+    # Console scripts: the build venv's are outside site-packages, so
+    # copy_distribution leaves them behind, and these go the same way.
+    for scripts in ("bin", "Scripts"):
+        shutil.rmtree(Path(dest_dir) / scripts, ignore_errors=True)
+    return True
+
+
 def verify_pyobjc(dest_dir):
     """Light sanity check that the PyObjC runtime landed (macOS platform layer)."""
     if sys.platform != "darwin":
@@ -402,7 +432,8 @@ def verify_pyobjc(dest_dir):
     return True
 
 
-def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None):
+def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None,
+                         target_platform=None):
     """
     Resolve and copy the runtime dependency closure. Returns True on success.
 
@@ -413,6 +444,9 @@ def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None):
     distributions themselves are not copied. This is how the Windows bundle
     picks up PuiKit's ``numpy`` dependency (the win32 backend imports numpy;
     the macOS backend does not).
+
+    With *target_platform*, the closure's versions are installed from wheels
+    for that platform rather than copied from the venv.
     """
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -437,6 +471,13 @@ def collect_dependencies(pyproject_file, dest_dir, include_deps_of=None):
         return False
     if not verify_versions(pyproject_file, resolved, skip=unversioned):
         return False
+
+    if target_platform:
+        wanted = [dist for cname, dist in sorted(resolved.items()) if cname not in deps_only]
+        if not install_for_platform(wanted, dest_dir, target_platform):
+            return False
+        log_success(f"Collected {len(wanted)} distributions for {target_platform}")
+        return True
 
     total_files = 0
     failed = []
@@ -482,6 +523,10 @@ def main():
                         help="Collect the runtime deps of NAME (a package bundled "
                              "separately, e.g. puikit) without copying NAME itself. "
                              "Repeatable.")
+    parser.add_argument("--target-platform", metavar="TAG",
+                        help="Install the closure's versions from wheels for this "
+                             "platform tag (e.g. win_arm64) instead of copying the "
+                             "venv's files: a bundle of another architecture.")
     args = parser.parse_args()
 
     pyproject_file = os.path.abspath(args.pyproject)
@@ -491,7 +536,8 @@ def main():
     log_info(f"pyproject: {pyproject_file}")
     log_info(f"Destination directory: {dest_dir}")
 
-    if collect_dependencies(pyproject_file, dest_dir, include_deps_of=args.include_deps_of):
+    if collect_dependencies(pyproject_file, dest_dir, include_deps_of=args.include_deps_of,
+                            target_platform=args.target_platform):
         sys.exit(0)
     else:
         sys.exit(1)

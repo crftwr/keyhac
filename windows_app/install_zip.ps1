@@ -34,6 +34,7 @@
 [CmdletBinding()]
 param(
     # Defaults (in the body, not here) to windows_app\build\Keyhac-<version>-win64.zip.
+    # make install-windows-zip names the zip of its ARCH.
     # $PSScriptRoot is not reliably populated in a param default under
     # 'powershell -File' - the form the Makefile uses - so it is resolved below.
     [string]$Zip,

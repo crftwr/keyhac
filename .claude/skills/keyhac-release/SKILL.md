@@ -7,7 +7,7 @@ description: Release a new version of Keyhac — confirm the version bump, run t
 
 Run every command from the root of the keyhac checkout. One version
 (`__version__` in `keyhac/__init__.py`) covers both OSes, but the artifacts
-come from two machines — the DMG builds and notarizes on macOS, the win64 zip
+come from two machines — the DMG builds and notarizes on macOS, the win64 and winarm64 zips
 and the Store MSIX on Windows — so a release usually finishes across two
 sessions. Run each OS's targets on that OS and report the other side as
 remaining; never mark the release done with artifacts missing. The pipeline is
@@ -99,9 +99,9 @@ make release-status       # read-only: which artifacts have landed
 ```
 
 On the Windows machine, from the same checkout at the tag:
-`make release-windows-zip` attaches the portable zip;
-`make release-windows-msix` is the odd one out — it submits to the Microsoft
-Store, not the GitHub Release, and certification proceeds asynchronously
+`make release-windows-zip` attaches both portable zips (win64, winarm64);
+`make release-windows-msix` is the odd one out — it submits one `.msixbundle`
+of both architectures to the Microsoft Store, not the GitHub Release, and certification proceeds asynchronously
 (poll with `msstore submission status`).
 
 The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
@@ -118,7 +118,7 @@ against the checkout.
 - `make tag` commits directly to `main` — sanctioned for release commits only.
 - Each target is independently re-runnable; `release-github` is idempotent.
   The DMG/zip file targets do **not** rebuild an existing artifact (so a
-  re-upload never re-runs notarization); `make macos-dmg` / `make windows-zip`
+  re-upload never re-runs notarization); `make macos-dmg` / `make windows-zip [ARCH=arm64]`
   force a fresh build.
 - Prereqs: `[pypi]` token in `~/.pypirc`, authenticated `gh`,
   `macos_app/signing.env` for sign/notarize, `windows_app/store.env` + the
@@ -153,7 +153,7 @@ gh release edit vX.Y.Z --notes-file <scratch>/release-note-x.y.z.md
 
 ## 5. After the release
 
-- `make release-status` must show all of it: the DMG, the win64 zip, every
+- `make release-status` must show all of it: the DMG, both Windows zips, every
   skill bundle ("N of N attached" — its absence is the one that fails
   quietly, and a user connecting the MCP endpoint without the skill gets
   sleep-and-coordinates actions instead of an error), the sdist + wheel, and
@@ -183,13 +183,15 @@ finished and get a yes before uploading.
    on the release commit, `git checkout vX.Y.Z` when it has moved on. The
    artifacts must be built from the tagged code, not from whatever `main`
    has become.
-3. `make release-windows-zip` — builds the bundle and the portable zip, and
-   attaches the zip to the GitHub Release. If the collector refuses the venv
+3. `make release-windows-zip` — builds both bundles and portable zips, and
+   attaches the zips to the GitHub Release. The arm64 one needs the MSVC ARM64
+   build tools component. If the collector refuses the venv
    (a local install, a version below a requirement), bring it to the released
-   versions as in step 3 and rebuild with `make windows-zip`.
+   versions as in step 3 and rebuild with `make windows-zip` and `make
+   windows-zip ARCH=arm64`.
 4. Ask whether to also submit to the Microsoft Store this time:
    `make release-windows-msix`. It is a separate publication with its own
    asynchronous certification (`msstore submission status`), not a Release
    asset, so it is a deliberate choice, not a default.
 5. `make release-status` — the release is finished when everything shows:
-   DMG, win64 zip, every skill bundle, sdist + wheel, PyPI published.
+   DMG, both Windows zips, every skill bundle, sdist + wheel, PyPI published.

@@ -9,6 +9,14 @@
     own code, PuiKit, and all third-party dependencies.
     Structure ported from XeFM's windows_app/build.ps1.
 
+.PARAMETER Arch
+    The architecture the bundle is for: x64 (the default, in build\Keyhac) or
+    arm64 (in build\arm64\Keyhac). The .venv need not match it. When it does not,
+    the build cross-compiles: the embeddable, the headers and import library
+    (NuGet's python/pythonarm64) and the dependency wheels are all fetched for
+    the target, at the versions the venv holds. So one machine of either
+    architecture builds both.
+
 .PARAMETER Version
     Version string embedded in Keyhac.exe (e.g. 2.0.0). Defaults to
     keyhac/__init__.py's __version__.
@@ -18,7 +26,8 @@
     the venv's exact version).
 
 .PARAMETER Zip
-    Also produce build\Keyhac-<version>-win64.zip for distribution.
+    Also produce build\Keyhac-<version>-win64.zip (arm64: -winarm64) for
+    distribution.
 
 .PARAMETER Clean
     Remove the build directory and exit.
@@ -33,10 +42,13 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Version 2.0.0 -Zip
+    powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Arch arm64 -Zip
     powershell -ExecutionPolicy Bypass -File windows_app\build.ps1 -Install
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('x64', 'arm64')]
+    [string]$Arch = 'x64',
     [string]$Version,
     [string]$PythonEmbedUrl,
     [switch]$Zip,
@@ -71,8 +83,10 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $SrcDir      = Join-Path $ScriptDir 'src'
 $ResDir      = Join-Path $ScriptDir 'resources'
 $BuildDir    = Join-Path $ScriptDir 'build'
-$AppRoot     = Join-Path $BuildDir 'Keyhac'    # the distributable folder
-$ObjDir      = Join-Path $BuildDir 'obj'      # launcher intermediates
+# Named Keyhac under either, because that is the folder a zip unpacks to.
+$ArchDir     = if ($Arch -eq 'x64') { $BuildDir } else { Join-Path $BuildDir $Arch }
+$AppRoot     = Join-Path $ArchDir 'Keyhac'    # the distributable folder
+$ObjDir      = Join-Path $ArchDir 'obj'      # launcher intermediates
 $CacheDir    = Join-Path $ScriptDir '.cache'  # downloaded embeddable zips
 
 $AppName = 'Keyhac'
@@ -96,7 +110,7 @@ if ($Clean) {
 # ---------------------------------------------------------------------------
 function Invoke-Install {
     if (-not (Test-Path (Join-Path $AppRoot 'Keyhac.exe'))) {
-        Fail "No built bundle at $AppRoot. Run 'make windows-app' first."
+        Fail "No built bundle at $AppRoot. Run 'make windows-app ARCH=$Arch' first."
     }
 
     $isAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -107,7 +121,7 @@ function Invoke-Install {
         Info "Administrator rights are required to write to '$InstallDir'."
         Info 'Requesting elevation (accept the UAC prompt)...'
         $psExe = (Get-Process -Id $PID).Path
-        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Install -InstallDir `"$InstallDir`""
+        $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Arch $Arch -Install -InstallDir `"$InstallDir`""
         try {
             Start-Process -FilePath $psExe -Verb RunAs -Wait -ArgumentList $argLine
         } catch {
@@ -178,6 +192,7 @@ print('\t'.join([
     '%d%d' % sys.version_info[:2],                               # 314
     sys.base_prefix,                                             # full-CPython root
     sysconfig.get_paths()['purelib'],                           # venv site-packages
+    sysconfig.get_platform(),                                    # win-amd64 / win-arm64
 ]))
 "@
 if ($LASTEXITCODE -ne 0) { Fail 'Failed to probe the venv interpreter.' }
@@ -187,13 +202,42 @@ $PyXY        = $parts[1]
 $PyNoDot     = $parts[2]
 $BasePrefix  = $parts[3]
 $SitePkgs    = $parts[4]
+$VenvPlatform = $parts[5]
+
+# platform.machine() will not do here: it says ARM64 in an x64 Python running
+# under emulation, which is how a build machine on Windows on Arm usually is.
+$Cross = $VenvPlatform -ne @{ x64 = 'win-amd64'; arm64 = 'win-arm64' }[$Arch]
+
+Info "Python:        $PyFull (ABI cp$PyNoDot), $VenvPlatform"
+Info "Target:        $Arch$(if ($Cross) { ' (cross-compiling)' })"
+Info "base_prefix:   $BasePrefix"
+Info "site-packages: $SitePkgs"
 
 $PyInclude = Join-Path $BasePrefix 'include'
 $PyLibs    = Join-Path $BasePrefix 'libs'
-
-Info "Python:        $PyFull (ABI cp$PyNoDot)"
-Info "base_prefix:   $BasePrefix"
-Info "site-packages: $SitePkgs"
+if ($Cross) {
+    # The venv's own headers and import library are for its architecture. The
+    # embeddable has neither, so they come from python.org's NuGet package for
+    # the target, at the venv's exact version. Expand-Archive insists on .zip.
+    New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+    $NugetName = @{ x64 = 'python'; arm64 = 'pythonarm64' }[$Arch]
+    $NugetDir  = Join-Path $CacheDir "$NugetName-$PyFull"
+    if (-not (Test-Path (Join-Path $NugetDir 'tools\include\Python.h'))) {
+        $NugetZip = "$NugetDir.zip"
+        $NugetUrl = "https://www.nuget.org/api/v2/package/$NugetName/$PyFull"
+        Info "Downloading $NugetUrl"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        try {
+            Invoke-WebRequest -Uri $NugetUrl -OutFile $NugetZip -UseBasicParsing
+        } catch {
+            Fail "Failed to download $NugetName $PyFull for the headers and import library.`n$($_.Exception.Message)"
+        }
+        Expand-Archive -Path $NugetZip -DestinationPath $NugetDir -Force
+        Remove-Item -Force $NugetZip
+    }
+    $PyInclude = Join-Path $NugetDir 'tools\include'
+    $PyLibs    = Join-Path $NugetDir 'tools\libs'
+}
 
 if (-not (Test-Path (Join-Path $PyInclude 'Python.h'))) {
     Fail "Python.h not found under $PyInclude. The .venv must be backed by a full CPython install (headers + libs)."
@@ -215,17 +259,28 @@ Info "Bundle version: $Version"
 # ---------------------------------------------------------------------------
 Info 'Step 2: Locating the MSVC toolchain...'
 
+$VsTarget    = @{ x64 = 'amd64'; arm64 = 'arm64' }[$Arch]
+$VsComponent = @{ x64 = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+                  arm64 = 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' }[$Arch]
+
 function Import-VsDevEnv {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) { return $false }
     $vsPath = & $vswhere -latest -products * `
-        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -requires $VsComponent `
         -property installationPath
     if (-not $vsPath) { return $false }
     $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
     if (-not (Test-Path $devCmd)) { return $false }
-    Info "Importing environment from $devCmd"
-    cmd /c "`"$devCmd`" -arch=amd64 -host_arch=amd64 && set" | ForEach-Object {
+    # The compiler that runs here. Windows on Arm can run an x64-hosted one too,
+    # and may only have that, so the x64 tools are the fallback.
+    $hostArch = 'amd64'
+    if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -and
+            (Test-Path "$vsPath\VC\Tools\MSVC\*\bin\HostARM64\$($Arch)\cl.exe")) {
+        $hostArch = 'arm64'
+    }
+    Info "Importing environment from $devCmd (host $hostArch, target $VsTarget)"
+    cmd /c "`"$devCmd`" -arch=$VsTarget -host_arch=$hostArch && set" | ForEach-Object {
         if ($_ -match '^([^=]+)=(.*)$') {
             [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2])
         }
@@ -233,13 +288,17 @@ function Import-VsDevEnv {
     return $true
 }
 
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+# A cl.exe already on PATH is used only if it builds for this target. A developer
+# prompt says what it targets; one that does not say is taken to be x64.
+$ClTarget = if ($env:VSCMD_ARG_TGT_ARCH) { $env:VSCMD_ARG_TGT_ARCH } else { 'x64' }
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue) -or $ClTarget -ne $Arch) {
     if (-not (Import-VsDevEnv)) {
         Fail @"
-MSVC toolchain (cl.exe) not found.
+MSVC toolchain (cl.exe) for $Arch not found.
 
 Install the 'Build Tools for Visual Studio' with the 'Desktop development with
-C++' workload (includes cl.exe, rc.exe, and the Windows SDK):
+C++' workload (includes cl.exe, rc.exe, and the Windows SDK), plus, for arm64,
+the 'MSVC ARM64/ARM64EC build tools' component:
   https://visualstudio.microsoft.com/downloads/  (scroll to 'Tools for Visual Studio')
 
 This is the Windows analog of the macOS build's Xcode Command Line Tools.
@@ -262,7 +321,8 @@ if (Test-Path $AppRoot) { Remove-Item -Recurse -Force $AppRoot }
 New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 
-$EmbedZipName = "python-$PyFull-embed-amd64.zip"
+$EmbedArch = @{ x64 = 'amd64'; arm64 = 'arm64' }[$Arch]
+$EmbedZipName = "python-$PyFull-embed-$EmbedArch.zip"
 if (-not $PythonEmbedUrl) { $PythonEmbedUrl = "https://www.python.org/ftp/python/$PyFull/$EmbedZipName" }
 $CachedZip = Join-Path $CacheDir $EmbedZipName
 
@@ -393,13 +453,19 @@ if (Test-Path (Join-Path $ProjectRoot 'LICENSE')) {
 # --include-deps-of puikit pulls in PuiKit's own runtime deps (numpy, which the
 # win32 Direct2D backend imports) without copying PuiKit itself (its source is
 # copied into app\puikit above). Each dist is copied with its .dist-info, whose
-# license text the notices generator reads in Step 5b.
+# license text the notices generator reads in Step 5b. Cross-compiling, the venv
+# still decides what goes in and at which versions, but its files are for the
+# wrong architecture, so the collector installs wheels for the target instead.
 Info 'Step 5: Collecting third-party dependencies...'
 
 $SitePkgsDest = Join-Path $AppRoot 'Lib\site-packages'
 $SharedCollector = Join-Path $ProjectRoot 'tools\collect_dependencies.py'
 $Pyproject = Join-Path $ProjectRoot 'pyproject.toml'
-& $VenvPy $SharedCollector --pyproject $Pyproject --dest $SitePkgsDest --include-deps-of puikit
+$CollectorArgs = @('--pyproject', $Pyproject, '--dest', $SitePkgsDest, '--include-deps-of', 'puikit')
+if ($Cross) {
+    $CollectorArgs += @('--target-platform', @{ x64 = 'win_amd64'; arm64 = 'win_arm64' }[$Arch])
+}
+& $VenvPy $SharedCollector @CollectorArgs
 if ($LASTEXITCODE -ne 0) { Fail 'Dependency collection failed.' }
 
 # ---------------------------------------------------------------------------
@@ -570,7 +636,8 @@ Success "Built $BridgeOut"
 # Step 8 (optional): Zip for distribution
 # ---------------------------------------------------------------------------
 if ($Zip) {
-    $ZipOut = Join-Path $BuildDir "Keyhac-$Version-win64.zip"
+    $ZipSuffix = @{ x64 = 'win64'; arm64 = 'winarm64' }[$Arch]
+    $ZipOut = Join-Path $BuildDir "Keyhac-$Version-$ZipSuffix.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"
     Compress-Archive -Path $AppRoot -DestinationPath $ZipOut -Force
