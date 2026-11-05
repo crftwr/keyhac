@@ -1951,9 +1951,17 @@ py-spy is refused: they are Apple-signed with the right to inspect a process.
   on macOS, private bytes on Windows. Resident size and working set are shown too, but
   drop under pressure and would hide a leak in the history.
 - *Each report collects first*, so cycles merely waiting for a collection do not read as
-  growth. Measured with 300k objects, longest heartbeat stall: census 7.5 ms (the worker
-  gives up the GIL between objects), `gc.collect` 24 ms, `tracemalloc.take_snapshot`
-  62 ms per 100k live allocations. The latter two hold the GIL throughout.
+  growth. Measured with 300k objects, longest heartbeat stall: census 93 ms, `gc.collect`
+  24 ms, `tracemalloc.take_snapshot` 62 ms per 100k live allocations. All three hold the
+  GIL throughout.
+- *The census holds the GIL on purpose.* `gc.get_objects()` references everything, so if
+  another thread drops its reference meanwhile, the census holds the last one and the
+  object is destroyed on the census's thread. An `NSAutoreleasePool` made on the main
+  thread segfaulted that way (found by #325's experiment, with a 7.5 ms stall in exchange
+  before the fix). `_census` raises the switch interval so that no thread runs until the
+  list is gone. Running it on the main thread in slices would have kept the hook
+  responsive, but only moves the problem: COM pointers from a worker would then be
+  released on the main thread instead.
 - *tracemalloc is a menu tick, not a setting.* It costs CPU on every allocation, on the
   key path too, so nothing may leave it on across a restart by accident.
 
