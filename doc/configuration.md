@@ -1035,6 +1035,40 @@ samples. Key handling is measured on every key event and does not miss it.
 The report names your bindings, functions and files. It holds no typed text: keys
 with no binding are counted together, not one by one.
 
+## Memory reports
+
+Keyhac stays running for weeks, so memory that accumulates matters. To look into it,
+choose **Advanced > Write Memory Report**. Keyhac opens a new folder under
+`~/.keyhac/diagnostics/`:
+
+| File | Content |
+|---|---|
+| `summary.txt` | The part to read |
+| `types.txt` | Every Python type: objects, bytes, and growth since startup |
+| `history.csv` | The process's memory over time |
+| `native-footprint.txt` | macOS only: the system's breakdown of the process's memory, from `footprint` |
+| `allocations.txt` | Only while allocations are tracked (below) |
+
+Keyhac records its memory every ten minutes from startup, so the history is already
+there when you first notice a problem. To read a report, ask in this order:
+
+1. **Is it growing, and since when?** The history in **Process** has both the process
+   total and Python's allocated blocks.
+2. **Is it Python or native?** If the process grows and the Python blocks do not, the
+   memory is native: Python cannot see it, and **Native** says what kind it is on macOS.
+   On Windows, **Process** also lists handles and GDI and USER objects.
+3. **If it is Python, what is it?** **Types that grew** compares against shortly after
+   startup and against the previous report, so two reports some hours apart show the
+   most. **What Keyhac holds on to** lists Keyhac's own stores against their limits.
+
+Types cannot show strings or bytes. To see those, and which line of code allocated
+what is still alive, tick **Advanced > Track Python Allocations**, and write a report
+a while later. It sees only what is allocated after you tick it, and Keyhac is slower
+and uses more memory until you untick it, so leave it off otherwise.
+
+A report holds counts, sizes, and the names of types, threads and files. It holds no
+clipboard contents, console text or window titles.
+
 ## Runtime API summary
 
 | API | Notes |
