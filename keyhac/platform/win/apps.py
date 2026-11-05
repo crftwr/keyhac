@@ -3,8 +3,8 @@
 STATUS: activate_pid verified live on Windows (chooser-focus session: a
 two-process probe armed the foreground lock with synthesized input and
 confirmed plain SetForegroundWindow is refused while this path wins
-foreground + keyboard focus). launch() and edit_file() written to spec, not
-yet run.
+foreground + keyboard focus). launch() verified live on Windows
+(tests/test_win_start_menu.py). edit_file() written to spec, not yet run.
 """
 
 import ctypes
@@ -13,6 +13,8 @@ import sys
 
 from keyhac.core import log
 from keyhac.platform.base import AppControl
+from keyhac.platform.win.startmenu import (
+    find_start_menu_app, forget_start_menu_apps)
 
 logger = log.getLogger("WinApps")
 
@@ -69,6 +71,17 @@ class WinAppControl(AppControl):
         return WinWindow(found[0]).activate()
 
     def launch(self, app_name: str) -> None:
+        """A Start menu entry of that name if there is one, whatever PATH
+        holds, otherwise whatever the shell makes of the name."""
+        target = find_start_menu_app(app_name)
+        if target is not None:
+            try:
+                os.startfile(f"shell:AppsFolder\\{target}")
+                return
+            except OSError as e:
+                logger.warning(f"Start menu entry {app_name!r} would not "
+                               f"launch: {e}")
+                forget_start_menu_apps()
         os.startfile(app_name)
 
     def open_url(self, url: str) -> None:

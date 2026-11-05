@@ -1200,8 +1200,7 @@ Build the action.
 
 **Args:**
  
- - <b>`app_name`</b>:  Application to launch, named the way the OS resolves 
- - <b>`it`</b>:  "Terminal.app" on macOS, an executable name or path on Windows. 
+ - <b>`app_name`</b>:  Application to launch, named the way the OS resolves  it. On macOS that is "Terminal.app". On Windows it is the  name the Start menu shows ("Calculator"), which also reaches  Microsoft Store applications, or an executable name or path  ("notepad.exe"). 
 
 
 ---
@@ -1257,7 +1256,7 @@ Build the action.
  
  - <b>`app`</b>:  Application name pattern, matched like define_keytable's  app= - case-insensitive, fnmatch wildcards, "|" alternation, 
  - <b>`".exe" optional.  Name every spelling you need`</b>:  macOS reports the localized application name, so Terminal is "ターミナル" on a Japanese system. 
- - <b>`launch`</b>:  What to hand the OS when nothing matches - "Terminal.app"  on macOS, an executable name or path on Windows.  None never  launches anything. 
+ - <b>`launch`</b>:  What to hand the OS when nothing matches - "Terminal.app"  on macOS; on Windows the name the Start menu shows  ("Calculator"), which also reaches Microsoft Store  applications, or an executable name or path.  None never  launches anything. 
  - <b>`cycle`</b>:  Whether a press made while the application is already in  front moves on to its next window. 
  - <b>`reverse`</b>:  Walk the windows the other way. 
 

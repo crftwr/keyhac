@@ -797,6 +797,15 @@ the same minus those two — one press, the front-most window, never a launch.
 `LaunchApplication` only hands the name to the OS, which on Windows means a new
 window on every press.
 
+On Windows, the name given to `launch=` or `LaunchApplication` can be the one the
+Start menu shows, such as `launch="Calculator"`, and this is how to reach a
+Microsoft Store application. The whole name has to match, ignoring case. The
+Start menu is asked first, so its entry wins over a same-named command on `PATH`;
+to start the command instead, name it with its extension (`launch="xefm.exe"`).
+A path or URL goes straight to the OS, as does a name the Start menu does not
+have. Start menu names follow the display language, so a config shared between
+languages is safer with an executable name.
+
 The rotation keeps no state: which window is current is read from the z-order
 each time, and the order walked is where the windows sit on screen, so it
 survives a config reload and windows opening, closing or being dragged

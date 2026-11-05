@@ -61,6 +61,8 @@ summary of the surface:
 - **`ClipboardProvider`** — `get_text` / `set_text` / `poll()` (change detection;
   sequence number on Windows, changeCount on macOS).
 - **`AppControl`** — `activate_pid`, `launch`, `edit_file(path, editor=None)`.
+  On Windows, `launch` looks a bare name up in the Start menu first
+  (`platform/win/startmenu.py`).
 - **`Window` / `WindowProvider`** — portable window objects and
   find/enumerate/activate/geometry queries (`screen_frames`, `screen_work_frames`,
   `window_frames`); thread contract documented in

@@ -358,8 +358,10 @@ class LaunchApplication(ThreadedAction):
 
         Args:
             app_name: Application to launch, named the way the OS resolves
-                it: "Terminal.app" on macOS, an executable name or path on
-                Windows.
+                it. On macOS that is "Terminal.app". On Windows it is the
+                name the Start menu shows ("Calculator"), which also reaches
+                Microsoft Store applications, or an executable name or path
+                ("notepad.exe").
         """
         self.app_name = app_name
 

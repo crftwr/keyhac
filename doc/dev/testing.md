@@ -1453,6 +1453,17 @@ found.
   On the way the Windows image moved to a powered-off snapshot, so each
   run boots it (quality-loop's guest layer waits for the automatic
   sign-in).
+- **`launch=` by Start menu name** (2026-11-05, issue #319, `make test-vm`.
+  Windows 11 Arm in VMware Fusion from the snapshot `QA-2026-11-03`.) The
+  COM scan of `shell:AppsFolder` matches `Get-StartApps` exactly over 74
+  entries. Calculator (packaged), Character Map (known-folder path), Remote
+  Desktop (explicit app ID) and Python (absolute path) each start by display
+  name through `shell:AppsFolder\<parsing name>`. A parsing name that does
+  not exist raises FileNotFoundError within 0.01 s, which is how a stale kept
+  listing is noticed. The scan took 436 ms the first time in the process and
+  about 150 ms after that, in emulated x64 Python. A Store application
+  coexisting with a same-named command on `PATH` is covered by the scripted
+  tests only.
 
 
 ## The interactive pass before a release

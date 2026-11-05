@@ -1630,7 +1630,9 @@ class ActivateApplication(ThreadedAction):
                 the localized application name, so Terminal is "ターミナル" on
                 a Japanese system.
             launch: What to hand the OS when nothing matches - "Terminal.app"
-                on macOS, an executable name or path on Windows.  None never
+                on macOS; on Windows the name the Start menu shows
+                ("Calculator"), which also reaches Microsoft Store
+                applications, or an executable name or path.  None never
                 launches anything.
             cycle: Whether a press made while the application is already in
                 front moves on to its next window.
