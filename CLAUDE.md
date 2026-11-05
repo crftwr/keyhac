@@ -50,7 +50,9 @@ reviewed one-off.
    interface. See [doc/dev/platform-layer.md](doc/dev/platform-layer.md).
 3. **Config API**: keyhac-mac's snake_case API is the base, extended with portable
    focus conditions (`app=`, `title=`) and the keyhac-win features it lacked. One
-   `config.py` runs on both OSes; keyhac-win configs require migration.
+   `config.py` runs on both OSes; keyhac-win configs require migration. There is no
+   separate public API layer between a config and the core, unlike XeFM's. See
+   [The public API stays thin](doc/dev/design-notes.md#the-public-api-stays-thin).
 4. **PuiKit is extended additively** per its compatibility policy; everything Keyhac2
    needs is in the PyPI release `pyproject.toml` pins. See
    [doc/dev/puikit.md](doc/dev/puikit.md).
