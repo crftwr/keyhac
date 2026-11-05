@@ -32,7 +32,12 @@ classifiers = [
 ]
 dependencies = [
     # 1.4.2 is the first release with every puikit API/fix keyhac uses. What
-    # the floor last moved for: the four things a window drawing its own
+    # the floor last moved for: 1.20.2, where a closed window and a dead raster
+    # let go of their memory. Before it the chooser leaked on macOS for as long
+    # as Keyhac ran, every open and close and every preview it showed
+    # (issue #325).
+    #
+    # Before that: the four things a window drawing its own
     # chrome cannot work out for itself (PR #132) - pointer_position_px(),
     # because a mouse event's position is measured against a window that the
     # gesture is itself moving; set_frame_px(), because a resize from the top
@@ -68,7 +73,7 @@ dependencies = [
     # no longer does) - and ListView scrolling an assigned selection into view
     # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
     # develop against a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.15.2",
+    "puikit>=1.20.2",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
