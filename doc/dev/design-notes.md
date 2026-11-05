@@ -42,6 +42,45 @@ rich clipboard formats).
   input overtaking re-posted deferred reals during the flush window) was found by the
   ordering verification in [testing.md](testing.md).
 
+## The public API stays thin
+
+Keyhac has no separate API layer between a `config.py` and the core, and should
+not get one. A config uses the core's own classes. New API should keep what sits
+between the two thin.
+
+**Why not XeFM's layer.** XeFM has `xefm.user_api`, a layer an extension must go
+through, and it fits that product. XeFM's value is the file manager's existing
+features. Those features will keep changing, and the layer stops those changes
+from breaking the API. Keyhac's core is small and customization is the product,
+so the same layer would only be a second surface to maintain. When comparing the
+two projects, judge each piece of XeFM's API machinery against this difference
+rather than porting it.
+
+**What tells public from internal, without a layer:**
+
+- **`keyhac.__all__` is the list of what can be imported.** Its order is
+  `doc/config-api.md`'s. `tools/public_api.py` derives the reference's lists from
+  it, and `tests/test_public_api.py` fails if they or the skill's import lists
+  disagree.
+- **A leading underscore marks a member as not public.** It means the same to a
+  person, a checker and an AI, and it needs no machinery of its own. Some members
+  are still public only in the naming sense, with a `lazydocs: ignore` line hiding
+  them from the docs.
+- **`preview` and `deprecated` are marks on one API**, not on the whole surface. A
+  new API can ship as Preview without being frozen the day it ships, and a
+  deprecated one keeps working and says so.
+
+The major version carries compatibility, so there is no `API_VERSION`. An API
+snapshot fits this design, because it checks the existing API and adds no layer.
+
+**Renames do not wait for 3.0.** Once `deprecated` exists, a member moves to
+`_name` during 2.x, and its old name stays as a deprecated alias until the next
+major release. That keeps to the additive-only policy, because existing configs
+keep working.
+
+The underscore renames and the two marks are the direction, and not all of it
+exists yet. What remains is tracked in issue #278.
+
 ## Why a Windows key cannot be a user modifier
 
 `define_modifier` refuses `LWin` / `RWin`. The reason is that consuming a key-down

@@ -5,7 +5,7 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidatePreview](#class-candidatepreview) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console) · [ReportCaretAnchor](#class-reportcaretanchor)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -1827,6 +1827,23 @@ Adapt the `(icon, label, *payload)` tuple `ChooserAction.list_items` returns.  T
 ---
 
 
+## <kbd>class</kbd> `CandidatePreview`
+What the chooser's preview window shows for the selected row. 
+
+Returned from `CandidateSource.preview()`.  Three kinds of content, any mix of them; the window draws whichever are present, top to bottom: the image, then the text, then the fields. 
+
+
+
+**Attributes:**
+ 
+ - <b>`title`</b>:  A heading, when the row's own label is not enough to say what  is being previewed. 
+ - <b>`image`</b>:  Encoded image bytes (PNG, JPEG, TIFF, BMP) or a path to an  image file.  Decoded off the main thread and scaled to fit. 
+ - <b>`text`</b>:  Plain text, shown from its first line - long text is cut  short, not scrolled. 
+ - <b>`fields`</b>:  `(label, value)` pairs shown as a small table under the rest:  an image's size, a file's state, an action's arguments. 
+
+---
+
+
 ## <kbd>class</kbd> `CandidateSource`
 A named set of candidates, and what choosing one does. 
 
@@ -2432,6 +2449,22 @@ Get the buffered console lines.
 
 **Returns:**
   (text, log level) pairs, oldest first, up to max_lines of them. 
+
+---
+
+
+## <kbd>class</kbd> `ReportCaretAnchor`
+Say where a popup would open right now, and why. 
+
+Bind it to a key and press it inside the application you are asking about.  The report goes to the console at INFO - no debug logging to turn on - and a balloon appears at the place it found, so the numbers and the result are visible together. 
+
+```python
+kt["Fn-Ctrl-C"] = ReportCaretAnchor()
+``` 
+
+**Why a key rather than a command-line tool.**  `tools/caret_probe.py` asks about whatever is in front, and while it runs that is the terminal. Reaching the application under test means switching to it and racing a timer, and the Accessibility permission it needs belongs to the terminal rather than to Keyhac - a second grant, in a second place, easy to have given to a different terminal last time.  Pressed as a key, none of that applies: Keyhac is already trusted and the application under test already has the focus. 
+
+What it reports is the chain `keyhac.core.anchor` walks - the caret, then the focused control if it is small enough to be a place, then the window - and, above it, what each way of asking the caret question answered.  That last part is what tells a control with no caret from one whose caret cannot be believed, and those want opposite things done about them. 
 
 ---
 
