@@ -11,9 +11,9 @@ native (the two totals, side by side, plus the platform's own breakdown); and if
 Python, of what type and from where (the census, and tracemalloc if switched on).
 
 All of it runs on a worker thread, and the main thread runs the keyboard hook.
-Measured with 300k objects, longest stall of a 1 ms heartbeat: census 7.5 ms,
+Measured with 300k objects, longest stall of a 1 ms heartbeat: census 93 ms,
 gc.collect 24 ms, tracemalloc.take_snapshot 62 ms per 100k live allocations.
-The last two hold the GIL throughout; there is no way round that.
+All three hold the GIL throughout, the census on purpose (see _census).
 
 The reports get attached to issues, so they hold counts, sizes and code
 locations: never clipboard contents, console text or window titles.
@@ -47,6 +47,9 @@ HISTORY_ROWS = 1008
 #: callers are what tell a leak's source from a helper it went through.
 TRACEMALLOC_FRAMES = 10
 
+#: Longer than any census takes: see _census.
+_CENSUS_SWITCH_INTERVAL = 60
+
 _TOP = 30
 _TOP_TRACEBACKS = 10
 _SUMMARY_ROWS = 24
@@ -66,16 +69,32 @@ def _signed_size(n: float) -> str:
 def _census() -> dict:
     """{type name: (objects, bytes)} over what gc tracks. That leaves out what
     gc has no reason to track - str, bytes, numbers - which only tracemalloc
-    and the allocated blocks can see."""
-    counts = collections.Counter()
-    sizes = collections.Counter()
-    for obj in gc.get_objects():
-        kind = type(obj)
-        counts[kind] += 1
-        try:
-            sizes[kind] += sys.getsizeof(obj)
-        except Exception:   # a __sizeof__ of someone else's
-            pass
+    and the allocated blocks can see.
+
+    gc.get_objects() holds a reference to everything. If another thread could
+    run meanwhile and drop its own, this list would be left with the last one,
+    and the object would be destroyed here, on the wrong thread. An
+    NSAutoreleasePool made on the main thread segfaults that way, and AppKit
+    objects are no better. So no other thread runs until the list is gone: the
+    switch interval is what makes a waiting thread ask for the GIL. The sleep
+    lets through any thread already waiting under the old interval.
+    """
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(_CENSUS_SWITCH_INTERVAL)
+    try:
+        time.sleep(0.01)
+        counts = collections.Counter()
+        sizes = collections.Counter()
+        for obj in gc.get_objects():
+            kind = type(obj)
+            counts[kind] += 1
+            try:
+                sizes[kind] += sys.getsizeof(obj)
+            except Exception:   # a __sizeof__ of someone else's
+                pass
+        del obj
+    finally:
+        sys.setswitchinterval(interval)
     census = {}
     for kind, count in counts.items():
         try:

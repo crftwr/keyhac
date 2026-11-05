@@ -3,6 +3,7 @@ what - in a report that can be attached to an issue."""
 
 import gc
 import os
+import subprocess
 import sys
 import threading
 import tracemalloc
@@ -382,3 +383,33 @@ class TestTheMenuInTheTray:
         finally:
             item.activate()
         assert not item.is_checked()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="PyObjC")
+def test_a_census_does_not_destroy_another_thread_s_objects():
+    """gc.get_objects() must not become the last reference to something the main
+    thread lets go of: an NSAutoreleasePool destroyed on a worker segfaults."""
+    script = """
+import threading, time, objc
+from keyhac.core import memory_report
+stop = threading.Event()
+def worker():
+    while not stop.is_set():
+        memory_report._census()
+thread = threading.Thread(target=worker, daemon=True)
+thread.start()
+end = time.monotonic() + 3
+while time.monotonic() < end:
+    with objc.autorelease_pool():
+        pass
+stop.set()
+thread.join(10)
+"""
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, timeout=60)
+    assert done.returncode == 0, done.stderr.decode()[-2000:]
+
+
+def test_a_census_puts_the_switch_interval_back():
+    before = sys.getswitchinterval()
+    memory_report._census()
+    assert sys.getswitchinterval() == before
