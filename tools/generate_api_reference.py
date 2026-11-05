@@ -10,15 +10,16 @@ Python a stub module for keyhac_core, whose real implementation was Swift and
 not introspectable. Keyhac 2 is pure Python by policy, so importing the package
 is enough.
 
-WHAT LANDS IN THE REFERENCE. API_NAMES below picks the classes and functions;
-within each class, lazydocs documents every member that does not start with an
+WHAT LANDS IN THE REFERENCE. API_NAMES and ACTION_API_NAMES pick the classes and
+functions; tools/public_api.py derives them from `keyhac.__all__`. Within each
+class, lazydocs documents every member that does not start with an
 underscore. Several of those are public only in the naming sense - hook
 callbacks, wiring called by main(), constructors of objects a configuration
 receives rather than builds. Each of those carries a `lazydocs: ignore` line in
 its docstring, which is lazydocs' own opt-out marker, so the decision sits next
 to the definition instead of in a list here that would silently drift.
 
-Keeping the two apart matters: this file answers "which symbols does a
+Keeping the two apart matters: the lists answer "which symbols does a
 configuration author see", and the marker answers "is this member part of that
 symbol's surface".
 
@@ -48,61 +49,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import keyhac
 from keyhac.platform.base import Window
 
-# Config-facing API, grouped the way doc/configuration.md introduces it rather
-# than alphabetically: someone reading top to bottom meets the keymap first and
-# the leaf actions last.
-API_NAMES = [
-    # The engine and its collaborators
-    "Keymap",
-    "KeyTable",
-    "KeyCondition",
-    "FocusCondition",
-    "InputContext",
-    "Focus",
-    "KeyEvent",
-    "Window",
-    # Actions
-    "ThreadedAction",
-    "InputText",
-    "LaunchApplication",
-    "ActivateApplication",
-    "ActivateWindow",
-    "MoveWindow",
-    "SnapWindow",
-    "MouseMove",
-    "MouseButtonDown",
-    "MouseButtonUp",
-    "MouseButtonClick",
-    "MouseWheel",
-    "MouseHorizontalWheel",
-    "StartRecordingKeys",
-    "StopRecordingKeys",
-    "ToggleRecordingKeys",
-    "PlaybackRecordedKeys",
-    # Clipboard
-    "ClipboardHistory",
-    # Candidate window: sources are values, so several share one hotkey.
-    "ChooserAction",
-    "ShowCandidates",
-    "Candidate",
-    "CandidateSource",
-    "CallableSource",
-    "ChooserPage",
-    "ActionsSource",
-    "ClipboardHistorySource",
-    "KeyBindingsSource",
-    "MenuItemsSource",
-    "WindowControlsSource",
-    "SnippetsSource",
-    "ClipboardToolsSource",
-    "ShowClipboardHistory",
-    "ShowClipboardSnippets",
-    "ShowClipboardTools",
-    "DateTimeSnippet",
-    # Logging
-    "getLogger",
-    "Console",
-]
+sys.path.insert(0, os.path.dirname(__file__))
+
+from public_api import ACTION_API_NAMES, API_NAMES
 
 HEADER = """# API reference
 
@@ -121,33 +70,6 @@ docstrings, not this file.
 #: audience with a different question: a config author asks "how do I bind a
 #: key", an action asks "how do I read that table". Mixing them is what grew a
 #: `press` and a `focus` into the config namespace in the first place.
-ACTION_API_NAMES = [
-    # The class every action *is*. It lived only in config-api.md, on the
-    # grounds that a config author binds one to a key - but the action's own
-    # body is `run()`, and SKILL.md sends the author here for "every signature
-    # an action's body uses". A clean room looked here for `check_cancelled`,
-    # found the whole class missing, and recorded that it could not tell
-    # whether the method exists.
-    "ThreadedAction",
-    "UI",
-    "UINode",
-    # The values the verbs take. They are reached as `ui.Locator(...)` rather
-    # than imported - the config namespace keeps its three names - but a
-    # reader who meets `locator: Locator` in a signature needs somewhere that
-    # says what is in one, which is here.
-    "Locator",
-    "Appears",
-    "Front",
-    "Gone",
-    "Reads",
-    "Stable",
-    "WaitTimeout",
-    "FillFailed",
-    "ActionCancelled",
-    "StaleElement",
-    "Unresponsive",
-]
-
 ACTION_HEADER = """# Action API reference
 
 The surface an action uses to drive another application: finding windows,
