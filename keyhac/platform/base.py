@@ -301,6 +301,19 @@ def main_thread_only(method):
 CLIPBOARD_KINDS = ("files", "image", "rich", "text")
 
 
+@dataclass(frozen=True)
+class ProcessMemory:
+    """What the OS says this process uses, for keyhac.core.memory_report.
+
+    Attributes:
+        used: Bytes, in the measure that tracks accumulation on this OS: the
+            physical footprint on macOS, private bytes on Windows.
+        details: Everything worth showing, as label and text.
+    """
+    used: int = 0
+    details: dict = field(default_factory=dict)
+
+
 @dataclass
 class ClipboardSnapshot:
     """What the clipboard held, as far as the history keeps it.

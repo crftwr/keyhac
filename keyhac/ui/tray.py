@@ -81,6 +81,8 @@ def install_tray(console, keymap, hook) -> None:
 
     package_sync = PackageSync(keymap)
     profiling = Profiling(keymap)
+    memory_reports = MemoryReports(keymap)
+    memory_reports.start_history()
 
     items = (
         MenuItem("Open Console", on_select=console.backend.show_main_window),
@@ -126,6 +128,11 @@ def install_tray(console, keymap, hook) -> None:
                      enabled=lambda: profiling.can_start),
             MenuItem("Stop Profiling", on_select=profiling.stop,
                      enabled=lambda: profiling.can_stop),
+            SEPARATOR,
+            MenuItem("Write Memory Report", on_select=memory_reports.write,
+                     enabled=lambda: not memory_reports.running),
+            MenuItem("Track Python Allocations", on_select=memory_reports.toggle_tracking,
+                     checked=lambda: memory_reports.tracking),
         )),
         SEPARATOR,
         MenuItem("Quit Keyhac", on_select=console.backend.quit),
@@ -299,13 +306,55 @@ class Profiling:
 
     def _finish(self, folder: str, error) -> None:
         self._keymap.on_key_handled = None
-        if error is not None:
-            logger.error(f"Profiling failed: {error!r}")
-            return
-        logger.info(f"Profile written: {folder}")
-        if self._keymap.app_control is not None:
-            # A folder opens in Finder / Explorer; open_url hands it to the shell.
-            self._keymap.app_control.open_url(folder)
+        _report_written(self._keymap, "Profile", folder, error)
+
+
+class MemoryReports:
+    """Write Memory Report and Track Python Allocations
+    (keyhac.core.memory_report): the folder is opened once it is written."""
+
+    def __init__(self, keymap, reporter=None):
+        from keyhac import platform
+        from keyhac.core import memory_report
+        self._keymap = keymap
+        self._reporter = reporter or memory_report.MemoryReporter(
+            os.path.dirname(keymap.extensions_dir), platform.process_memory,
+            native_report=platform.native_memory_report(),
+            stores=memory_report.keyhac_stores(keymap))
+
+    @property
+    def running(self) -> bool:
+        return self._reporter.running
+
+    @property
+    def tracking(self) -> bool:
+        return self._reporter.tracking
+
+    def start_history(self) -> None:
+        self._reporter.start_history()
+
+    def write(self) -> None:
+        logger.info("Writing a memory report...")
+        self._reporter.write(lambda folder, error: self._keymap.call_on_main_thread(
+            lambda: _report_written(self._keymap, "Memory report", folder, error)))
+
+    def toggle_tracking(self) -> None:
+        on = not self._reporter.tracking
+        self._reporter.set_tracking(on)
+        logger.info(
+            "Tracking Python allocations. Keyhac is slower and uses more memory "
+            "until this is switched off. Write a memory report when there is "
+            "something to see." if on else "No longer tracking Python allocations.")
+
+
+def _report_written(keymap, what: str, folder: str, error) -> None:
+    if error is not None:
+        logger.error(f"{what} failed: {error!r}")
+        return
+    logger.info(f"{what} written: {folder}")
+    if keymap.app_control is not None:
+        # A folder opens in Finder / Explorer; open_url hands it to the shell.
+        keymap.app_control.open_url(folder)
 
 
 def _cancel(name: str) -> None:

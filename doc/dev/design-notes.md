@@ -1937,6 +1937,26 @@ py-spy is refused: they are Apple-signed with the right to inspect a process.
   key sending keys is one row whatever the key, and a bound object is named by its
   type, since a `partial`'s repr holds its arguments.
 
+**Memory reports (#324).**
+
+- *The history is always on*, because accumulation is noticed hours after it starts. A
+  row is one OS call and `sys.getallocatedblocks()` every ten minutes on a sleeping
+  daemon thread, kept in memory for a week, plus one census shortly after startup. No
+  file is written until someone asks.
+- *`footprint` is the only native tool it runs*: see the table above. Native memory is
+  not a corner case. An installed 2.x with a console open showed 795 MB after ten
+  minutes, 523 MB of it Core Animation and 103 MB IOSurface, none of which a
+  Python-only report could show.
+- *The measures are the ones that do not fall when the OS reclaims*: physical footprint
+  on macOS, private bytes on Windows. Resident size and working set are shown too, but
+  drop under pressure and would hide a leak in the history.
+- *Each report collects first*, so cycles merely waiting for a collection do not read as
+  growth. Measured with 300k objects, longest heartbeat stall: census 7.5 ms (the worker
+  gives up the GIL between objects), `gc.collect` 24 ms, `tracemalloc.take_snapshot`
+  62 ms per 100k live allocations. The latter two hold the GIL throughout.
+- *tracemalloc is a menu tick, not a setting.* It costs CPU on every allocation, on the
+  key path too, so nothing may leave it on across a restart by accident.
+
 ## Data directory and Windows portable mode
 
 `keyhac/core/paths.py` is the single place that decides where `config.py` and the

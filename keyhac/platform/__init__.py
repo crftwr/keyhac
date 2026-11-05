@@ -40,3 +40,25 @@ def native_sampler():
         from keyhac.platform.mac.diagnostics import sample_native
         return sample_native
     return None
+
+
+def process_memory():
+    """What the OS says this process uses, as a `base.ProcessMemory`."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.diagnostics import process_memory as read
+    elif sys.platform == "win32":
+        from keyhac.platform.win.diagnostics import process_memory as read
+    else:
+        from keyhac.platform.base import ProcessMemory
+        return ProcessMemory()
+    return read()
+
+
+def native_memory_report():
+    """What writes the OS's own breakdown of this process's memory, for
+    keyhac.core.memory_report: ``report(path)`` returning what went wrong or
+    None. None if this OS has nothing built in that can."""
+    if sys.platform == "darwin":
+        from keyhac.platform.mac.diagnostics import write_footprint
+        return write_footprint
+    return None
