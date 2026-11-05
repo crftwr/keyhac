@@ -208,6 +208,12 @@ GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
 versioned/released independently on PyPI; Keyhac2 pins a minimum in
 `pyproject.toml`.
 
+A bundle built off the release tag, or from a dirty tree, is named and stamped
+with a dev version (`2.7.0+dev.g<sha>`), and its links to the repository name the
+commit. So `release-skill` uploads only a bundle built from a clean checkout at
+the tag: from anywhere else, the `keyhac-<ver>-skill.zip` it looks for is not
+built.
+
 **`release-skill` is not optional the way it looks.** The bundles are the
 only way a user can obtain the skills — `make skill-bundle` needs the
 Makefile and `tools/`, and neither ships — so a release without it leaves

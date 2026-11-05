@@ -553,7 +553,9 @@ that can be handed documents can be handed these. What that does not buy is the
 provides.
 
 (Building it from a source checkout, if you are working on Keyhac itself:
-`make skill-bundle` writes the same zip into `dist/`.)
+`make skill-bundle` writes the same zip into `dist/`. Off a release tag, or with
+uncommitted changes, it carries a dev version such as `2.7.0+dev.g<sha>` in its
+name and in the stamp inside.)
 
 **A skill is not the connection, and neither step implies the other.** A skill
 is knowledge — rules and an API reference, with no way to reach your machine;
