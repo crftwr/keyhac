@@ -53,12 +53,13 @@ invoking any of that, do the checks preflight cannot:
   here, the user decides what is fixed before tagging.
   - **Findings** (exit 1) are the mechanical rules — OS imports in core/ui,
     ctypes prototypes, camelCase, and the public API compared against the
-    last tag (an entry or parameter removed, a parameter added with no
-    default: additive-only, so each is a stop unless the user moves it to
-    `doc/dev/next-major.md`). List them as they are.
+    last tag through `tests/data/api_snapshot.txt` (a removal or an
+    incompatible signature: additive-only, so each is a stop unless the user
+    moves it to `doc/dev/next-major.md`). List them as they are.
   - **For review** lines are pointers, not violations: read each site and
     give a verdict per line. Its API additions also check step 1 — any of
-    them means at least a minor bump — and are the note's raw material.
+    them means at least a minor bump — and, with new deprecations, are the
+    note's raw material.
 - `make icons-check` — the committed rendered icons must match their SVG
   sources before they ship.
 - **`make release-test`** runs inside `make tag` (#316): `pytest

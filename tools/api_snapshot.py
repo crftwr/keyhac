@@ -34,14 +34,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 
-import keyhac  # noqa: E402
-import keyhac.core.ui as ui_module  # noqa: E402
-from keyhac.core.api_marks import is_deprecated, is_preview  # noqa: E402
-from keyhac.mcp.tools import ToolRegistry  # noqa: E402
-from keyhac.platform.base import Window  # noqa: E402
-from public_api import ACTION_API_NAMES, API_NAMES  # noqa: E402
-
-SNAPSHOT = ROOT / "tests" / "data" / "api_snapshot.txt"
+SNAPSHOT =ROOT / "tests" / "data" / "api_snapshot.txt"
 MAJOR_ROW = "keyhac.major"
 
 #: Public on a Keymap, documented in doc/configuration.md, and assigned by main()
@@ -94,12 +87,6 @@ def _member(owner, name: str, raw) -> tuple[str, str]:
     return "attribute", ""
 
 
-def _resolve(name: str):
-    if name == "Window":
-        return Window
-    return getattr(ui_module, name) if hasattr(ui_module, name) else getattr(keyhac, name)
-
-
 def _tool_detail(schema: dict) -> str:
     """A tool's parameters as JSON, `[name, required]` each."""
     required = set(schema.get("required", ()))
@@ -108,7 +95,21 @@ def _tool_detail(schema: dict) -> str:
 
 def build() -> dict[str, tuple[str, str, str]]:
     """`{name: (status, kind, detail)}` for the whole public surface."""
+    # Imported here so that tools/release_review.py can compare two committed
+    # snapshots with parse() and classify() without loading the Keyhac it reviews.
+    import keyhac
+    import keyhac.core.ui as ui_module
+    from keyhac.core.api_marks import is_deprecated, is_preview
+    from keyhac.mcp.tools import ToolRegistry
+    from keyhac.platform.base import Window
+    from public_api import ACTION_API_NAMES, API_NAMES
+
     items: dict[str, tuple[str, str, str]] = {}
+
+    def resolve(name: str):
+        if name == "Window":
+            return Window
+        return getattr(ui_module, name) if hasattr(ui_module, name) else getattr(keyhac, name)
 
     def put(name: str, kind: str, detail: str = "") -> None:
         status = ("deprecated" if is_deprecated(name) is not None
@@ -120,7 +121,7 @@ def build() -> dict[str, tuple[str, str, str]]:
     put("DEPRECATED_APIS", "data")
 
     for name in dict.fromkeys(API_NAMES + ACTION_API_NAMES):
-        obj = _resolve(name)
+        obj = resolve(name)
         if not inspect.isclass(obj):
             put(name, "function", _signature(obj))
             continue

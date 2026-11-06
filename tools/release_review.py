@@ -18,9 +18,12 @@ Two kinds of output, both from the same diff:
   on the lines the range added: no OS module imported under ``keyhac/core/``,
   no AppKit / Win32 under ``keyhac/ui/``, every Windows DLL function called
   with its ``restype`` declared, no camelCase in the public API - plus the
-  public API compared tag to head (an entry or a parameter removed, a
-  parameter added with no default) and the existing generated-doc and
-  translation checks. Exit status 1 when there are any.
+  public API compared tag to head through ``tests/data/api_snapshot.txt`` (a
+  change ``tools/api_snapshot.py`` classifies as breaking) and the existing
+  generated-doc and translation checks. For a base older than that file the
+  comparison goes through the generated references, which list what is
+  documented rather than all that works, so it can report a name that only
+  left the reference. Exit status 1 when there are any.
 - **For review** - pointers for the judgment calls: new modules, new files at
   the repo root or tests outside ``tests/``, new or moved dependencies,
   user-facing docstrings (read from the generated API reference) naming
@@ -28,8 +31,8 @@ Two kinds of output, both from the same diff:
   in a comment - core reaching into a platform module, the hooks (whose
   subtle behaviours doc/dev/design-notes.md lists), UINode's identity and
   lifetime (settled until the next major), the MCP tool surface, and the API
-  additions the release note and the version bump should account for. They
-  never set the exit status.
+  additions and deprecations the release note and the version bump should
+  account for. They never set the exit status.
 
 The generated-doc and translation checks run the existing tools on the
 working tree, which should be a checkout of ``--head`` (the output says so
@@ -47,6 +50,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from api_snapshot import classify as classify_snapshot
+from api_snapshot import major as snapshot_major
+from api_snapshot import parse as parse_snapshot
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Modules that are OS access, which keyhac/core/ reaches only through
@@ -56,6 +63,10 @@ OS_MODULES = {
     "objc", "AppKit", "Foundation", "Quartz", "Cocoa", "ApplicationServices",
     "CoreFoundation", "HIServices",
 }
+
+#: The public surface with signatures and status, deprecated names included.
+#: v2.8.0 is the first tag that has it.
+API_SNAPSHOT = "tests/data/api_snapshot.txt"
 
 #: The generated user documentation, one entry per heading.
 API_DOCS = ("doc/config-api.md", "doc/action-api.md")
@@ -230,20 +241,63 @@ def parameters(signature: str | None) -> dict[str, bool] | None:
     return params
 
 
-def api_changes(base: str, head: str) -> tuple[list[Item], list[Item]]:
-    """(findings, for-review items) from the public API across the release."""
+def docstring_notes(base: str, head: str) -> list[Item]:
+    """Text the generated references gained that names the older products."""
+    notes = []
+    for doc in API_DOCS:
+        old_text, new_text = show(base, doc), show(head, doc)
+        if old_text is None or new_text is None:
+            continue
+        old_lines = set(old_text.splitlines())
+        for line in new_text.splitlines():
+            if line not in old_lines and PORTING_HISTORY.search(line):
+                notes.append(Item("docstring", doc, "for a migrating user, or porting "
+                                  f"history? {line.strip()[:70]}"))
+    return notes
+
+
+def snapshot_changes(base: str, head: str, old_text: str,
+                     new_text: str) -> tuple[list[Item], list[Item]]:
+    """(findings, for-review items) from two copies of the API snapshot. A break
+    is allowed when the major version moved, and is then listed for the note."""
+    old, new = parse_snapshot(old_text), parse_snapshot(new_text)
+    major_moved = snapshot_major(old) != snapshot_major(new)
+    findings, notes = [], []
+    for category, name, why in classify_snapshot(old, new):
+        added = why == "added"
+        if added and CAMEL.search(name.rsplit(".", 1)[-1]) and new[name][1] != "class":
+            findings.append(Item("api", name, "camelCase in the public API"))
+        if category == "breaking":
+            message = f"{why}, from {base} to {head}"
+            if major_moved:
+                notes.append(Item("api", name, f"{message} - the major version moved"))
+            else:
+                findings.append(Item("api", name, f"{message} - the public API is "
+                                     "additive-only (doc/dev/next-major.md)"))
+        elif category == "deprecation" or (added and new[name][0] == "deprecated"):
+            # Added as deprecated: a name that worked all along and was left out
+            # as internal, now listed because it is on its way out. Not new API.
+            notes.append(Item("api", name, "newly deprecated, and it keeps working - "
+                                           "a change users may see"))
+        elif category == "preview":
+            label = f"new Preview {new[name][1]}" if added else f"Preview API: {why}"
+            notes.append(Item("api", name, f"{label} - the note's \"Also\""))
+        else:
+            label = f"new {new[name][1]}" if added else why
+            notes.append(Item("api", name, f"{label} - the note's \"Also\", and "
+                                           "at least a minor bump"))
+    return findings, notes
+
+
+def reference_changes(base: str, head: str) -> tuple[list[Item], list[Item]]:
+    """(findings, for-review items) from the generated references, for a base
+    older than the snapshot. They list what is documented, not all that works."""
     findings, notes = [], []
     for doc in API_DOCS:
         old_text, new_text = show(base, doc), show(head, doc)
         if old_text is None or new_text is None:
             continue
         old, new = api_entries(old_text), api_entries(new_text)
-        added_text = "\n".join(line for line in new_text.splitlines()
-                               if line not in set(old_text.splitlines()))
-        for line in added_text.splitlines():
-            if PORTING_HISTORY.search(line):
-                notes.append(Item("docstring", doc, "for a migrating user, or porting "
-                                  f"history? {line.strip()[:70]}"))
         for name in sorted(set(old) - set(new)):
             findings.append(Item("api", name, f"shipped at {base}, gone at {head} - "
                                  "the public API is additive-only (doc/dev/next-major.md)"))
@@ -270,6 +324,16 @@ def api_changes(base: str, head: str) -> tuple[list[Item], list[Item]]:
             if not any(f.where == name for f in findings) and set(before) == set(after):
                 notes.append(Item("api", name, f"signature changed: {new[name][1]}"))
     return findings, notes
+
+
+def api_changes(base: str, head: str) -> tuple[list[Item], list[Item]]:
+    """(findings, for-review items) from the public API across the release."""
+    old_text, new_text = show(base, API_SNAPSHOT), show(head, API_SNAPSHOT)
+    if old_text is None or new_text is None:
+        findings, notes = reference_changes(base, head)
+    else:
+        findings, notes = snapshot_changes(base, head, old_text, new_text)
+    return findings, docstring_notes(base, head) + notes
 
 
 def run_tool(rule: str, argv: list[str], fix: str) -> list[Item]:
