@@ -7,7 +7,7 @@ description: Release a new version of Keyhac — confirm the version bump, run t
 
 Run every command from the root of the keyhac checkout. One version
 (`__version__` in `keyhac/__init__.py`) covers both OSes, but the artifacts
-come from two machines — the DMG builds and notarizes on macOS, the win64 and winarm64 zips
+come from two machines — the DMG builds and notarizes on macOS, the win-x64 and win-arm64 zips
 and the Store MSIX on Windows — so a release usually finishes across two
 sessions. Run each OS's targets on that OS and report the other side as
 remaining; never mark the release done with artifacts missing. The pipeline is
@@ -99,10 +99,12 @@ make release-status       # read-only: which artifacts have landed
 ```
 
 On the Windows machine, from the same checkout at the tag:
-`make release-windows-zip` attaches both portable zips (win64, winarm64);
+`make release-windows-zip` attaches both portable zips (win-x64, win-arm64);
 `make release-windows-msix` is the odd one out — it submits one `.msixbundle`
 of both architectures to the Microsoft Store, not the GitHub Release, and certification proceeds asynchronously
-(poll with `msstore submission status`).
+(poll with `msstore submission status`). Run `make` from PowerShell here: MSYS2's
+`make` started from Git Bash reaches its recipes with most of the environment
+gone, so `gh` reads as not logged in and `release-status` misreports the Release.
 
 The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
 not installed from a package index — an editable PuiKit included — or outside

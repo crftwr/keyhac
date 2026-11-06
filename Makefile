@@ -134,7 +134,7 @@ help:
 	@echo "  make release-whl       - upload sdist + wheel to PyPI, and to the Release"
 	@echo "  make release-skill     - attach the AI authoring skill bundle to the Release"
 	@echo "  make release-macos-dmg   - (on macOS)   attach Keyhac-<ver>-macos.dmg"
-	@echo "  make release-windows-zip - (on Windows) attach the -win64 and -winarm64 zips"
+	@echo "  make release-windows-zip - (on Windows) attach the -win-x64 and -win-arm64 zips"
 	@echo "  make release-windows-msix - (on Windows) submit the x64+arm64 .msixbundle to the Microsoft Store"
 	@echo "  make release-status    - show which artifacts have landed so far"
 	@echo "  Supporting: make build (sdist + wheel into dist/, also a tag gate),"
@@ -364,7 +364,7 @@ clean-venv:
 #   make release-status        any machine  what has landed so far
 #
 #   make release-macos-dmg     macOS        Keyhac-<ver>-macos.dmg -> the Release
-#   make release-windows-zip   Windows      Keyhac-<ver>-win64.zip, -winarm64.zip -> the Release
+#   make release-windows-zip   Windows      Keyhac-<ver>-win-x64.zip, -win-arm64.zip -> the Release
 #   make release-windows-msix  Windows      Keyhac-<ver>.0.msixbundle -> the Microsoft Store
 #
 # Order matters only twice: `tag` first (everything else names the tag it
@@ -753,10 +753,10 @@ windows-zip: $(VENV_STAMP)
 	@echo "Building Windows application bundle ($(ARCH), + zip)..."
 	@powershell -ExecutionPolicy Bypass -File windows_app/build.ps1 -Arch $(ARCH) -Zip
 
-# Filename mirrors build.ps1's own naming (Keyhac-<version>-win64.zip, -winarm64), derived
+# Filename mirrors build.ps1's own naming (Keyhac-<version>-win-x64.zip, -win-arm64), derived
 # from the same version literal as KEYHAC_VERSION, so the two cannot drift.
-WINDOWS_ZIP_x64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-win64.zip
-WINDOWS_ZIP_arm64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-winarm64.zip
+WINDOWS_ZIP_x64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-win-x64.zip
+WINDOWS_ZIP_arm64 := windows_app/build/Keyhac-$(KEYHAC_VERSION)-win-arm64.zip
 WINDOWS_ZIP := $(WINDOWS_ZIP_$(ARCH))
 
 # File target so the upload/install builds the zip on demand when it is missing

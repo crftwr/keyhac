@@ -25,8 +25,8 @@ shipped PuiKit app, the standard to follow for build infra.
   from PyConfig alone. `install_zip.ps1` installs a built zip.
 - Layout: `Keyhac.exe` + `runtime\` (CPython) + `Lib\site-packages\` +
   `app\{keyhac,puikit}`.
-- Distribution: `Keyhac-<version>-win64.zip` via `make windows-zip`,
-  `Keyhac-<version>-winarm64.zip` via `make windows-zip ARCH=arm64`, and the
+- Distribution: `Keyhac-<version>-win-x64.zip` via `make windows-zip`,
+  `Keyhac-<version>-win-arm64.zip` via `make windows-zip ARCH=arm64`, and the
   Microsoft Store as one `.msixbundle` of both (below).
 - **Two architectures** (issue #318). `build.ps1 -Arch x64|arm64` writes to
   `build\Keyhac` or `build\arm64\Keyhac`. Either builds on one machine with one
@@ -216,8 +216,8 @@ tag..`origin/main` is where drift across many small changes shows.
   comment?), and every API addition - the release note's material, and the
   reason a release with any is at least a minor.
 
-Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win64.zip`,
-`Keyhac-<ver>-winarm64.zip`,
+Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win-x64.zip`,
+`Keyhac-<ver>-win-arm64.zip`,
 the skill bundles - one zip per folder in `keyhac/skills/`, all attached to the
 GitHub Release - and the `keyhac` wheel on PyPI. PuiKit is
 versioned/released independently on PyPI; Keyhac2 pins a minimum in

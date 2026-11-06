@@ -26,7 +26,7 @@
     the venv's exact version).
 
 .PARAMETER Zip
-    Also produce build\Keyhac-<version>-win64.zip (arm64: -winarm64) for
+    Also produce build\Keyhac-<version>-win-x64.zip (arm64: -win-arm64) for
     distribution.
 
 .PARAMETER Clean
@@ -636,7 +636,7 @@ Success "Built $BridgeOut"
 # Step 8 (optional): Zip for distribution
 # ---------------------------------------------------------------------------
 if ($Zip) {
-    $ZipSuffix = @{ x64 = 'win64'; arm64 = 'winarm64' }[$Arch]
+    $ZipSuffix = @{ x64 = 'win-x64'; arm64 = 'win-arm64' }[$Arch]
     $ZipOut = Join-Path $BuildDir "Keyhac-$Version-$ZipSuffix.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     The Windows counterpart of `make install-macos-dmg`: it installs the exact
-    artifact end users download (windows_app\build\Keyhac-<version>-win64.zip,
+    artifact end users download (windows_app\build\Keyhac-<version>-win-x64.zip,
     produced by build.ps1 -Zip) rather than copying windows_app\build\Keyhac\
     directly. Expanding the real zip is what catches a truncated or incomplete
     archive here, instead of leaving it for the first person to download it.
@@ -33,7 +33,7 @@
 #>
 [CmdletBinding()]
 param(
-    # Defaults (in the body, not here) to windows_app\build\Keyhac-<version>-win64.zip.
+    # Defaults (in the body, not here) to windows_app\build\Keyhac-<version>-win-x64.zip.
     # make install-windows-zip names the zip of its ARCH.
     # $PSScriptRoot is not reliably populated in a param default under
     # 'powershell -File' - the form the Makefile uses - so it is resolved below.
@@ -103,7 +103,7 @@ if (-not $Zip) {
     $m = Select-String -Path $init -Pattern '^__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
     if (-not $m) { Fail "Could not read __version__ from $init" }
     $version = $m.Matches[0].Groups[1].Value
-    $Zip = Join-Path $ScriptDir "build\Keyhac-$version-win64.zip"
+    $Zip = Join-Path $ScriptDir "build\Keyhac-$version-win-x64.zip"
 }
 
 if (-not (Test-Path $Zip)) {

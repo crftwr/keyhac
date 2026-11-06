@@ -65,8 +65,8 @@ Settings → Apps → Startup.
 
 ### Zip package
 
-1. Download `Keyhac-<version>-win64.zip` (x64) or
-   `Keyhac-<version>-winarm64.zip` (Arm) from
+1. Download `Keyhac-<version>-win-x64.zip` (x64) or
+   `Keyhac-<version>-win-arm64.zip` (Arm) from
    [Releases](https://github.com/crftwr/keyhac/releases) and unzip it anywhere
    (for example `C:\Program Files\Keyhac` or a folder in your home directory).
 2. Run `Keyhac.exe`.
