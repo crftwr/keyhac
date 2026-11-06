@@ -21,6 +21,7 @@ from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
 from keyhac.core.input import InputContext
 from keyhac.core import log, permissions
+from keyhac.core.api_marks import deprecated_alias, follow_renamed_overrides
 from keyhac.core.action import ThreadedAction
 from keyhac.core.uitree import Unresponsive, one_timeout_per_key_event
 from keyhac.core.config import Config
@@ -163,6 +164,14 @@ def _collapse_planes(mod: int) -> int:
     return mod & MODKEY_PLANE_MASK
 
 
+#: What a renamed Keymap member's old name says it is.
+_INTERNAL_WIRING = "it is internal to Keyhac, with no public replacement"
+
+
+#: What a renamed Keymap member's old name says it is.
+_INTERNAL_WIRING = "it is internal to Keyhac, with no public replacement"
+
+
 class Keymap:
     """Manages key tables and executes key action translations.
 
@@ -180,6 +189,24 @@ class Keymap:
     """
 
     _instance = None
+
+    # Public only in the naming sense, and renamed in 2.x (#278). The old names stay
+    # until the next major (doc/dev/next-major.md).
+    set_main_thread_dispatcher = deprecated_alias("_set_main_thread_dispatcher", _INTERNAL_WIRING)
+    on_key_event = deprecated_alias("_on_key_event", _INTERNAL_WIRING)
+    on_hook_restored = deprecated_alias("_on_hook_restored", _INTERNAL_WIRING)
+    on_mouse_event = deprecated_alias("_on_mouse_event", _INTERNAL_WIRING)
+    push_modal_input = deprecated_alias("_push_modal_input", _INTERNAL_WIRING)
+    pop_modal_input = deprecated_alias("_pop_modal_input", _INTERNAL_WIRING)
+    modal_input_active = deprecated_alias("_modal_input_active", _INTERNAL_WIRING)
+    effective_keytable = deprecated_alias("_effective_keytable", _INTERNAL_WIRING)
+    start_mcp_server = deprecated_alias("_start_mcp_server", _INTERNAL_WIRING)
+    stop_mcp_server = deprecated_alias("_stop_mcp_server", _INTERNAL_WIRING)
+    mcp_server_running = deprecated_alias("_mcp_server_running", _INTERNAL_WIRING)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        follow_renamed_overrides(cls)
 
     @staticmethod
     def get_instance() -> "Keymap":
@@ -217,7 +244,7 @@ class Keymap:
         self._keytable_list = []            # list of (FocusCondition, KeyTable)
         self._all_keytables = []            # every table define_keytable created
         self._multi_stroke_keytable = None  # active multi-stroke KeyTable
-        self._modal_input = None            # sticky key grab - see push_modal_input
+        self._modal_input = None            # sticky key grab - see _push_modal_input
         self._modal_passthrough = None      # its owner's say - _modal_fallback
         self._modal_text = None             # where the grab's text output goes
         self._modal_focus = None            # what the tables see while grabbed
@@ -241,8 +268,8 @@ class Keymap:
         self._mcp_timer = None              # closes the window on its own
         self.on_enter_multi_stroke = None   # callable(name) - balloon help
         self.on_leave_multi_stroke = None   # callable()
-        self.on_mouse_button = None         # callable() - see on_mouse_event
-        self.on_key_handled = None          # callable(binding, seconds) - see on_key_event
+        self.on_mouse_button = None         # callable() - see _on_mouse_event
+        self.on_key_handled = None          # callable(binding, seconds) - see _on_key_event
         self._handled_binding = None
         self._main_thread_dispatcher = None  # callable(callback) - see below
 
@@ -759,12 +786,10 @@ class Keymap:
     # ------------------------------------------------------------------
     # Main-thread dispatch
 
-    def set_main_thread_dispatcher(self, dispatcher) -> None:
+    def _set_main_thread_dispatcher(self, dispatcher) -> None:
         """Wired by main() with whichever loop is actually running: PuiKit's
         Backend.call_on_main_thread with the console up, the platform
         EventLoop's under --no-ui.  *dispatcher* takes a single callable.
-
-        lazydocs: ignore
         """
         self._main_thread_dispatcher = dispatcher
 
@@ -794,10 +819,8 @@ class Keymap:
     # ------------------------------------------------------------------
     # Hook entry points (called synchronously on the event-loop thread)
 
-    def on_key_event(self, event: KeyEvent) -> bool:
+    def _on_key_event(self, event: KeyEvent) -> bool:
         """InputHook on_key callback.  Returns True to consume the event.
-
-        lazydocs: ignore
         """
         # on_key_handled is set only during a profile (keyhac.core.profiler),
         # so an ordinary key pays for reading one attribute. What it is told
@@ -805,15 +828,15 @@ class Keymap:
         # issues, and per-key counts of those are most of what someone typed.
         observer = self.on_key_handled
         if observer is None:
-            return self._on_key_event(event)
+            return self._process_key_event(event)
         self._handled_binding = None
         started = time.perf_counter()
         try:
-            return self._on_key_event(event)
+            return self._process_key_event(event)
         finally:
             observer(self._handled_binding, time.perf_counter() - started)
 
-    def _on_key_event(self, event: KeyEvent) -> bool:
+    def _process_key_event(self, event: KeyEvent) -> bool:
         # Before the keytable, so Esc reaches a running action whether or not
         # the active table binds it - and outside the engine lock, because
         # this runs inside the hook's deadline and cancel_all() only sets an
@@ -877,17 +900,15 @@ class Keymap:
             vk = self._escape_vk_cached = get_key_names().str_to_vk("Escape")
         return vk
 
-    def on_hook_restored(self) -> None:
+    def _on_hook_restored(self) -> None:
         """InputHook on_restored callback.
-
-        lazydocs: ignore
         """
         with self._lock:
             # The platform has logged why: a re-installed hook, or input on a
             # desktop the hook cannot see. Either way some ups went missing.
             self._modifier = 0
 
-    def on_mouse_event(self, kind: str = "button") -> None:
+    def _on_mouse_event(self, kind: str = "button") -> None:
         """InputHook on_mouse callback: physical mouse button/wheel input
         cancels a pending one-shot modifier (keyhac-win behavior - clicking
         while holding a one-shot key means the hold was a drag/click
@@ -902,8 +923,6 @@ class Keymap:
 
         The observer is called outside the lock: it does UI work, and the
         engine has nothing left to protect by then.
-
-        lazydocs: ignore
         """
         with self._lock:
             self._last_keydown = None
@@ -1059,7 +1078,7 @@ class Keymap:
                     except Exception:
                         logger.error(f"Modal input handler failed:\n"
                                      f"{traceback.format_exc()}")
-                        self.pop_modal_input()
+                        self._pop_modal_input()
                 return True
 
         if callable(action):
@@ -1133,7 +1152,7 @@ class Keymap:
                          f"{traceback.format_exc()}")
             return None
 
-    def push_modal_input(self, handler, passes_through=None, focus=None,
+    def _push_modal_input(self, handler, passes_through=None, focus=None,
                          on_text=None) -> None:
         """Hand the keyboard to a window that has no OS keyboard focus.
 
@@ -1155,7 +1174,7 @@ class Keymap:
         the application underneath is not where the user is typing.
 
         Esc is not offered to a running `ThreadedAction` while a grab is up,
-        as `on_key_event` otherwise does before the tables: Esc there means
+        as `_on_key_event` otherwise does before the tables: Esc there means
         "close this window", and the window is what the user is looking at.
 
         Args:
@@ -1172,8 +1191,6 @@ class Keymap:
                 grab is up.  None keeps the real one.
             on_text: Optional `callable(str)` taking `send_text()` output.
                 Without it, text output is dropped.
-
-        lazydocs: ignore
         """
         with self._lock:
             self._leave_multi_stroke()
@@ -1185,10 +1202,8 @@ class Keymap:
             self._update_unified_keytable()
             self._show_focus_path(self._table_focus())
 
-    def pop_modal_input(self) -> None:
-        """Release the grab pushed by :meth:`push_modal_input`.
-
-        lazydocs: ignore
+    def _pop_modal_input(self) -> None:
+        """Release the grab pushed by :meth:`_push_modal_input`.
         """
         with self._lock:
             if self._modal_input is None:
@@ -1205,10 +1220,8 @@ class Keymap:
             self._update_unified_keytable()
             self._show_focus_path(self._focus)
 
-    def modal_input_active(self) -> bool:
+    def _modal_input_active(self) -> bool:
         """Whether a key grab is up.
-
-        lazydocs: ignore
         """
         return self._modal_input is not None
 
@@ -1262,7 +1275,7 @@ class Keymap:
 
         # While a grab is up the tables are matched against the chooser's
         # focus, which does not move; the real one is still read above, so
-        # `keymap.focus` keeps answering, and pop_modal_input re-merges.
+        # `keymap.focus` keeps answering, and _pop_modal_input re-merges.
         if self._modal_input is not None:
             return
 
@@ -1286,12 +1299,12 @@ class Keymap:
 
     def _table_focus(self):
         """The focus the key tables are matched against: a grab's, while one
-        is up (see push_modal_input), and the real one otherwise."""
+        is up (see _push_modal_input), and the real one otherwise."""
         if self._modal_input is not None and self._modal_focus is not None:
             return self._modal_focus
         return self._focus
 
-    def effective_keytable(self) -> dict:
+    def _effective_keytable(self) -> dict:
         """The bindings in effect right now, as `{KeyCondition: action}`.
 
         The table the hook itself resolves against, not a re-derivation of
@@ -1300,8 +1313,6 @@ class Keymap:
         when there is one.  Anything that answered "what can I press here" by
         walking the configuration again would be a second implementation of
         that rule, and the two would drift.
-
-        lazydocs: ignore
         """
         return dict(self._unified_keytable)
 
@@ -1599,14 +1610,12 @@ class Keymap:
     # what registration bought.
 
     @property
-    def mcp_server_running(self) -> bool:
+    def _mcp_server_running(self) -> bool:
         """Whether the endpoint is currently listening.
-
-        lazydocs: ignore
         """
         return self._mcp_server is not None
 
-    def start_mcp_server(self, port: int = 0, timeout=_DEFAULT_WINDOW) -> None:
+    def _start_mcp_server(self, port: int = 0, timeout=_DEFAULT_WINDOW) -> None:
         """Start the AI-integration endpoint on localhost, for a while.
 
         The switch is the console's **AI Integration: MCP Server** checkbox, or
@@ -1650,8 +1659,6 @@ class Keymap:
             timeout: Seconds before it closes itself, or None to leave it open
                 until the endpoint is turned off or Keyhac quits.  Omitted
                 means the standard authoring window.
-
-        lazydocs: ignore
         """
         if self._mcp_server is not None:
             return
@@ -1666,7 +1673,7 @@ class Keymap:
         # A timer rather than a deadline checked at each request: what expiry
         # has to do here is *stop listening*, and nothing arrives to trigger a
         # lazy check once the conversation has moved on - which is exactly the
-        # state this exists to end. One timer, cancelled by stop_mcp_server.
+        # state this exists to end. One timer, cancelled by _stop_mcp_server.
         if timeout is _DEFAULT_WINDOW:
             timeout = _AUTHORING_WINDOW
         if timeout is None:
@@ -1685,12 +1692,10 @@ class Keymap:
         """
         logger.info(f"MCP server stopped ({_AUTHORING_WINDOW // 60} minute "
                     f"timeout). Tick AI Integration again to reopen it.")
-        self.stop_mcp_server()
+        self._stop_mcp_server()
 
-    def stop_mcp_server(self) -> None:
+    def _stop_mcp_server(self) -> None:
         """Stop the endpoint and remove its published token.
-
-        lazydocs: ignore
         """
         timer, self._mcp_timer = self._mcp_timer, None
         if timer is not None:

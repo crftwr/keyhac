@@ -36,7 +36,7 @@ that nothing needs any more.
 **Nothing here checks a permission**, and that is deliberate rather than
 missing. The endpoint being reachable *is* the permission: it listens only
 while the operator's switch is on, and that switch closes itself an hour after
-they tick it (`Keymap.start_mcp_server`). Splitting it into a second, finer
+they tick it (`Keymap._start_mcp_server`). Splitting it into a second, finer
 switch was tried and undone - it left reading every open window as the
 long-lived half and writing as the short-lived one, which is backwards, since
 `describe_screen` is by far the larger exposure. So the statement of what a
@@ -1262,7 +1262,7 @@ class ToolRegistry:
 
         No permission check: the endpoint being reachable at all is the
         permission. It listens only while the operator's switch is on, and the
-        switch closes itself - see `Keymap.start_mcp_server`.
+        switch closes itself - see `Keymap._start_mcp_server`.
         """
         if arguments is not None and not isinstance(arguments, dict):
             raise KeyError(f"arguments must be a JSON object of keyword "

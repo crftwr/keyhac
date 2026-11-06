@@ -36,7 +36,7 @@ def ui_backend(engine):
     runtime.backend = backend
     yield fixture, backend
     runtime.backend = None
-    fixture.keymap.pop_modal_input()
+    fixture.keymap._pop_modal_input()
     backend.close()
 
 
@@ -104,7 +104,7 @@ class TestModalGrab:
     def test_keys_are_consumed_and_delivered(self, engine):
         fixture = engine(lambda keymap: None)
         seen = []
-        fixture.keymap.push_modal_input(seen.append)
+        fixture.keymap._push_modal_input(seen.append)
         assert fixture.down("A") is True, "the app underneath must see nothing"
         assert fixture.up("A") is True
         assert [str(k) for k in seen] == ["D-A"]
@@ -112,7 +112,7 @@ class TestModalGrab:
     def test_only_key_downs_reach_the_handler(self, engine):
         fixture = engine(lambda keymap: None)
         seen = []
-        fixture.keymap.push_modal_input(seen.append)
+        fixture.keymap._push_modal_input(seen.append)
         fixture.stroke("A")
         # One down; no key-up echo and no one-shot echo.
         assert len(seen) == 1 and seen[0].down
@@ -120,7 +120,7 @@ class TestModalGrab:
     def test_modifiers_pass_through_and_are_tracked(self, engine):
         fixture = engine(lambda keymap: None)
         seen = []
-        fixture.keymap.push_modal_input(seen.append)
+        fixture.keymap._push_modal_input(seen.append)
         fixture.down("LShift")
         fixture.down("A")
         # The engine tracks the L/R plane, so the test asks the same
@@ -139,7 +139,7 @@ class TestModalGrab:
 
         fixture = engine(configure)
         fixture.stroke("Shift")             # a first key, so the focus is read
-        fixture.keymap.push_modal_input(seen.append)
+        fixture.keymap._push_modal_input(seen.append)
         fixture.stroke("A")
         fixture.stroke("B")
         assert calls == ["a"]
@@ -148,8 +148,8 @@ class TestModalGrab:
     def test_popping_restores_normal_dispatch(self, engine):
         fixture = engine(lambda keymap: None)
         seen = []
-        fixture.keymap.push_modal_input(seen.append)
-        fixture.keymap.pop_modal_input()
+        fixture.keymap._push_modal_input(seen.append)
+        fixture.keymap._pop_modal_input()
         assert fixture.stroke("A") == (False, False)
         assert seen == []
 
@@ -167,9 +167,9 @@ class TestModalGrab:
         fixture.up("LCtrl")
         assert fixture.keymap._multi_stroke_keytable is not None
 
-        fixture.keymap.push_modal_input(lambda key: None)
+        fixture.keymap._push_modal_input(lambda key: None)
         assert fixture.keymap._multi_stroke_keytable is None
-        assert fixture.keymap.modal_input_active()
+        assert fixture.keymap._modal_input_active()
 
     def test_a_failing_handler_releases_the_grab(self, engine):
         """Pass-through-on-error: a broken candidate window must not leave
@@ -179,9 +179,9 @@ class TestModalGrab:
         def boom(key):
             raise RuntimeError("handler is broken")
 
-        fixture.keymap.push_modal_input(boom)
+        fixture.keymap._push_modal_input(boom)
         fixture.stroke("A")
-        assert not fixture.keymap.modal_input_active()
+        assert not fixture.keymap._modal_input_active()
 
 
 class TestNonActivatingChooser:
@@ -200,7 +200,7 @@ class TestNonActivatingChooser:
     def test_typing_filters_without_focus(self, ui_backend):
         fixture, _backend = ui_backend
         chooser = self._chooser(ui_backend)
-        assert fixture.keymap.modal_input_active()
+        assert fixture.keymap._modal_input_active()
 
         for name in ("A", "L", "P"):
             fixture.stroke(name)
@@ -234,7 +234,7 @@ class TestNonActivatingChooser:
         fixture.stroke("B")
         fixture.stroke("Return")
         assert [c.payload for c in chosen] == [("*", "beta", 2)]
-        assert not fixture.keymap.modal_input_active()
+        assert not fixture.keymap._modal_input_active()
 
     def test_escape_cancels_and_releases_the_grab(self, ui_backend):
         fixture, _backend = ui_backend
@@ -243,7 +243,7 @@ class TestNonActivatingChooser:
                                 on_canceled=lambda: canceled.append(True))
         fixture.stroke("Escape")
         assert canceled == [True]
-        assert not fixture.keymap.modal_input_active()
+        assert not fixture.keymap._modal_input_active()
 
     def test_shift_enter_carries_its_modifier(self, ui_backend):
         fixture, _backend = ui_backend
@@ -266,14 +266,14 @@ class TestNonActivatingChooser:
         assert style.overlay_input == "mouse"
         # The panel's mask forces a title bar; frameless hides it again.
         assert style.frameless is True
-        assert fixture.keymap.modal_input_active()
+        assert fixture.keymap._modal_input_active()
         chooser.dismiss()
 
     def test_an_activating_chooser_takes_no_grab(self, ui_backend):
         fixture, backend = ui_backend
         chooser = ChooserWindow(backend, [("*", "alpha", 1)], activates=True)
         assert chooser.window.window_style.overlay_input == "none"
-        assert not fixture.keymap.modal_input_active()
+        assert not fixture.keymap._modal_input_active()
         chooser.dismiss()
 
     def test_escape_closes_the_window_even_while_an_action_runs(self, ui_backend):
@@ -302,7 +302,7 @@ class TestNonActivatingChooser:
         fixture.stroke("Escape")
         release.set()
         assert canceled == [True]
-        assert not fixture.keymap.modal_input_active()
+        assert not fixture.keymap._modal_input_active()
 
 
 class TestTheKeymapInsideTheChooser:

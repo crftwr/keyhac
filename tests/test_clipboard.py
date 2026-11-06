@@ -150,7 +150,7 @@ class TestMainThreadOnly:
         yield
         keymap = Keymap.get_instance()
         if keymap is not None:
-            keymap.set_main_thread_dispatcher(None)
+            keymap._set_main_thread_dispatcher(None)
 
     def _queueing(self, engine):
         """An engine whose dispatcher queues work for the main thread.
@@ -160,7 +160,7 @@ class TestMainThreadOnly:
         """
         made = engine(lambda keymap: None)
         queued = []
-        made.keymap.set_main_thread_dispatcher(queued.append)
+        made.keymap._set_main_thread_dispatcher(queued.append)
         return queued
 
     def _run_on_main_until_done(self, queued, worker, timeout=5.0):

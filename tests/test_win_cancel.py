@@ -1,8 +1,8 @@
 """Esc cancellation through the real Windows hook.
 
-`tests/test_cancel.py` covers the engine's half by handing `on_key_event` a
+`tests/test_cancel.py` covers the engine's half by handing `_on_key_event` a
 `KeyEvent` directly, and its docstring says why it can go no further: Keyhac's
-own translated output "never reaches on_key_event at all (the platform layer
+own translated output "never reaches _on_key_event at all (the platform layer
 drops it on its own tag)".  That sentence is a claim about
 `keyhac/platform/win/hook.py`, and nothing was checking it.
 
@@ -161,7 +161,7 @@ class Harness:
 
     def _on_key(self, event):
         self.seen.append((event.vk, event.kind))
-        return self.keymap.on_key_event(event)
+        return self.keymap._on_key_event(event)
 
     def __enter__(self):
         # Re-asserted per test, not once per module: a busy desktop can cost

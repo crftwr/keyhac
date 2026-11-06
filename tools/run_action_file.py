@@ -161,7 +161,7 @@ def run_action(action) -> int:
         # send_key() emits the key without its modifiers - "Cmd-V" arrives as a
         # bare "v".  Silent, and it cost an afternoon of blaming the OS.
         keymap.configure()
-        keymap.set_main_thread_dispatcher(loop.call_on_main_thread)
+        keymap._set_main_thread_dispatcher(loop.call_on_main_thread)
         # main() wires this; a bare Keymap has none, and without it keymap.ui's
         # window lookups return None - which reads exactly like "the application
         # has no window" rather than "this harness is incomplete".
@@ -205,7 +205,7 @@ def run_action(action) -> int:
         # callback is what puts the modifier flags on them.  It is uninstalled
         # in the finally below, and dies with the process in any case, but a
         # run that types really is holding a keyboard tap while it lasts.
-        hook.install(keymap.on_key_event, keymap.on_hook_restored)
+        hook.install(keymap._on_key_event, keymap._on_hook_restored)
         try:
             with keymap._lock:
                 action.starting()

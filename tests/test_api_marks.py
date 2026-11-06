@@ -17,10 +17,10 @@ def test_the_registries_are_published():
     assert keyhac.DEPRECATED_APIS is api_marks.DEPRECATED_APIS
 
 
-def test_nothing_existing_is_marked():
-    # The marks start empty: everything shipped so far is promised.
+def test_only_the_renamed_keymap_wiring_is_marked():
     assert not api_marks.PREVIEW_APIS
-    assert not api_marks.DEPRECATED_APIS
+    assert all(name.startswith("Keymap.") for name in api_marks.DEPRECATED_APIS)
+    assert "Keymap.on_key_event" in api_marks.DEPRECATED_APIS
 
 
 def test_preview_opens_the_docstring_and_registers(monkeypatch):
@@ -140,3 +140,122 @@ class TestCallbackCheck:
         FocusCondition(custom_condition_func=lambda focus, extra=1: True)
         api_marks.warn_unless_callable_with(print, 2, "uninspectable or not")
         assert not warnings
+
+
+class TestDeprecatedAlias:
+    """An alias has to keep working in every way a config can use the old name."""
+
+    def _base(self, monkeypatch):
+        warnings = []
+        monkeypatch.setattr(api_marks, "DEPRECATED_APIS", {})
+        monkeypatch.setattr(api_marks, "_recorded", set())
+        monkeypatch.setattr(api_marks.logger, "warning", warnings.append)
+
+        class Base:
+            old = api_marks.deprecated_alias("_new", "it is internal")
+            state = api_marks.deprecated_alias("_state", "it is internal")
+
+            def __init_subclass__(cls, **kwargs):
+                super().__init_subclass__(**kwargs)
+                api_marks.follow_renamed_overrides(cls)
+
+            def _new(self, value):
+                return f"base {value}"
+
+            @property
+            def _state(self):
+                return "base state"
+
+            def internal_call(self, value):
+                return self._new(value)
+
+        return Base, warnings
+
+    def test_calling_it_reaches_the_new_name_and_warns_once(self, monkeypatch):
+        Base, warnings = self._base(monkeypatch)
+        assert _outside(lambda: Base().old(1)) == "base 1"
+        assert Base().old(2) == "base 2"
+        assert len([w for w in warnings if ".old" in w]) == 1
+
+    def test_a_property_reads_through(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+        assert Base().state == "base state"
+
+    def test_assigning_to_it_reaches_keyhacs_own_calls(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+        thing = Base()
+        original = thing.old
+        thing.old = lambda value: "wrapped " + original(value)
+        assert thing.internal_call(1) == "wrapped base 1"
+        assert thing.old(2) == "wrapped base 2"
+        del thing.old
+        assert thing.internal_call(3) == "base 3"
+
+    def test_overriding_it_reaches_keyhacs_own_calls_and_super_works(self, monkeypatch):
+        Base, warnings = self._base(monkeypatch)
+
+        class Mine(Base):
+            def old(self, value):
+                return "mine " + super().old(value)
+
+        assert Mine().internal_call(1) == "mine base 1"
+        assert Mine().old(2) == "mine base 2"
+        assert any(".old" in w for w in warnings)
+
+    def test_two_levels_of_override_chain_through_super(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+
+        class Middle(Base):
+            def old(self, value):
+                return "middle " + super().old(value)
+
+        class Leaf(Middle):
+            def old(self, value):
+                return "leaf " + super().old(value)
+
+        assert Leaf().internal_call(1) == "leaf middle base 1"
+
+    def test_a_subclass_inherits_an_override_without_redefining_it(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+
+        class Middle(Base):
+            def old(self, value):
+                return "middle " + super().old(value)
+
+        class Leaf(Middle):
+            pass
+
+        assert Leaf().internal_call(1) == "middle base 1"
+
+    def test_overriding_a_property_by_its_old_name(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+
+        class Mine(Base):
+            @property
+            def state(self):
+                return "mine " + super().state
+
+        assert Mine()._state == "mine base state"
+
+    def test_overriding_the_new_name_shows_through_the_old(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+
+        class Mine(Base):
+            def _new(self, value):
+                return "mine"
+
+        assert Mine().old(1) == "mine"
+
+    def test_reading_it_off_the_class(self, monkeypatch):
+        Base, _ = self._base(monkeypatch)
+        assert Base.old is Base._new
+
+
+def test_a_keymap_subclass_overriding_old_wiring_is_followed():
+    from keyhac.core.keymap import Keymap
+
+    class Mine(Keymap):
+        def on_key_event(self, event):
+            return "mine"
+
+    assert Mine._on_key_event is Mine.__dict__["on_key_event"]

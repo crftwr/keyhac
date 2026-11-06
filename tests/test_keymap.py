@@ -898,8 +898,8 @@ class TestFailedReload:
         keymap, config = self._keymap(tmp_path, self.GOOD)
         keymap.configure()
         hook = keymap._hook
-        hook.install(keymap.on_key_event, keymap.on_hook_restored,
-                     keymap.on_mouse_event)
+        hook.install(keymap._on_key_event, keymap._on_hook_restored,
+                     keymap._on_mouse_event)
         config.write_text("def configure(keymap:\n")
         keymap.configure()
         names = get_key_names()

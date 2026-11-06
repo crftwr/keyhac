@@ -489,7 +489,7 @@ precondition for eliminating runtime LLM calls.**
   the run would continue — the one thing cancelling must not do. `wait_for`
   raises it at the top of each poll, so an action needs no line about it;
   `check_cancelled()` covers a stretch with no wait in it. Only `kind == "real"`
-  cancels: Keyhac's own translated output never reaches `on_key_event` (the
+  cancels: Keyhac's own translated output never reaches `_on_key_event` (the
   platform layer drops it on its own tag) and replay is excluded on purpose, so
   an action pressing Escape cannot kill itself and a macro cannot kill it either.
   Esc is consumed only when it actually stopped something.

@@ -83,8 +83,9 @@ keep working.
 with its signature and status. `tests/test_api_snapshot.py` fails on any difference,
 and `make api-snapshot` refuses a breaking change within a major version. An
 extension or a config that imports something internal still works, and the MCP
-tools that write or list it say so (`extensions.import_warnings`). The underscore
-renames are what remains, tracked in issue #278.
+tools that write or list it say so (`extensions.import_warnings`). Keymap's wiring
+has moved to `_name`, its old names kept by `deprecated_alias`, which also covers
+assigning to them and overriding them in a subclass.
 
 **Callbacks never gain arguments.** A new fact reaches a callback as an attribute of
 an object it is already passed, never as an extra positional argument, because one
@@ -373,14 +374,14 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   - **The chooser's own promises survive app-specific bindings.** The key that
     opened a chooser closes it, and another chooser's key replaces it — but a
     chooser bound only in one application's table is not bound under the
-    stand-in focus. `push_modal_input`'s `passes_through` is therefore asked of
+    stand-in focus. `_push_modal_input`'s `passes_through` is therefore asked of
     what the *real* focus's tables bind a modified key down to, when the
     chooser's tables bind nothing; the chooser answers True for a
     `ChooserAction`.
   - This retires the earlier "only those keys" rule, whose reason was that a key
     bound to `Left` would have sent `Left` to the application underneath. With
     the output diverted, that `Left` reaches the chooser.
-- The keystrokes arrive through the key hook instead — `Keymap.push_modal_input`
+- The keystrokes arrive through the key hook instead — `Keymap._push_modal_input`
   plus `keyhac/ui/keyroute.py`. That route carries letters, digits, space and the
   named keys, and — through `InputHook.char_for_key` — every digit and
   punctuation mark the active layout produces. That last part is not a table of
@@ -399,7 +400,7 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - Pushing a grab disarms any armed multi-stroke prefix. Inside the grab,
   prefixes work as anywhere else — they are the tables' business, and the
   tables come first.
-- **Esc precedence.** `on_key_event` normally offers Esc to a running `ThreadedAction`
+- **Esc precedence.** `_on_key_event` normally offers Esc to a running `ThreadedAction`
   before the key tables. While a grab is up it does not: Esc there means "close this
   window", and the window is what the user is looking at.
 
@@ -1121,7 +1122,7 @@ at all.
   having there — "Apple already does it" is a reason not to *out-engineer*
   Apple at ranking clipboard entries, not a reason to leave a Windows user
   without the feature. The same config runs on both.
-- It reads `Keymap.effective_keytable()` — *the table the hook resolves
+- It reads `Keymap._effective_keytable()` — *the table the hook resolves
   against*, not a re-derivation. Answering "what can I press here" by walking
   the configuration again would be a second implementation of the
   merge-in-definition-order rule, and the two would drift. It also means the

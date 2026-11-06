@@ -148,7 +148,7 @@ def _escape(engine):
 def test_only_physical_escape_cancels(engine):
     """The requirement that made this worth a test: Keyhac injects Esc itself,
     and an action that presses Escape to dismiss a dialog must not thereby kill
-    itself. Translated output never reaches on_key_event at all (the platform
+    itself. Translated output never reaches _on_key_event at all (the platform
     layer drops it on its own tag), so what is checked here is the other half -
     that replay-injected input is excluded too, since a macro replaying an Esc
     is not a user asking to stop."""
@@ -157,24 +157,24 @@ def test_only_physical_escape_cancels(engine):
     vk = _escape(e)
 
     with action.cancellable():
-        assert e.keymap.on_key_event(KeyEvent(vk, True, "replay")) is not True
+        assert e.keymap._on_key_event(KeyEvent(vk, True, "replay")) is not True
         assert action.cancelled() is False, "a replayed Esc cancelled an action"
 
-        assert e.keymap.on_key_event(KeyEvent(vk, True, "real")) is True
+        assert e.keymap._on_key_event(KeyEvent(vk, True, "real")) is True
         assert action.cancelled() is True
 
 
 def test_escape_passes_through_when_nothing_is_running(engine):
     """Swallowing every Esc would change what the focused application sees."""
     e = engine(lambda keymap: None)
-    assert e.keymap.on_key_event(KeyEvent(_escape(e), True, "real")) is not True
+    assert e.keymap._on_key_event(KeyEvent(_escape(e), True, "real")) is not True
 
 
 def test_escape_up_is_not_a_cancel(engine):
     e = engine(lambda keymap: None)
     action = Waiter()
     with action.cancellable():
-        e.keymap.on_key_event(KeyEvent(_escape(e), False, "real"))
+        e.keymap._on_key_event(KeyEvent(_escape(e), False, "real"))
         assert action.cancelled() is False
 
 

@@ -192,7 +192,7 @@ class Harness:
         t0 = time.perf_counter()
         self.input_keys.append(event.vk)
         try:
-            return self.keymap.on_key_event(event)
+            return self.keymap._on_key_event(event)
         finally:
             self.callback_ms.append((time.perf_counter() - t0) * 1000.0)
 

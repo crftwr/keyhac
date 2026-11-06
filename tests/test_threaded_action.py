@@ -63,7 +63,7 @@ class TestThreadDispatch:
     def test_finished_runs_on_the_dispatcher_not_the_pool_thread(self, engine):
         e = engine(lambda keymap: None)
         dispatcher = QueueDispatcher()
-        e.keymap.set_main_thread_dispatcher(dispatcher)
+        e.keymap._set_main_thread_dispatcher(dispatcher)
 
         action = RecordingAction()
         action()
@@ -83,7 +83,7 @@ class TestThreadDispatch:
     def test_starting_and_finished_share_a_thread(self, engine):
         e = engine(lambda keymap: None)
         dispatcher = QueueDispatcher()
-        e.keymap.set_main_thread_dispatcher(dispatcher)
+        e.keymap._set_main_thread_dispatcher(dispatcher)
 
         action = RecordingAction()
         action()
@@ -110,7 +110,7 @@ class TestThreadDispatch:
     def test_a_failing_run_is_logged_not_raised(self, engine):
         e = engine(lambda keymap: None)
         dispatcher = QueueDispatcher()
-        e.keymap.set_main_thread_dispatcher(dispatcher)
+        e.keymap._set_main_thread_dispatcher(dispatcher)
 
         finished_called = []
 
@@ -133,7 +133,7 @@ class TestCallOnMainThread:
     def test_dispatcher_receives_the_callback(self, engine):
         e = engine(lambda keymap: None)
         dispatcher = QueueDispatcher()
-        e.keymap.set_main_thread_dispatcher(dispatcher)
+        e.keymap._set_main_thread_dispatcher(dispatcher)
 
         ran = []
         e.keymap.call_on_main_thread(lambda: ran.append(1))

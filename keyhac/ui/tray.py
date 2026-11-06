@@ -68,15 +68,15 @@ def install_tray(console, keymap, hook) -> None:
         # Through the console's handler rather than the keymap's, so the
         # setting is written and the checkbox follows from one place - the two
         # switches are one switch with two faces.
-        console._on_mcp_toggle(not keymap.mcp_server_running)
-        console._mcp_checkbox.checked = keymap.mcp_server_running
+        console._on_mcp_toggle(not keymap._mcp_server_running)
+        console._mcp_checkbox.checked = keymap._mcp_server_running
         console.panel.render()
 
     def toggle_mcp_timeout():
         # Through the console for the same reason toggle_mcp goes through it:
         # one place owns the setting and the running endpoint together.
         console.set_mcp_timeout_disabled(not console.mcp_timeout_disabled())
-        console._mcp_checkbox.checked = keymap.mcp_server_running
+        console._mcp_checkbox.checked = keymap._mcp_server_running
         console.panel.render()
 
     package_sync = PackageSync(keymap)
@@ -99,7 +99,7 @@ def install_tray(console, keymap, hook) -> None:
             # The tick is evaluated when the menu opens, so an endpoint that
             # has since timed out reads as off without anything pushing it.
             MenuItem("MCP Server", on_select=toggle_mcp,
-                     checked=lambda: keymap.mcp_server_running),
+                     checked=lambda: keymap._mcp_server_running),
             # Under the switch it modifies, rather than beside it in the
             # console's toolbar: that row already spells its own hierarchy in
             # a label ("AI Integration: MCP Server") because a flat row cannot

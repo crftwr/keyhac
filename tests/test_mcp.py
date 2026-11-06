@@ -1951,19 +1951,19 @@ def test_reloading_the_config_keeps_a_run_cancellable(writable):
 # turns off. What lapses is the whole endpoint, so these drive a real Keymap.
 
 def test_the_endpoint_is_off_until_asked(engine):
-    assert engine(lambda keymap: None).keymap.mcp_server_running is False
+    assert engine(lambda keymap: None).keymap._mcp_server_running is False
 
 
 def test_it_closes_itself(engine, monkeypatch):
     monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
     keymap = engine(lambda keymap: None).keymap
-    keymap.start_mcp_server()
-    assert keymap.mcp_server_running is True
+    keymap._start_mcp_server()
+    assert keymap._mcp_server_running is True
 
     deadline = time.monotonic() + 5
-    while keymap.mcp_server_running and time.monotonic() < deadline:
+    while keymap._mcp_server_running and time.monotonic() < deadline:
         time.sleep(0.02)
-    assert keymap.mcp_server_running is False, "the window never closed"
+    assert keymap._mcp_server_running is False, "the window never closed"
 
 
 def test_reopening_after_a_manual_stop_gets_a_whole_window(engine, monkeypatch):
@@ -1975,16 +1975,16 @@ def test_reopening_after_a_manual_stop_gets_a_whole_window(engine, monkeypatch):
     """
     monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.2)
     keymap = engine(lambda keymap: None).keymap
-    keymap.start_mcp_server()
-    keymap.stop_mcp_server()
+    keymap._start_mcp_server()
+    keymap._stop_mcp_server()
 
     monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 30)
-    keymap.start_mcp_server()
+    keymap._start_mcp_server()
     try:
         time.sleep(0.5)                   # the first timer would have fired
-        assert keymap.mcp_server_running is True
+        assert keymap._mcp_server_running is True
     finally:
-        keymap.stop_mcp_server()
+        keymap._stop_mcp_server()
 
 
 # -- the two security properties --------------------------------------------
@@ -2266,18 +2266,18 @@ def _real_keymap(tmp_path):
 
 
 def test_the_switch_reports_and_moves(tmp_path):
-    """`mcp_server_running` is what both faces of the switch read to draw
+    """`_mcp_server_running` is what both faces of the switch read to draw
     themselves, so it has to follow the socket rather than the request."""
     keymap = _real_keymap(tmp_path)
-    assert keymap.mcp_server_running is False
-    keymap.start_mcp_server()
+    assert keymap._mcp_server_running is False
+    keymap._start_mcp_server()
     try:
-        assert keymap.mcp_server_running is True
-        keymap.start_mcp_server()          # idempotent: the menu can double-fire
-        assert keymap.mcp_server_running is True
+        assert keymap._mcp_server_running is True
+        keymap._start_mcp_server()          # idempotent: the menu can double-fire
+        assert keymap._mcp_server_running is True
     finally:
-        keymap.stop_mcp_server()
-    assert keymap.mcp_server_running is False
+        keymap._stop_mcp_server()
+    assert keymap._mcp_server_running is False
 
 
 # -- the bridge -------------------------------------------------------------
@@ -3133,12 +3133,12 @@ def test_no_timeout_leaves_it_open(engine, monkeypatch):
     """
     monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
     keymap = engine(lambda keymap: None).keymap
-    keymap.start_mcp_server(timeout=None)
+    keymap._start_mcp_server(timeout=None)
     try:
         time.sleep(0.5)                   # the standard window would have gone
-        assert keymap.mcp_server_running is True
+        assert keymap._mcp_server_running is True
     finally:
-        keymap.stop_mcp_server()
+        keymap._stop_mcp_server()
 
 
 def test_the_default_window_is_still_read_at_start_time(engine, monkeypatch):
@@ -3149,12 +3149,12 @@ def test_the_default_window_is_still_read_at_start_time(engine, monkeypatch):
     """
     monkeypatch.setattr(keymap_module, "_AUTHORING_WINDOW", 0.1)
     keymap = engine(lambda keymap: None).keymap
-    keymap.start_mcp_server()
+    keymap._start_mcp_server()
 
     deadline = time.monotonic() + 5
-    while keymap.mcp_server_running and time.monotonic() < deadline:
+    while keymap._mcp_server_running and time.monotonic() < deadline:
         time.sleep(0.02)
-    assert keymap.mcp_server_running is False
+    assert keymap._mcp_server_running is False
 
 
 def test_a_write_keeps_the_file_s_own_last_byte(configurable, tmp_path):

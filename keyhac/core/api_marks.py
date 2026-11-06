@@ -7,7 +7,8 @@ API at a time rather than for the whole surface:
   new API need not be right the first time. Stabilizing it is deleting the mark.
 - **``@deprecated("use X")``**: on its way out. It keeps working, and it is removed
   no earlier than the next major release. Its first use from outside Keyhac is
-  logged as a warning, once per API per session.
+  logged as a warning, once per API per session. :class:`deprecated_alias` is the
+  same for a member that moved to a new name.
 
 The mark sits on the definition, where whoever reads the code meets it, and goes
 on a function, a method, a property's getter (under ``@property``) or a class. It
@@ -87,6 +88,70 @@ def deprecated(instead: str) -> Callable[[T], T]:
         return recorded  # type: ignore[return-value]
 
     return mark
+
+
+class deprecated_alias:
+    """The old name of a member that moved to ``new``, kept until the next major.
+
+    ``on_key_event = deprecated_alias("_on_key_event", "it is internal wiring")``
+    in the class body. It has to keep working in every way a config can use the old
+    name, not only for calling it, so reading, assigning to and deleting the old name
+    all act on the new one. A subclass overriding the old name is the fourth way, and
+    needs :func:`follow_renamed_overrides` from the class's ``__init_subclass__``, so
+    that Keyhac's own calls, which use the new name, reach the override.
+
+    Assigning to the old name on the class itself replaces this descriptor rather
+    than the new member. Nothing can see that without a metaclass, and a config holds
+    an instance.
+    """
+
+    def __init__(self, new: str, instead: str):
+        self.new = new
+        self.instead = instead
+
+    def __set_name__(self, owner, name):
+        self.owner = owner
+        self.api = f"{owner.__qualname__}.{name}"
+        self.old = name
+        DEPRECATED_APIS[self.api] = self.instead
+        self.__doc__ = f"Deprecated — {self.instead}. Removed in a later major release."
+
+    def _record(self):
+        _record_use(self.api, sys._getframe(2).f_globals.get("__name__", ""), self.instead)
+
+    def __get__(self, obj, objtype=None):
+        self._record()
+        if obj is None:
+            return getattr(objtype, self.new)
+        # A class before this one in the MRO that defines the old name would have
+        # been found first. So getting here despite one means super() from that
+        # override, and the new name now leads back to the override: go to the
+        # implementation below it instead.
+        mro = type(obj).__mro__
+        overridden = any(self.old in vars(cls) for cls in mro[:mro.index(self.owner)])
+        if overridden:
+            return inspect.getattr_static(self.owner, self.new).__get__(obj, type(obj))
+        return getattr(obj, self.new)
+
+    def __set__(self, obj, value):
+        self._record()
+        setattr(obj, self.new, value)
+
+    def __delete__(self, obj):
+        self._record()
+        delattr(obj, self.new)
+
+
+def follow_renamed_overrides(cls: type) -> None:
+    """Make a subclass's override of a renamed member reach Keyhac's own calls. Call
+    it from ``__init_subclass__``."""
+    for name, value in list(vars(cls).items()):
+        # Any class above: an override of an override has a plain function next.
+        alias = next((vars(base)[name] for base in cls.__mro__[1:]
+                      if isinstance(vars(base).get(name), deprecated_alias)), None)
+        if alias is not None and not isinstance(value, deprecated_alias):
+            _record_use(alias.api, cls.__module__, alias.instead)
+            setattr(cls, alias.new, value)
 
 
 def _record_use(api: str, module: str, instead: str) -> None:

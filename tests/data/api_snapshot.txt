@@ -157,6 +157,7 @@ stable	method	Keymap.configure	[["self", "pk", null]]
 stable	method	Keymap.define_keytable	[["self", "pk", null], ["name", "pk", "None"], ["focus_path_pattern", "pk", "None"], ["custom_condition_func", "pk", "None"], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
 stable	method	Keymap.define_modifier	[["self", "pk", null], ["key", "pk", null], ["mod", "pk", null]]
 stable	method	Keymap.edit_config	[["self", "pk", null]]
+deprecated	attribute	Keymap.effective_keytable
 stable	method	Keymap.find_window	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
 stable	property	Keymap.focus	ro
 stable	method	Keymap.get_active_window	[["self", "pk", null]]
@@ -164,12 +165,22 @@ stable	method	Keymap.get_ime_status	[["self", "pk", null]]
 stable	method	Keymap.get_input_context	[["self", "pk", null], ["replay", "pk", "False"]]
 stable	staticmethod	Keymap.get_instance	[]
 stable	method	Keymap.list_windows	[["self", "pk", null]]
+deprecated	attribute	Keymap.mcp_server_running
+deprecated	attribute	Keymap.modal_input_active
+deprecated	attribute	Keymap.on_hook_restored
+deprecated	attribute	Keymap.on_key_event
+deprecated	attribute	Keymap.on_mouse_event
 stable	attribute	Keymap.pop_balloon
+deprecated	attribute	Keymap.pop_modal_input
+deprecated	attribute	Keymap.push_modal_input
 stable	method	Keymap.reload_config	[["self", "pk", null]]
 stable	method	Keymap.replace_key	[["self", "pk", null], ["src", "pk", null], ["dst", "pk", null]]
 stable	method	Keymap.screen_frames	[["self", "pk", null]]
 stable	method	Keymap.screen_work_frames	[["self", "pk", null]]
 stable	method	Keymap.set_ime_status	[["self", "pk", null], ["on", "pk", null]]
+deprecated	attribute	Keymap.set_main_thread_dispatcher
+deprecated	attribute	Keymap.start_mcp_server
+deprecated	attribute	Keymap.stop_mcp_server
 stable	property	Keymap.ui	ro
 stable	method	Keymap.window_frames	[["self", "pk", null]]
 stable	class	LaunchApplication

@@ -61,7 +61,7 @@ class TestOpeningLeavesTheHookCallback:
 
     def _queue(self, keyhac_engine):
         queued = []
-        keyhac_engine.keymap.set_main_thread_dispatcher(queued.append)
+        keyhac_engine.keymap._set_main_thread_dispatcher(queued.append)
         return queued
 
     def test_nothing_is_built_until_the_loop_turns(self, ui_backend,
@@ -724,10 +724,10 @@ class TestAutoDismiss:
 
     def test_dismissal_releases_the_key_grab(self, keyhac_engine, ui_backend):
         _action, _chooser = self._open(ui_backend)
-        assert keyhac_engine.keymap.modal_input_active()
+        assert keyhac_engine.keymap._modal_input_active()
         self._move_focus_to(keyhac_engine.focus_provider, pid=99, title="Elsewhere")
         ChooserAction._watch._tick()
-        assert not keyhac_engine.keymap.modal_input_active()
+        assert not keyhac_engine.keymap._modal_input_active()
 
     def test_the_watch_is_torn_down_with_the_chooser(self, ui_backend):
         from keyhac.core.keymap import Keymap
