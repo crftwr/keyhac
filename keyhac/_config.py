@@ -202,7 +202,6 @@ def configure(keymap):
     actions = ActionsSource()
     controls = WindowControlsSource()
     apps = ApplicationsSource()
-    layouts = WindowLayoutsSource()
 
     # Three pages, each named for what Enter does on it - so the query you
     # carry between them is the noun and the page is the verb: type `mail`,
@@ -218,9 +217,8 @@ def configure(keymap):
     # deliberately.  They stream: the first rows are on screen while the
     # rest are still being read.
     kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
-        # Run: your bindings and actions, the applications you could launch,
-        # and where to put the front window.
-        ChooserPage("Run", [keys, actions, apps, layouts]),
+        # Run: your bindings and actions, and the applications you could launch.
+        ChooserPage("Run", [keys, actions, apps]),
         ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
         # Click: what you would otherwise reach for the mouse to hit - the
         # application's menu commands, its controls, and the other windows.

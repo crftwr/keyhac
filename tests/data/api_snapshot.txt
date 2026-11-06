@@ -392,14 +392,6 @@ stable	attribute	WindowControlsSource.name
 stable	method	WindowControlsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
 stable	attribute	WindowControlsSource.preview_background
 stable	method	WindowControlsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
-stable	class	WindowLayoutsSource
-stable	constructor	WindowLayoutsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
-stable	attribute	WindowLayoutsSource.background
-stable	method	WindowLayoutsSource.badge	[["self", "pk", null], ["candidate", "pk", null]]
-stable	attribute	WindowLayoutsSource.name
-stable	method	WindowLayoutsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
-stable	attribute	WindowLayoutsSource.preview_background
-stable	method	WindowLayoutsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
 stable	function	getLogger	[["name", "pk", null]]
 stable	version	keyhac.major	2
 stable	tool	mcp.cancel_action	[["name", true]]

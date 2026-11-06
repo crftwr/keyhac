@@ -863,48 +863,6 @@ class ApplicationsSource(CandidateSource):
         LaunchApplication(candidate.payload)()
 
 
-class WindowLayoutsSource(CandidateSource):
-    """Places for the focused window: the halves of its screen, or all of it.
-
-    Each row does what `SnapWindow` does, so the frame is written and the OS's
-    own snap or tile state is not entered.
-    """
-
-    name = "Layout"
-
-    _LAYOUTS = (("Left half", "left"), ("Right half", "right"),
-                ("Top half", "top"), ("Bottom half", "bottom"),
-                ("Full screen", "full"))
-
-    def __init__(self, name: str = None):
-        """Build the source.
-
-        Args:
-            name: What a shared window shows beside these rows.
-        """
-        if name is not None:
-            self.name = name
-
-    def candidates(self):
-        """lazydocs: ignore"""
-        return [Candidate(icon="▦", display=label, payload=position)
-                for label, position in self._LAYOUTS]
-
-    def on_chosen(self, candidate, modifier_flags: int) -> None:
-        """lazydocs: ignore"""
-        from keyhac.actions import SnapWindow
-
-        snap = SnapWindow(candidate.payload)
-        # One turn of the loop later, as for WindowControlsSource.on_chosen:
-        # this is inside the key hook's callback, and writing a frame is a
-        # round trip into the other application.
-        keymap = Keymap.get_instance()
-        if keymap is None:
-            snap()
-        else:
-            keymap.call_on_main_thread(snap)
-
-
 class ActionsSource(CandidateSource):
     """Every action in `~/.keyhac/extensions/`, startable without a key.
 

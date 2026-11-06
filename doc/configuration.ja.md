@@ -676,8 +676,7 @@ kt["Fn-P"] = ShowCandidates([
 
 `ApplicationsSource` はインストール済みのアプリケーションを列挙し、Enter で起動します。
 macOS ではアプリケーションフォルダーの `.app` バンドル、Windows ではスタートメニューの一覧が
-対象です。`WindowLayoutsSource` は画面の半分と全体を選択肢として示し、Enter でフォーカスのある
-ウィンドウを `SnapWindow` と同じようにそこへ移動します。
+対象です。
 
 `MenuItemsSource` は **macOS 専用** です。macOS ではメニューバーは OS レベルの部品であり、
 アプリケーションごとに 1 つ、常に画面の上端にあり、閉じている間も全体を読み取れます。だからこそ

@@ -682,8 +682,7 @@ The last two read the front application on every invocation, so give each a
 
 `ApplicationsSource` lists the installed applications, and Enter launches one:
 the `.app` bundles in the Applications folders on macOS, what the Start menu
-lists on Windows. `WindowLayoutsSource` offers the halves of the screen and all
-of it, and Enter puts the focused window there as `SnapWindow` does.
+lists on Windows.
 
 `MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
 one per application, always at the top of the screen, and readable in full

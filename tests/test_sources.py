@@ -2535,27 +2535,3 @@ class TestApplicationsSource:
         found = {os.path.basename(p) for p in find_app_bundles(str(tmp_path))}
         assert found == {"Mail.app", "Terminal.app"}
         assert find_app_bundles(str(tmp_path / "missing")) == []
-
-
-class TestWindowLayoutsSource:
-
-    def test_every_row_is_a_position_snap_window_accepts(self):
-        from keyhac.actions import SnapWindow
-        from keyhac.core.sources import WindowLayoutsSource
-        rows = WindowLayoutsSource().candidates()
-        assert {c.payload for c in rows} == set(SnapWindow.POSITIONS)
-
-    def test_choosing_snaps_one_turn_of_the_loop_later(self, engine, monkeypatch):
-        from keyhac import actions
-        from keyhac.core.sources import WindowLayoutsSource
-
-        snapped, queued = [], []
-        monkeypatch.setattr(actions.SnapWindow, "__call__",
-                            lambda action: snapped.append(action.position))
-        fixture = engine(lambda keymap: None)
-        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", queued.append)
-        source = WindowLayoutsSource()
-        source.on_chosen(source.candidates()[1], 0)
-        assert snapped == [] and len(queued) == 1
-        queued[0]()
-        assert snapped == ["right"]

@@ -26,7 +26,6 @@ from keyhac.core.sources import (
     KeyBindingsSource,
     MenuItemsSource,
     WindowControlsSource,
-    WindowLayoutsSource,
     ClipboardToolsSource,
     SnippetsSource,
 )
@@ -105,7 +104,6 @@ __all__ = [
     "KeyBindingsSource",
     "MenuItemsSource",
     "WindowControlsSource",
-    "WindowLayoutsSource",
     "SnippetsSource",
     "ClipboardToolsSource",
     "ShowClipboardHistory",
