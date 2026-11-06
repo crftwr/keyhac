@@ -836,6 +836,9 @@ class BrowserTabsSource(CandidateSource):
     extension or browser permission is needed.  A row shows the tab's title:
     the URL is not available for a tab that is not selected.
 
+    Only tabs visible in the tab bar are listed.  Chrome leaves a tab it has no
+    room to show out of what it exposes, so widening the window brings it back.
+
     Every browser window is read each time the page opens, so this belongs in
     a `ChooserPage` you go to deliberately.
     """
