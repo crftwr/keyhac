@@ -1531,8 +1531,10 @@ found.
   resolves through its alias. `Add-AppxPackage` over SSH fails with 0x80070005
   and works from a scheduled task in the desktop session. Every PE in the ARM64
   bundle is ARM64 except `runtime\vcruntime140_1.dll`, which python.org's
-  `embed-arm64` itself ships as x64. Not exercised: a Store submission of the
-  bundle, and the x64 payload on real x64 hardware. `make test-vm GUEST=qa-win
+  `embed-arm64` itself ships as x64. Not exercised: the x64 payload on real x64
+  hardware. The Store accepted the bundle with 2.8.0: its public catalog lists
+  `craftware.Keyhac_2.8.0.0_neutral_~` as an MsixBundle of x64 and arm64, though
+  nothing here was installed from the Store. `make test-vm GUEST=qa-win
   ARCH=arm64` passes 1691 tests with 105 skipped under the native ARM64 Python.
   `test_the_real_git_answers_mean_what_identity_expects` failed there and on x64
   because `QA-2026-11-03` has no `git`, and is now `host_only`, as the tooling it
