@@ -995,6 +995,18 @@ finding the caret is a UI Automation (Windows) or Accessibility (macOS) call on 
 of that. Call it from a key binding, or from a `ThreadedAction` worker by way of
 `keymap.call_on_main_thread`.
 
+For something the user should see when they may be looking elsewhere, such as a
+long action finishing, post a native notification from `finished()` instead:
+
+```python
+keymap.notify("Deploy finished", "All 12 services are up")   # title, text
+```
+
+It goes to Notification Center on macOS and appears as a toast on Windows. macOS
+asks for permission the first time. Where a notification cannot be posted, a balloon
+in the corner says the same thing and stays until it is closed. Focus and Do Not
+Disturb can hold a notification back.
+
 In `--no-ui` mode these attributes are absent — guard with
 `getattr(keymap, "pop_balloon", None)` if your config must run headless.
 
@@ -1098,6 +1110,7 @@ clipboard contents, console text or window titles.
 | `keymap.editor` / `edit_config()` / `reload_config()` | config lifecycle (tray menu uses these) |
 | `keymap.replay_buffer` | macro buffer behind the record actions |
 | `keymap.pop_balloon(name, text, timeout, anchor=…)` / `close_balloon(name)` | balloons (UI mode only); opens at the caret unless `anchor` says otherwise |
+| `keymap.notify(title, text)` | native OS notification (UI mode only); a balloon where one cannot be posted |
 | `InputText(s)` | type a literal string |
 | `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | mouse output actions |

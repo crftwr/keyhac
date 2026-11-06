@@ -39,7 +39,7 @@ MAJOR_ROW = "keyhac.major"
 
 #: Public on a Keymap, documented in doc/configuration.md, and assigned by main()
 #: because they need the UI, so no class definition shows them.
-ASSIGNED_TO_KEYMAP = ["pop_balloon", "close_balloon"]
+ASSIGNED_TO_KEYMAP = ["pop_balloon", "close_balloon", "notify"]
 
 _KIND = {
     inspect.Parameter.POSITIONAL_ONLY: "pos",
