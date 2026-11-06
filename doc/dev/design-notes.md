@@ -78,8 +78,21 @@ snapshot fits this design, because it checks the existing API and adds no layer.
 major release. That keeps to the additive-only policy, because existing configs
 keep working.
 
-The underscore renames and the two marks are the direction, and not all of it
-exists yet. What remains is tracked in issue #278.
+`@preview` and `@deprecated` are in `keyhac/core/api_marks.py`, and
+`tests/data/api_snapshot.txt` holds the surface still: one line per public item
+with its signature and status. `tests/test_api_snapshot.py` fails on any difference,
+and `make api-snapshot` refuses a breaking change within a major version. An
+extension or a config that imports something internal still works, and the MCP
+tools that write or list it say so (`extensions.import_warnings`). The underscore
+renames are what remains, tracked in issue #278.
+
+**Callbacks never gain arguments.** A new fact reaches a callback as an attribute of
+an object it is already passed, never as an extra positional argument, because one
+more argument breaks every callback written for the current ones. This holds for
+every new callback. The existing positional ones wait for the next major
+([next-major.md](next-major.md)). `custom_condition_func` and `on_chosen` are
+checked when they are handed over, and a function that cannot take its arguments
+is logged then rather than failing when the key is pressed.
 
 ## Why a Windows key cannot be a user modifier
 

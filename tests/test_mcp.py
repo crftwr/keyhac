@@ -3169,3 +3169,51 @@ def test_a_write_keeps_the_file_s_own_last_byte(configurable, tmp_path):
     assert config.read_text() == "x = 1\ny = 2\n"
     configurable.call("write_config", {"source": "x = 1\ny = 2\n\n"})
     assert config.read_text() == "x = 1\ny = 2\n\n", "only the very end is followed"
+
+
+# -- what a written module imports (#278) --------------------------------------
+
+@pytest.mark.parametrize("source, expected", [
+    ("from keyhac import ThreadedAction, getLogger\n", []),
+    ("from keyhac import *\nimport os\nfrom pathlib import Path\n", []),
+    ("import keyhac\n", []),
+    ("from keyhac.core.keymap import Keymap\n", ["from keyhac import Keymap"]),
+    ("from keyhac.core.action import _private\n", ["internal to Keyhac"]),
+    ("from keyhac.core.ui import Locator\n", ["ui.Locator"]),
+    ("from keyhac import core\n", ["internal to Keyhac"]),
+    ("import keyhac.core.keymap\n", ["import keyhac.core.keymap"]),
+    ("from keyhac.core.keymap import *\n", ["import the public names"]),
+    ("def f(:\n", []),
+])
+def test_import_warnings(source, expected):
+    warnings = tools_module.extensions.import_warnings(source)
+    assert len(warnings) == len(expected)
+    for warning, part in zip(warnings, expected):
+        assert part in warning
+
+
+def test_a_deprecated_import_says_what_replaces_it(monkeypatch):
+    monkeypatch.setattr("keyhac.core.api_marks.DEPRECATED_APIS",
+                        {"getLogger": "use Console"})
+    warnings = tools_module.extensions.import_warnings("from keyhac import getLogger\n")
+    assert warnings == ["line 1: getLogger is deprecated - use Console"]
+
+
+def test_writing_an_internal_import_still_writes_and_says_so(writable):
+    reply = writable.call("write_extension", {
+        "name": "thing", "source": "from keyhac.core.keymap import Keymap\n"})
+    assert reply.startswith("wrote ")
+    assert "from keyhac import Keymap" in reply
+    assert (pathlib.Path(writable.keymap.extensions_dir) / "thing.py").exists()
+
+
+def test_writing_public_imports_adds_nothing(writable):
+    reply = writable.call("write_extension", {
+        "name": "thing", "source": "from keyhac import ThreadedAction\n"})
+    assert "public API" not in reply
+
+
+def test_the_listing_counts_internal_imports(writable):
+    writable.call("write_extension", {
+        "name": "thing", "source": "from keyhac.core.keymap import Keymap\n"})
+    assert "1 import(s) outside the public API" in writable.call("list_extensions", {})

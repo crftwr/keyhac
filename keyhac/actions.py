@@ -731,8 +731,10 @@ class ShowCandidates(ChooserAction):
                 text insertion point, or "window" in the focused window's
                 middle.  See `ChooserAction.anchor`.
         """
+        from keyhac.core.api_marks import warn_unless_callable_with
         from keyhac.core.source import ChooserPage, as_source
 
+        warn_unless_callable_with(on_chosen, 2, "on_chosen")
         self._on_chosen = on_chosen
         listed = sources if isinstance(sources, (list, tuple)) else [sources]
         if listed and all(isinstance(s, ChooserPage) for s in listed):

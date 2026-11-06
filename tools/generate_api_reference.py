@@ -60,6 +60,10 @@ docstrings. It answers "what are the arguments of X"; for "how do I do Y",
 read [Configuration](configuration.md) first — it introduces these APIs in the
 order you meet them, with worked examples.
 
+An entry opening with "Preview" may change in any release. One opening with
+"Deprecated" still works, says what replaces it, and goes in a later major
+release. `PREVIEW_APIS` and `DEPRECATED_APIS` list them.
+
 """
 
 FOOTER = """Generated from the docstrings by `make api-reference`. Edit the

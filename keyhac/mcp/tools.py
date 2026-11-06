@@ -120,6 +120,15 @@ EMPTY_WINDOW = 5
 MAX_SOURCE = 64 * 1024
 
 
+def _import_warnings_of(path: str) -> list[str]:
+    """`extensions.import_warnings` for a file; nothing for one that cannot be read."""
+    try:
+        with open(path, encoding="utf-8") as stream:
+            return extensions.import_warnings(stream.read())
+    except (OSError, ValueError):
+        return []
+
+
 def _listdir(directory: str) -> list[str]:
     try:
         return os.listdir(directory)
@@ -1441,6 +1450,9 @@ class ToolRegistry:
                 note = "helper - not offered as an action"
             else:
                 note = "no ThreadedAction subclass"
+            count = len(_import_warnings_of(os.path.join(directory, entry)))
+            if count:
+                note += f" - {count} import(s) outside the public API"
             lines.append(f"{entry}  {size} bytes - {note}")
         return "\n".join(lines)
 
@@ -1507,7 +1519,12 @@ class ToolRegistry:
 
         summary = _change_summary(previous, source)
         logger.info(f"Wrote {path} ({summary}).")
-        return f"wrote {what} ({summary})."
+        reply = f"wrote {what} ({summary})."
+        warnings = extensions.import_warnings(source)
+        if warnings:
+            reply += ("\n\nIt works, but what it imports is not all public API:\n"
+                      + "\n".join(f"- {warning}" for warning in warnings))
+        return reply
 
     def read_extension(self, name: str) -> str:
         """The whole of one module in `extensions/`.

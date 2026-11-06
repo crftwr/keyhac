@@ -55,7 +55,7 @@ SANDBOX_CONFIG := .sandbox/config.py
 VENV_STAMP := $(VENV)/.installed
 
 .PHONY: help banner venv install install-puikit check-venv test run run-debug run-sandbox echo caret-probe mac-focus-pass mac-focus-push-pass icons icons-check \
-        test-vm run-vm release-test api-reference api-reference-check release-review check-docs fix-docs skill-bundle qa \
+        test-vm run-vm release-test api-reference api-reference-check api-snapshot release-review check-docs fix-docs skill-bundle qa \
         clean clean-venv clean-macos clean-windows clean-windows-cache \
         tag release-github release-whl release-skill release-status build publish-testpypi \
         macos-app macos-dmg install-macos-dmg uninstall-macos-dmg release-macos-dmg \
@@ -100,6 +100,8 @@ help:
 	@echo "                             quit your own Keyhac first"
 	@echo "  make api-reference       - regenerate doc/config-api.md + doc/action-api.md"
 	@echo "  make api-reference-check - verify both match the docstrings"
+	@echo "  make api-snapshot        - regenerate tests/data/api_snapshot.txt (refuses a"
+	@echo "                             breaking change within a major version)"
 	@echo "  make check-docs  - check the Japanese doc translations (missing, stale, links)"
 	@echo "  make release-review - review the last tag..origin/main against CLAUDE.md's rules"
 	@echo "  make fix-docs    - point translations' links at other translations, then check"
@@ -308,6 +310,11 @@ api-reference: $(VENV_STAMP)
 api-reference-check: $(VENV_STAMP)
 	@$(VENV_PIP) install --quiet lazydocs
 	$(VENV_PYTHON) tools/generate_api_reference.py --check
+
+# The public API, held still (#278). tests/test_api_snapshot.py fails on any
+# difference; regenerating the file is the deliberate step.
+api-snapshot: $(VENV_STAMP)
+	$(VENV_PYTHON) tools/api_snapshot.py --write
 
 # What is about to ship, against CLAUDE.md's rules: the mechanical ones as
 # findings, the judgment calls as pointers (tools/release_review.py). Reports

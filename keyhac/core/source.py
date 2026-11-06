@@ -23,6 +23,7 @@ copying it onto every candidate would be storing what is already known.
 
 from typing import Any, Callable
 
+from keyhac.core.api_marks import warn_unless_callable_with
 from keyhac.core.candidate import Candidate, CandidatePreview
 
 
@@ -182,6 +183,7 @@ class CallableSource(CandidateSource):
     def __init__(self, produce: Callable[[], Any], name: str = "",
                  on_chosen: Callable[[Candidate, int], None] = None,
                  background: bool = False):
+        warn_unless_callable_with(on_chosen, 2, "on_chosen")
         self._produce = produce
         self.name = name
         self._on_chosen = on_chosen

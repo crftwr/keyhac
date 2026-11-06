@@ -82,6 +82,11 @@ tools/         # icon pipeline, Pages banner render, release scripts, hook_echo 
 ## Conventions
 
 - Public API is snake_case (keyhac-mac style). No new camelCase API.
+- `tests/data/api_snapshot.txt` lists the public API with signatures and status.
+  After an intended API change, run `make api-snapshot`, which refuses a breaking
+  change within a major version. New API that may still change carries `@preview`
+  (`keyhac/core/api_marks.py`). A callback never gains an argument: see
+  [The public API stays thin](doc/dev/design-notes.md#the-public-api-stays-thin).
 - `keyhac/core/` must not import OS modules (`ctypes.windll`, `AppKit`, `Quartz`,
   Win32 constants). All OS access goes through `keyhac/platform/` interfaces.
 - UI code talks to PuiKit only; no direct AppKit/Win32 in `keyhac/ui/`.

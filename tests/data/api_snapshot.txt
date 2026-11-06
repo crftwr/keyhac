@@ -1,0 +1,393 @@
+# Keyhac public API snapshot - regenerate with `make api-snapshot`.
+# status	kind	name	detail
+stable	class	ActionCancelled
+stable	constructor	ActionCancelled.__init__	[["self", "pos", null], ["args", "*", null], ["kwargs", "**", null]]
+stable	class	ActionsSource
+stable	constructor	ActionsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	ActionsSource.background
+stable	attribute	ActionsSource.name
+stable	attribute	ActionsSource.preview_background
+stable	method	ActionsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	ActivateApplication
+stable	constructor	ActivateApplication.__init__	[["self", "pk", null], ["app", "pk", null], ["launch", "pk", "None"], ["cycle", "pk", "True"], ["reverse", "pk", "False"]]
+stable	method	ActivateApplication.cancelled	[["self", "pk", null]]
+stable	method	ActivateApplication.check_cancelled	[["self", "pk", null]]
+stable	property	ActivateApplication.keymap	ro
+stable	attribute	ActivateApplication.thread_pool
+stable	property	ActivateApplication.ui	ro
+stable	class	ActivateWindow
+stable	constructor	ActivateWindow.__init__	[["self", "pk", null], ["app", "pk", null]]
+stable	method	ActivateWindow.cancelled	[["self", "pk", null]]
+stable	method	ActivateWindow.check_cancelled	[["self", "pk", null]]
+stable	property	ActivateWindow.keymap	ro
+stable	attribute	ActivateWindow.thread_pool
+stable	property	ActivateWindow.ui	ro
+stable	class	Appears
+stable	constructor	Appears.__init__	[["self", "pk", null], ["locator", "pk", "None"], ["within", "pk", "None"], ["app", "pk", "None"], ["title", "pk", "None"]]
+stable	attribute	Appears.app
+stable	attribute	Appears.locator
+stable	attribute	Appears.postcondition
+stable	attribute	Appears.title
+stable	attribute	Appears.within
+stable	class	CallableSource
+stable	constructor	CallableSource.__init__	[["self", "pk", null], ["produce", "pk", null], ["name", "pk", "''"], ["on_chosen", "pk", "None"], ["background", "pk", "False"]]
+stable	attribute	CallableSource.background
+stable	method	CallableSource.badge	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	CallableSource.name
+stable	method	CallableSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	CallableSource.preview_background
+stable	method	CallableSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	Candidate
+stable	constructor	Candidate.__init__	[["self", "pk", null], ["display", "pk", null], ["payload", "pk", "None"], ["match_text", "pk", "None"], ["identity", "pk", "None"], ["icon", "pk", "''"], ["rect", "pk", "None"], ["provenance", "pk", "None"], ["action", "pk", "None"], ["extras", "pk", "<factory>"]]
+stable	attribute	Candidate.action
+stable	staticmethod	Candidate.from_item	[["item", "pk", null]]
+stable	attribute	Candidate.icon
+stable	attribute	Candidate.identity
+stable	property	Candidate.label	ro
+stable	attribute	Candidate.match_text
+stable	attribute	Candidate.payload
+stable	attribute	Candidate.provenance
+stable	attribute	Candidate.rect
+stable	class	CandidatePreview
+stable	constructor	CandidatePreview.__init__	[["self", "pk", null], ["title", "pk", "None"], ["image", "pk", "None"], ["text", "pk", "None"], ["fields", "pk", "()"]]
+stable	attribute	CandidatePreview.fields
+stable	attribute	CandidatePreview.image
+stable	attribute	CandidatePreview.text
+stable	attribute	CandidatePreview.title
+stable	class	CandidateSource
+stable	attribute	CandidateSource.background
+stable	method	CandidateSource.badge	[["self", "pk", null], ["candidate", "pk", null]]
+stable	method	CandidateSource.candidates	[["self", "pk", null]]
+stable	attribute	CandidateSource.name
+stable	method	CandidateSource.on_chosen	[["self", "pk", null], ["candidate", "pk", null], ["modifier_flags", "pk", null]]
+stable	method	CandidateSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	CandidateSource.preview_background
+stable	method	CandidateSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	ChooserAction
+stable	attribute	ChooserAction.activates
+stable	attribute	ChooserAction.anchor
+stable	method	ChooserAction.list_items	[["self", "pk", null]]
+stable	attribute	ChooserAction.matcher
+stable	method	ChooserAction.on_chosen	[["self", "pk", null], ["item", "pk", null], ["modifier_flags", "pk", null]]
+stable	class	ChooserPage
+stable	constructor	ChooserPage.__init__	[["self", "pk", null], ["name", "pk", null], ["sources", "pk", null]]
+stable	class	ClipboardHistory
+stable	method	ClipboardHistory.add_item	[["self", "pk", null], ["s", "pk", null]]
+stable	method	ClipboardHistory.get_current	[["self", "pk", null]]
+stable	method	ClipboardHistory.items	[["self", "pk", null]]
+stable	attribute	ClipboardHistory.max_data_size
+stable	attribute	ClipboardHistory.max_items
+stable	attribute	ClipboardHistory.max_label_length
+stable	attribute	ClipboardHistory.max_persist_data_size
+stable	attribute	ClipboardHistory.max_session_data_size
+stable	method	ClipboardHistory.remove_item	[["self", "pk", null], ["s", "pk", null]]
+stable	method	ClipboardHistory.set_current	[["self", "pk", null], ["s", "pk", null]]
+stable	class	ClipboardHistorySource
+stable	attribute	ClipboardHistorySource.background
+stable	method	ClipboardHistorySource.badge	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	ClipboardHistorySource.name
+stable	attribute	ClipboardHistorySource.preview_background
+stable	class	ClipboardToolsSource
+stable	constructor	ClipboardToolsSource.__init__	[["self", "pk", null], ["tools", "pk", null], ["name", "pk", "None"]]
+stable	attribute	ClipboardToolsSource.background
+stable	method	ClipboardToolsSource.badge	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	ClipboardToolsSource.name
+stable	attribute	ClipboardToolsSource.preview_background
+stable	method	ClipboardToolsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	Console
+stable	classmethod	Console.get_instance	[]
+stable	method	Console.lines	[["self", "pk", null]]
+stable	attribute	Console.max_lines
+stable	data	DEPRECATED_APIS
+stable	class	DateTimeSnippet
+stable	constructor	DateTimeSnippet.__init__	[["self", "pk", null], ["fmt", "pk", null]]
+stable	class	FillFailed
+stable	constructor	FillFailed.__init__	[["self", "pk", null], ["message", "pk", null], ["attempted", "pk", "()"]]
+stable	class	Focus
+stable	constructor	Focus.__init__	[["self", "pk", null], ["app_name", "pk", "None"], ["pid", "pk", "None"], ["window_title", "pk", "None"], ["class_name", "pk", "None"], ["path", "pk", "None"], ["native", "pk", "None"], ["element", "pk", "None"]]
+stable	attribute	Focus.app_name
+stable	attribute	Focus.class_name
+stable	attribute	Focus.element
+stable	attribute	Focus.native
+stable	attribute	Focus.path
+stable	attribute	Focus.pid
+stable	attribute	Focus.window_title
+stable	class	FocusCondition
+stable	constructor	FocusCondition.__init__	[["self", "pk", null], ["focus_path_pattern", "pk", "None"], ["custom_condition_func", "pk", "None"], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
+stable	class	Front
+stable	constructor	Front.__init__	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"], ["node", "pk", "None"]]
+stable	attribute	Front.app
+stable	attribute	Front.node
+stable	attribute	Front.postcondition
+stable	attribute	Front.title
+stable	class	Gone
+stable	constructor	Gone.__init__	[["self", "pk", null], ["target", "pk", "None"], ["within", "pk", "None"]]
+stable	attribute	Gone.postcondition
+stable	attribute	Gone.target
+stable	attribute	Gone.within
+stable	class	InputContext
+stable	method	InputContext.send_key	[["self", "pk", null], ["s", "pk", null]]
+stable	method	InputContext.send_key_by_vk	[["self", "pk", null], ["vk", "pk", null], ["down", "pk", "True"]]
+stable	method	InputContext.send_mouse_button	[["self", "pk", null], ["button", "pk", "'left'"], ["down", "pk", "None"]]
+stable	method	InputContext.send_mouse_horizontal_wheel	[["self", "pk", null], ["notches", "pk", null]]
+stable	method	InputContext.send_mouse_move	[["self", "pk", null], ["dx", "pk", null], ["dy", "pk", null]]
+stable	method	InputContext.send_mouse_wheel	[["self", "pk", null], ["notches", "pk", null]]
+stable	method	InputContext.send_text	[["self", "pk", null], ["s", "pk", null]]
+stable	class	InputText
+stable	constructor	InputText.__init__	[["self", "pk", null], ["text", "pk", null]]
+stable	class	KeyBindingsSource
+stable	constructor	KeyBindingsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	KeyBindingsSource.background
+stable	attribute	KeyBindingsSource.name
+stable	method	KeyBindingsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	KeyBindingsSource.preview_background
+stable	method	KeyBindingsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	KeyCondition
+stable	staticmethod	KeyCondition.from_str	[["s", "pk", null]]
+stable	class	KeyEvent
+stable	constructor	KeyEvent.__init__	[["self", "pk", null], ["vk", "pk", null], ["down", "pk", null], ["kind", "pk", "'real'"]]
+stable	attribute	KeyEvent.kind
+stable	class	KeyTable
+stable	class	Keymap
+stable	method	Keymap.call_on_main_thread	[["self", "pk", null], ["callback", "pk", null]]
+stable	property	Keymap.clipboard	ro
+stable	property	Keymap.clipboard_history	ro
+stable	attribute	Keymap.close_balloon
+stable	method	Keymap.configure	[["self", "pk", null]]
+stable	method	Keymap.define_keytable	[["self", "pk", null], ["name", "pk", "None"], ["focus_path_pattern", "pk", "None"], ["custom_condition_func", "pk", "None"], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
+stable	method	Keymap.define_modifier	[["self", "pk", null], ["key", "pk", null], ["mod", "pk", null]]
+stable	method	Keymap.edit_config	[["self", "pk", null]]
+stable	method	Keymap.find_window	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
+stable	property	Keymap.focus	ro
+stable	method	Keymap.get_active_window	[["self", "pk", null]]
+stable	method	Keymap.get_ime_status	[["self", "pk", null]]
+stable	method	Keymap.get_input_context	[["self", "pk", null], ["replay", "pk", "False"]]
+stable	staticmethod	Keymap.get_instance	[]
+stable	method	Keymap.list_windows	[["self", "pk", null]]
+stable	attribute	Keymap.pop_balloon
+stable	method	Keymap.reload_config	[["self", "pk", null]]
+stable	method	Keymap.replace_key	[["self", "pk", null], ["src", "pk", null], ["dst", "pk", null]]
+stable	method	Keymap.screen_frames	[["self", "pk", null]]
+stable	method	Keymap.screen_work_frames	[["self", "pk", null]]
+stable	method	Keymap.set_ime_status	[["self", "pk", null], ["on", "pk", null]]
+stable	property	Keymap.ui	ro
+stable	method	Keymap.window_frames	[["self", "pk", null]]
+stable	class	LaunchApplication
+stable	constructor	LaunchApplication.__init__	[["self", "pk", null], ["app_name", "pk", null]]
+stable	method	LaunchApplication.cancelled	[["self", "pk", null]]
+stable	method	LaunchApplication.check_cancelled	[["self", "pk", null]]
+stable	method	LaunchApplication.finished	[["self", "pk", null], ["result", "pk", null]]
+stable	property	LaunchApplication.keymap	ro
+stable	method	LaunchApplication.starting	[["self", "pk", null]]
+stable	attribute	LaunchApplication.thread_pool
+stable	property	LaunchApplication.ui	ro
+stable	class	Locator
+stable	constructor	Locator.__init__	[["self", "pk", null], ["role", "pk", "None"], ["name", "pk", "None"], ["value", "pk", "None"], ["identifier", "pk", "None"], ["text", "pk", "None"], ["predicate", "pk", "None"], ["max_depth", "pk", "None"], ["max_nodes", "pk", "None"]]
+stable	method	Locator.criteria	[["self", "pk", null]]
+stable	attribute	Locator.identifier
+stable	attribute	Locator.max_depth
+stable	attribute	Locator.max_nodes
+stable	attribute	Locator.name
+stable	attribute	Locator.predicate
+stable	attribute	Locator.role
+stable	attribute	Locator.text
+stable	attribute	Locator.value
+stable	class	MenuItemsSource
+stable	constructor	MenuItemsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	MenuItemsSource.background
+stable	attribute	MenuItemsSource.name
+stable	method	MenuItemsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	MenuItemsSource.preview_background
+stable	method	MenuItemsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	MouseButtonClick
+stable	constructor	MouseButtonClick.__init__	[["self", "pk", null], ["button", "pk", "'left'"]]
+stable	class	MouseButtonDown
+stable	constructor	MouseButtonDown.__init__	[["self", "pk", null], ["button", "pk", "'left'"]]
+stable	class	MouseButtonUp
+stable	constructor	MouseButtonUp.__init__	[["self", "pk", null], ["button", "pk", "'left'"]]
+stable	class	MouseHorizontalWheel
+stable	constructor	MouseHorizontalWheel.__init__	[["self", "pk", null], ["wheel", "pk", null]]
+stable	class	MouseMove
+stable	constructor	MouseMove.__init__	[["self", "pk", null], ["dx", "pk", null], ["dy", "pk", null]]
+stable	class	MouseWheel
+stable	constructor	MouseWheel.__init__	[["self", "pk", null], ["wheel", "pk", null]]
+stable	class	MoveWindow
+stable	attribute	MoveWindow.ADJACENT_SCREEN_TOLERANCE
+stable	attribute	MoveWindow.EDGE_TOLERANCE
+stable	constructor	MoveWindow.__init__	[["self", "pk", null], ["x", "pk", "None"], ["y", "pk", "None"], ["direction", "pk", "''"], ["distance", "pk", "10"], ["window_edge", "pk", "False"], ["screen_edge", "pk", "True"]]
+stable	method	MoveWindow.cancelled	[["self", "pk", null]]
+stable	method	MoveWindow.check_cancelled	[["self", "pk", null]]
+stable	property	MoveWindow.keymap	ro
+stable	attribute	MoveWindow.thread_pool
+stable	property	MoveWindow.ui	ro
+stable	data	PREVIEW_APIS
+stable	class	PlaybackRecordedKeys
+stable	class	Reads
+stable	constructor	Reads.__init__	[["self", "pk", null], ["target", "pk", "None"], ["role", "pk", "None"], ["name", "pk", "None"], ["value", "pk", "None"]]
+stable	attribute	Reads.name
+stable	attribute	Reads.postcondition
+stable	attribute	Reads.role
+stable	attribute	Reads.target
+stable	attribute	Reads.value
+stable	class	ReportCaretAnchor
+stable	class	ShowCandidates
+stable	constructor	ShowCandidates.__init__	[["self", "pk", null], ["sources", "pk", null], ["on_chosen", "pk", "None"], ["matcher", "pk", "None"], ["activates", "pk", "None"], ["anchor", "pk", "None"]]
+stable	attribute	ShowCandidates.activates
+stable	attribute	ShowCandidates.anchor
+stable	method	ShowCandidates.list_items	[["self", "pk", null]]
+stable	attribute	ShowCandidates.matcher
+stable	class	ShowClipboardHistory
+stable	attribute	ShowClipboardHistory.activates
+stable	attribute	ShowClipboardHistory.anchor
+stable	method	ShowClipboardHistory.list_items	[["self", "pk", null]]
+stable	attribute	ShowClipboardHistory.matcher
+stable	class	ShowClipboardSnippets
+stable	constructor	ShowClipboardSnippets.__init__	[["self", "pk", null], ["snippets", "pk", null]]
+stable	attribute	ShowClipboardSnippets.activates
+stable	attribute	ShowClipboardSnippets.anchor
+stable	method	ShowClipboardSnippets.list_items	[["self", "pk", null]]
+stable	attribute	ShowClipboardSnippets.matcher
+stable	class	ShowClipboardTools
+stable	constructor	ShowClipboardTools.__init__	[["self", "pk", null], ["tools", "pk", null]]
+stable	attribute	ShowClipboardTools.activates
+stable	attribute	ShowClipboardTools.anchor
+stable	method	ShowClipboardTools.list_items	[["self", "pk", null]]
+stable	attribute	ShowClipboardTools.matcher
+stable	staticmethod	ShowClipboardTools.quote	[["s", "pk", null]]
+stable	attribute	ShowClipboardTools.quote_mark
+stable	staticmethod	ShowClipboardTools.to_full_width	[["s", "pk", null]]
+stable	staticmethod	ShowClipboardTools.to_half_width	[["s", "pk", null]]
+stable	staticmethod	ShowClipboardTools.to_plain	[["s", "pk", null]]
+stable	staticmethod	ShowClipboardTools.unindent	[["s", "pk", null]]
+stable	class	SnapWindow
+stable	attribute	SnapWindow.POSITIONS
+stable	constructor	SnapWindow.__init__	[["self", "pk", null], ["position", "pk", null], ["ratio", "pk", "0.5"]]
+stable	class	SnippetsSource
+stable	constructor	SnippetsSource.__init__	[["self", "pk", null], ["snippets", "pk", null], ["name", "pk", "None"]]
+stable	attribute	SnippetsSource.background
+stable	method	SnippetsSource.badge	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	SnippetsSource.name
+stable	attribute	SnippetsSource.preview_background
+stable	method	SnippetsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	Stable
+stable	constructor	Stable.__init__	[["self", "pk", null], ["within", "pk", "None"], ["quiet", "pk", "0.3"], ["max_depth", "pk", "None"], ["max_nodes", "pk", "None"]]
+stable	attribute	Stable.max_depth
+stable	attribute	Stable.max_nodes
+stable	attribute	Stable.postcondition
+stable	attribute	Stable.quiet
+stable	attribute	Stable.within
+stable	class	StaleElement
+stable	constructor	StaleElement.__init__	[["self", "pos", null], ["args", "*", null], ["kwargs", "**", null]]
+stable	class	StartRecordingKeys
+stable	class	StopRecordingKeys
+stable	class	ThreadedAction
+stable	method	ThreadedAction.cancelled	[["self", "pk", null]]
+stable	method	ThreadedAction.check_cancelled	[["self", "pk", null]]
+stable	method	ThreadedAction.finished	[["self", "pk", null], ["result", "pk", null]]
+stable	property	ThreadedAction.keymap	ro
+stable	method	ThreadedAction.run	[["self", "pk", null]]
+stable	method	ThreadedAction.starting	[["self", "pk", null]]
+stable	attribute	ThreadedAction.thread_pool
+stable	property	ThreadedAction.ui	ro
+stable	class	ToggleRecordingKeys
+stable	class	UI
+stable	attribute	UI.Appears
+stable	attribute	UI.Front
+stable	attribute	UI.Gone
+stable	attribute	UI.Locator
+stable	attribute	UI.Reads
+stable	attribute	UI.Stable
+stable	method	UI.activate	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"], ["timeout", "pk", "10.0"], ["retry_interval", "pk", "2.0"], ["node", "pk", "None"]]
+stable	method	UI.at_point	[["self", "pk", null], ["x", "pk", null], ["y", "pk", null]]
+stable	method	UI.click	[["self", "pk", null], ["locator", "pk", "None"], ["within", "pk", "None"], ["node", "pk", "None"], ["given", "pk", "None"], ["until", "pk", "None"], ["timeout", "pk", "10.0"], ["retry_interval", "pk", "2.0"]]
+stable	method	UI.content_access	[["self", "pk", null], ["target", "pk", "None"]]
+stable	method	UI.enable_content_access	[["self", "pk", null], ["target", "pk", "None"], ["enable", "pk", "True"]]
+stable	method	UI.fill	[["self", "pk", null], ["text", "pk", null], ["locator", "pk", "None"], ["within", "pk", "None"], ["node", "pk", "None"], ["given", "pk", "None"], ["until", "pk", "None"], ["timeout", "pk", "10.0"], ["retry_interval", "pk", "2.0"]]
+stable	method	UI.focused	[["self", "pk", null]]
+stable	method	UI.menu	[["self", "pk", null], ["path", "*", null], ["given", "kw", "None"], ["until", "kw", "None"], ["timeout", "kw", "10.0"], ["retry_interval", "kw", "2.0"]]
+stable	method	UI.node	[["self", "pk", null], ["element", "pk", null]]
+stable	method	UI.on_main_thread	[["self", "pk", null], ["func", "pk", null]]
+stable	method	UI.preserve_clipboard	[["self", "pk", null]]
+stable	method	UI.scroll	[["self", "pk", null], ["locator", "pk", "None"], ["within", "pk", "None"], ["node", "pk", "None"], ["by", "pk", "'down'"], ["amount", "pk", "3.0"], ["given", "pk", "None"], ["until", "pk", "None"], ["timeout", "pk", "10.0"], ["retry_interval", "pk", "0.4"]]
+stable	method	UI.send_key	[["self", "pk", null], ["keys", "pk", null], ["given", "pk", "None"], ["until", "pk", "None"], ["timeout", "pk", "10.0"], ["retry_interval", "pk", "2.0"]]
+stable	method	UI.wait	[["self", "pk", null], ["condition", "pk", null], ["timeout", "pk", "10.0"], ["message", "pk", "None"], ["interval", "pk", "None"]]
+stable	method	UI.window	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"], ["class_name", "pk", "None"]]
+stable	method	UI.windows	[["self", "pk", null], ["app", "pk", "None"], ["title", "pk", "None"]]
+stable	class	UINode
+stable	constructor	UINode.__init__	[["self", "pk", null], ["role", "pk", "None"], ["name", "pk", "None"], ["name_source", "pk", "None"], ["value", "pk", "None"], ["identifier", "pk", "None"], ["rect", "pk", "None"], ["depth", "pk", "0"], ["element", "pk", "None"], ["children", "pk", "<factory>"], ["truncated", "pk", "False"]]
+stable	property	UINode.all_text	ro
+stable	method	UINode.contains_focus	[["self", "pk", null]]
+stable	attribute	UINode.depth
+stable	method	UINode.dump	[["self", "pk", null], ["max_value", "pk", "60"]]
+stable	attribute	UINode.element
+stable	method	UINode.find	[["self", "pk", null], ["max_depth", "pk", "14"], ["max_nodes", "pk", "1000"], ["criteria", "**", null]]
+stable	method	UINode.find_all	[["self", "pk", null], ["max_depth", "pk", "14"], ["max_nodes", "pk", "1000"], ["criteria", "**", null]]
+stable	method	UINode.focus	[["self", "pk", null], ["timeout", "pk", "None"]]
+stable	method	UINode.has_focus	[["self", "pk", null]]
+stable	attribute	UINode.identifier
+stable	method	UINode.line_at_caret	[["self", "pk", null]]
+stable	attribute	UINode.name
+stable	attribute	UINode.name_source
+stable	method	UINode.press	[["self", "pk", null]]
+stable	method	UINode.read_text	[["self", "pk", null]]
+stable	attribute	UINode.rect
+stable	method	UINode.reread	[["self", "pk", null], ["max_depth", "pk", "14"], ["max_nodes", "pk", "1000"], ["roles", "pk", "None"], ["prune", "pk", "None"]]
+stable	attribute	UINode.role
+stable	method	UINode.selection	[["self", "pk", null]]
+stable	method	UINode.set_checked	[["self", "pk", null], ["checked", "pk", null]]
+stable	method	UINode.set_text	[["self", "pk", null], ["text", "pk", null], ["options", "**", null]]
+stable	property	UINode.text	ro
+stable	attribute	UINode.truncated
+stable	attribute	UINode.value
+stable	method	UINode.wait_for	[["self", "pk", null], ["timeout", "pk", "10.0"], ["message", "pk", "None"], ["max_depth", "pk", "14"], ["max_nodes", "pk", "1000"], ["criteria", "**", null]]
+stable	method	UINode.wait_until_gone	[["self", "pk", null], ["timeout", "pk", "10.0"], ["message", "pk", "None"], ["max_depth", "pk", "14"], ["max_nodes", "pk", "1000"], ["criteria", "**", null]]
+stable	method	UINode.wait_until_stable	[["self", "pk", null], ["quiet", "pk", "0.3"], ["timeout", "pk", "10.0"], ["bounds", "**", null]]
+stable	method	UINode.walk	[["self", "pk", null]]
+stable	class	Unresponsive
+stable	constructor	Unresponsive.__init__	[["self", "pos", null], ["args", "*", null], ["kwargs", "**", null]]
+stable	class	WaitTimeout
+stable	constructor	WaitTimeout.__init__	[["self", "pos", null], ["args", "*", null], ["kwargs", "**", null]]
+stable	class	Window
+stable	method	Window.activate	[["self", "pk", null]]
+stable	property	Window.app_name	ro
+stable	property	Window.class_name	ro
+stable	property	Window.element	ro
+stable	method	Window.enter_full_screen	[["self", "pk", null]]
+stable	method	Window.get_frame	[["self", "pk", null]]
+stable	method	Window.is_full_screen	[["self", "pk", null]]
+stable	method	Window.is_maximized	[["self", "pk", null]]
+stable	method	Window.is_minimized	[["self", "pk", null]]
+stable	method	Window.maximize	[["self", "pk", null]]
+stable	method	Window.minimize	[["self", "pk", null]]
+stable	property	Window.native	ro
+stable	property	Window.pid	ro
+stable	method	Window.restore	[["self", "pk", null]]
+stable	method	Window.set_frame	[["self", "pk", null], ["x", "pk", null], ["y", "pk", null], ["w", "pk", "None"], ["h", "pk", "None"]]
+stable	property	Window.title	ro
+stable	class	WindowControlsSource
+stable	constructor	WindowControlsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	WindowControlsSource.background
+stable	attribute	WindowControlsSource.name
+stable	method	WindowControlsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	WindowControlsSource.preview_background
+stable	method	WindowControlsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	function	getLogger	[["name", "pk", null]]
+stable	version	keyhac.major	2
+stable	tool	mcp.cancel_action	[["name", true]]
+stable	tool	mcp.delete_extension	[["keep_backup", false], ["name", true]]
+stable	tool	mcp.describe_keymap	[]
+stable	tool	mcp.describe_screen	[["app", false], ["max_depth", false], ["max_nodes", false], ["roles", false], ["title", false], ["within", false]]
+stable	tool	mcp.enable_content_access	[["app", false], ["enable", false], ["title", false]]
+stable	tool	mcp.find_elements	[["app", false], ["identifier", false], ["limit", false], ["max_depth", false], ["max_nodes", false], ["name", false], ["offset", false], ["role", false], ["text", false], ["title", false], ["value", false]]
+stable	tool	mcp.get_action_result	[["level", false], ["name", true], ["tail", false], ["wait", false]]
+stable	tool	mcp.get_focus	[]
+stable	tool	mcp.list_actions	[]
+stable	tool	mcp.list_extensions	[]
+stable	tool	mcp.list_windows	[]
+stable	tool	mcp.read_config	[]
+stable	tool	mcp.read_extension	[["name", true]]
+stable	tool	mcp.read_text	[["app", false], ["identifier", false], ["name", false], ["role", false], ["start", false], ["title", false]]
+stable	tool	mcp.reload_config	[]
+stable	tool	mcp.start_action	[["arguments", false], ["name", true]]
+stable	tool	mcp.write_config	[["source", true]]
+stable	tool	mcp.write_extension	[["name", true], ["source", true]]
