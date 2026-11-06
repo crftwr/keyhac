@@ -407,8 +407,10 @@ console; the person learns the outcome from a balloon -
 that went on while they were elsewhere belongs in a corner and stays until
 they close it: `timeout=None, anchor="corner"`. When the run is long enough that
 they may have gone to another application or left, post a notification instead:
-`self.keymap.notify(title, text)`. Both are absent when Keyhac runs without its
-UI, so reach them with `getattr(self.keymap, "notify", None)`.
+`self.keymap.notify(title, text)`. `on_click=` takes what to do when it is clicked,
+such as showing the file the run saved; a `ThreadedAction` instance for anything
+slow. Both are absent when Keyhac runs without its UI, so reach them with
+`getattr(self.keymap, "notify", None)`.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it

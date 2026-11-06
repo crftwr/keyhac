@@ -1020,6 +1020,22 @@ asks for permission the first time. Where a notification cannot be posted, a bal
 in the corner says the same thing and stays until it is closed. Focus and Do Not
 Disturb can hold a notification back.
 
+`on_click` runs when the user clicks the notification. This argument is Preview and
+may change in any release:
+
+```python
+def reveal():
+    subprocess.run(["open", "-R", path])    # explorer /select,<path> on Windows
+
+keymap.notify("Saved", path, on_click=reveal)
+```
+
+It takes no arguments and runs on the main thread, so it has to be quick. For
+anything slow, pass a `ThreadedAction` instance, which can be called the same way
+and does its work on a worker: `on_click=ConvertReport(path)`. A click does nothing
+after Keyhac has restarted, or on a balloon standing in for the notification. On
+Windows only the latest notification's `on_click` runs.
+
 In `--no-ui` mode these attributes are absent — guard with
 `getattr(keymap, "pop_balloon", None)` if your config must run headless.
 
@@ -1123,7 +1139,7 @@ clipboard contents, console text or window titles.
 | `keymap.editor` / `edit_config()` / `reload_config()` | config lifecycle (tray menu uses these) |
 | `keymap.replay_buffer` | macro buffer behind the record actions |
 | `keymap.pop_balloon(name, text, timeout, anchor=…)` / `close_balloon(name)` | balloons (UI mode only); opens at the caret unless `anchor` says otherwise |
-| `keymap.notify(title, text)` | native OS notification (UI mode only); a balloon where one cannot be posted |
+| `keymap.notify(title, text, on_click=None)` | native OS notification (UI mode only); a balloon where one cannot be posted |
 | `InputText(s)` | type a literal string |
 | `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | window & app actions |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | mouse output actions |
