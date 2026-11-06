@@ -9,7 +9,7 @@ An entry opening with "Preview" may change in any release. One opening with
 "Deprecated" still works, says what replaces it, and goes in a later major
 release. `PREVIEW_APIS` and `DEPRECATED_APIS` list them.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidatePreview](#class-candidatepreview) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console) · [ReportCaretAnchor](#class-reportcaretanchor)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidatePreview](#class-candidatepreview) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ApplicationsSource](#class-applicationssource) · [BrowserTabsSource](#class-browsertabssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console) · [ReportCaretAnchor](#class-reportcaretanchor)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -2027,6 +2027,58 @@ Build the source.
 ---
 
 
+## <kbd>class</kbd> `ApplicationsSource`
+Every installed application, and a way to launch one. 
+
+On macOS these are the `.app` bundles in the Applications folders, listed by the name Finder shows.  On Windows they are what the Start menu lists, including Microsoft Store applications, and also whatever else it holds there, such as uninstallers. 
+
+Choosing a row launches the application.  On macOS an application already running comes to the front.  On Windows it depends on the application, and many open another window; `ActivateApplication` goes to a running one. 
+
+### <kbd>method</kbd> `ApplicationsSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
+
+---
+
+
+## <kbd>class</kbd> `BrowserTabsSource`
+The tabs open in Chrome, Edge and Safari, across all their windows. 
+
+Choosing a row selects the tab and brings its window to the front. 
+
+Tabs are read from each browser's own window through accessibility, so no extension or browser permission is needed.  A row shows the tab's title: the URL is not available for a tab that is not selected. 
+
+Only tabs visible in the tab bar are listed.  Chrome leaves a tab it has no room to show out of what it exposes, so widening the window brings it back. 
+
+Every browser window is read each time the page opens, so this belongs in a `ChooserPage` you go to deliberately. 
+
+### <kbd>method</kbd> `BrowserTabsSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
+
+---
+
+
 ## <kbd>class</kbd> `ClipboardHistorySource`
 Everything the clipboard has held, most recent first. 
 
@@ -2060,6 +2112,19 @@ Build the source.
  
  - <b>`name`</b>:  What a shared window shows beside these rows. 
 
+
+
+
+---
+
+### <kbd>method</kbd> `KeyBindingsSource.preview`
+
+```python
+preview(candidate)
+```
+
+What the binding does in full, its docstring, and what else follows a multi-stroke prefix. 
+
 ---
 
 
@@ -2088,6 +2153,19 @@ Build the source.
  
  - <b>`name`</b>:  What a shared window shows beside these rows. 
 
+
+
+
+---
+
+### <kbd>method</kbd> `MenuItemsSource.preview`
+
+```python
+preview(candidate)
+```
+
+The item's full menu path and its keyboard shortcut. 
+
 ---
 
 
@@ -2099,6 +2177,8 @@ Discussion #112's original target, and the reason the window had to stop taking 
 **It streams, because it is expensive.** Measured on macOS: a heavy application's tree is 3000 nodes and 460 ms, and filtering by role does not help - the walk is the cost, and reporting less of it changes nothing. So the walk yields as it goes and the first controls are on screen while the rest are still being found. Put it in a `ChooserPage` of its own all the same; it has real work to do on every invocation. 
 
 **Only controls with a name are offered.** An icon-only button with no label, no description and no tooltip cannot be typed for - there is no text to filter on - so listing it would add a row nobody can reach. Where a name comes from is recorded on the candidate (`provenance`), because it decides what else can find the element: a control reachable only through its tooltip cannot be found by `find(name=...)` in an action either. 
+
+**It has no preview, deliberately.** The outline on the real control is what says which row is which, and a window beside the chooser could only add a way to cover it. 
 
 ### <kbd>method</kbd> `WindowControlsSource.__init__`
 

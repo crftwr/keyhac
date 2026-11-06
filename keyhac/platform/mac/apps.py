@@ -4,7 +4,9 @@ import os
 import subprocess
 
 import ApplicationServices as AS
+import objc
 from AppKit import NSApplication, NSRunningApplication
+from Foundation import NSFileManager
 
 from keyhac.core import log
 from keyhac.platform.base import AppControl
@@ -15,6 +17,32 @@ logger = log.getLogger("MacApps")
 #: edit_file's fallback cascade when no editor is configured (the keyhac-mac
 #: "Edit config.py" order): first installed one wins.
 _EDITOR_FALLBACKS = ("Visual Studio Code", "Xcode", "TextEdit")
+
+#: Where installed applications live.  The earlier folder wins when two hold
+#: an application of the same name.
+_APP_FOLDERS = ("~/Applications", "/Applications", "/System/Applications",
+                "/System/Library/CoreServices/Applications")
+
+#: How many plain folders are followed below one of those: Utilities, a
+#: vendor's folder, or `~/Applications/Chrome Apps.localized`.
+_APP_FOLDER_DEPTH = 2
+
+
+def find_app_bundles(folder: str, depth: int = _APP_FOLDER_DEPTH) -> list[str]:
+    """The paths of the `.app` bundles in `folder`, without looking inside one."""
+    bundles = []
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.name.endswith(".app"):
+                    bundles.append(entry.path)
+                elif depth > 0 and entry.is_dir():
+                    bundles.extend(find_app_bundles(entry.path, depth - 1))
+    except OSError:
+        pass  # A folder that is missing or unreadable holds nothing to offer.
+    return bundles
 
 # NSApplicationActivateIgnoringOtherApps is deprecated but still the reliable
 # way to bring the previously-focused app back before a programmatic paste.
@@ -51,6 +79,18 @@ class MacAppControl(AppControl):
 
     def launch(self, app_name: str) -> None:
         subprocess.Popen(["open", "-a", app_name])
+
+    def installed_apps(self) -> list[tuple[str, str]]:
+        """Each bundle under the application folders, with the localized name
+        Finder shows: "ターミナル" for Terminal.app on a Japanese system."""
+        manager = NSFileManager.defaultManager()
+        found = {}
+        with objc.autorelease_pool():
+            for folder in _APP_FOLDERS:
+                for path in find_app_bundles(os.path.expanduser(folder)):
+                    name = str(manager.displayNameAtPath_(path)).removesuffix(".app")
+                    found.setdefault(name.casefold(), (name, path))
+        return list(found.values())
 
     def open_url(self, url: str) -> None:
         # No -a: LaunchServices picks the default browser for the scheme.

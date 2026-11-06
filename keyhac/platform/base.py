@@ -461,6 +461,12 @@ class AppControl(ABC):
     def open_url(self, url: str) -> None:
         """Open a URL in the user's default browser.  Logged, not raised."""
 
+    def installed_apps(self) -> list[tuple[str, str]]:
+        """The applications that can be launched, as `(display name, target)`
+        pairs, where `target` is what `launch()` takes.  Runs on a worker
+        thread; a platform that cannot list them answers empty."""
+        return []
+
 
 class Window(ABC):
     """A top-level OS window.

@@ -8,6 +8,8 @@ chosen row's source says it means.
 
 import time
 
+import os
+
 import pytest
 
 from tests.test_chooser import keyhac_engine, ui_backend  # noqa: F401
@@ -1013,6 +1015,19 @@ class TestCandidateRowLayout:
             assert row._inset(_Ctx(False, 8), px) == 1.0
             assert row._inset(_Ctx(True, 8), px) == px / 8
             assert row._inset(_Ctx(True, 0), px) == 0.0
+
+    @pytest.mark.parametrize("line_break", [
+        "\n", "\r", "\r\n", "\v", "\f", "\x85", " ", " "])
+    def test_a_row_holds_one_line_whatever_the_text_carries(self, line_break):
+        """A control's name or a tab's title may hold a line break, and on
+        Windows a row's text reaching DirectWrite with one raised out of
+        WM_PAINT with a puikit older than the fix: no list, and one traceback
+        per paint."""
+        from keyhac.ui.candidate_row import CandidateRow
+
+        row = CandidateRow(f"Save{line_break}File", f"Con{line_break}trol\n")
+        assert row.label == "Save File"
+        assert row.badge == "Con trol"
 
     def test_the_icon_is_not_flush_against_the_window(self):
         """The list runs to the page's edge now, with no frame of its own in
@@ -2463,3 +2478,198 @@ class TestBackgroundSources:
         from keyhac.core.sources import ClipboardHistorySource
         assert CandidateSource.background is False
         assert ClipboardHistorySource.background is False
+
+
+class _FakeApps:
+    def __init__(self, apps):
+        self.apps = apps
+        self.launched = []
+
+    def installed_apps(self):
+        return self.apps
+
+    def launch(self, app_name):
+        self.launched.append(app_name)
+
+
+class TestApplicationsSource:
+
+    def _source(self, engine, apps):
+        from keyhac.core.sources import ApplicationsSource
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = _FakeApps(apps)
+        return ApplicationsSource(), fixture.keymap.app_control
+
+    def test_rows_are_sorted_by_name_whatever_the_case(self, engine):
+        source, _ = self._source(engine, [("zed", "/A/zed.app"), ("Mail", "/A/Mail.app"),
+                                          ("calc", "/A/calc.app")])
+        assert [c.display for c in source.candidates()] == ["calc", "Mail", "zed"]
+
+    def test_the_english_file_name_finds_a_localized_row(self, engine):
+        source, _ = self._source(engine, [("ターミナル", "/A/Terminal.app")])
+        [row] = source.candidates()
+        assert row.display == "ターミナル" and "Terminal" in row.match_text
+        # The folder is not matched: "app" would then find every row.
+        assert "/A" not in row.match_text
+
+    def test_it_reads_on_a_worker(self):
+        from keyhac.core.sources import ApplicationsSource
+        assert ApplicationsSource.background is True
+
+    def test_nothing_to_list_with_no_app_control(self, engine):
+        from keyhac.core.sources import ApplicationsSource
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = None
+        assert list(ApplicationsSource().candidates()) == []
+
+    def test_choosing_launches_through_a_threaded_action(self, engine, monkeypatch):
+        from keyhac.core import sources
+
+        started = []
+        monkeypatch.setattr(sources.LaunchApplication, "__call__",
+                            lambda action: started.append(action.app_name))
+        source, _ = self._source(engine, [("Mail", "/A/Mail.app")])
+        [row] = source.candidates()
+        source.on_chosen(row, 0)
+        assert started == ["/A/Mail.app"]
+
+    def test_the_base_platform_lists_nothing(self):
+        from keyhac.platform.base import AppControl
+        assert AppControl.installed_apps(None) == []
+
+    def test_macos_finds_bundles_without_looking_inside_them(self, tmp_path):
+        pytest.importorskip("AppKit")
+        from keyhac.platform.mac.apps import find_app_bundles
+        (tmp_path / "Mail.app" / "Contents" / "Helper.app").mkdir(parents=True)
+        (tmp_path / "Utilities" / "Terminal.app").mkdir(parents=True)
+        (tmp_path / "a" / "b" / "c" / "Deep.app").mkdir(parents=True)
+        (tmp_path / ".hidden" / "Hidden.app").mkdir(parents=True)
+        (tmp_path / "notes.txt").write_text("")
+        found = {os.path.basename(p) for p in find_app_bundles(str(tmp_path))}
+        assert found == {"Mail.app", "Terminal.app"}
+        assert find_app_bundles(str(tmp_path / "missing")) == []
+
+
+class _FakeTabElement:
+    def __init__(self, role, name=None, identifier=None, kids=()):
+        self._role, self._name, self._identifier = role, name, identifier
+        self._kids = list(kids)
+        self.pressed = []
+
+    def role(self):
+        return self._role
+
+    def describe(self):
+        return {"role": self._role, "name": self._name, "identifier": self._identifier}
+
+    def children(self):
+        return self._kids
+
+    def get_action_names(self):
+        return ["AXPress"]
+
+    def perform_action(self, name):
+        self.pressed.append(name)
+        return True
+
+
+class _FakeBrowserWindow:
+    def __init__(self, app_name, element):
+        self.app_name, self.element = app_name, element
+        self.title = "t"
+        self.activated = 0
+
+    def activate(self):
+        self.activated += 1
+        return True
+
+
+def _E(role, name=None, *kids, identifier=None):
+    return _FakeTabElement(role, name, identifier, kids)
+
+
+class TestBrowserTabsSource:
+
+    def _rows(self, *windows):
+        from keyhac.core.sources import _walk_browser_windows
+        return list(_walk_browser_windows(windows))
+
+    def _names(self, root, app="Google Chrome"):
+        return [c.display for c in self._rows(_FakeBrowserWindow(app, root))]
+
+    def test_macos_chromium_tabs_are_radio_buttons_in_a_tab_group(self):
+        root = _E("AXWindow", "w", _E("AXGroup", None, _E("AXTabGroup", None,
+                  _E("AXRadioButton", "One"), _E("AXRadioButton", "Two"))))
+        assert self._names(root) == ["One", "Two"]
+
+    def test_safari_tabs_are_found_by_identifier_not_by_its_tab_group(self):
+        """Safari's AXTabGroup holds the page, and its tab bar is not one."""
+        root = _E("AXWindow", "w", _E("AXOpaqueProviderGroup", "Tab bar",
+                  _E("AXRadioButton", "One", identifier="TabBarTab?isActive=true")))
+        assert self._names(root, "Safari") == ["One"]
+
+    def test_a_radio_button_elsewhere_is_not_a_tab(self):
+        root = _E("AXWindow", "w", _E("AXGroup", None, _E("AXRadioButton", "Small")))
+        assert self._names(root) == []
+
+    def test_windows_tabs_are_tab_items(self):
+        root = _E("Window", "w", _E("Tab", "Tab bar", _E("TabItem", "One")))
+        assert self._names(root, "msedge") == ["One"]
+
+    @pytest.mark.parametrize("page", ["AXWebArea", "Document"])
+    def test_a_page_is_not_entered(self, page):
+        """A carousel's thumbnails are radio buttons in a tab group."""
+        root = _E("AXWindow", "w", _E(page, None, _E("AXTabGroup", None,
+                  _E("AXRadioButton", "Thumbnail"), _E("TabItem", "Section"))))
+        assert self._names(root) == []
+
+    @pytest.mark.parametrize("name,title", [
+        ("Issues - Memory usage - 234 MB", "Issues"),
+        ("Netflix - Audio playing - Memory usage - 367 MB", "Netflix"),
+        ("Wikipedia - Memory usage - 47.2 MB", "Wikipedia"),
+        ("Audio playing tips", "Audio playing tips"),
+        ("A - B", "A - B"),
+    ])
+    def test_chromiums_status_is_taken_off_the_title(self, name, title):
+        root = _E("Window", "w", _E("TabItem", name))
+        assert self._names(root, "chrome") == [title]
+
+    def test_only_browser_windows_are_read(self, engine, monkeypatch):
+        from keyhac.core.sources import BrowserTabsSource
+
+        tab = _E("Window", "w", _E("TabItem", "Mine"))
+        other = _E("Window", "w", _E("TabItem", "Not a browser"))
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.window_provider = object()
+        monkeypatch.setattr(fixture.keymap, "list_windows", lambda: [
+            _FakeBrowserWindow("Code", other), _FakeBrowserWindow("msedge", tab)])
+        assert [c.display for c in BrowserTabsSource().candidates()] == ["Mine"]
+
+    def test_choosing_presses_the_tab_then_brings_the_window_forward(
+            self, engine, monkeypatch):
+        from keyhac.core.sources import BrowserTabsSource
+
+        tab = _E("AXRadioButton", "One")
+        window = _FakeBrowserWindow(
+            "Safari", _E("AXWindow", "w", _E("AXTabGroup", None, tab)))
+        [row] = self._rows(window)
+        queued = []
+        fixture = engine(lambda keymap: None)
+        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", queued.append)
+        BrowserTabsSource().on_chosen(row, 0)
+        assert tab.pressed == [] and window.activated == 0
+        queued[0]()
+        assert tab.pressed == ["AXPress"] and window.activated == 1
+
+    def test_a_refused_press_leaves_the_window_where_it_is(self, engine, monkeypatch):
+        from keyhac.core import sources
+
+        tab = _E("AXRadioButton", "One")
+        window = _FakeBrowserWindow(
+            "Safari", _E("AXWindow", "w", _E("AXTabGroup", None, tab)))
+        [row] = self._rows(window)
+        monkeypatch.setattr(sources, "_press", lambda element: False)
+        fixture = engine(lambda keymap: None)
+        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", lambda act: act())
+        sources.BrowserTabsSource().on_chosen(row, 0)
+        assert window.activated == 0

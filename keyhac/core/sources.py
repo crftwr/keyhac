@@ -14,13 +14,18 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import functools
+import inspect
 import os
+import re
 import time
 import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
+from keyhac.core.action import LaunchApplication
 from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
+from keyhac.core.focus import match_window_fields
 from keyhac.core.keymap import Keymap
 from keyhac.core.source import CandidateSource
 from keyhac.core import log
@@ -454,6 +459,16 @@ class MenuItemsSource(CandidateSource):
         """lazydocs: ignore"""
         return candidate.extras.get("shortcut", "")
 
+    def preview(self, candidate):
+        """The item's full menu path and its keyboard shortcut."""
+        # What the walk already read, and nothing more: a row whose label is
+        # cut short by the window's width is the one this is for, and asking
+        # the other application again would hold the keyboard to learn nothing.
+        shortcut = candidate.extras.get("shortcut")
+        return CandidatePreview(
+            text=candidate.display,
+            fields=(("Shortcut", shortcut),) if shortcut else ())
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         if not _press(candidate.payload):
@@ -751,6 +766,24 @@ class KeyBindingsSource(CandidateSource):
         """lazydocs: ignore"""
         return candidate.extras.get("keys", "")
 
+    def preview(self, candidate):
+        """What the binding does in full, its docstring, and
+        what else follows a multi-stroke prefix."""
+        from keyhac.core.keymap import _key_text
+
+        parts = [_action_text(candidate.payload)]
+        doc = _action_doc(candidate.payload)
+        if doc:
+            parts.append(doc)
+        siblings = candidate.extras.get("siblings")
+        if siblings:
+            lines = [f"{_key_text(key)}  {_continuation_text(action)}"
+                     for key, action in siblings.items()]
+            prefix = candidate.extras["prefix"]
+            parts.append(f"After {prefix}:\n" + "\n".join(lines))
+        return CandidatePreview(text="\n\n".join(parts),
+                                fields=(("Keys", candidate.extras.get("keys", "")),))
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         keymap = Keymap.get_instance()
@@ -779,10 +812,13 @@ def _walk_bindings(table, path, rows, depth) -> None:
         if isinstance(action, KeyTable):
             _walk_bindings(action.table, keys, rows, depth + 1)
             continue
+        extras = {"keys": " › ".join(keys)}
+        if path:
+            extras.update(prefix=" › ".join(path), siblings=table)
         rows.append(Candidate(
             icon="⌨", display=_action_text(action), payload=action,
             match_text=f"{' '.join(keys)} {_action_text(action)}",
-            extras={"keys": " › ".join(keys)}))
+            extras=extras))
 
 
 def _action_text(action) -> str:
@@ -804,6 +840,231 @@ def _action_text(action) -> str:
     if text.startswith("<") and " object at 0x" in text:
         return f"{type(action).__name__}()"
     return text
+
+
+def _action_doc(action) -> str | None:
+    """A callable binding's own docstring, or None.
+
+    `__doc__` rather than `inspect.getdoc`, which goes looking up the class
+    tree: an operator's undocumented `ThreadedAction` subclass would then be
+    described by what `ThreadedAction` says about itself. A `partial`'s
+    `__doc__` is likewise about `partial`, so the function inside it is asked.
+    """
+    if isinstance(action, (str, list, tuple)) or not callable(action):
+        return None
+    while isinstance(action, functools.partial):
+        action = action.func
+    doc = getattr(action, "__doc__", None)
+    if not isinstance(doc, str) or not doc.strip():
+        return None
+    return inspect.cleandoc(doc)
+
+
+def _continuation_text(action) -> str:
+    """A line in the list of what else follows a multi-stroke prefix."""
+    from keyhac.core.key import KeyTable
+
+    return "›" if isinstance(action, KeyTable) else _action_text(action)
+
+
+#: The browsers whose tabs are read: their names on macOS, and on Windows the
+#: process names.  Chromium's and Safari's tab bars are what `_is_tab` knows.
+_BROWSER_APPS = "Google Chrome|Microsoft Edge|Safari|chrome|msedge"
+
+#: What Chromium appends to the accessible name of a tab, so that the name reads
+#: as the page's title: "Netflix - Audio playing - Memory usage - 367 MB".
+_TAB_STATUS = re.compile(r"( - (Audio playing|Memory usage - [\d.,]+ ?[KMGT]?B))+$")
+
+#: Bounds on the walk of one window.  The tab bar is browser chrome, near the
+#: top of a tree whose web content is not walked: Chrome's and Safari's tabs
+#: are within 1500 nodes and depth 25.
+_TABS_MAX_NODES = 1500
+_TABS_MAX_DEPTH = 25
+
+#: Where a page starts.  A page's own controls can look exactly like tabs - a
+#: carousel's thumbnails are radio buttons in a tab group - so it is not entered.
+_WEB_CONTENT_ROLES = ("AXWebArea", "Document")
+
+
+class BrowserTabsSource(CandidateSource):
+    """The tabs open in Chrome, Edge and Safari, across all their windows.
+
+    Choosing a row selects the tab and brings its window to the front.
+
+    Tabs are read from each browser's own window through accessibility, so no
+    extension or browser permission is needed.  A row shows the tab's title:
+    the URL is not available for a tab that is not selected.
+
+    Only tabs visible in the tab bar are listed.  Chrome leaves a tab it has no
+    room to show out of what it exposes, so widening the window brings it back.
+
+    Every browser window is read each time the page opens, so this belongs in
+    a `ChooserPage` you go to deliberately.
+    """
+
+    name = "Tab"
+
+    #: The walk reads other applications' trees and touches nothing of
+    #: Keyhac's. See MenuItemsSource.background.
+    background = True
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        if keymap is None or keymap.window_provider is None:
+            return []
+        return _walk_browser_windows(
+            [w for w in keymap.list_windows()
+             if match_window_fields(w, app=_BROWSER_APPS)])
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("app", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        element, window = candidate.payload, candidate.extras["window"]
+
+        def act():
+            # Both, in this order: pressing a tab selects it, and on macOS
+            # leaves a window at the back there.
+            if not _press(element):
+                logger.error(f"{candidate.display}: the tab refused to be pressed.")
+                return
+            window.activate()
+
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            act()
+        else:
+            # As WindowControlsSource.on_chosen: this is inside the key hook's
+            # callback, and both calls are round trips into the browser.
+            keymap.call_on_main_thread(act)
+
+
+def _walk_browser_windows(windows):
+    """Yield a row for each tab of each window, in the order listed."""
+    for window in windows:
+        element = getattr(window, "element", None)
+        if element is None:
+            continue
+        for tab, name in _walk_tabs(element):
+            title = _TAB_STATUS.sub("", name)
+            yield Candidate(icon="🌐", display=title, payload=tab,
+                            extras={"app": window.app_name, "window": window})
+
+
+def _is_tab(role, parent_role, described) -> bool:
+    """Whether a control is a browser's tab.
+
+    Windows says so for every browser.  macOS never does: the role is
+    AXRadioButton, in an AXTabGroup in Chromium.  Safari's AXTabGroup holds the
+    page, and its tabs are recognized by their identifier instead.
+    """
+    if role == "TabItem":
+        return True
+    if role != "AXRadioButton":
+        return False
+    return (parent_role == "AXTabGroup"
+            or (described.get("identifier") or "").startswith("TabBarTab"))
+
+
+def _walk_tabs(root):
+    """Yield `(element, name)` for each tab below a browser window, without
+    entering the pages."""
+    budget = [_TABS_MAX_NODES]
+
+    def walk(element, parent_role, depth):
+        if budget[0] <= 0 or depth > _TABS_MAX_DEPTH:
+            return
+        budget[0] -= 1
+        try:
+            role = element.role()
+        except Exception:
+            return
+        if role in _WEB_CONTENT_ROLES:
+            return
+        if role in ("TabItem", "AXRadioButton"):
+            try:
+                described = element.describe()
+            except Exception:
+                described = {}
+            name = described.get("name")
+            if name and _is_tab(role, parent_role, described):
+                yield element, name
+        try:
+            children = element.children()
+        except Exception:
+            return
+        for child in children or []:
+            yield from walk(child, role, depth + 1)
+
+    yield from walk(root, None, 0)
+
+
+class ApplicationsSource(CandidateSource):
+    """Every installed application, and a way to launch one.
+
+    On macOS these are the `.app` bundles in the Applications folders, listed
+    by the name Finder shows.  On Windows they are what the Start menu lists,
+    including Microsoft Store applications, and also whatever else it holds
+    there, such as uninstallers.
+
+    Choosing a row launches the application.  On macOS an application already
+    running comes to the front.  On Windows it depends on the application, and
+    many open another window; `ActivateApplication` goes to a running one.
+    """
+
+    name = "App"
+
+    #: The listing reads the file system or the shell's folder of applications
+    #: and touches nothing of Keyhac's, so it belongs on a worker. It takes
+    #: 150-450 ms on Windows (see keyhac.platform.win.startmenu).
+    background = True
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        control = keymap.app_control if keymap is not None else None
+        if control is None:
+            return []
+        return self._rows(control)
+
+    @staticmethod
+    def _rows(control):
+        # Read fresh each time, not kept: what it costs happens off the main
+        # thread, and a kept list would miss what was installed since.
+        for name, target in sorted(control.installed_apps(),
+                                   key=lambda app: app[0].casefold()):
+            stem = os.path.splitext(os.path.basename(target))[0]
+            # The file name as well, so an English name still finds an
+            # application listed under its localized one.
+            yield Candidate(icon="🚀", display=name, payload=target,
+                            match_text=f"{name} {stem}")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        # LaunchApplication runs on a worker: this is inside the key hook's
+        # callback, and on Windows launch() may scan the Start menu.
+        LaunchApplication(candidate.payload)()
 
 
 class ActionsSource(CandidateSource):
@@ -982,6 +1243,10 @@ class WindowControlsSource(CandidateSource):
     a name comes from is recorded on the candidate (`provenance`), because it
     decides what else can find the element: a control reachable only through
     its tooltip cannot be found by `find(name=...)` in an action either.
+
+    **It has no preview, deliberately.** The outline on the real control is
+    what says which row is which, and a window beside the chooser could only
+    add a way to cover it.
     """
 
     name = "Control"

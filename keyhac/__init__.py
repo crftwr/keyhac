@@ -21,6 +21,8 @@ from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.source import CallableSource, ChooserPage, CandidateSource
 from keyhac.core.sources import (
     ActionsSource,
+    ApplicationsSource,
+    BrowserTabsSource,
     ClipboardHistorySource,
     KeyBindingsSource,
     MenuItemsSource,
@@ -98,6 +100,8 @@ __all__ = [
     "CallableSource",
     "ChooserPage",
     "ActionsSource",
+    "ApplicationsSource",
+    "BrowserTabsSource",
     "ClipboardHistorySource",
     "KeyBindingsSource",
     "MenuItemsSource",
