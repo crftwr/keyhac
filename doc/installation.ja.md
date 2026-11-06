@@ -59,7 +59,7 @@ Settings → Apps → Startup で切り替えます。
 
 ### zip パッケージ
 
-1. [Releases](https://github.com/crftwr/keyhac/releases) から `Keyhac-<version>-win64.zip`（x64）または `Keyhac-<version>-winarm64.zip`（Arm）を
+1. [Releases](https://github.com/crftwr/keyhac/releases) から `Keyhac-<version>-win-x64.zip`（x64）または `Keyhac-<version>-win-arm64.zip`（Arm）を
    ダウンロードし、任意の場所に展開します
    （たとえば `C:\Program Files\Keyhac` やホームディレクトリ内のフォルダー）。
 2. `Keyhac.exe` を実行します。
