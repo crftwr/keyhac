@@ -201,6 +201,7 @@ def configure(keymap):
     keys = KeyBindingsSource()
     actions = ActionsSource()
     controls = WindowControlsSource()
+    tabs = BrowserTabsSource()
 
     # Three pages, each named for what Enter does on it - so the query you
     # carry between them is the noun and the page is the verb: type `mail`,
@@ -220,8 +221,9 @@ def configure(keymap):
         ChooserPage("Run", [keys, actions]),
         ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
         # Click: what you would otherwise reach for the mouse to hit - the
-        # application's menu commands, its controls, and the other windows.
-        ChooserPage("Click", ([menus] if mac else []) + [controls, OpenWindows()]),
+        # application's menu commands, its controls, the other windows, and
+        # the tabs open in your browsers.
+        ChooserPage("Click", ([menus] if mac else []) + [controls, OpenWindows(), tabs]),
     ])
 
     # Type `@` and a source name to narrow to one of them - `@Clip`, `@Menu`,

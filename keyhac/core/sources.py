@@ -15,12 +15,14 @@ things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
 import os
+import re
 import time
 import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
 from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
+from keyhac.core.focus import match_window_fields
 from keyhac.core.keymap import Keymap
 from keyhac.core.source import CandidateSource
 from keyhac.core import log
@@ -804,6 +806,147 @@ def _action_text(action) -> str:
     if text.startswith("<") and " object at 0x" in text:
         return f"{type(action).__name__}()"
     return text
+
+
+#: The browsers whose tabs are read: their names on macOS, and on Windows the
+#: process names.  Chromium's and Safari's tab bars are what `_is_tab` knows.
+_BROWSER_APPS = "Google Chrome|Microsoft Edge|Safari|chrome|msedge"
+
+#: What Chromium appends to the accessible name of a tab, so that the name reads
+#: as the page's title: "Netflix - Audio playing - Memory usage - 367 MB".
+_TAB_STATUS = re.compile(r"( - (Audio playing|Memory usage - [\d.,]+ ?[KMGT]?B))+$")
+
+#: Bounds on the walk of one window.  The tab bar is browser chrome, near the
+#: top of a tree whose web content is not walked: Chrome's and Safari's tabs
+#: are within 1500 nodes and depth 25.
+_TABS_MAX_NODES = 1500
+_TABS_MAX_DEPTH = 25
+
+#: Where a page starts.  A page's own controls can look exactly like tabs - a
+#: carousel's thumbnails are radio buttons in a tab group - so it is not entered.
+_WEB_CONTENT_ROLES = ("AXWebArea", "Document")
+
+
+class BrowserTabsSource(CandidateSource):
+    """The tabs open in Chrome, Edge and Safari, across all their windows.
+
+    Choosing a row selects the tab and brings its window to the front.
+
+    Tabs are read from each browser's own window through accessibility, so no
+    extension or browser permission is needed.  A row shows the tab's title:
+    the URL is not available for a tab that is not selected.
+
+    Every browser window is read each time the page opens, so this belongs in
+    a `ChooserPage` you go to deliberately.
+    """
+
+    name = "Tab"
+
+    #: The walk reads other applications' trees and touches nothing of
+    #: Keyhac's. See MenuItemsSource.background.
+    background = True
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        if keymap is None or keymap.window_provider is None:
+            return []
+        return _walk_browser_windows(
+            [w for w in keymap.list_windows()
+             if match_window_fields(w, app=_BROWSER_APPS)])
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("app", "")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        element, window = candidate.payload, candidate.extras["window"]
+
+        def act():
+            # Both, in this order: pressing a tab selects it, and on macOS
+            # leaves a window at the back there.
+            if not _press(element):
+                logger.error(f"{candidate.display}: the tab refused to be pressed.")
+                return
+            window.activate()
+
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            act()
+        else:
+            # As WindowControlsSource.on_chosen: this is inside the key hook's
+            # callback, and both calls are round trips into the browser.
+            keymap.call_on_main_thread(act)
+
+
+def _walk_browser_windows(windows):
+    """Yield a row for each tab of each window, in the order listed."""
+    for window in windows:
+        element = getattr(window, "element", None)
+        if element is None:
+            continue
+        for tab, name in _walk_tabs(element):
+            title = _TAB_STATUS.sub("", name)
+            yield Candidate(icon="🌐", display=title, payload=tab,
+                            extras={"app": window.app_name, "window": window})
+
+
+def _is_tab(role, parent_role, described) -> bool:
+    """Whether a control is a browser's tab.
+
+    Windows says so for every browser.  macOS never does: the role is
+    AXRadioButton, in an AXTabGroup in Chromium.  Safari's AXTabGroup holds the
+    page, and its tabs are recognized by their identifier instead.
+    """
+    if role == "TabItem":
+        return True
+    if role != "AXRadioButton":
+        return False
+    return (parent_role == "AXTabGroup"
+            or (described.get("identifier") or "").startswith("TabBarTab"))
+
+
+def _walk_tabs(root):
+    """Yield `(element, name)` for each tab below a browser window, without
+    entering the pages."""
+    budget = [_TABS_MAX_NODES]
+
+    def walk(element, parent_role, depth):
+        if budget[0] <= 0 or depth > _TABS_MAX_DEPTH:
+            return
+        budget[0] -= 1
+        try:
+            role = element.role()
+        except Exception:
+            return
+        if role in _WEB_CONTENT_ROLES:
+            return
+        if role in ("TabItem", "AXRadioButton"):
+            try:
+                described = element.describe()
+            except Exception:
+                described = {}
+            name = described.get("name")
+            if name and _is_tab(role, parent_role, described):
+                yield element, name
+        try:
+            children = element.children()
+        except Exception:
+            return
+        for child in children or []:
+            yield from walk(child, role, depth + 1)
+
+    yield from walk(root, None, 0)
 
 
 class ActionsSource(CandidateSource):
