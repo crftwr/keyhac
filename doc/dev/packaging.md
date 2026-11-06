@@ -202,19 +202,21 @@ tag..`origin/main` is where drift across many small changes shows.
   imported under `keyhac/core/`, or AppKit / Win32 under `keyhac/ui/`; a
   Windows DLL function called with no `restype` declared in its file;
   camelCase in the public API; the public API compared tag to head through
-  the generated `doc/config-api.md` and `doc/action-api.md` - an entry or a
-  parameter that shipped and is gone, a new parameter with no default - and
-  the `api-reference-check` and `check-docs` results. Comparing across the
-  release sees what no single PR does: an entry added and removed again
-  inside it is fine, one that shipped is not.
+  `tests/data/api_snapshot.txt` - whatever `tools/api_snapshot.py` classifies
+  as breaking, unless the major version moved - and the `api-reference-check`
+  and `check-docs` results. Comparing across the release sees what no single
+  PR does: an entry added and removed again inside it is fine, one that
+  shipped is not. A base older than that file (before v2.8.0) is compared
+  through the generated references instead, which can report a name that only
+  left the documentation.
 - **For review**, pointers that never set the exit status: new modules, new
   root files and tests outside `tests/`, new or moved dependencies, core
   reaching into `platform/mac|win` or `ui`, changed hooks (against
   [design-notes.md](design-notes.md)'s load-bearing list), lines near
   UINode's identity and lifetime, the MCP tool surface, user docstrings that
   name keyhac-mac / keyhac-win (migration help, or porting history for a
-  comment?), and every API addition - the release note's material, and the
-  reason a release with any is at least a minor.
+  comment?), and every API addition or new deprecation - the release note's
+  material, and an addition is the reason a release is at least a minor.
 
 Release artifacts per version: `Keyhac-<ver>-macos.dmg`, `Keyhac-<ver>-win-x64.zip`,
 `Keyhac-<ver>-win-arm64.zip`,

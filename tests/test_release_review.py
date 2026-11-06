@@ -146,6 +146,106 @@ class TestApiChanges:
         assert findings == [] and _rules(notes) == ["docstring"]
 
 
+def _snapshot(*rows):
+    lines = ["stable\tversion\tkeyhac.major\t2"]
+    lines += ["\t".join(row) for row in rows]
+    return "\n".join(lines) + "\n"
+
+
+_METHOD = ("stable", "method", "Keymap.configure", '[["self", "pk", null]]')
+
+
+class TestSnapshotChanges:
+
+    def _changes(self, monkeypatch, base_rows, head_rows, base_doc=None, head_doc=None):
+        texts = {("base", release_review.API_SNAPSHOT): _snapshot(*base_rows),
+                 ("head", release_review.API_SNAPSHOT): _snapshot(*head_rows),
+                 ("base", "doc/config-api.md"): base_doc,
+                 ("head", "doc/config-api.md"): head_doc}
+        monkeypatch.setattr(release_review, "show",
+                            lambda ref, path: texts.get((ref, path)))
+        return release_review.api_changes("base", "head")
+
+    def test_unchanged_api_has_nothing(self, monkeypatch):
+        assert self._changes(monkeypatch, [_METHOD], [_METHOD]) == ([], [])
+
+    def test_a_name_that_only_left_the_reference_is_not_a_finding(self, monkeypatch):
+        # Keymap.mcp_server_running on 2.8.0: still a deprecated alias, listed in
+        # the snapshot, gone from the reference on purpose.
+        row = ("deprecated", "attribute", "Keymap.mcp_server_running")
+        base_doc = "#### <kbd>property</kbd> Keymap.mcp_server_running\n"
+        assert self._changes(monkeypatch, [row], [row], base_doc, "") == ([], [])
+
+    def test_a_class_that_is_new_only_to_the_reference_is_not_a_note(self, monkeypatch):
+        # CandidatePreview on 2.8.0: exported since before the reference listed it.
+        row = ("stable", "class", "CandidatePreview")
+        head_doc = "## <kbd>class</kbd> `CandidatePreview`\n"
+        assert self._changes(monkeypatch, [row], [row], "", head_doc) == ([], [])
+
+    def test_removal_is_a_finding(self, monkeypatch):
+        findings, _ = self._changes(monkeypatch, [_METHOD], [])
+        assert [f.where for f in findings] == ["Keymap.configure"]
+
+    def test_removing_a_deprecated_name_is_a_finding(self, monkeypatch):
+        row = ("deprecated", "attribute", "Keymap.on_key_event")
+        findings, _ = self._changes(monkeypatch, [row], [])
+        assert [f.where for f in findings] == ["Keymap.on_key_event"]
+
+    def test_incompatible_signature_is_a_finding(self, monkeypatch):
+        head = _METHOD[:3] + ('[["self", "pk", null], ["quiet", "pk", null]]',)
+        findings, _ = self._changes(monkeypatch, [_METHOD], [head])
+        assert "quiet" in findings[0].message
+
+    def test_a_break_across_a_major_is_a_note(self, monkeypatch):
+        texts = {("base", release_review.API_SNAPSHOT): _snapshot(_METHOD),
+                 ("head", release_review.API_SNAPSHOT):
+                     "stable\tversion\tkeyhac.major\t3\n"}
+        monkeypatch.setattr(release_review, "show",
+                            lambda ref, path: texts.get((ref, path)))
+        findings, notes = release_review.api_changes("base", "head")
+        assert findings == [] and "major version moved" in notes[0].message
+
+    def test_new_deprecation_is_listed_for_the_note(self, monkeypatch):
+        head = ("deprecated",) + _METHOD[1:]
+        findings, notes = self._changes(monkeypatch, [_METHOD], [head])
+        assert findings == [] and "deprecated" in notes[0].message
+
+    def test_a_name_first_listed_as_deprecated_is_not_new_api(self, monkeypatch):
+        # Keymap.on_key_event on 2.8.0: public only in the naming sense until its
+        # wiring moved to an underscored name, then listed as a deprecated alias.
+        row = ("deprecated", "attribute", "Keymap.on_key_event")
+        findings, notes = self._changes(monkeypatch, [], [row])
+        assert findings == [] and "deprecated" in notes[0].message \
+            and "minor bump" not in notes[0].message
+
+    def test_addition_is_a_note_and_asks_for_a_minor_bump(self, monkeypatch):
+        row = ("stable", "class", "NewThing")
+        findings, notes = self._changes(monkeypatch, [], [row])
+        assert findings == [] and "new class" in notes[0].message \
+            and "minor bump" in notes[0].message
+
+    def test_preview_addition_is_a_note(self, monkeypatch):
+        row = ("preview", "method", "Keymap.try_this", "[]")
+        findings, notes = self._changes(monkeypatch, [], [row])
+        assert findings == [] and "new Preview method" in notes[0].message
+
+    def test_removing_a_preview_is_a_note(self, monkeypatch):
+        row = ("preview", "method", "Keymap.try_this", "[]")
+        findings, notes = self._changes(monkeypatch, [row], [])
+        assert findings == [] and "removed" in notes[0].message
+
+    def test_camel_case_is_a_finding_for_any_new_name(self, monkeypatch):
+        stable = ("stable", "method", "Keymap.getFocus", "[]")
+        preview = ("preview", "method", "Keymap.tryThis", "[]")
+        findings, _ = self._changes(monkeypatch, [], [stable, preview])
+        assert [f.where for f in findings] == ["Keymap.getFocus", "Keymap.tryThis"]
+
+    def test_docstring_check_stays_on_the_reference(self, monkeypatch):
+        findings, notes = self._changes(monkeypatch, [_METHOD], [_METHOD], "",
+                                        "The keyhac-win name for this.\n")
+        assert findings == [] and _rules(notes) == ["docstring"]
+
+
 class TestPlacement:
 
     def test_new_root_file_and_stray_test(self):
