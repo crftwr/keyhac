@@ -19,6 +19,8 @@ from puikit import DEFAULT_STYLE, Style
 from puikit.text import elide
 from puikit.widgets.base import Widget
 
+from keyhac.ui.text import one_line
+
 #: Blank columns kept between the label and its badge, so a full-width label
 #: does not run into it.
 _GAP = 2
@@ -43,8 +45,11 @@ class CandidateRow(Widget):
     def __init__(self, label: str, badge: str = "",
                  style: Style = DEFAULT_STYLE,
                  badge_style: Style = _BADGE_STYLE):
-        self.label = label
-        self.badge = badge
+        # A row is one line, and these come from other applications: a control's
+        # name, a tab's title. `Candidate.display` itself stays as it was given,
+        # since a source's `on_chosen` may act on it.
+        self.label = one_line(label)
+        self.badge = one_line(badge)
         self.style = style
         self.badge_style = badge_style
 

@@ -459,6 +459,11 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   was the plan, but Keyhac has no screen capture, and adding one means the macOS
   Screen Recording permission. Text alone says little the row does not, and the
   preview window could cover the outline, which is the actual confirmation.
+- `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on
+  macOS Chrome: narrowing a window from 739 to 696 took its tabs in the tree from
+  36 to 33, and `enable_content_access` did not bring them back. Chrome's `Tab`
+  menu does list the hidden ones, for what looks like one window, with long names
+  elided. Using it was left out on purpose, as hidden tabs are an accepted limit.
 - Moving the selection through a source that carries screen rectangles draws
   an outline over the real control (`ChooserWindow._point_at_selection`, PuiKit
   `mark_screen`). This is discussion #112's argument for `node.highlight()`

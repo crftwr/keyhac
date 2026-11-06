@@ -680,6 +680,12 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 The last two read the front application on every invocation, so give each a
 `ChooserPage` of its own rather than putting it in a merged one.
 
+`BrowserTabsSource` lists the tabs open in Chrome, Edge and Safari, across all
+their windows, by title. Enter selects the tab and brings its window to the front.
+Only tabs visible in the tab bar are listed: Chrome leaves out a tab it has no room
+to show. It reads every browser window each time, so it too belongs on a page you
+go to deliberately.
+
 `MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
 one per application, always at the top of the screen, and readable in full
 while it is closed — which is what makes a flat list of every command
