@@ -47,6 +47,14 @@ if sys.platform == "win32":
     SW_SHOWNORMAL = 1
 
 
+#: Each Chromium browser: its name, its data folder under %LOCALAPPDATA%, and the
+#: executable, which App Paths resolves.
+_CHROMIUM_BROWSERS = (
+    ("Chrome", r"Google\Chrome\User Data", "chrome.exe"),
+    ("Edge", r"Microsoft\Edge\User Data", "msedge.exe"),
+)
+
+
 class WinAppControl(AppControl):
 
     def activate_pid(self, pid: int) -> bool:
@@ -94,6 +102,25 @@ class WinAppControl(AppControl):
             return []
         names = {name.casefold(): name for name, _parsing in entries}
         return [(name, name) for name in names.values()]
+
+    def browser_data_dirs(self) -> list[tuple[str, str]]:
+        local = os.environ.get("LOCALAPPDATA")
+        if not local:
+            return []
+        return [(name, os.path.join(local, folder))
+                for name, folder, _exe in _CHROMIUM_BROWSERS]
+
+    def open_url_in_browser(self, browser: str, url: str, profile: str) -> None:
+        if sys.platform != "win32":
+            return
+        exe = next(exe for name, _folder, exe in _CHROMIUM_BROWSERS if name == browser)
+        # A quote would end the argument.  In a URL it means the same escaped.
+        quoted = url.replace('"', "%22")
+        result = shell32.ShellExecuteW(
+            None, None, exe, f'--profile-directory="{profile}" "{quoted}"',
+            None, SW_SHOWNORMAL)
+        if (result or 0) <= 32:
+            logger.warning(f"Could not open {url} in {browser} (ShellExecute {result}).")
 
     def open_url(self, url: str) -> None:
         # startfile on a URL is ShellExecute "open", which is what the shell

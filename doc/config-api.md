@@ -9,7 +9,7 @@ An entry opening with "Preview" may change in any release. One opening with
 "Deprecated" still works, says what replaces it, and goes in a later major
 release. `PREVIEW_APIS` and `DEPRECATED_APIS` list them.
 
-**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidatePreview](#class-candidatepreview) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ApplicationsSource](#class-applicationssource) · [BrowserTabsSource](#class-browsertabssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console) · [ReportCaretAnchor](#class-reportcaretanchor)
+**Contents:** [Keymap](#class-keymap) · [KeyTable](#class-keytable) · [KeyCondition](#class-keycondition) · [FocusCondition](#class-focuscondition) · [InputContext](#class-inputcontext) · [Focus](#class-focus) · [KeyEvent](#class-keyevent) · [Window](#class-window) · [ThreadedAction](#class-threadedaction) · [InputText](#class-inputtext) · [LaunchApplication](#class-launchapplication) · [ActivateApplication](#class-activateapplication) · [ActivateWindow](#class-activatewindow) · [MoveWindow](#class-movewindow) · [SnapWindow](#class-snapwindow) · [MouseMove](#class-mousemove) · [MouseButtonDown](#class-mousebuttondown) · [MouseButtonUp](#class-mousebuttonup) · [MouseButtonClick](#class-mousebuttonclick) · [MouseWheel](#class-mousewheel) · [MouseHorizontalWheel](#class-mousehorizontalwheel) · [StartRecordingKeys](#class-startrecordingkeys) · [StopRecordingKeys](#class-stoprecordingkeys) · [ToggleRecordingKeys](#class-togglerecordingkeys) · [PlaybackRecordedKeys](#class-playbackrecordedkeys) · [ClipboardHistory](#class-clipboardhistory) · [ChooserAction](#class-chooseraction) · [ShowCandidates](#class-showcandidates) · [Candidate](#class-candidate) · [CandidatePreview](#class-candidatepreview) · [CandidateSource](#class-candidatesource) · [CallableSource](#class-callablesource) · [ChooserPage](#class-chooserpage) · [ActionsSource](#class-actionssource) · [ApplicationsSource](#class-applicationssource) · [BrowserBookmarksSource](#class-browserbookmarkssource) · [BrowserTabsSource](#class-browsertabssource) · [ClipboardHistorySource](#class-clipboardhistorysource) · [KeyBindingsSource](#class-keybindingssource) · [MenuItemsSource](#class-menuitemssource) · [WindowControlsSource](#class-windowcontrolssource) · [SnippetsSource](#class-snippetssource) · [ClipboardToolsSource](#class-clipboardtoolssource) · [ShowClipboardHistory](#class-showclipboardhistory) · [ShowClipboardSnippets](#class-showclipboardsnippets) · [ShowClipboardTools](#class-showclipboardtools) · [DateTimeSnippet](#class-datetimesnippet) · [getLogger](#function-getlogger) · [Console](#class-console) · [ReportCaretAnchor](#class-reportcaretanchor)
 
 
 ## <kbd>class</kbd> `Keymap`
@@ -2047,6 +2047,45 @@ Build the source.
 **Args:**
  
  - <b>`name`</b>:  What a shared window shows beside these rows. 
+
+---
+
+
+## <kbd>class</kbd> `BrowserBookmarksSource`
+The bookmarks of Chrome, Edge and Safari. 
+
+Choosing a row opens the bookmark in the browser it came from. 
+
+Chrome's and Edge's are read from their files, for every profile, whether or not the browser is running. Rows can be found by title, URL or folder. 
+
+Safari's are read from its Bookmarks menu on macOS, and only while Safari is running, because macOS protects the file. Rows can be found by title or folder: the menu does not say the URL. Nothing is kept between reads. 
+
+### <kbd>method</kbd> `BrowserBookmarksSource.__init__`
+
+```python
+__init__(name: str = None)
+```
+
+Build the source. 
+
+
+
+**Args:**
+ 
+ - <b>`name`</b>:  What a shared window shows beside these rows. 
+
+
+
+
+---
+
+### <kbd>method</kbd> `BrowserBookmarksSource.preview`
+
+```python
+preview(candidate)
+```
+
+The bookmark's URL, where it is known, and its folder. 
 
 ---
 
