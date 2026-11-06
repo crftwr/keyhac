@@ -1547,19 +1547,17 @@ at all.
 OSes have no shared way to show one. A config marks a level in the title, such as
 `"⚠️ Backup failed"`, which reads the same on both.
 
-What each OS offers, from its documentation and not yet tried:
+What each OS offers, from its documentation and mostly not yet tried:
 
 | | Showing a level | Other controls |
 |---|---|---|
-| **Windows** | `NIIF_INFO`, `NIIF_WARNING` or `NIIF_ERROR` in `dwInfoFlags` selects an icon. How a Windows 11 toast shows it is unchecked | None |
+| **Windows** | `NIIF_INFO`, `NIIF_WARNING` or `NIIF_ERROR` in `dwInfoFlags` selects an icon. Windows 11 shows `NIIF_INFO` as a large icon in the notification; the other two are unchecked | None |
 | **macOS** | None. The icon is always the application's | Sound, `interruptionLevel`, an attached image |
 
 - On macOS, `timeSensitive` and `critical` need an entitlement, and `critical` also
   needs Apple's approval, so neither is a practical way to show a level. An attached
   image needs a file and shows only as a small attachment.
 - A shared `level=` could therefore end up as nothing more than a sound on macOS.
-- The balloon that stands in when a notification cannot be posted is drawn by
-  Keyhac, so it could show any level. That does not help, since it is the rare case.
 - PuiKit's `post_notification` sends `NIIF_INFO` on Windows and sets no sound or
   interruption level on macOS.
 
