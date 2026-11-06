@@ -56,7 +56,7 @@ ACTION_IMPORTS = [name for name in ACTION_API_NAMES
                   if name not in REACHED_BY_ACTION] + ["getLogger"]
 
 #: In `__all__` without being API to document.
-NOT_DOCUMENTED = ["__version__"]
+NOT_DOCUMENTED = ["__version__", "PREVIEW_APIS", "DEPRECATED_APIS"]
 
 
 def _config_api_names() -> list[str]:

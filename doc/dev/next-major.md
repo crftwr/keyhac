@@ -148,3 +148,22 @@ normalising would settle.
 `splitlines()` or to `\n`. The release note should list the controls whose
 output changes.
 
+## Callbacks receive one context object
+
+**What.** Move the callbacks that take positional facts to one object each:
+`on_chosen(candidate, modifier_flags)`, `Candidate.action(modifier_flags)`,
+`finished(result)`, `custom_condition_func(focus)`, and `badge`, `preview` and
+`remove(candidate)`.
+
+**Why.** A callback can never be told one more thing: a new positional argument
+breaks every callback written for the current ones, so a new fact has nowhere to
+go. An attribute of a context object is additive. New callbacks already follow the
+rule ([design-notes.md](design-notes.md#the-public-api-stays-thin)).
+
+**Why it waits.** Every existing callback would have to change its signature, which
+is the breakage this exists to stop.
+
+**Migration.** Each callback changes to take the context object and read the same
+facts off it, for example `on_chosen(chosen)` with `chosen.candidate` and
+`chosen.modifier_flags`. `warn_unless_callable_with` can name the ones still
+written the old way for a release beforehand. The release note should list them.

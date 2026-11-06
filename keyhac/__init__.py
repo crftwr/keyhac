@@ -5,6 +5,7 @@ Configuration files do `from keyhac import *` and get the user-facing API.
 
 __version__ = "2.7.0"
 
+from keyhac.core.api_marks import DEPRECATED_APIS, PREVIEW_APIS
 from keyhac.core.keymap import Keymap
 from keyhac.core.key import KeyCondition, KeyTable
 from keyhac.core.focus import FocusCondition
@@ -118,5 +119,8 @@ __all__ = [
     "ActionCancelled",
     "StaleElement",
     "Unresponsive",
+    # Which APIs carry a mark (keyhac/core/api_marks.py)
+    "PREVIEW_APIS",
+    "DEPRECATED_APIS",
     "__version__",
 ]

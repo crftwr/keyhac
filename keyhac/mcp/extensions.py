@@ -149,6 +149,62 @@ def _parse_directory(extensions_dir: str) -> dict[str, _Parsed]:
     return parsed
 
 
+def import_warnings(source: str) -> list[str]:
+    """What is wrong with what `source` imports from Keyhac, one line per import.
+
+    **Warnings, not refusals.** `from keyhac.core.keymap import ...` works today and
+    can break on any release, and refusing it would stop configs that run fine
+    (#278). What it can do is say so at the moment something is being written, with
+    the public name where there is one. Read with `ast`, so nothing is executed;
+    a file that does not parse has nothing to say here, and says it elsewhere.
+    """
+    import keyhac
+    import keyhac.core.ui as ui_module
+    from keyhac.core.api_marks import is_deprecated
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+
+    public = set(keyhac.__all__)
+
+    def instead(module: str, name: str) -> str:
+        if name in public:
+            return f"use `from keyhac import {name}`"
+        if module == "keyhac.core.ui" and name[:1].isupper() and hasattr(ui_module, name):
+            return f"reach it through keymap.ui or self.ui, as `ui.{name}`"
+        return "it is internal to Keyhac and can change in any release"
+
+    warnings = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("keyhac."):
+                    warnings.append(f"line {node.lineno}: `import {alias.name}` is internal "
+                                    f"to Keyhac and can change in any release; import the "
+                                    f"public names from `keyhac`")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            internal = node.module.startswith("keyhac.")
+            if not internal and node.module != "keyhac":
+                continue
+            for alias in node.names:
+                if alias.name == "*":
+                    if internal:
+                        warnings.append(f"line {node.lineno}: `from {node.module} import *` "
+                                        f"is internal to Keyhac and can change in any "
+                                        f"release; import the public names from `keyhac`")
+                elif internal or alias.name not in public:
+                    warnings.append(f"line {node.lineno}: `from {node.module} import "
+                                    f"{alias.name}` - {instead(node.module, alias.name)}")
+                else:
+                    replacement = is_deprecated(alias.name)
+                    if replacement is not None:
+                        warnings.append(f"line {node.lineno}: {alias.name} is deprecated - "
+                                        f"{replacement}")
+    return warnings
+
+
 def _read_module(tree, path: str) -> _Parsed:
     source = _Parsed(path)
     for node in tree.body:

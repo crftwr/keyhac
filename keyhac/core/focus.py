@@ -11,6 +11,7 @@ from typing import Callable
 
 from keyhac.platform.base import Focus
 from keyhac.core import log
+from keyhac.core.api_marks import warn_unless_callable_with
 
 logger = log.getLogger("Focus")
 
@@ -100,6 +101,7 @@ class FocusCondition:
             class_name: Win32 window class name pattern (Windows only).
         """
         self.focus_path_pattern = focus_path_pattern
+        warn_unless_callable_with(custom_condition_func, 1, "custom_condition_func")
         self.custom_condition_func = custom_condition_func
         self.app = app
         self.title = title
