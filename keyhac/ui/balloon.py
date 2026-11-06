@@ -105,7 +105,7 @@ def focus_anchor(keymap):
 
 
 def multi_stroke_help(balloon: "BalloonManager"):
-    """The callback `main()` hands to `keymap.on_enter_multi_stroke`.
+    """The callback `main()` hands to `keymap._on_enter_multi_stroke`.
 
     A function rather than a lambda in the bootstrap because of the text it
     composes, and that is a claim worth a test that a lambda inside `main()`
@@ -116,7 +116,7 @@ def multi_stroke_help(balloon: "BalloonManager"):
         balloon: the BalloonManager to pop on.
 
     Returns:
-        A `callable(name)` for `on_enter_multi_stroke`.
+        A `callable(name)` for `_on_enter_multi_stroke`.
     """
     def show(name):
         balloon.pop("MultiStroke", f"Multi-stroke: {name or '...'}")
