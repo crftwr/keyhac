@@ -718,7 +718,10 @@ it is paid for only when you ask for it.
 Once the selection rests on a row, a **preview window** beside the chooser shows
 what one line cannot: the whole text with its size and format, an image, copied
 files, an action's description. Clipboard entries, snippets, clipboard tools (the
-converted result, before you choose it) and actions have one.
+converted result, before you choose it), actions, key bindings (the docstring and
+what else follows a multi-stroke prefix) and menu items (the full path and the
+shortcut) have one. Window controls do not: the outline on the real control says
+which one a row is, and a window beside the chooser could cover it.
 
 A source of your own offers one by overriding `preview()`:
 

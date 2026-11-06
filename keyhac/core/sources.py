@@ -14,6 +14,8 @@ name of the history *store* on ``keymap.clipboard_history``, and two public
 things with one name in a flat ``from keyhac import *`` namespace is a trap.
 """
 
+import functools
+import inspect
 import os
 import re
 import time
@@ -456,6 +458,16 @@ class MenuItemsSource(CandidateSource):
         """lazydocs: ignore"""
         return candidate.extras.get("shortcut", "")
 
+    def preview(self, candidate):
+        """The item's full menu path and its keyboard shortcut."""
+        # What the walk already read, and nothing more: a row whose label is
+        # cut short by the window's width is the one this is for, and asking
+        # the other application again would hold the keyboard to learn nothing.
+        shortcut = candidate.extras.get("shortcut")
+        return CandidatePreview(
+            text=candidate.display,
+            fields=(("Shortcut", shortcut),) if shortcut else ())
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         if not _press(candidate.payload):
@@ -753,6 +765,24 @@ class KeyBindingsSource(CandidateSource):
         """lazydocs: ignore"""
         return candidate.extras.get("keys", "")
 
+    def preview(self, candidate):
+        """What the binding does in full, its docstring, and
+        what else follows a multi-stroke prefix."""
+        from keyhac.core.keymap import _key_text
+
+        parts = [_action_text(candidate.payload)]
+        doc = _action_doc(candidate.payload)
+        if doc:
+            parts.append(doc)
+        siblings = candidate.extras.get("siblings")
+        if siblings:
+            lines = [f"{_key_text(key)}  {_continuation_text(action)}"
+                     for key, action in siblings.items()]
+            prefix = candidate.extras["prefix"]
+            parts.append(f"After {prefix}:\n" + "\n".join(lines))
+        return CandidatePreview(text="\n\n".join(parts),
+                                fields=(("Keys", candidate.extras.get("keys", "")),))
+
     def on_chosen(self, candidate, modifier_flags: int) -> None:
         """lazydocs: ignore"""
         keymap = Keymap.get_instance()
@@ -781,10 +811,13 @@ def _walk_bindings(table, path, rows, depth) -> None:
         if isinstance(action, KeyTable):
             _walk_bindings(action.table, keys, rows, depth + 1)
             continue
+        extras = {"keys": " › ".join(keys)}
+        if path:
+            extras.update(prefix=" › ".join(path), siblings=table)
         rows.append(Candidate(
             icon="⌨", display=_action_text(action), payload=action,
             match_text=f"{' '.join(keys)} {_action_text(action)}",
-            extras={"keys": " › ".join(keys)}))
+            extras=extras))
 
 
 def _action_text(action) -> str:
@@ -806,6 +839,31 @@ def _action_text(action) -> str:
     if text.startswith("<") and " object at 0x" in text:
         return f"{type(action).__name__}()"
     return text
+
+
+def _action_doc(action) -> str | None:
+    """A callable binding's own docstring, or None.
+
+    `__doc__` rather than `inspect.getdoc`, which goes looking up the class
+    tree: an operator's undocumented `ThreadedAction` subclass would then be
+    described by what `ThreadedAction` says about itself. A `partial`'s
+    `__doc__` is likewise about `partial`, so the function inside it is asked.
+    """
+    if isinstance(action, (str, list, tuple)) or not callable(action):
+        return None
+    while isinstance(action, functools.partial):
+        action = action.func
+    doc = getattr(action, "__doc__", None)
+    if not isinstance(doc, str) or not doc.strip():
+        return None
+    return inspect.cleandoc(doc)
+
+
+def _continuation_text(action) -> str:
+    """A line in the list of what else follows a multi-stroke prefix."""
+    from keyhac.core.key import KeyTable
+
+    return "›" if isinstance(action, KeyTable) else _action_text(action)
 
 
 #: The browsers whose tabs are read: their names on macOS, and on Windows the
@@ -1128,6 +1186,10 @@ class WindowControlsSource(CandidateSource):
     a name comes from is recorded on the candidate (`provenance`), because it
     decides what else can find the element: a control reachable only through
     its tooltip cannot be found by `find(name=...)` in an action either.
+
+    **It has no preview, deliberately.** The outline on the real control is
+    what says which row is which, and a window beside the chooser could only
+    add a way to cover it.
     """
 
     name = "Control"

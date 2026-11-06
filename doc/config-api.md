@@ -2088,6 +2088,19 @@ Build the source.
  
  - <b>`name`</b>:  What a shared window shows beside these rows. 
 
+
+
+
+---
+
+### <kbd>method</kbd> `KeyBindingsSource.preview`
+
+```python
+preview(candidate)
+```
+
+What the binding does in full, its docstring, and what else follows a multi-stroke prefix. 
+
 ---
 
 
@@ -2116,6 +2129,19 @@ Build the source.
  
  - <b>`name`</b>:  What a shared window shows beside these rows. 
 
+
+
+
+---
+
+### <kbd>method</kbd> `MenuItemsSource.preview`
+
+```python
+preview(candidate)
+```
+
+The item's full menu path and its keyboard shortcut. 
+
 ---
 
 
@@ -2127,6 +2153,8 @@ Discussion #112's original target, and the reason the window had to stop taking 
 **It streams, because it is expensive.** Measured on macOS: a heavy application's tree is 3000 nodes and 460 ms, and filtering by role does not help - the walk is the cost, and reporting less of it changes nothing. So the walk yields as it goes and the first controls are on screen while the rest are still being found. Put it in a `ChooserPage` of its own all the same; it has real work to do on every invocation. 
 
 **Only controls with a name are offered.** An icon-only button with no label, no description and no tooltip cannot be typed for - there is no text to filter on - so listing it would add a row nobody can reach. Where a name comes from is recorded on the candidate (`provenance`), because it decides what else can find the element: a control reachable only through its tooltip cannot be found by `find(name=...)` in an action either. 
+
+**It has no preview, deliberately.** The outline on the real control is what says which row is which, and a window beside the chooser could only add a way to cover it. 
 
 ### <kbd>method</kbd> `WindowControlsSource.__init__`
 

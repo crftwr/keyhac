@@ -455,6 +455,10 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Pointing at what a row stands for
 
+- `WindowControlsSource` has no preview (#262). A screenshot around the control
+  was the plan, but Keyhac has no screen capture, and adding one means the macOS
+  Screen Recording permission. Text alone says little the row does not, and the
+  preview window could cover the outline, which is the actual confirmation.
 - `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on
   macOS Chrome: narrowing a window from 739 to 696 took its tabs in the tree from
   36 to 33, and `enable_content_access` did not bring them back. Chrome's `Tab`
