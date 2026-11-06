@@ -220,3 +220,84 @@ class TestSourcePreviews:
         preview = ActionsSource().preview(Candidate(display="x", payload=action))
         assert "Uses the configured engine." in preview.text
         assert ("Address", "tool.Translate") in preview.fields
+
+    def test_a_binding_previews_its_docstring_and_keys(self):
+        from keyhac.core.sources import KeyBindingsSource
+
+        def deploy():
+            """Deploy to staging.
+
+            Asks first.
+            """
+        row = Candidate(display="deploy()", payload=deploy, extras={"keys": "Fn-D"})
+        preview = KeyBindingsSource().preview(row)
+        assert "deploy()" in preview.text and "Asks first." in preview.text
+        assert ("Keys", "Fn-D") in preview.fields
+
+    def test_a_binding_is_not_described_by_a_base_class_or_partial(self):
+        import functools
+
+        from keyhac.core.sources import _action_doc
+
+        class Base:
+            """About the base."""
+            def __call__(self):
+                pass
+
+        class Undocumented(Base):
+            pass
+
+        def documented():
+            """About the function."""
+
+        assert _action_doc(Undocumented()) is None
+        assert _action_doc(Base()) == "About the base."
+        assert _action_doc(functools.partial(documented)) == "About the function."
+        assert _action_doc(functools.partial(print, "x")) is not None
+        assert _action_doc("Ctrl-C") is None
+
+    def test_a_multi_stroke_binding_lists_what_else_follows_the_prefix(self, engine):
+        from keyhac.core.sources import KeyBindingsSource
+
+        def configure(keymap):
+            table = keymap.define_keytable(focus_path_pattern="*")
+            sub = keymap.define_keytable(name="sub")
+            deeper = keymap.define_keytable(name="deeper")
+            table["Fn-X"] = sub
+            sub["A"] = "Ctrl-A"
+            sub["B"] = "Ctrl-B"
+            sub["C"] = deeper
+            deeper["D"] = "Ctrl-D"
+
+        fixture = engine(configure)
+        fixture.keymap._check_focus_change()
+        source = KeyBindingsSource()
+        rows = {row.extras["keys"]: row for row in source.candidates()}
+        preview = source.preview(rows["Fn-X › A"])
+        assert "After Fn-X:" in preview.text
+        assert "B  Ctrl-B" in preview.text and "C  ›" in preview.text
+
+    def test_a_binding_outside_a_prefix_has_no_such_list(self):
+        from keyhac.core.sources import KeyBindingsSource
+        row = Candidate(display="Ctrl-C", payload="Ctrl-C", extras={"keys": "Fn-C"})
+        assert KeyBindingsSource().preview(row).text == "Ctrl-C"
+
+    def test_a_menu_item_previews_its_full_path_and_shortcut(self):
+        from keyhac.core.sources import MenuItemsSource
+        row = Candidate(display="File › Export › As PDF…", payload=None,
+                        extras={"shortcut": "Cmd-P"})
+        preview = MenuItemsSource().preview(row)
+        assert preview.text == "File › Export › As PDF…"
+        assert ("Shortcut", "Cmd-P") in preview.fields
+
+    def test_a_menu_item_with_no_shortcut_has_no_empty_field(self):
+        from keyhac.core.sources import MenuItemsSource
+        row = Candidate(display="File › Close", payload=None, extras={"shortcut": ""})
+        assert MenuItemsSource().preview(row).fields == ()
+
+    def test_a_control_offers_no_preview(self):
+        """The outline on the real control is the confirmation, and a window
+        beside the chooser could only cover it."""
+        from keyhac.core.sources import WindowControlsSource
+        row = Candidate(display="Save", payload=None, extras={"role": "AXButton"})
+        assert WindowControlsSource().preview(row) is None

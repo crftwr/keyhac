@@ -455,6 +455,10 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Pointing at what a row stands for
 
+- `WindowControlsSource` has no preview (#262). A screenshot around the control
+  was the plan, but Keyhac has no screen capture, and adding one means the macOS
+  Screen Recording permission. Text alone says little the row does not, and the
+  preview window could cover the outline, which is the actual confirmation.
 - Moving the selection through a source that carries screen rectangles draws
   an outline over the real control (`ChooserWindow._point_at_selection`, PuiKit
   `mark_screen`). This is discussion #112's argument for `node.highlight()`
