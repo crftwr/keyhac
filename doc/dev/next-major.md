@@ -167,3 +167,19 @@ is the breakage this exists to stop.
 facts off it, for example `on_chosen(chosen)` with `chosen.candidate` and
 `chosen.modifier_flags`. `warn_unless_callable_with` can name the ones still
 written the old way for a release beforehand. The release note should list them.
+
+## Remove `Keymap`'s deprecated aliases
+
+**What.** Delete the `deprecated_alias` lines in `keyhac/core/keymap.py`, with
+`__init_subclass__` if nothing else uses it: `on_key_event`, `on_hook_restored`,
+`on_mouse_event`, `set_main_thread_dispatcher`, `push_modal_input`,
+`pop_modal_input`, `modal_input_active`, `effective_keytable`, `start_mcp_server`,
+`stop_mcp_server`, `mcp_server_running`.
+
+**Why.** They moved to `_name` in 2.x (#278) because they were public only in the
+naming sense. The aliases exist so a config using them keeps working.
+
+**Why it waits.** Removing them breaks such a config, so it needs a major release.
+
+**Migration.** There is no public replacement, as a config has no reason to call
+these. The log has named each config that used one since the alias was added.

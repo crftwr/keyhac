@@ -27,7 +27,7 @@ def no_leftover_dispatcher():
     from keyhac.core.keymap import Keymap
     keymap = Keymap.get_instance()
     if keymap is not None:
-        keymap.set_main_thread_dispatcher(None)
+        keymap._set_main_thread_dispatcher(None)
 
 
 class Fake:
@@ -233,7 +233,7 @@ def test_refuses_to_block_the_loop_thread(engine, monkeypatch):
     fixture = engine(lambda keymap: None)
     # A dispatcher that never runs anything: if the guard fails to fire, the
     # test hangs rather than passing by accident.
-    fixture.keymap.set_main_thread_dispatcher(lambda callback: None)
+    fixture.keymap._set_main_thread_dispatcher(lambda callback: None)
     assert threading.current_thread() is threading.main_thread()
     with pytest.raises(RuntimeError, match="event-loop thread"):
         wait_for(lambda: False, timeout=0.2)
@@ -253,7 +253,7 @@ def test_a_worker_evaluates_its_condition_on_its_own_thread(engine):
         thread.start()
         thread.join()
 
-    fixture.keymap.set_main_thread_dispatcher(dispatcher)
+    fixture.keymap._set_main_thread_dispatcher(dispatcher)
     result = {}
 
     def worker():
@@ -298,7 +298,7 @@ def test_only_the_loop_bound_platform_calls_go_to_the_loop(engine):
         thread.join()
 
     keymap = fixture.keymap
-    keymap.set_main_thread_dispatcher(dispatcher)
+    keymap._set_main_thread_dispatcher(dispatcher)
     keymap.window_provider = Windows()
     keymap.ime_provider = Ime()
 
@@ -344,7 +344,7 @@ def test_reads_nest_inside_a_condition_already_on_the_loop(engine):
         thread.start()
         thread.join()
 
-    fixture.keymap.set_main_thread_dispatcher(dispatcher)
+    fixture.keymap._set_main_thread_dispatcher(dispatcher)
     seen = []
 
     def helper():

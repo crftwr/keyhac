@@ -47,6 +47,7 @@ from lazydocs import MarkdownGenerator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import keyhac
+from keyhac.core.api_marks import deprecated_alias
 from keyhac.platform.base import Window
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -141,6 +142,18 @@ class _Generator(MarkdownGenerator):
         return super().func2md(func, clsname=clsname, depth=depth)
 
 
+def _drop_deprecated_aliases():
+    """A renamed member's old name is not API to document. Reading one off its class
+    gives the underscored member, which lazydocs would then print. Only this process
+    loses them."""
+    for name in dict.fromkeys(API_NAMES + ACTION_API_NAMES):
+        obj = _resolve(name)
+        if isinstance(obj, type):
+            for member, raw in list(vars(obj).items()):
+                if isinstance(raw, deprecated_alias):
+                    delattr(obj, member)
+
+
 def _resolve(name):
     """The object a name in API_NAMES refers to.
 
@@ -202,6 +215,7 @@ DOCUMENTS = [
 def main() -> int:
     check = "--check" in sys.argv[1:]
     failed = 0
+    _drop_deprecated_aliases()
     for filename, names_key, header_key in DOCUMENTS:
         names = ACTION_API_NAMES if names_key else API_NAMES
         header = ACTION_HEADER if header_key else HEADER

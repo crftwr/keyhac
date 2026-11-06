@@ -208,7 +208,7 @@ class App:
         self.keymap.configure()
         self.restored = 0
         self._next_health = 0.0
-        self.hook.install(self.keymap.on_key_event, self._on_restored)
+        self.hook.install(self.keymap._on_key_event, self._on_restored)
 
     def _on_restored(self):
         self.restored += 1

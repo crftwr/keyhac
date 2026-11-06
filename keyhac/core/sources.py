@@ -744,7 +744,7 @@ class KeyBindingsSource(CandidateSource):
         if keymap is None:
             return []
         rows = []
-        _walk_bindings(keymap.effective_keytable(), (), rows, 0)
+        _walk_bindings(keymap._effective_keytable(), (), rows, 0)
         return rows
 
     def badge(self, candidate) -> str:

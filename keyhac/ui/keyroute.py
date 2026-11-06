@@ -10,7 +10,7 @@ explicit that ``activates=False`` is display-only - "keyboard-taking
 non-activating panels are a separate future feature".
 
 Keyhac does not need that feature, because it already has a global keyboard
-hook.  ``Keymap.push_modal_input`` routes each keystroke here, this turns it
+hook.  ``Keymap._push_modal_input`` routes each keystroke here, this turns it
 into the ``Event`` PuiKit's widgets expect, and ``Panel.dispatch_event``
 feeds it to the window's own focused widget.  No OS focus changes hands.
 

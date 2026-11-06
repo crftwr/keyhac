@@ -82,7 +82,7 @@ def no_leftover_dispatcher():
     from keyhac.core.keymap import Keymap
     keymap = Keymap.get_instance()
     if keymap is not None:
-        keymap.set_main_thread_dispatcher(None)
+        keymap._set_main_thread_dispatcher(None)
 
 
 @pytest.fixture
@@ -368,7 +368,7 @@ def test_every_read_dispatches_to_the_loop_thread(ui):
         thread.start()
         thread.join()
 
-    api._keymap.set_main_thread_dispatcher(dispatcher)
+    api._keymap._set_main_thread_dispatcher(dispatcher)
     result = {}
 
     def worker():
@@ -387,7 +387,7 @@ def test_every_read_dispatches_to_the_loop_thread(ui):
 
 def test_wait_refuses_to_block_the_loop_thread(ui):
     api, _element = ui
-    api._keymap.set_main_thread_dispatcher(lambda callback: None)
+    api._keymap._set_main_thread_dispatcher(lambda callback: None)
     with pytest.raises(RuntimeError, match="event-loop thread"):
         api.wait(lambda: False, timeout=0.2)
 
@@ -812,7 +812,7 @@ class TestVerbs:
     def test_a_verb_that_waits_refuses_the_loop_thread(self, ui):
         """Waiting there would hold the keyboard hook for the length of it."""
         api, _element = ui
-        api._keymap.set_main_thread_dispatcher(lambda callback: None)
+        api._keymap._set_main_thread_dispatcher(lambda callback: None)
         with pytest.raises(RuntimeError, match="event-loop thread"):
             api.send_key("A", until=lambda: False, timeout=0.2)
 

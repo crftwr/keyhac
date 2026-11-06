@@ -374,7 +374,7 @@ class TestTheMenuInTheTray:
     def keymap(self, tmp_path):
         keymap = _Keymap(tmp_path)
         keymap._config_path = str(tmp_path / "config.py")
-        keymap.mcp_server_running = False
+        keymap._mcp_server_running = False
         keymap.edit_config = keymap.configure = lambda: None
         keymap.on_key_handled = None
         return keymap

@@ -41,7 +41,9 @@ def test_it_holds_the_documented_surface_and_not_the_wiring():
     items = api_snapshot.build()
     assert items["Keymap.define_keytable"][1] == "method"
     assert items["mcp.describe_screen"][1] == "tool"
-    assert "Keymap.on_key_event" not in items       # lazydocs: ignore
+    assert "Keymap.char_for_key" not in items        # lazydocs: ignore
+    assert "Keymap._on_key_event" not in items       # underscored
+    assert items["Keymap.on_key_event"][0] == "deprecated"
     assert "WaitTimeout.with_traceback" not in items    # Python's, not ours
 
 

@@ -166,7 +166,7 @@ class ConsoleWindow:
         # duration in them, which says it once at the moment it matters instead
         # of every time the eye passes the toolbar.
         self._mcp_checkbox = Checkbox(
-            "AI Integration: MCP Server", checked=keymap.mcp_server_running,
+            "AI Integration: MCP Server", checked=keymap._mcp_server_running,
             on_change=self._on_mcp_toggle)
         self._level_dropdown = DropDown(
             [name for name, _lvl in _LEVELS],
@@ -318,8 +318,8 @@ class ConsoleWindow:
         # closes on a deadline rather than on an event, and a checkbox still
         # reading "on" over a socket that has shut is the one state this switch
         # must not show.
-        if self._keymap.mcp_server_running != self._mcp_checkbox.checked:
-            self._mcp_checkbox.checked = self._keymap.mcp_server_running
+        if self._keymap._mcp_server_running != self._mcp_checkbox.checked:
+            self._mcp_checkbox.checked = self._keymap._mcp_server_running
             changed = True
 
         now = time.monotonic()
@@ -364,9 +364,9 @@ class ConsoleWindow:
             self._keymap.configure()
             if not self._hook.installed:
                 try:
-                    self._hook.install(self._keymap.on_key_event,
-                                       self._keymap.on_hook_restored,
-                                       self._keymap.on_mouse_event)
+                    self._hook.install(self._keymap._on_key_event,
+                                       self._keymap._on_hook_restored,
+                                       self._keymap._on_mouse_event)
                 except Exception as e:
                     logger.error(f"Failed to install the keyboard hook: {e}")
                     self._hook_checkbox.checked = False
@@ -392,8 +392,8 @@ class ConsoleWindow:
         """
         if self._settings:
             self._settings.set("mcp_no_timeout", bool(disabled))
-        if self._keymap.mcp_server_running:
-            self._keymap.stop_mcp_server()
+        if self._keymap._mcp_server_running:
+            self._keymap._stop_mcp_server()
             self._on_mcp_toggle(True)
 
     def _on_mcp_toggle(self, checked: bool) -> None:
@@ -405,7 +405,7 @@ class ConsoleWindow:
         try:
             if checked:
                 no_timeout = self.mcp_timeout_disabled()
-                self._keymap.start_mcp_server(
+                self._keymap._start_mcp_server(
                     timeout=None if no_timeout else _AUTHORING_WINDOW)
                 logger.info(
                     "MCP server enabled with no timeout - it stays on until "
@@ -413,12 +413,12 @@ class ConsoleWindow:
                     if no_timeout else
                     f"MCP server enabled for {_AUTHORING_WINDOW // 60} minutes.")
             else:
-                self._keymap.stop_mcp_server()
+                self._keymap._stop_mcp_server()
                 logger.info("MCP server disabled.")
         except Exception as e:
             logger.error(f"Could not {'start' if checked else 'stop'} "
                          f"the MCP server: {e}")
-            self._mcp_checkbox.checked = self._keymap.mcp_server_running
+            self._mcp_checkbox.checked = self._keymap._mcp_server_running
 
     def _on_level_change(self, index: int, name: str) -> None:
         self._console.log_level = _LEVELS[index][1]

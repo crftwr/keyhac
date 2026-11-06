@@ -68,14 +68,6 @@ Always the real focus.  While a chooser is open the key tables are matched again
 
 ---
 
-#### <kbd>property</kbd> Keymap.mcp_server_running
-
-Whether the endpoint is currently listening. 
-
-lazydocs: ignore 
-
----
-
 #### <kbd>property</kbd> Keymap.ui
 
 The action-facing UI API - see doc/action-api.md. 

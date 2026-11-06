@@ -67,7 +67,7 @@ hook, focus = FakeInputHook("ansi"), FakeFocusProvider()
 keymap = Keymap(hook, focus, platform, config_path=str(pathlib.Path(home) / "config.py"))
 keymap._clipboard_history = ClipboardHistory(Clipboard(), str(pathlib.Path(home) / "clipboard.json"))
 keymap.configure()
-hook.install(keymap.on_key_event, keymap.on_hook_restored, keymap.on_mouse_event)
+hook.install(keymap._on_key_event, keymap._on_hook_restored, keymap._on_mouse_event)
 
 def describe(action):
     if isinstance(action, (str, tuple, list)) or action is None:

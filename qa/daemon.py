@@ -92,7 +92,7 @@ def _arm(console, keymap) -> None:
     """Endpoint on, and a thread that quits Keyhac when the runner lets go."""
 
     def endpoint_on():
-        keymap.start_mcp_server(timeout=None)
+        keymap._start_mcp_server(timeout=None)
         print("qa: MCP server on, no timeout", flush=True)
 
     def on_main_thread(func):
@@ -103,7 +103,7 @@ def _arm(console, keymap) -> None:
             keymap.call_on_main_thread(func)
 
     def quit_keyhac():
-        keymap.stop_mcp_server()
+        keymap._stop_mcp_server()
         console.quit()
 
     def wait_for_the_runner():

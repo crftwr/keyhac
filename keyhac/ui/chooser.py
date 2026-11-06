@@ -494,7 +494,7 @@ class ChooserWindow:
                 if char.isprintable():
                     queue(char_key_event(char))
 
-        keymap.push_modal_input(handler, self._passes_through,
+        keymap._push_modal_input(handler, self._passes_through,
                                 focus=chooser_focus(), on_text=text_handler)
         self._grabbed = True
 
@@ -521,7 +521,7 @@ class ChooserWindow:
         from keyhac.core.keymap import Keymap
         keymap = Keymap.get_instance()
         if keymap is not None:
-            keymap.pop_modal_input()
+            keymap._pop_modal_input()
 
     def _center_on(self, rect, clamp_to) -> None:
         frame = self.window.frame_px()
