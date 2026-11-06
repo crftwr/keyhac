@@ -998,8 +998,23 @@ keymap.notify("Deploy finished", "All 12 services are up")   # title, text
 ```
 
 macOS では通知センターに届き、Windows ではトーストとして表示されます。macOS では初回に許可を
-求められます。通知を送れない場合は、同じ内容のバルーンが画面の隅に表示され、閉じるまで残ります。
+求められます。許可されていないなどの理由で通知を送れない場合は、コンソールにその旨が表示されます。
 集中モードやおやすみモードでは、通知が表示されないことがあります。
+
+`on_click` は、ユーザーが通知をクリックしたときに実行されます。この引数は Preview で、どのリリースでも
+変更される可能性があります。
+
+```python
+def reveal():
+    subprocess.run(["open", "-R", path])    # Windows では explorer /select,<path>
+
+keymap.notify("Saved", path, on_click=reveal)
+```
+
+引数は受け取らず、メインスレッドで実行されるので、すぐに終わる処理にしてください。時間のかかる処理には、
+同じように呼び出せてワーカーで処理する `ThreadedAction` のインスタンスを渡します
+(`on_click=ConvertReport(path)`)。Keyhac の再起動後は、クリックしても何も起きません。Windows では、
+最後の通知の `on_click` だけが実行されます。
 
 `--no-ui` モードではこれらの属性は存在しません。設定をヘッドレスで動かす必要がある場合は
 `getattr(keymap, "pop_balloon", None)` で保護してください。
@@ -1099,7 +1114,7 @@ Keyhac は起動時から 10 分ごとにメモリを記録するので、問題
 | `keymap.editor` / `edit_config()` / `reload_config()` | 設定のライフサイクル（トレイメニューが使用） |
 | `keymap.replay_buffer` | 記録アクションの背後にあるマクロバッファー |
 | `keymap.pop_balloon(name, text, timeout, anchor=…)` / `close_balloon(name)` | バルーン（UI モードのみ）。`anchor` で指定しない限りキャレットの位置に開く |
-| `keymap.notify(title, text)` | ネイティブの OS 通知（UI モードのみ）。送れない場合はバルーン |
+| `keymap.notify(title, text, on_click=None)` | ネイティブの OS 通知（UI モードのみ） |
 | `InputText(s)` | 文字列をそのまま入力 |
 | `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | ウィンドウとアプリのアクション |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | マウス出力のアクション |

@@ -17,6 +17,9 @@ and lets the text wrap instead of being squeezed onto one line inside a
 window sized by `min(70, len(text) + 4)`.
 """
 
+import functools
+import traceback
+
 from puikit import Style
 
 from keyhac.core import log
@@ -163,6 +166,14 @@ def _focused_window_rect(keymap):
         return None
 
 
+def _run_on_click(on_click) -> None:
+    """A mistake in a config's on_click is the config's, and goes to the console."""
+    try:
+        on_click()
+    except Exception:
+        logger.error(f"The notification's on_click failed:\n{traceback.format_exc()}")
+
+
 class BalloonManager:
 
     def __init__(self, backend, keymap=None):
@@ -219,28 +230,36 @@ class BalloonManager:
             return
         self._balloons[name] = marker
 
-    def notify(self, title: str, text: str = "") -> None:
+    def notify(self, title: str, text: str = "", on_click=None) -> None:
         """Post a native OS notification: Notification Center on macOS, a toast
         on Windows.
 
         For telling the user something when they may be looking elsewhere,
         such as a long action finishing.  Call it from `finished()`, a key
         binding, or a worker by way of `keymap.call_on_main_thread`.  Where a
-        notification cannot be posted, a balloon in the corner of the screen
-        says the same thing and stays until it is closed.  The OS may hold a
-        notification back, under Focus or Do Not Disturb.
+        notification cannot be posted, such as when the user has refused them,
+        the console says so.  The OS may hold a notification back, under Focus
+        or Do Not Disturb.
 
         Args:
             title: The first line.
             text: The rest of the message.
+            on_click: Preview, and may change in any release.  Called with no
+                arguments, on the main thread, when the user clicks the
+                notification.  It has to be quick, so pass a `ThreadedAction`
+                for anything slow: an instance can be called just like this.
+                Nothing happens on a click after Keyhac has restarted, and on
+                Windows only the latest notification's runs.
         """
+        if on_click is not None:
+            on_click = functools.partial(_run_on_click, on_click)
         try:
-            if self._backend.post_notification(title, text):
-                return
+            posted = self._backend.post_notification(title, text, on_click=on_click)
         except Exception:
             logger.debug("The notification could not be posted.", exc_info=True)
-        message = f"{title}\n{text}" if text else title
-        self.pop("Notification", message, None, anchor="corner")
+            posted = False
+        if not posted:
+            logger.info(f"The notification was not posted: {title}")
 
     def close(self, name: str = None) -> None:
         """Close one balloon, or all when name is None."""
