@@ -475,14 +475,87 @@ def test_describe_screen_within_rejects_what_it_cannot_use(registry):
         registry.call("describe_screen", {"within": {"max_depth": 30}})
 
 
-def _wide_tree(count, name_chars):
+def _wide_tree(count, name_chars, roles=("AXLink", "AXButton")):
+    """Siblings alternating between `roles`, so nothing collapses unless one role
+    is given."""
     from keyhac.core.uitree import UINode
 
     root = UINode(role="AXWindow", name="Docs")
-    root.children = [UINode(role="AXLink", name=f"{i:04d} " + "x" * name_chars,
-                            depth=1)
+    root.children = [UINode(role=roles[i % len(roles)],
+                            name=f"{i:04d} " + "x" * name_chars, depth=1)
                      for i in range(count)]
     return root
+
+
+def test_a_reply_too_large_collapses_a_long_run_and_reaches_what_follows(registry):
+    """Issue #67: a table's rows filled the reply, and the controls after it were
+    cut off. All of it comes from one read, so what is shown is one moment."""
+    from keyhac.core.uitree import UINode
+
+    tree = _wide_tree(500, 100, roles=("AXRow",))
+    tree.children.append(UINode(role="AXButton", name="Next page", depth=1))
+    reads = []
+    registry.keymap.node.reread = lambda **kw: reads.append(kw) or tree
+    text = registry.call("describe_screen", {"max_nodes": 6000})
+    assert len(reads) == 1
+    assert len(text) < tools_module.MAX_REPLY_CHARS
+    assert "AXButton 'Next page'" in text
+    assert "… 498 more AXRow" in text
+    assert "[collapsed:" in text and "498 of 502 node(s) are not shown" in text
+    assert "0000 xxx" in text and "0001 xxx" in text and "0002 xxx" not in text
+
+
+def test_a_collapsed_reply_still_says_the_read_was_truncated(registry):
+    """Seen on a real 1,500-row table in Edge: 6,000 nodes read, the button after the
+    table never reached, and nothing else in the reply would say so."""
+    from keyhac.core.uitree import UINode
+
+    tree = _wide_tree(500, 100, roles=("AXRow",))
+    tree.children.append(UINode(role="AXGroup", depth=1, truncated=True))
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {"max_nodes": 501})
+    assert "[collapsed:" in text and "[truncated:" in text
+    assert "before concluding this is the whole screen" in text
+    assert len(text) <= tools_module.MAX_REPLY_CHARS
+
+
+def test_a_read_that_fits_is_never_collapsed(registry):
+    """A selector may need a row that collapsing hides, so it costs a fitting read
+    nothing."""
+    tree = _wide_tree(50, 100, roles=("AXRow",))
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {})
+    assert len(text.splitlines()) == 51 and "more AXRow" not in text
+
+
+def test_a_scoped_collapse_keeps_the_placing_line(registry):
+    tree = _wide_tree(500, 100, roles=("AXRow",))
+    tree.reread = lambda **kw: tree
+    _with_container(registry, tree)
+    text = registry.call("describe_screen", {"within": {"role": "Window"}})
+    assert text.startswith("[within ") and "[collapsed:" in text
+
+
+def test_when_collapsing_is_not_enough_the_reply_is_still_cut(registry):
+    """Many short runs do not shrink below the ceiling, so the cut still holds, and
+    the note counts nodes rather than the count lines."""
+    from keyhac.core.uitree import UINode
+
+    tree = UINode(role="AXWindow", name="Docs")
+    groups = []
+    for g in range(200):
+        group = UINode(role="AXGroup" if g % 2 else "AXList", name=f"{g} " + "y" * 60, depth=1)
+        group.children = [UINode(role="AXRow", name=f"{g}.{i} " + "x" * 60, depth=2)
+                          for i in range(8)]
+        groups.append(group)
+    tree.children = groups
+    registry.keymap.node.reread = lambda **kw: tree
+    text = registry.call("describe_screen", {"max_nodes": 6000})
+    assert len(text) <= tools_module.MAX_REPLY_CHARS, "the note included"
+    body, note = text.split("\n\n[cut at ")
+    assert "long same-role runs collapsed" in note and "more AXRow" in body
+    shown = [line for line in body.splitlines() if not line.lstrip().startswith("… ")]
+    assert f"showing {len(shown)} of 1801 node(s)" in note
 
 
 def test_describe_screen_cuts_a_reply_too_large_for_the_client(registry):

@@ -681,20 +681,70 @@ def format_tree(node: UINode, indent: int = 0, max_value: int = 60) -> str:
     lines = []
     for current in node.walk():
         prefix = "  " * (current.depth - node.depth + indent)
-        bits = [current.role or "?"]
-        if current.identifier:
-            bits.append(f"#{current.identifier}")
-        if current.name:
-            bits.append(repr(current.name))
-        if current.value is not None and current.value != "":
-            value = str(current.value).replace("\n", "\\n")
-            if len(value) > max_value:
-                value = value[:max_value] + "…"
-            bits.append(f"= {value!r}")
-        if current.truncated:
-            bits.append("… (truncated)")
-        lines.append(prefix + " ".join(bits))
+        lines.append(prefix + _node_line(current, max_value))
     return "\n".join(lines)
+
+
+def _node_line(node: UINode, max_value: int = 60) -> str:
+    """One node as `format_tree` prints it, without the indent."""
+    bits = [node.role or "?"]
+    if node.identifier:
+        bits.append(f"#{node.identifier}")
+    if node.name:
+        bits.append(repr(node.name))
+    if node.value is not None and node.value != "":
+        value = str(node.value).replace("\n", "\\n")
+        if len(value) > max_value:
+            value = value[:max_value] + "…"
+        bits.append(f"= {value!r}")
+    if node.truncated:
+        bits.append("… (truncated)")
+    return " ".join(bits)
+
+
+def collapsed_tree(node: UINode, run: int = 6, keep: int = 2,
+                   max_value: int = 60) -> tuple[str, int]:
+    """`format_tree`, with long runs of same-role siblings shortened, and how many
+    nodes that left out.
+
+    A run of `run` or more siblings of one role prints its first `keep` whole,
+    because those show the shape a selector needs, and then one line with the
+    count. A data table is mostly this, and it is what uses up a reply before the
+    controls after it are reached (issue #67).
+
+    All of it comes from one read, so what is shown is one moment of the screen,
+    which paging through a tree read again per page could not promise.
+    """
+    lines = []
+    hidden = 0
+
+    def emit(current: UINode, level: int) -> None:
+        nonlocal hidden
+        prefix = "  " * level
+        lines.append(prefix + _node_line(current, max_value))
+        children = list(current.children or ())
+        index = 0
+        while index < len(children):
+            role = children[index].role
+            end = index
+            while end < len(children) and children[end].role == role:
+                end += 1
+            group = children[index:end]
+            index = end
+            if len(group) < run:
+                for child in group:
+                    emit(child, level + 1)
+                continue
+            for child in group[:keep]:
+                emit(child, level + 1)
+            rest = group[keep:]
+            count = sum(sum(1 for _ in child.walk()) for child in rest)
+            hidden += count
+            inner = f" ({count} nodes with what is inside them)" if count != len(rest) else ""
+            lines.append(f"{prefix}  … {len(rest)} more {role or '?'}{inner}")
+
+    emit(node, 0)
+    return "\n".join(lines), hidden
 
 
 # -- matching ---------------------------------------------------------------

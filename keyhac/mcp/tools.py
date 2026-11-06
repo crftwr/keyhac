@@ -159,7 +159,23 @@ def _truncation_shape(nodes: list, max_depth: int, max_nodes: int) -> str:
             f"{max(node.depth for node in nodes)}")
 
 
-def _cut_screen(text: str, total: int, scoped: bool) -> str:
+def _truncated_note(nodes: list, max_depth: int, max_nodes: int) -> str:
+    """What a reply from a read its bounds cut short says about that."""
+    return (f"[truncated: {_truncation_shape(nodes, max_depth, max_nodes)}. "
+            + ("Raise the bound that did the cutting, or narrow with roles=, "
+               if _raisable(nodes) else "")
+            + "before concluding this is the whole screen]")
+
+
+def _collapsed_note(hidden: int, total: int) -> str:
+    """What a reply shortened by `uitree.collapsed_tree` says about itself."""
+    return (f"\n\n[collapsed: this read was too large to return whole, so each long "
+            f"run of same-role siblings shows its first two and a count. {hidden} of "
+            f"{total} node(s) are not shown. To see some: within= the run's parent, "
+            f"roles=, or find_elements for a specific one]")
+
+
+def _cut_screen(text: str, total: int, scoped: bool, collapsed: bool = False) -> str:
     """A `describe_screen` reply cut to MAX_REPLY_CHARS, saying where - the
     body to MAX_CUT_BODY, so the note fits under the ceiling as well.
 
@@ -174,10 +190,13 @@ def _cut_screen(text: str, total: int, scoped: bool) -> str:
             break
         kept.append(line)
         size += len(line) + 1
-    shown = max(0, len(kept) - (1 if scoped else 0))
+    counted = [line for line in kept if not line.lstrip().startswith("… ")]
+    shown = max(0, len(counted) - (1 if scoped else 0))
     return ("\n".join(kept)
             + f"\n\n[cut at {MAX_REPLY_CHARS} characters: showing {shown} of "
-              f"{total} node(s), in tree order - everything after this line "
+              f"{total} node(s), in tree order"
+              + (", long same-role runs collapsed" if collapsed else "")
+              + f" - everything after this line "
               f"is missing, not just the bottom of the window. A larger read "
               f"would be too large for the client to accept, so narrow it: "
               f"within= one container from the lines above, roles= for the "
@@ -604,10 +623,12 @@ class ToolRegistry:
                                    "walk (default 14)."},
                      "max_nodes": {**integer, "description":
                                    f"Node budget (default {DEFAULT_MAX_NODES}). "
-                                   f"However many are read, the reply is cut "
-                                   f"at {MAX_REPLY_CHARS} characters - past "
-                                   f"that, narrow with within= or roles= "
-                                   f"rather than raising this."},
+                                   f"However many are read, a reply past "
+                                   f"{MAX_REPLY_CHARS} characters has its long "
+                                   f"runs of same-role siblings collapsed, and "
+                                   f"is cut if that is not enough - past that, "
+                                   f"narrow with within= or roles= rather than "
+                                   f"raising this."},
                      "roles": {**string, "description": "Only report elements "
                                "whose role matches this pattern."},
                      "within": {"type": "object", "description":
@@ -1076,10 +1097,26 @@ class ToolRegistry:
                     "will not help.]")
 
         if len(text) > MAX_REPLY_CHARS:
+            # Shorter first, then cut: a run of table rows is what usually fills
+            # a reply, and what follows it is what was being looked for. Only
+            # here, because a selector may need a row that collapsing hides, so
+            # a read that fits comes back whole (issue #67).
+            short, hidden = uitree.collapsed_tree(tree)
+            if placed is not None:
+                short = f"{placed}\n{short}"
+            if hidden:
+                # The read's own bound still has to be said: what a truncated
+                # read never reached is not in the count of what was collapsed.
+                notes = _collapsed_note(hidden, len(nodes))
+                if any(node.truncated for node in nodes):
+                    notes += "\n\n" + _truncated_note(nodes, max_depth, max_nodes)
+                if len(short) + len(notes) <= MAX_REPLY_CHARS:
+                    return short + notes
             # Cut on a line boundary and said out loud, ahead of the bound
             # hints below: "raise max_nodes" is the opposite of the advice a
             # reply that is already too large needs.
-            return _cut_screen(text, len(nodes), placed is not None)
+            return _cut_screen(short if hidden else text, len(nodes), placed is not None,
+                               collapsed=bool(hidden))
         if missing_document:
             text += f"\n\n{missing_document}"
         elif placed is None and len(nodes) < EMPTY_WINDOW:
@@ -1090,12 +1127,7 @@ class ToolRegistry:
             # With the shape of the cut, not just the fact of one (issue #54):
             # "raise max_nodes" without saying from what left the next value a
             # guess, and a measured session guessed twice.
-            text += (f"\n\n[truncated: "
-                     f"{_truncation_shape(nodes, max_depth, max_nodes)}. "
-                     + ("Raise the bound that did the cutting, or narrow "
-                        "with roles=, "
-                        if _raisable(nodes) else "")
-                     + "before concluding this is the whole screen]")
+            text += "\n\n" + _truncated_note(nodes, max_depth, max_nodes)
         return text
 
     def find_elements(self, app=None, title=None, limit=20, offset=0,

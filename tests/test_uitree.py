@@ -10,7 +10,7 @@ page, not invented.
 import pytest
 
 from keyhac.core.uitree import (
-    UINode, find_element, find_elements, format_tree, get_ui_tree,
+    UINode, collapsed_tree, find_element, find_elements, format_tree, get_ui_tree,
     match_pattern, match_role,
 )
 
@@ -289,3 +289,47 @@ class TestNameProvenance:
         from keyhac.core.uitree import UINode
         assert UINode().name_source is None
         assert UINode(name="Save", name_source="label").name_source == "label"
+
+
+def _rows(parent_depth, count, role="AXRow"):
+    return [UINode(role=role, name=f"{role} {i}", depth=parent_depth + 1) for i in range(count)]
+
+
+class TestCollapsedTree:
+
+    def test_a_long_run_keeps_its_first_two_and_a_count(self):
+        root = UINode(role="AXTable", depth=0)
+        root.children = _rows(0, 10)
+        text, hidden = collapsed_tree(root)
+        assert text.splitlines() == ["AXTable", "  AXRow 'AXRow 0'", "  AXRow 'AXRow 1'",
+                                     "  … 8 more AXRow"]
+        assert hidden == 8
+
+    def test_a_short_run_and_mixed_roles_are_left_alone(self):
+        root = UINode(role="AXTable", depth=0)
+        root.children = _rows(0, 5) + _rows(0, 1, "AXButton") + _rows(0, 5)
+        text, hidden = collapsed_tree(root)
+        assert hidden == 0 and text == format_tree(root)
+
+    def test_what_is_inside_a_hidden_node_is_counted(self):
+        root = UINode(role="AXTable", depth=0)
+        root.children = _rows(0, 7)
+        for row in root.children:
+            row.children = _rows(1, 2, "AXCell")
+        text, hidden = collapsed_tree(root)
+        assert "… 5 more AXRow (15 nodes with what is inside them)" in text
+        assert hidden == 15
+
+    def test_runs_are_collapsed_inside_what_is_kept(self):
+        root = UINode(role="AXTable", depth=0)
+        root.children = _rows(0, 6)
+        root.children[0].children = _rows(1, 9, "AXCell")
+        text, hidden = collapsed_tree(root)
+        assert "    … 7 more AXCell" in text
+        assert hidden == 7 + 4
+
+    def test_a_run_after_other_siblings_is_found(self):
+        root = UINode(role="AXGroup", depth=0)
+        root.children = _rows(0, 1, "AXButton") + _rows(0, 6) + _rows(0, 1, "AXButton")
+        lines = collapsed_tree(root)[0].splitlines()
+        assert lines[-2] == "  … 4 more AXRow" and lines[-1].startswith("  AXButton")
