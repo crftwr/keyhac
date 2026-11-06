@@ -680,6 +680,12 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 The last two read the front application on every invocation, so give each a
 `ChooserPage` of its own rather than putting it in a merged one.
 
+`BrowserTabsSource` lists the tabs open in Chrome, Edge and Safari, across all
+their windows, by title. Enter selects the tab and brings its window to the front.
+Only tabs visible in the tab bar are listed: Chrome leaves out a tab it has no room
+to show. It reads every browser window each time, so it too belongs on a page you
+go to deliberately.
+
 `ApplicationsSource` lists the installed applications, and Enter launches one:
 the `.app` bundles in the Applications folders on macOS, what the Start menu
 lists on Windows.
@@ -716,7 +722,10 @@ it is paid for only when you ask for it.
 Once the selection rests on a row, a **preview window** beside the chooser shows
 what one line cannot: the whole text with its size and format, an image, copied
 files, an action's description. Clipboard entries, snippets, clipboard tools (the
-converted result, before you choose it) and actions have one.
+converted result, before you choose it), actions, key bindings (the docstring and
+what else follows a multi-stroke prefix) and menu items (the full path and the
+shortcut) have one. Window controls do not: the outline on the real control says
+which one a row is, and a window beside the chooser could cover it.
 
 A source of your own offers one by overriding `preview()`:
 

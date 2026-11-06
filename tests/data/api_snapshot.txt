@@ -37,6 +37,13 @@ stable	attribute	ApplicationsSource.name
 stable	method	ApplicationsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
 stable	attribute	ApplicationsSource.preview_background
 stable	method	ApplicationsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	BrowserTabsSource
+stable	constructor	BrowserTabsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	BrowserTabsSource.background
+stable	attribute	BrowserTabsSource.name
+stable	method	BrowserTabsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	BrowserTabsSource.preview_background
+stable	method	BrowserTabsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
 stable	class	CallableSource
 stable	constructor	CallableSource.__init__	[["self", "pk", null], ["produce", "pk", null], ["name", "pk", "''"], ["on_chosen", "pk", "None"], ["background", "pk", "False"]]
 stable	attribute	CallableSource.background
