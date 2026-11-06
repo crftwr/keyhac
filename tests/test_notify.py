@@ -1,5 +1,4 @@
-"""keymap.notify: a native notification, or a balloon where none can be posted
-(issue #255)."""
+"""keymap.notify: a native notification, and what a click on it runs (issue #255)."""
 
 from types import SimpleNamespace
 
@@ -15,10 +14,10 @@ def _manager(post):
     return manager
 
 
-def test_a_posted_notification_shows_no_balloon():
+def test_a_notification_is_handed_to_the_backend():
     posted = []
 
-    def post(title, text, on_click=None, on_refused=None):
+    def post(title, text, on_click=None):
         posted.append((title, text))
         return True
 
@@ -28,50 +27,25 @@ def test_a_posted_notification_shows_no_balloon():
     assert manager.popped == []
 
 
-def _refuse(title, text, on_click=None, on_refused=None):
+def _refuse(title, text, on_click=None):
     return False
 
 
-def _raise(title, text, on_click=None, on_refused=None):
+def _raise(title, text, on_click=None):
     raise RuntimeError("no notification center")
 
 
 @pytest.mark.parametrize("post", [_refuse, _raise])
-def test_a_balloon_in_the_corner_says_it_otherwise_and_stays(post):
-    manager = _manager(post)
-    manager.notify("Deploy finished", "All 12 services are up")
-    assert manager.popped == [
-        (("Notification", "Deploy finished\nAll 12 services are up", None),
-         {"anchor": "corner"})]
-
-
-def test_a_title_alone_makes_a_balloon_with_no_blank_line():
-    manager = _manager(_refuse)
-    manager.notify("Deploy finished")
-    assert manager.popped[0][0][1] == "Deploy finished"
-
-
-def test_a_refusal_after_the_post_shows_the_balloon_once():
-    """macOS's answer to the first request arrives after the call returned."""
-    answers = []
-
-    def post(title, text, on_click=None, on_refused=None):
-        answers.append(on_refused)
-        return True
-
+def test_one_that_cannot_be_posted_shows_no_balloon(post):
     manager = _manager(post)
     manager.notify("Deploy finished", "All 12 services are up")
     assert manager.popped == []
-    answers[0]()
-    assert manager.popped == [
-        (("Notification", "Deploy finished\nAll 12 services are up", None),
-         {"anchor": "corner"})]
 
 
 def _clicked(on_click):
     handed = []
 
-    def post(title, text, on_click=None, on_refused=None):
+    def post(title, text, on_click=None):
         handed.append(on_click)
         return True
 

@@ -237,9 +237,9 @@ class BalloonManager:
         For telling the user something when they may be looking elsewhere,
         such as a long action finishing.  Call it from `finished()`, a key
         binding, or a worker by way of `keymap.call_on_main_thread`.  Where a
-        notification cannot be posted, a balloon in the corner of the screen
-        says the same thing and stays until it is closed.  The OS may hold a
-        notification back, under Focus or Do Not Disturb.
+        notification cannot be posted, such as when the user has refused them,
+        the console says so.  The OS may hold a notification back, under Focus
+        or Do Not Disturb.
 
         Args:
             title: The first line.
@@ -248,24 +248,18 @@ class BalloonManager:
                 arguments, on the main thread, when the user clicks the
                 notification.  It has to be quick, so pass a `ThreadedAction`
                 for anything slow: an instance can be called just like this.
-                Nothing happens on a click after Keyhac has restarted, or on a
-                balloon standing in for the notification, and on Windows
-                only the latest notification's runs.
+                Nothing happens on a click after Keyhac has restarted, and on
+                Windows only the latest notification's runs.
         """
-        message = f"{title}\n{text}" if text else title
-
-        def say_it_otherwise():
-            self.pop("Notification", message, None, anchor="corner")
-
         if on_click is not None:
             on_click = functools.partial(_run_on_click, on_click)
         try:
-            if self._backend.post_notification(title, text, on_click=on_click,
-                                               on_refused=say_it_otherwise):
-                return
+            posted = self._backend.post_notification(title, text, on_click=on_click)
         except Exception:
             logger.debug("The notification could not be posted.", exc_info=True)
-        say_it_otherwise()
+            posted = False
+        if not posted:
+            logger.info(f"The notification was not posted: {title}")
 
     def close(self, name: str = None) -> None:
         """Close one balloon, or all when name is None."""
