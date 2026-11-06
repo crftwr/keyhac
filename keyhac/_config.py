@@ -201,6 +201,7 @@ def configure(keymap):
     keys = KeyBindingsSource()
     actions = ActionsSource()
     controls = WindowControlsSource()
+    apps = ApplicationsSource()
     tabs = BrowserTabsSource()
 
     # Three pages, each named for what Enter does on it - so the query you
@@ -217,8 +218,8 @@ def configure(keymap):
     # deliberately.  They stream: the first rows are on screen while the
     # rest are still being read.
     kt[f"{MOD1}-P"] = ShowCandidates([            # P for palette
-        # Run: what Keyhac itself defines - your bindings, your actions.
-        ChooserPage("Run", [keys, actions]),
+        # Run: your bindings and actions, and the applications you could launch.
+        ChooserPage("Run", [keys, actions, apps]),
         ChooserPage("Paste", [clipboard, snippet_source, tool_source]),
         # Click: what you would otherwise reach for the mouse to hit - the
         # application's menu commands, its controls, the other windows, and

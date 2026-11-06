@@ -686,6 +686,10 @@ Only tabs visible in the tab bar are listed: Chrome leaves out a tab it has no r
 to show. It reads every browser window each time, so it too belongs on a page you
 go to deliberately.
 
+`ApplicationsSource` lists the installed applications, and Enter launches one:
+the `.app` bundles in the Applications folders on macOS, what the Start menu
+lists on Windows.
+
 `MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
 one per application, always at the top of the screen, and readable in full
 while it is closed — which is what makes a flat list of every command
