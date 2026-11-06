@@ -219,6 +219,29 @@ class BalloonManager:
             return
         self._balloons[name] = marker
 
+    def notify(self, title: str, text: str = "") -> None:
+        """Post a native OS notification: Notification Center on macOS, a toast
+        on Windows.
+
+        For telling the user something when they may be looking elsewhere,
+        such as a long action finishing.  Call it from `finished()`, a key
+        binding, or a worker by way of `keymap.call_on_main_thread`.  Where a
+        notification cannot be posted, a balloon in the corner of the screen
+        says the same thing and stays until it is closed.  The OS may hold a
+        notification back, under Focus or Do Not Disturb.
+
+        Args:
+            title: The first line.
+            text: The rest of the message.
+        """
+        try:
+            if self._backend.post_notification(title, text):
+                return
+        except Exception:
+            logger.debug("The notification could not be posted.", exc_info=True)
+        message = f"{title}\n{text}" if text else title
+        self.pop("Notification", message, None, anchor="corner")
+
     def close(self, name: str = None) -> None:
         """Close one balloon, or all when name is None."""
         names = [name] if name is not None else list(self._balloons)

@@ -405,8 +405,10 @@ console; the person learns the outcome from a balloon -
 `self.keymap.pop_balloon(name, text, timeout)` (`references/configuration.md`,
 "Balloons"). `finished()` runs on the thread a balloon needs. One about a run
 that went on while they were elsewhere belongs in a corner and stays until
-they close it: `timeout=None, anchor="corner"`. It is absent when Keyhac runs
-without its UI, so reach it with `getattr(self.keymap, "pop_balloon", None)`.
+they close it: `timeout=None, anchor="corner"`. When the run is long enough that
+they may have gone to another application or left, post a notification instead:
+`self.keymap.notify(title, text)`. Both are absent when Keyhac runs without its
+UI, so reach them with `getattr(self.keymap, "notify", None)`.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it

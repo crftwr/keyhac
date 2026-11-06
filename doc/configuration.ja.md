@@ -990,6 +990,17 @@ keymap.pop_balloon("mode", "insert mode", 2.0, anchor="corner")
 行うからです。キー割り当てから呼び出すか、`ThreadedAction` のワーカーからなら
 `keymap.call_on_main_thread` を介して呼び出してください。
 
+長いアクションの完了など、ユーザーが別のものを見ているかもしれないときに伝えたいことは、
+`finished()` からネイティブ通知として送ります。
+
+```python
+keymap.notify("Deploy finished", "All 12 services are up")   # title, text
+```
+
+macOS では通知センターに届き、Windows ではトーストとして表示されます。macOS では初回に許可を
+求められます。通知を送れない場合は、同じ内容のバルーンが画面の隅に表示され、閉じるまで残ります。
+集中モードやおやすみモードでは、通知が表示されないことがあります。
+
 `--no-ui` モードではこれらの属性は存在しません。設定をヘッドレスで動かす必要がある場合は
 `getattr(keymap, "pop_balloon", None)` で保護してください。
 
@@ -1088,6 +1099,7 @@ Keyhac は起動時から 10 分ごとにメモリを記録するので、問題
 | `keymap.editor` / `edit_config()` / `reload_config()` | 設定のライフサイクル（トレイメニューが使用） |
 | `keymap.replay_buffer` | 記録アクションの背後にあるマクロバッファー |
 | `keymap.pop_balloon(name, text, timeout, anchor=…)` / `close_balloon(name)` | バルーン（UI モードのみ）。`anchor` で指定しない限りキャレットの位置に開く |
+| `keymap.notify(title, text)` | ネイティブの OS 通知（UI モードのみ）。送れない場合はバルーン |
 | `InputText(s)` | 文字列をそのまま入力 |
 | `MoveWindow(...)` / `SnapWindow(...)` / `ActivateApplication(...)` / `ActivateWindow(...)` / `LaunchApplication(...)` | ウィンドウとアプリのアクション |
 | `MouseMove` / `MouseButtonDown/Up/Click` / `MouseWheel` / `MouseHorizontalWheel` | マウス出力のアクション |
