@@ -1014,6 +1014,19 @@ class TestCandidateRowLayout:
             assert row._inset(_Ctx(True, 8), px) == px / 8
             assert row._inset(_Ctx(True, 0), px) == 0.0
 
+    @pytest.mark.parametrize("line_break", [
+        "\n", "\r", "\r\n", "\v", "\f", "\x85", " ", " "])
+    def test_a_row_holds_one_line_whatever_the_text_carries(self, line_break):
+        """A control's name or a tab's title may hold a line break, and on
+        Windows a row's text reaching DirectWrite with one raised out of
+        WM_PAINT with a puikit older than the fix: no list, and one traceback
+        per paint."""
+        from keyhac.ui.candidate_row import CandidateRow
+
+        row = CandidateRow(f"Save{line_break}File", f"Con{line_break}trol\n")
+        assert row.label == "Save File"
+        assert row.badge == "Con trol"
+
     def test_the_icon_is_not_flush_against_the_window(self):
         """The list runs to the page's edge now, with no frame of its own in
         between, so a row starting at column zero starts against the window."""
