@@ -14,7 +14,7 @@ import sys
 from keyhac.core import log
 from keyhac.platform.base import AppControl
 from keyhac.platform.win.startmenu import (
-    find_start_menu_app, forget_start_menu_apps)
+    find_start_menu_app, forget_start_menu_apps, scan_start_menu)
 
 logger = log.getLogger("WinApps")
 
@@ -83,6 +83,17 @@ class WinAppControl(AppControl):
                                f"launch: {e}")
                 forget_start_menu_apps()
         os.startfile(app_name)
+
+    def installed_apps(self) -> list[tuple[str, str]]:
+        """What the Start menu lists.  launch() takes the display name, and
+        resolves a name used twice to the Store application."""
+        try:
+            entries = scan_start_menu()
+        except OSError as e:
+            logger.warning(f"Could not read the Start menu's applications: {e}")
+            return []
+        names = {name.casefold(): name for name, _parsing in entries}
+        return [(name, name) for name in names.values()]
 
     def open_url(self, url: str) -> None:
         # startfile on a URL is ShellExecute "open", which is what the shell

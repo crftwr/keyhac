@@ -19,6 +19,7 @@ import time
 import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
+from keyhac.core.action import LaunchApplication
 from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
 from keyhac.core.keymap import Keymap
@@ -804,6 +805,104 @@ def _action_text(action) -> str:
     if text.startswith("<") and " object at 0x" in text:
         return f"{type(action).__name__}()"
     return text
+
+
+class ApplicationsSource(CandidateSource):
+    """Every installed application, and a way to launch one.
+
+    On macOS these are the `.app` bundles in the Applications folders, listed
+    by the name Finder shows.  On Windows they are what the Start menu lists,
+    including Microsoft Store applications, and also whatever else it holds
+    there, such as uninstallers.
+
+    Choosing a row launches the application.  On macOS an application already
+    running comes to the front.  On Windows it depends on the application, and
+    many open another window; `ActivateApplication` goes to a running one.
+    """
+
+    name = "App"
+
+    #: The listing reads the file system or the shell's folder of applications
+    #: and touches nothing of Keyhac's, so it belongs on a worker. It takes
+    #: 150-450 ms on Windows (see keyhac.platform.win.startmenu).
+    background = True
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        control = keymap.app_control if keymap is not None else None
+        if control is None:
+            return []
+        return self._rows(control)
+
+    @staticmethod
+    def _rows(control):
+        # Read fresh each time, not kept: what it costs happens off the main
+        # thread, and a kept list would miss what was installed since.
+        for name, target in sorted(control.installed_apps(),
+                                   key=lambda app: app[0].casefold()):
+            stem = os.path.splitext(os.path.basename(target))[0]
+            # The file name as well, so an English name still finds an
+            # application listed under its localized one.
+            yield Candidate(icon="🚀", display=name, payload=target,
+                            match_text=f"{name} {stem}")
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        # LaunchApplication runs on a worker: this is inside the key hook's
+        # callback, and on Windows launch() may scan the Start menu.
+        LaunchApplication(candidate.payload)()
+
+
+class WindowLayoutsSource(CandidateSource):
+    """Places for the focused window: the halves of its screen, or all of it.
+
+    Each row does what `SnapWindow` does, so the frame is written and the OS's
+    own snap or tile state is not entered.
+    """
+
+    name = "Layout"
+
+    _LAYOUTS = (("Left half", "left"), ("Right half", "right"),
+                ("Top half", "top"), ("Bottom half", "bottom"),
+                ("Full screen", "full"))
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        return [Candidate(icon="▦", display=label, payload=position)
+                for label, position in self._LAYOUTS]
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        from keyhac.actions import SnapWindow
+
+        snap = SnapWindow(candidate.payload)
+        # One turn of the loop later, as for WindowControlsSource.on_chosen:
+        # this is inside the key hook's callback, and writing a frame is a
+        # round trip into the other application.
+        keymap = Keymap.get_instance()
+        if keymap is None:
+            snap()
+        else:
+            keymap.call_on_main_thread(snap)
 
 
 class ActionsSource(CandidateSource):

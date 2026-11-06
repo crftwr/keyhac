@@ -680,6 +680,11 @@ not need a key of its own) and `ActionsSource` (every `ThreadedAction` under
 The last two read the front application on every invocation, so give each a
 `ChooserPage` of its own rather than putting it in a merged one.
 
+`ApplicationsSource` lists the installed applications, and Enter launches one:
+the `.app` bundles in the Applications folders on macOS, what the Start menu
+lists on Windows. `WindowLayoutsSource` offers the halves of the screen and all
+of it, and Enter puts the focused window there as `SnapWindow` does.
+
 `MenuItemsSource` is **macOS only**. There a menu bar is an OS-level part —
 one per application, always at the top of the screen, and readable in full
 while it is closed — which is what makes a flat list of every command

@@ -8,6 +8,8 @@ chosen row's source says it means.
 
 import time
 
+import os
+
 import pytest
 
 from tests.test_chooser import keyhac_engine, ui_backend  # noqa: F401
@@ -2463,3 +2465,97 @@ class TestBackgroundSources:
         from keyhac.core.sources import ClipboardHistorySource
         assert CandidateSource.background is False
         assert ClipboardHistorySource.background is False
+
+
+class _FakeApps:
+    def __init__(self, apps):
+        self.apps = apps
+        self.launched = []
+
+    def installed_apps(self):
+        return self.apps
+
+    def launch(self, app_name):
+        self.launched.append(app_name)
+
+
+class TestApplicationsSource:
+
+    def _source(self, engine, apps):
+        from keyhac.core.sources import ApplicationsSource
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = _FakeApps(apps)
+        return ApplicationsSource(), fixture.keymap.app_control
+
+    def test_rows_are_sorted_by_name_whatever_the_case(self, engine):
+        source, _ = self._source(engine, [("zed", "/A/zed.app"), ("Mail", "/A/Mail.app"),
+                                          ("calc", "/A/calc.app")])
+        assert [c.display for c in source.candidates()] == ["calc", "Mail", "zed"]
+
+    def test_the_english_file_name_finds_a_localized_row(self, engine):
+        source, _ = self._source(engine, [("ターミナル", "/A/Terminal.app")])
+        [row] = source.candidates()
+        assert row.display == "ターミナル" and "Terminal" in row.match_text
+        # The folder is not matched: "app" would then find every row.
+        assert "/A" not in row.match_text
+
+    def test_it_reads_on_a_worker(self):
+        from keyhac.core.sources import ApplicationsSource
+        assert ApplicationsSource.background is True
+
+    def test_nothing_to_list_with_no_app_control(self, engine):
+        from keyhac.core.sources import ApplicationsSource
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = None
+        assert list(ApplicationsSource().candidates()) == []
+
+    def test_choosing_launches_through_a_threaded_action(self, engine, monkeypatch):
+        from keyhac.core import sources
+
+        started = []
+        monkeypatch.setattr(sources.LaunchApplication, "__call__",
+                            lambda action: started.append(action.app_name))
+        source, _ = self._source(engine, [("Mail", "/A/Mail.app")])
+        [row] = source.candidates()
+        source.on_chosen(row, 0)
+        assert started == ["/A/Mail.app"]
+
+    def test_the_base_platform_lists_nothing(self):
+        from keyhac.platform.base import AppControl
+        assert AppControl.installed_apps(None) == []
+
+    def test_macos_finds_bundles_without_looking_inside_them(self, tmp_path):
+        pytest.importorskip("AppKit")
+        from keyhac.platform.mac.apps import find_app_bundles
+        (tmp_path / "Mail.app" / "Contents" / "Helper.app").mkdir(parents=True)
+        (tmp_path / "Utilities" / "Terminal.app").mkdir(parents=True)
+        (tmp_path / "a" / "b" / "c" / "Deep.app").mkdir(parents=True)
+        (tmp_path / ".hidden" / "Hidden.app").mkdir(parents=True)
+        (tmp_path / "notes.txt").write_text("")
+        found = {os.path.basename(p) for p in find_app_bundles(str(tmp_path))}
+        assert found == {"Mail.app", "Terminal.app"}
+        assert find_app_bundles(str(tmp_path / "missing")) == []
+
+
+class TestWindowLayoutsSource:
+
+    def test_every_row_is_a_position_snap_window_accepts(self):
+        from keyhac.actions import SnapWindow
+        from keyhac.core.sources import WindowLayoutsSource
+        rows = WindowLayoutsSource().candidates()
+        assert {c.payload for c in rows} == set(SnapWindow.POSITIONS)
+
+    def test_choosing_snaps_one_turn_of_the_loop_later(self, engine, monkeypatch):
+        from keyhac import actions
+        from keyhac.core.sources import WindowLayoutsSource
+
+        snapped, queued = [], []
+        monkeypatch.setattr(actions.SnapWindow, "__call__",
+                            lambda action: snapped.append(action.position))
+        fixture = engine(lambda keymap: None)
+        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", queued.append)
+        source = WindowLayoutsSource()
+        source.on_chosen(source.candidates()[1], 0)
+        assert snapped == [] and len(queued) == 1
+        queued[0]()
+        assert snapped == ["right"]
