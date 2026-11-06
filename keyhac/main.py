@@ -196,8 +196,8 @@ def _run_with_console(keymap, hook, platform_name: str, clipboard_provider,
     balloon = BalloonManager(console.backend, keymap)
     keymap.pop_balloon = balloon.pop
     keymap.close_balloon = balloon.close
-    keymap.on_enter_multi_stroke = multi_stroke_help(balloon)
-    keymap.on_leave_multi_stroke = lambda: balloon.close("MultiStroke")
+    keymap._on_enter_multi_stroke = multi_stroke_help(balloon)
+    keymap._on_leave_multi_stroke = lambda: balloon.close("MultiStroke")
     install_tray(console, keymap, hook)
 
     hook.install(keymap._on_key_event, keymap._on_hook_restored,

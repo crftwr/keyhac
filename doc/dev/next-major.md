@@ -174,7 +174,8 @@ written the old way for a release beforehand. The release note should list them.
 `__init_subclass__` if nothing else uses it: `on_key_event`, `on_hook_restored`,
 `on_mouse_event`, `set_main_thread_dispatcher`, `push_modal_input`,
 `pop_modal_input`, `modal_input_active`, `effective_keytable`, `start_mcp_server`,
-`stop_mcp_server`, `mcp_server_running`.
+`stop_mcp_server`, `mcp_server_running`, `on_enter_multi_stroke`,
+`on_leave_multi_stroke`.
 
 **Why.** They moved to `_name` in 2.x (#278) because they were public only in the
 naming sense. The aliases exist so a config using them keeps working.

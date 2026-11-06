@@ -128,6 +128,22 @@ class TestMultiStroke:
         assert e.down("O") is True
         assert "D-F1" in e.sent_names()
 
+    def test_hooks_assigned_by_their_old_names_are_called(self, engine):
+        calls = []
+
+        def configure(keymap):
+            self._configure(keymap)
+            keymap.on_enter_multi_stroke = lambda name: calls.append(("enter", name))
+            keymap.on_leave_multi_stroke = lambda: calls.append(("leave",))
+            assert keymap._on_enter_multi_stroke is keymap.on_enter_multi_stroke
+
+        e = engine(configure)
+        e.down("LCtrl")
+        e.down("X")
+        e.up("X")
+        e.down("O")
+        assert calls == [("enter", "Ctrl-X"), ("leave",)]
+
 
 class TestOneShot:
 

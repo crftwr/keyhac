@@ -203,6 +203,8 @@ class Keymap:
     start_mcp_server = deprecated_alias("_start_mcp_server", _INTERNAL_WIRING)
     stop_mcp_server = deprecated_alias("_stop_mcp_server", _INTERNAL_WIRING)
     mcp_server_running = deprecated_alias("_mcp_server_running", _INTERNAL_WIRING)
+    on_enter_multi_stroke = deprecated_alias("_on_enter_multi_stroke", _INTERNAL_WIRING)
+    on_leave_multi_stroke = deprecated_alias("_on_leave_multi_stroke", _INTERNAL_WIRING)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -266,8 +268,8 @@ class Keymap:
         self._clipboard_history = None      # core ClipboardHistory
         self._mcp_server = None             # MCPServer while enabled
         self._mcp_timer = None              # closes the window on its own
-        self.on_enter_multi_stroke = None   # callable(name) - balloon help
-        self.on_leave_multi_stroke = None   # callable()
+        self._on_enter_multi_stroke = None   # callable(name) - balloon help
+        self._on_leave_multi_stroke = None   # callable()
         self.on_mouse_button = None         # callable() - see _on_mouse_event
         self.on_key_handled = None          # callable(binding, seconds) - see _on_key_event
         self._handled_binding = None
@@ -1232,22 +1234,22 @@ class Keymap:
         logger.debug(f"Entering multi-stroke keytable - {keytable}")
         self._multi_stroke_keytable = keytable
         self._update_unified_keytable()
-        if self.on_enter_multi_stroke is not None:
+        if self._on_enter_multi_stroke is not None:
             try:
-                self.on_enter_multi_stroke(keytable.name)
+                self._on_enter_multi_stroke(keytable.name)
             except Exception:
-                logger.error("on_enter_multi_stroke callback failed.")
+                logger.error("_on_enter_multi_stroke callback failed.")
 
     def _leave_multi_stroke(self):
         if self._multi_stroke_keytable:
             logger.debug(f"Leaving multi-stroke keytable - {self._multi_stroke_keytable}")
             self._multi_stroke_keytable = None
             self._update_unified_keytable()
-            if self.on_leave_multi_stroke is not None:
+            if self._on_leave_multi_stroke is not None:
                 try:
-                    self.on_leave_multi_stroke()
+                    self._on_leave_multi_stroke()
                 except Exception:
-                    logger.error("on_leave_multi_stroke callback failed.")
+                    logger.error("_on_leave_multi_stroke callback failed.")
 
     # ------------------------------------------------------------------
     # Focus / key table selection

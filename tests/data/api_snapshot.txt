@@ -167,8 +167,10 @@ stable	staticmethod	Keymap.get_instance	[]
 stable	method	Keymap.list_windows	[["self", "pk", null]]
 deprecated	attribute	Keymap.mcp_server_running
 deprecated	attribute	Keymap.modal_input_active
+deprecated	attribute	Keymap.on_enter_multi_stroke
 deprecated	attribute	Keymap.on_hook_restored
 deprecated	attribute	Keymap.on_key_event
+deprecated	attribute	Keymap.on_leave_multi_stroke
 deprecated	attribute	Keymap.on_mouse_event
 stable	attribute	Keymap.pop_balloon
 deprecated	attribute	Keymap.pop_modal_input
