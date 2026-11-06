@@ -455,6 +455,11 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 
 ## Pointing at what a row stands for
 
+- `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on
+  macOS Chrome: narrowing a window from 739 to 696 took its tabs in the tree from
+  36 to 33, and `enable_content_access` did not bring them back. Chrome's `Tab`
+  menu does list the hidden ones, for what looks like one window, with long names
+  elided. Using it was left out on purpose, as hidden tabs are an accepted limit.
 - Moving the selection through a source that carries screen rectangles draws
   an outline over the real control (`ChooserWindow._point_at_selection`, PuiKit
   `mark_screen`). This is discussion #112's argument for `node.highlight()`

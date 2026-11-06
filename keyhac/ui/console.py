@@ -26,6 +26,7 @@ from puikit.widgets import Button, Checkbox, DropDown, Label, LayoutView, LogVie
 from keyhac.core import log
 from keyhac.core.keymap import _AUTHORING_WINDOW
 from keyhac.ui.frame import Frame
+from keyhac.ui.text import one_line
 
 logger = log.getLogger("Console")
 
@@ -309,7 +310,8 @@ class ConsoleWindow:
         if last_key != self._last_key_label.text:
             self._last_key_label.text = last_key
             changed = True
-        focus_path = self._console.get_text("focusPath")
+        # A focus path spells out control names, which can hold line breaks.
+        focus_path = one_line(self._console.get_text("focusPath"))
         if focus_path != self._focus_path_label.text:
             self._focus_path_label.text = focus_path
             changed = True
