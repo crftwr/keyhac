@@ -10,7 +10,7 @@ from Foundation import NSFileManager
 
 from keyhac.core import log
 from keyhac.platform.base import AppControl
-from keyhac.platform.mac.uielement import AX_MESSAGING_TIMEOUT
+from keyhac.platform.mac.uielement import AX_MESSAGING_TIMEOUT, UIElement
 
 logger = log.getLogger("MacApps")
 
@@ -91,6 +91,16 @@ class MacAppControl(AppControl):
                     name = str(manager.displayNameAtPath_(path)).removesuffix(".app")
                     found.setdefault(name.casefold(), (name, path))
         return list(found.values())
+
+    def running_app_element(self, bundle_id: str):
+        with objc.autorelease_pool():
+            apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+            if not apps:
+                return None
+            pid = apps[0].processIdentifier()
+        element = AS.AXUIElementCreateApplication(pid)
+        AS.AXUIElementSetMessagingTimeout(element, AX_MESSAGING_TIMEOUT)
+        return pid, UIElement(element)
 
     def open_url(self, url: str) -> None:
         # No -a: LaunchServices picks the default browser for the scheme.

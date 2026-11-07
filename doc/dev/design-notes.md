@@ -459,6 +459,27 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   was the plan, but Keyhac has no screen capture, and adding one means the macOS
   Screen Recording permission. Text alone says little the row does not, and the
   preview window could cover the outline, which is the actual confirmation.
+- `BrowserBookmarksSource` reads menus on macOS, not files (#121). Measured from a
+  signed `Keyhac.app` on macOS 27: Safari's `Bookmarks.plist`, folder and containers,
+  and Chrome's data folder and `AccountBookmarks`, answer `Operation not permitted`,
+  Spotlight finds no bookmarks, and reading them would take Full Disk Access, too much
+  to ask for this. The menus need no new permission and read while closed, with the
+  browser in the back: 9-14 ms for Safari's 14, 74 ms for Chrome's 72, up to 5 levels
+  deep. Neither says the URL. Pressing an item replaces the current tab and leaves the
+  browser where it was, hence New Tab first, found by its Cmd-T as no key is sent, and
+  the activate last. An item's identifier, `goToFromMenuItem:` or `openBookmarkMenuItem:`,
+  tells a bookmark from a command in any language. Chrome's menu has no identifier, so
+  the walk tries the menu by name and then the others.
+- Nothing from a menu is kept for when the browser is not running. A copy on disk would
+  put a protected store where any process of the user can read it, and into whatever
+  syncs `~/.keyhac`. Without a URL a kept row could not open anything by itself either.
+- On Windows, `BrowserBookmarksSource` reads only the default browser. It asks
+  `AssocQueryStringW` what opens `https` and compares the file name: a per-user Chrome's
+  ProgId has a suffix unique to the installation, and the API saves knowing where
+  Windows keeps the choice. If the default is another browser nothing is listed, as
+  Chrome's rows would not be what the user asked for. If Windows gives no answer both
+  are read, as a failed lookup says nothing against either. macOS still reads all three,
+  each only while it runs.
 - `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on
   macOS Chrome: narrowing a window from 739 to 696 took its tabs in the tree from
   36 to 33, and `enable_content_access` did not bring them back. Chrome's `Tab`

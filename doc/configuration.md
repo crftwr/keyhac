@@ -686,6 +686,16 @@ Only tabs visible in the tab bar are listed: Chrome leaves out a tab it has no r
 to show. It reads every browser window each time, so it too belongs on a page you
 go to deliberately.
 
+`BrowserBookmarksSource` lists the bookmarks of Chrome, Edge and Safari, and Enter
+opens one in a new tab of the browser it came from. On macOS they come from each browser's Bookmarks
+menu, because macOS protects the browsers' files. A browser's bookmarks appear only
+while it is running, and they can be found by title or folder, as the menu does not give
+the URL. Chrome and Edge list the profile of their last active window. On Windows,
+they come from the default browser's files, for every profile, whether or not it is
+running, and can also be found by URL. That browser must be Chrome or Edge: with any
+other as the default, nothing is listed. Bookmarks are read each time and are not
+stored.
+
 `ApplicationsSource` lists the installed applications, and Enter launches one:
 the `.app` bundles in the Applications folders on macOS, what the Start menu
 lists on Windows.

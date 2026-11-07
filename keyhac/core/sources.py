@@ -16,13 +16,14 @@ things with one name in a flat ``from keyhac import *`` namespace is a trap.
 
 import functools
 import inspect
+import json
 import os
 import re
 import time
 import traceback
 
 from keyhac.core.act import click as _click, press as _press, _identity_of
-from keyhac.core.action import LaunchApplication
+from keyhac.core.action import LaunchApplication, ThreadedAction
 from keyhac.core.candidate import Candidate, CandidatePreview
 from keyhac.core.const import MODKEY_ALT, MODKEY_SHIFT
 from keyhac.core.focus import match_window_fields
@@ -1009,6 +1010,284 @@ def _walk_tabs(root):
             yield from walk(child, role, depth + 1)
 
     yield from walk(root, None, 0)
+
+
+#: What a Chromium bookmark may open.  Not `javascript:` or `data:`: a bookmarklet
+#: runs in the page it is clicked on, and from here there is no such page.  The
+#: list also means a URL can never reach a browser's command line as a flag.
+_BOOKMARK_URL = re.compile(r"(https?|file|ftp|chrome|edge)://?", re.IGNORECASE)
+
+#: The files of a Chromium profile that hold bookmarks: those on this machine,
+#: and those saved to the signed-in account.
+_CHROMIUM_BOOKMARK_FILES = ("Bookmarks", "AccountBookmarks")
+
+_BOOKMARK_MAX_DEPTH = 32
+
+#: The browsers whose Bookmarks menu is read on macOS, where their files are
+#: protected: name, bundle identifier, and the identifier its bookmarks carry.
+#: That says what an item is in every language.  Edge's is assumed from Chrome's.
+_MENU_BROWSERS = (
+    ("Chrome", "com.google.Chrome", "openBookmarkMenuItem:"),
+    ("Edge", "com.microsoft.edgemac", "openBookmarkMenuItem:"),
+    ("Safari", "com.apple.Safari", "goToFromMenuItem:"),
+)
+
+#: Looked at first, for the cost of not walking every menu.  In another language
+#: the walk goes on through the menus until one holds a bookmark.
+_BOOKMARKS_MENU_NAMES = ("Bookmarks", "ブックマーク")
+
+#: How a browser's New Tab command is known in any language.
+_NEW_TAB_SHORTCUT = "Cmd-T"
+
+#: A bound on the walk of one browser's menus, which hold every bookmark.
+_MENU_BOOKMARKS_MAX_NODES = 20000
+
+
+class _OpenBookmark(ThreadedAction):
+    """On a worker: starting a browser can take a moment, and choosing a row is
+    inside the key hook's callback."""
+
+    def __init__(self, browser, url, profile):
+        self.browser, self.url, self.profile = browser, url, profile
+
+    def run(self):
+        """lazydocs: ignore"""
+        Keymap.get_instance().app_control.open_url_in_browser(
+            self.browser, self.url, self.profile)
+
+
+class BrowserBookmarksSource(CandidateSource):
+    """The bookmarks of Chrome, Edge and Safari.
+
+    Choosing a row opens the bookmark in a new tab of the browser it came from.
+
+    On macOS they are read from each browser's Bookmarks menu, because macOS
+    protects the browsers' files.  A browser's rows appear only while it is
+    running, and Chrome and Edge list the profile of their last active window.
+    Rows can be found by title or folder: the menu does not say the URL.
+
+    On Windows they are read from the default browser's files, for every profile,
+    whether or not it is running.  That browser must be Chrome or Edge: with any
+    other as the default there are no rows.  Rows can be found by title, URL or
+    folder.
+
+    Bookmarks are read each time and are not stored.
+    """
+
+    name = "Bookmark"
+
+    #: Reads files and another application's menus, and touches nothing of
+    #: Keyhac's.
+    background = True
+
+    def __init__(self, name: str = None):
+        """Build the source.
+
+        Args:
+            name: What a shared window shows beside these rows.
+        """
+        if name is not None:
+            self.name = name
+
+    def candidates(self):
+        """lazydocs: ignore"""
+        keymap = Keymap.get_instance()
+        control = keymap.app_control if keymap is not None else None
+        if control is None:
+            return []
+        return self._rows(control)
+
+    @staticmethod
+    def _rows(control):
+        for browser, data_dir in control.browser_data_dirs():
+            yield from _chromium_rows(browser, data_dir)
+        for browser, bundle_id, item in _MENU_BROWSERS:
+            yield from _menu_rows(control, browser, bundle_id, item)
+
+    def badge(self, candidate) -> str:
+        """lazydocs: ignore"""
+        return candidate.extras.get("badge", "")
+
+    def preview(self, candidate):
+        """The bookmark's URL, where it is known, and its folder."""
+        extras = candidate.extras
+        fields = [("Browser", extras["badge"])]
+        if extras.get("url"):
+            fields.append(("URL", extras["url"]))
+        if extras.get("folder"):
+            fields.append(("Folder", extras["folder"]))
+        return CandidatePreview(fields=tuple(fields))
+
+    def on_chosen(self, candidate, modifier_flags: int) -> None:
+        """lazydocs: ignore"""
+        extras = candidate.extras
+        if extras.get("url"):
+            _OpenBookmark(extras["browser"], extras["url"], extras["profile"])()
+            return
+        keymap = Keymap.get_instance()
+        element, pid = candidate.payload, extras["pid"]
+
+        def act():
+            # A pressed bookmark replaces the current tab, as a clicked one
+            # does, and a press cannot carry the Command of a Command-click.
+            # Should New Tab not be found, the page still opens.
+            if not _press_new_tab(extras["app"]):
+                logger.warning(f"{extras['browser']}: its New Tab command was not found.")
+            # In this order: pressing the item opens the page and leaves the
+            # browser wherever it was.
+            if not _press(element):
+                logger.error(f"{candidate.display}: the bookmark refused to be pressed.")
+                return
+            keymap.app_control.activate_pid(pid)
+
+        # As WindowControlsSource.on_chosen: both are round trips into the browser.
+        keymap.call_on_main_thread(act)
+
+
+def _chromium_profiles(data_dir):
+    """`(folder, name)` of each profile holding bookmarks, in a Chromium browser's
+    data folder.  The name is the one the browser's profile menu shows."""
+    try:
+        folders = sorted(entry for entry in os.listdir(data_dir)
+                         if entry == "Default" or entry.startswith("Profile "))
+    except OSError:
+        return []
+    try:
+        with open(os.path.join(data_dir, "Local State"), encoding="utf-8") as f:
+            names = json.load(f)["profile"]["info_cache"]
+    except (OSError, ValueError, KeyError, TypeError):
+        names = {}
+    found = []
+    for folder in folders:
+        if any(os.path.exists(os.path.join(data_dir, folder, file))
+               for file in _CHROMIUM_BOOKMARK_FILES):
+            info = names.get(folder) if isinstance(names, dict) else None
+            name = info.get("name") if isinstance(info, dict) else None
+            found.append((folder, name or folder))
+    return found
+
+
+def _walk_chromium_bookmarks(node, folder, depth=0):
+    """Yield `(title, url, folder path)` below a node of a `Bookmarks` file."""
+    if depth > _BOOKMARK_MAX_DEPTH:
+        return
+    for child in node.get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        name = child.get("name") or ""
+        if child.get("type") == "folder":
+            yield from _walk_chromium_bookmarks(child, (*folder, name), depth + 1)
+            continue
+        url = child.get("url")
+        if isinstance(url, str) and _BOOKMARK_URL.match(url):
+            yield name or url, url, folder
+
+
+def _read_chromium_bookmarks(path):
+    """The bookmarks in one file, or none where it cannot be read."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            roots = json.load(f)["roots"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if not isinstance(roots, dict):
+        return
+    for root in roots.values():
+        # The roots are the bookmarks bar and the like, and sit in no folder a
+        # user made.  Some entries are not nodes at all.
+        if isinstance(root, dict):
+            yield from _walk_chromium_bookmarks(root, ())
+
+
+def _chromium_rows(browser, data_dir):
+    """Yield a row for each bookmark of each profile of one browser."""
+    profiles = _chromium_profiles(data_dir)
+    for folder, profile_name in profiles:
+        badge = f"{browser} · {profile_name}" if len(profiles) > 1 else browser
+        for file in _CHROMIUM_BOOKMARK_FILES:
+            for title, url, path in _read_chromium_bookmarks(
+                    os.path.join(data_dir, folder, file)):
+                folders = " › ".join(path)
+                yield Candidate(
+                    icon="🔖", display=title, payload=url,
+                    match_text=f"{title} {url} {folders}",
+                    extras={"browser": browser, "profile": folder, "badge": badge,
+                            "url": url, "folder": folders})
+
+
+def _menu_rows(control, browser, bundle_id, item):
+    """Yield a row for each bookmark in a running browser's menus."""
+    found = control.running_app_element(bundle_id)
+    if found is None:
+        return
+    pid, app = found
+    try:
+        bar = app.menu_bar()
+        tops = (bar.children() or []) if bar is not None else []
+    except Exception:
+        logger.debug(f"{browser}'s menu bar could not be read.")
+        return
+    named = []
+    for top in tops:
+        try:
+            name = top.describe().get("name")
+        except Exception:
+            name = None
+        named.append((name not in _BOOKMARKS_MENU_NAMES, top))
+    named.sort(key=lambda entry: entry[0])
+    budget = [_MENU_BOOKMARKS_MAX_NODES]
+    for _other, top in named:
+        any_row = False
+        for element, title, path in _walk_menu_bookmarks(top, (), item, budget):
+            any_row = True
+            folders = " › ".join(path)
+            yield Candidate(
+                icon="🔖", display=title, payload=element,
+                match_text=f"{title} {folders}",
+                extras={"browser": browser, "badge": browser, "pid": pid,
+                        "app": app, "folder": folders})
+        if any_row:
+            return
+
+
+def _press_new_tab(app) -> bool:
+    """Press a browser's New Tab command, found by its shortcut."""
+    try:
+        for top in app.menu_bar().children() or []:
+            for menu in top.children() or []:
+                for item in menu.children() or []:
+                    if _menu_shortcut(item) == _NEW_TAB_SHORTCUT:
+                        return _press(item)
+    except Exception:
+        logger.debug("A browser's menus could not be read.")
+    return False
+
+
+def _walk_menu_bookmarks(node, path, item, budget, depth=0):
+    """Yield `(element, title, folder path)` below a node of a browser's menu."""
+    if depth > _BOOKMARK_MAX_DEPTH:
+        return
+    try:
+        children = node.children()
+    except Exception:
+        return
+    for child in children or []:
+        if budget[0] <= 0:
+            return
+        budget[0] -= 1
+        try:
+            described = child.describe()
+        except Exception:
+            continue
+        name = described.get("name")
+        if described.get("identifier") == item:
+            if name:
+                yield child, name, path
+            continue
+        # An item with a name may be a folder, whose menu is its child.  A menu
+        # adds nothing to the path.
+        below = (*path, name) if name and described.get("role") != "AXMenu" else path
+        yield from _walk_menu_bookmarks(child, below, item, budget, depth + 1)
 
 
 class ApplicationsSource(CandidateSource):

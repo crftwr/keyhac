@@ -8,7 +8,9 @@ chosen row's source says it means.
 
 import time
 
+import json
 import os
+import sys
 
 import pytest
 
@@ -2673,3 +2675,255 @@ class TestBrowserTabsSource:
         monkeypatch.setattr(fixture.keymap, "call_on_main_thread", lambda act: act())
         sources.BrowserTabsSource().on_chosen(row, 0)
         assert window.activated == 0
+
+
+class _FakeBookmarkApps:
+    def __init__(self, dirs=(), running=None):
+        # running: bundle identifier -> (pid, application element)
+        self.dirs, self.running = list(dirs), running or {}
+        self.opened, self.activated = [], []
+
+    def browser_data_dirs(self):
+        return self.dirs
+
+    def running_app_element(self, bundle_id):
+        return self.running.get(bundle_id)
+
+    def open_url_in_browser(self, browser, url, profile):
+        self.opened.append((browser, url, profile))
+
+    def activate_pid(self, pid):
+        self.activated.append(pid)
+        return True
+
+
+def _chromium_profile(data_dir, folder, *entries, file="Bookmarks"):
+    profile = data_dir / folder
+    profile.mkdir(parents=True, exist_ok=True)
+    (profile / file).write_text(json.dumps({"roots": {
+        "bookmark_bar": {"name": "Bookmarks bar", "type": "folder", "children": list(entries)},
+        "sync_transaction_version": "1",
+    }}), encoding="utf-8")
+
+
+def _url(name, url):
+    return {"type": "url", "name": name, "url": url}
+
+
+def _folder(name, *children):
+    return {"type": "folder", "name": name, "children": list(children)}
+
+
+class _FakeSafariApp:
+    def __init__(self, bar):
+        self.bar = bar
+
+    def menu_bar(self):
+        return self.bar
+
+
+def _browser_app(*items, title="Bookmarks", identifier=None):
+    menu = _E("AXMenuBarItem", title, _E("AXMenu", None, *items), identifier=identifier)
+    return _FakeSafariApp(_E("AXMenuBar", None, _E("AXMenuBarItem", "File"), menu))
+
+
+def _safari(*items):
+    return _FakeBookmarkApps(running={
+        "com.apple.Safari": (42, _browser_app(*items, identifier="SafariBookmarksMenu"))})
+
+
+class TestBrowserBookmarksSource:
+
+    def _rows(self, control):
+        from keyhac.core.sources import BrowserBookmarksSource
+        return list(BrowserBookmarksSource._rows(control))
+
+    def test_folders_are_followed_and_kept_in_the_row(self, tmp_path):
+        _chromium_profile(tmp_path, "Default", _url("News", "https://news.example/"),
+                          _folder("Work", _folder("Docs", _url("Spec", "https://spec.example/"))))
+        rows = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        assert [c.display for c in rows] == ["News", "Spec"]
+        spec = rows[1]
+        assert spec.extras["folder"] == "Work › Docs"
+        # By title, URL or folder.
+        assert all(word in spec.match_text for word in ("Spec", "spec.example", "Docs"))
+
+    def test_a_bookmarklet_is_not_offered(self, tmp_path):
+        _chromium_profile(tmp_path, "Default", _url("Run", "javascript:alert(1)"),
+                          _url("Inline", "data:text/html,x"), _url("Flag", "--renderer-cmd-prefix=x"),
+                          _url("Settings", "chrome://settings"), _url("Web", "https://a.example/"))
+        rows = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        assert [c.display for c in rows] == ["Settings", "Web"]
+
+    def test_a_bookmark_with_no_title_shows_its_url(self, tmp_path):
+        _chromium_profile(tmp_path, "Default", _url("", "https://a.example/"))
+        rows = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        assert rows[0].display == "https://a.example/"
+
+    def test_account_bookmarks_are_read_too(self, tmp_path):
+        _chromium_profile(tmp_path, "Default", _url("Local", "https://l.example/"))
+        _chromium_profile(tmp_path, "Default", _url("Account", "https://a.example/"),
+                          file="AccountBookmarks")
+        rows = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        assert [c.display for c in rows] == ["Local", "Account"]
+
+    def test_one_profile_shows_only_the_browser(self, tmp_path):
+        from keyhac.core.sources import BrowserBookmarksSource
+        _chromium_profile(tmp_path, "Default", _url("A", "https://a.example/"))
+        [row] = self._rows(_FakeBookmarkApps([("Edge", str(tmp_path))]))
+        assert BrowserBookmarksSource().badge(row) == "Edge"
+
+    def test_profiles_are_told_apart_by_the_name_the_browser_shows(self, tmp_path):
+        from keyhac.core.sources import BrowserBookmarksSource
+        _chromium_profile(tmp_path, "Default", _url("A", "https://a.example/"))
+        _chromium_profile(tmp_path, "Profile 2", _url("B", "https://b.example/"))
+        (tmp_path / "Local State").write_text(json.dumps(
+            {"profile": {"info_cache": {"Profile 2": {"name": "Work"}}}}), encoding="utf-8")
+        (tmp_path / "Guest Profile").mkdir()
+        (tmp_path / "Guest Profile" / "Bookmarks").write_text("{}", encoding="utf-8")
+        rows = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        source = BrowserBookmarksSource()
+        assert [source.badge(c) for c in rows] == ["Chrome · Default", "Chrome · Work"]
+        assert rows[1].extras["profile"] == "Profile 2"
+
+    @pytest.mark.parametrize("content", ["not json", "[]", '{"roots": 3}',
+                                         '{"roots": {"a": {"children": [7, {"type": "url"}]}}}'])
+    def test_a_damaged_file_gives_no_rows_and_no_error(self, tmp_path, content):
+        (tmp_path / "Default").mkdir()
+        (tmp_path / "Default" / "Bookmarks").write_text(content, encoding="utf-8")
+        assert self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))])) == []
+
+    def test_a_browser_that_is_not_installed_gives_no_rows(self, tmp_path):
+        assert self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path / "missing"))])) == []
+
+    def test_choosing_opens_it_in_its_browser_and_profile(self, tmp_path, engine, monkeypatch):
+        from keyhac.core import sources
+        monkeypatch.setattr(sources.ThreadedAction, "__call__", lambda action: action.run())
+        _chromium_profile(tmp_path, "Profile 2", _url("A", "https://a.example/"))
+        control = _FakeBookmarkApps([("Edge", str(tmp_path))])
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = control
+        [row] = self._rows(control)
+        sources.BrowserBookmarksSource().on_chosen(row, 0)
+        assert control.opened == [("Edge", "https://a.example/", "Profile 2")]
+
+    def test_the_preview_says_the_url_and_folder(self, tmp_path):
+        from keyhac.core.sources import BrowserBookmarksSource
+        _chromium_profile(tmp_path, "Default", _folder("Work", _url("A", "https://a.example/")))
+        [row] = self._rows(_FakeBookmarkApps([("Chrome", str(tmp_path))]))
+        fields = dict(BrowserBookmarksSource().preview(row).fields)
+        assert fields["URL"] == "https://a.example/" and fields["Folder"] == "Work"
+
+    def test_safari_bookmarks_are_told_from_its_commands_by_identifier(self):
+        control = _safari(
+            _E("AXMenuItem", "Add Bookmark…", identifier="AddBookmark"),
+            _E("AXMenuItem", "Favorites", _E("AXMenu", None,
+               _E("AXMenuItem", "Apple", identifier="goToFromMenuItem:"),
+               _E("AXMenuItem", "Open in New Tabs", identifier="openAllInNewTabsFromMenuItem:"))),
+            _E("AXMenuItem", "Top", identifier="goToFromMenuItem:"))
+        rows = self._rows(control)
+        assert [c.display for c in rows] == ["Apple", "Top"]
+        assert rows[0].extras["folder"] == "Favorites"
+        assert "Favorites" in rows[0].match_text
+
+    def test_a_browser_is_only_read_while_it_runs(self):
+        assert self._rows(_FakeBookmarkApps()) == []
+
+    def test_chrome_bookmarks_are_told_from_its_commands_by_identifier(self):
+        app = _browser_app(
+            _E("AXMenuItem", "Bookmark Manager", identifier="commandDispatch:"),
+            _E("AXMenuItem", "Team", _E("AXMenu", None,
+               _E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"),
+               _E("AXMenuItem", "Inner", _E("AXMenu", None,
+                  _E("AXMenuItem", "Deep", identifier="openBookmarkMenuItem:"))))))
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec", "Deep"]
+        assert rows[1].extras["folder"] == "Team › Inner"
+        assert rows[0].extras["badge"] == "Chrome" and rows[0].extras["pid"] == 7
+
+    def test_edge_is_read_as_chrome_is(self):
+        app = _browser_app(_E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"))
+        rows = self._rows(_FakeBookmarkApps(running={"com.microsoft.edgemac": (8, app)}))
+        assert [c.extras["badge"] for c in rows] == ["Edge"]
+
+    def test_a_menu_in_another_language_is_found_by_its_bookmarks(self):
+        app = _browser_app(_E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"),
+                           title="Lesezeichen")
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec"]
+
+    def test_the_menu_named_bookmarks_is_read_first_and_alone(self):
+        history = _E("AXMenuBarItem", "History", _E("AXMenu", None,
+                     _E("AXMenuItem", "Elsewhere", identifier="openBookmarkMenuItem:")))
+        bookmarks = _E("AXMenuBarItem", "Bookmarks", _E("AXMenu", None,
+                       _E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:")))
+        app = _FakeSafariApp(_E("AXMenuBar", None, history, bookmarks))
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec"]
+
+    def _choose(self, engine, monkeypatch, press=lambda element: True, new_tab=True):
+        """Choose Safari's one bookmark, and answer what was pressed, in order."""
+        from keyhac.core import sources
+        items = [_E("AXMenuItem", "Top", identifier="goToFromMenuItem:")]
+        if new_tab:
+            items.append(_E("AXMenuItem", "New Tab", identifier="newTab"))
+        control = _safari(*items)
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = control
+        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", lambda act: act())
+        monkeypatch.setattr(sources, "_menu_shortcut",
+                            lambda e: "Cmd-T" if e.describe()["name"] == "New Tab" else "")
+        pressed = []
+
+        def record(element):
+            pressed.append(element.describe()["name"])
+            return press(element)
+
+        monkeypatch.setattr(sources, "_press", record)
+        [row] = self._rows(control)
+        sources.BrowserBookmarksSource().on_chosen(row, 0)
+        return pressed, control
+
+    def test_choosing_from_a_menu_opens_a_new_tab_then_the_bookmark(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch)
+        assert pressed == ["New Tab", "Top"]
+        assert control.activated == [42]
+
+    def test_with_no_new_tab_command_the_page_still_opens(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch, new_tab=False)
+        assert pressed == ["Top"]
+        assert control.activated == [42]
+
+    def test_a_refused_press_does_not_bring_the_browser_forward(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch, press=lambda element: False)
+        assert pressed == ["New Tab", "Top"]
+        assert control.activated == []
+
+    def test_nothing_to_list_with_no_app_control(self, engine):
+        from keyhac.core.sources import BrowserBookmarksSource
+        fixture = engine(lambda keymap: None)
+        fixture.keymap.app_control = None
+        assert list(BrowserBookmarksSource().candidates()) == []
+
+    def test_the_base_platform_has_no_browsers(self):
+        from keyhac.platform.base import AppControl
+        assert AppControl.browser_data_dirs(None) == []
+        assert AppControl.running_app_element(None, "x") is None
+
+    @pytest.mark.parametrize("default, browsers", [
+        ("chrome.exe", ["Chrome"]),
+        ("MSEDGE.EXE", ["Edge"]),
+        ("firefox.exe", []),
+        (None, ["Chrome", "Edge"]),
+    ])
+    def test_windows_reads_only_the_default_browser(self, monkeypatch, default, browsers):
+        from keyhac.platform.win import apps
+        monkeypatch.setenv("LOCALAPPDATA", "local")
+        monkeypatch.setattr(apps, "_default_browser_executable", lambda: default)
+        assert [name for name, _ in apps.WinAppControl().browser_data_dirs()] == browsers
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="asks Windows")
+    def test_windows_answers_with_a_file_name(self):
+        from keyhac.platform.win import apps
+        default = apps._default_browser_executable()
+        assert default is None or default.casefold().endswith(".exe")

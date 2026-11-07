@@ -467,6 +467,23 @@ class AppControl(ABC):
         thread; a platform that cannot list them answers empty."""
         return []
 
+    def browser_data_dirs(self) -> list[tuple[str, str]]:
+        """The Chromium browsers whose bookmark files to read, as `(browser name,
+        data folder)` pairs.  A folder need not exist.  Runs on a worker thread.
+        macOS answers empty, because it protects those files."""
+        return []
+
+    def open_url_in_browser(self, browser: str, url: str, profile: str) -> None:
+        """Open a URL in a browser `browser_data_dirs()` named, in the profile
+        with that folder name.  Runs on a worker thread.  Logged, not raised."""
+        self.open_url(url)
+
+    def running_app_element(self, bundle_id: str):
+        """`(pid, application element)` of a running application, or None.  It
+        answers with the application's windows all closed.  Only macOS has
+        bundle identifiers, and elsewhere this is always None."""
+        return None
+
 
 class Window(ABC):
     """A top-level OS window.

@@ -37,6 +37,13 @@ stable	attribute	ApplicationsSource.name
 stable	method	ApplicationsSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
 stable	attribute	ApplicationsSource.preview_background
 stable	method	ApplicationsSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
+stable	class	BrowserBookmarksSource
+stable	constructor	BrowserBookmarksSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
+stable	attribute	BrowserBookmarksSource.background
+stable	attribute	BrowserBookmarksSource.name
+stable	method	BrowserBookmarksSource.preview	[["self", "pk", null], ["candidate", "pk", null]]
+stable	attribute	BrowserBookmarksSource.preview_background
+stable	method	BrowserBookmarksSource.remove	[["self", "pk", null], ["candidate", "pk", null]]
 stable	class	BrowserTabsSource
 stable	constructor	BrowserTabsSource.__init__	[["self", "pk", null], ["name", "pk", "None"]]
 stable	attribute	BrowserTabsSource.background
