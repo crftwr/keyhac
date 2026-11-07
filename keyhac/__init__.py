@@ -3,7 +3,7 @@
 Configuration files do `from keyhac import *` and get the user-facing API.
 """
 
-__version__ = "2.8.0"
+__version__ = "2.9.0"
 
 from keyhac.core.api_marks import DEPRECATED_APIS, PREVIEW_APIS
 from keyhac.core.keymap import Keymap
