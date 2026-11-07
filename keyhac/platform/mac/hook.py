@@ -651,7 +651,6 @@ class MacInputHook(InputHook):
         if layout_type == int.from_bytes(b"JIS ", "big"):
             return "jis"
         if layout_type == int.from_bytes(b"ISO ", "big"):
-            logger.error("Unsupported keyboard layout: iso")
             return "iso"
         logger.error(f"Unknown keyboard layout type: {layout_type:#x}; assuming ANSI.")
         return "ansi"

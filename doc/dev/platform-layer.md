@@ -224,8 +224,17 @@ a few AX calls need `objc.loadBundleFunctions`-style care).
   `keyhac_const.py` + `keyhac_key.py`).
 - `KeyCondition` stores native vks at parse time (fast hook-path comparisons stay int).
 - Raw codes remain expressible as `"(123)"` for unmapped keys.
-- ISO layout on macOS: unsupported (as upstream keyhac-mac); a warning is logged.
-  Tracked in the issue tracker.
+- ISO layout on macOS: the ANSI table, plus `Section` (`0x0A`, in every Mac layout's
+  table). macOS reportedly swaps `0x0A` and `0x32` on a keyboard whose type is ISO.
+  Keyhac does not correct that, on input or on output, so a name stays tied to the
+  code and the character that code maps to. **Not verified under ISO** (issue #22): a
+  Tart macOS 27 guest could not be made ISO, because its virtual keyboards stayed at
+  type 198 through `com.apple.keyboardtype.plist`, `hidutil`'s `StandardType` and
+  `CGEventSourceSetKeyboardType`. What the guest did show, under ANSI: both codes
+  reach the tap unchanged, whether real or posted. A real event's keyboard type is 0
+  at a `kCGHIDEventTap` tap and 198 at a `kCGSessionEventTap` tap, so if the swap
+  happens in that span, output posted at `kCGHIDEventTap` could be affected too.
+  Check that on ISO hardware.
 
 ## What is deliberately NOT platform-abstracted
 

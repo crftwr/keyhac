@@ -75,6 +75,57 @@ class TestParseWin:
         assert KeyCondition.from_str("Alt").vk == WIN_VK["MENU"]
 
 
+class TestMacISO:
+    """The layout the engine picks up from KBGetLayoutType() == 'ISO '.
+
+    These pin the names and the absence of a keycode correction. That macOS
+    reports the codes this way on ISO hardware is not verified here (issue #22).
+    """
+
+    @pytest.fixture
+    def iso_names(self):
+        from keyhac.core.vk import init_key_names
+        try:
+            yield init_key_names("mac", "iso")
+        finally:
+            init_key_names("windows", "ansi")
+
+    def test_section_names_the_iso_keycode(self, iso_names):
+        assert KeyCondition.from_str("Section").vk == 0x0A
+        assert iso_names.vk_to_str(0x0A) == "Section"
+
+    def test_section_and_backquote_are_not_swapped(self, iso_names):
+        """macOS already swaps these two on ISO keyboards. Correcting that here
+        would make Section type what BackQuote should."""
+        assert KeyCondition.from_str("BackQuote").vk == MAC_VK["BACKQUOTE"] == 0x32
+        assert iso_names.vk_to_str(0x32) == "BackQuote"
+
+    @pytest.mark.parametrize("layout", ["ansi", "jis"])
+    def test_section_parses_on_every_mac_layout(self, layout):
+        from keyhac.core.vk import KeyNames
+        assert KeyNames("mac", layout).str_to_vk("Section") == 0x0A
+
+    def test_iso_differs_from_ansi_in_nothing(self):
+        from keyhac.core.vk import KeyNames
+        ansi, iso = KeyNames("mac", "ansi"), KeyNames("mac", "iso")
+        assert iso.str_vk_table == ansi.str_vk_table
+        assert iso.vk_str_table == ansi.vk_str_table
+
+    def test_remap_of_section_dispatches(self, engine):
+        def configure(keymap):
+            kt = keymap.define_keytable(focus_path_pattern="*")
+            kt["Section"] = "Escape"
+
+        e = engine(configure, platform="mac", layout="iso")
+        assert e.down("Section") is True
+        assert "D-Escape" in e.sent_names()
+
+    def test_a_config_for_windows_is_told_it_is_mac_only(self):
+        from keyhac.core.vk import KeyNames
+        with pytest.raises(ValueError, match="exists only on macOS"):
+            KeyNames("windows", "ansi").str_to_vk("Section")
+
+
 class TestParseWinJIS:
     """The layout the engine picks up from GetKeyboardType(0) == 7.
 
