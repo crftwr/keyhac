@@ -409,14 +409,38 @@ def test_in_a_guest_the_screens_go_up_there_and_the_operator_is_told_its_os(
     assert product.platform() == "win32"
 
 
-def test_a_mac_guest_without_a_named_python_runs_keyhac_app_s(tmp_path, monkeypatch):
-    from guest import Guest
-    monkeypatch.delenv("KEYHAC_QA_GUEST_KEYHAC", raising=False)
+def test_a_mac_guest_needs_the_images_python_named(tmp_path):
+    """No fallback to an installed Keyhac.app's interpreter: what runs in the
+    guest is all this checkout's (the bundled PuiKit went stale once)."""
+    from guest import Guest, GuestError
     mac = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa")
     mac._windows = False
-    assert mac.python.startswith("/Applications/Keyhac.app/Contents/Frameworks/")
+    with pytest.raises(GuestError, match="python ="):
+        mac.python
     mac.settings["python"] = "/usr/local/bin/python3.14"
     assert mac.python == "/usr/local/bin/python3.14"
+
+
+def test_a_mac_guest_starts_the_daemon_as_the_suite_runs(tmp_path):
+    """The image's Python and a fresh venv run qa/daemon.py over SSH, with the
+    staged PuiKit on PYTHONPATH - not Keyhac.app."""
+    from guest import Guest
+    mac = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa")
+    mac._windows = False
+    stage = tmp_path / "keyhac-qa-stage-x"
+    stage.mkdir()
+    sent = []
+    mac.venv = lambda stage, requirements: "/Users/qa/.ql-venv-1/bin/python"
+    mac.ssh = lambda command, timeout=60: (
+        sent.append(command) or subprocess.CompletedProcess(command, 0, "", ""))
+    mac.start(tmp_path / "home", stage, stage / "keyhac.log", stage / "quit")
+    command = sent[-1]
+    assert "/Users/qa/.ql-venv-1/bin/python" in command and "qa/daemon.py" in command
+    assert "PYTHONPATH='/Volumes/My Shared Files/qa/keyhac-qa-stage-x/lib'" in command
+    assert "KEYHAC_QA_QUIT_FILE=" in command
+    assert "KEYHAC_QA_KEEP_FOCUS='1'" in command
+    assert "nohup" in command and command.rstrip().endswith("&")
+    assert "Keyhac.app" not in command
 
 
 @pytest.mark.host_only

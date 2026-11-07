@@ -7,17 +7,19 @@ machines, the venv, the desktop session, the screens - is quality-loop's
 (`quality_loop.guest`, docs/guests.md there), shared with XeFM (xefm#750).
 What is left here is Keyhac's own:
 
-- **What is staged.** This working tree's keyhac/ and qa/daemon.py, on a
-  stage on the share. On macOS also qa/guest_boot/sitecustomize.py; on
-  Windows also PuiKit, which is ours and so staged rather than installed -
-  the PuiKit this checkout's own environment runs.
-- **How Keyhac starts.** macOS: Keyhac.app runs the staged code, through
-  qa/guest_boot/sitecustomize.py, because the guest's Accessibility grant is
-  the app's; `open -g` starts it without bringing it forward. Windows: the
+- **What is staged.** This working tree's keyhac/ and qa/daemon.py, and
+  PuiKit - ours, so staged rather than installed: the PuiKit this checkout's
+  own environment runs - on a stage on the share.
+- **How Keyhac starts.** As the test suite runs (`make test-vm`): the
   image's Python - no Keyhac is installed in the image (xefm#750, "Decisions
   on the shared test image") - with the third-party packages from
-  pyproject.toml installed into a fresh venv for the run, runs qa/daemon.py in
-  the desktop session from a scheduled task, which needs no grant.
+  pyproject.toml installed into a fresh venv for the run, runs qa/daemon.py
+  in the desktop session. macOS: over SSH, which reaches that session, under
+  the image's Accessibility and Input Monitoring grant to python.org's Python
+  and sshd-keygen-wrapper. Windows: from a scheduled task, which needs no
+  grant. Either way the code under test is all this checkout's: Keyhac.app's
+  bundled PuiKit, which once ran the staged keyhac/ here, went stale the
+  first time the PuiKit pin was raised.
 - **How it stops.** It quits when a file appears (KEYHAC_QA_QUIT_FILE,
   qa/daemon.py): there is no stdin to close across a VM.
 - **How it is reached.** Keyhac in the guest listens on the guest's
@@ -29,8 +31,7 @@ What is left here is Keyhac's own:
 KEYHAC_QA_GUEST is an SSH host alias; its address, user and key are in
 ~/.ssh/config, and what it means on this machine is its table in
 ~/.config/quality-loop/guests.toml (doc/dev/testing.md, "In a VM").
-KEYHAC_QA_SHARE overrides the table's share, KEYHAC_QA_GUEST_KEYHAC its
-`keyhac` (Keyhac.app in a macOS guest, default /Applications/Keyhac.app).
+KEYHAC_QA_SHARE overrides the table's share.
 """
 
 from __future__ import annotations
@@ -38,7 +39,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import posixpath
 import shutil
 import subprocess
 import time
@@ -126,10 +126,6 @@ def working_tree() -> list[str]:
 class Guest(ql.Guest):
     """quality-loop's guest, with Keyhac staged and started in it."""
 
-    def __init__(self, alias, host_share, guest_share, settings=None):
-        super().__init__(alias, host_share, guest_share, settings)
-        self._keyhac = os.environ.get("KEYHAC_QA_GUEST_KEYHAC") or self.settings.get("keyhac")
-
     @classmethod
     def for_alias(cls, alias: str) -> "Guest":
         try:
@@ -151,20 +147,6 @@ class Guest(ql.Guest):
     def os_name(self) -> str:
         """What `--platform` takes when this run is replayed: windows or mac."""
         return "windows" if self.windows else "mac"
-
-    @property
-    def keyhac(self) -> str:
-        """Keyhac.app in a macOS guest."""
-        return self._keyhac or "/Applications/Keyhac.app"
-
-    @property
-    def python(self) -> str:
-        """The image's interpreter (`python` in the settings). A macOS guest
-        without one runs Keyhac.app's."""
-        if self.settings.get("python") or self.windows:
-            return super().python
-        return posixpath.join(self.keyhac, "Contents/Frameworks/Python.framework/"
-                                           "Versions/Current/bin/python3")
 
     def use_arm64_python(self) -> None:
         """From here on, a native ARM64 Python of the image's version instead of
@@ -202,7 +184,6 @@ class Guest(ql.Guest):
         shutil.copytree(ROOT / "keyhac", stage / "keyhac", ignore=ignore)
         (stage / "qa").mkdir()
         shutil.copy2(HERE / "daemon.py", stage / "qa" / "daemon.py")
-        shutil.copytree(HERE / "guest_boot", stage / "boot", ignore=ignore)
         lib = stage / "lib"
         lib.mkdir()
         for name in STAGED:
@@ -239,14 +220,30 @@ class Guest(ql.Guest):
         # so a get_focus in those seconds would go on answering the installer.
         self.ssh("for i in $(seq 60); do pgrep -qf 'Installer Progress.app' || exit 0; "
                  "sleep 1; done", timeout=90)
-        env = {"HOME": home, "PYTHONPATH": self.path(stage / "boot"),
-               "KEYHAC_QA_STAGE": self.path(stage), "KEYHAC_QA_QUIT_FILE": quit_at}
-        # -n: a new instance even if one is up, so it gets this environment.
-        args = ["open", "-n", "-g"]
-        for name, value in env.items():
-            args += ["--env", f"{name}={value}"]
-        args += ["--stdout", self.path(log), "--stderr", self.path(log), "-a", self.keyhac]
-        said = self.ssh(" ".join(ql.sh_quote(a) for a in args))
+        self._start_mac(home, stage, log, quit_at)
+
+    def _start_mac(self, home: str, stage: pathlib.Path, log: pathlib.Path,
+                   quit_at: str) -> None:
+        # The image's Python with this run's packages, as `make test-vm` runs
+        # the suite. Over SSH, which reaches the desktop session; the image
+        # grants python.org's Python and sshd-keygen-wrapper Accessibility and
+        # Input Monitoring, which is what the hook and the AX reads need.
+        # daemon.py puts the stage in front of sys.path, so the staged keyhac
+        # wins; PYTHONPATH carries the staged PuiKit. nohup and the
+        # redirections let the SSH session end while Keyhac goes on.
+        try:
+            python = self.venv(stage, third_party_requirements())
+        except GuestError as error:
+            raise SystemExit(f"could not start Keyhac in the VM:\n{error}") from None
+        env = {"HOME": home, "PYTHONPATH": self.path(stage / "lib"),
+               "KEYHAC_QA_QUIT_FILE": quit_at, "KEYHAC_QA_KEEP_FOCUS": "1",
+               "PYTHONIOENCODING": "utf-8"}
+        assignments = " ".join(f"{name}={ql.sh_quote(value)}"
+                               for name, value in env.items())
+        command = (f"cd {ql.sh_quote(self.path(stage))} && {assignments} "
+                   f"nohup {ql.sh_quote(python)} -s qa/daemon.py "
+                   f"> {ql.sh_quote(self.path(log))} 2>&1 < /dev/null &")
+        said = self.ssh(command)
         if said.returncode != 0:
             raise SystemExit(f"could not start Keyhac in the VM:\n{said.stderr}")
 
@@ -366,6 +363,12 @@ class GuestKeyhacUp:
         except (OSError, ValueError):
             pid = None
         (self.stage / "quit").touch()
+        if not self.guest.windows:
+            # Made from inside the guest too: a macOS guest's view of the
+            # shared folder can go on answering "no such file" for a name it
+            # has been polling, after the host made it (seen in qa-mac: the
+            # daemon never saw the quit file within the grace).
+            self.guest.ssh(f"touch {ql.sh_quote(self.guest.path(self.stage / 'quit'))}")
         # Keyhac says "stopped" as the last thing it logs. Not mcp.json's
         # absence: on an SMB share the host's view of a deleted file lags.
         # The grace covers a Windows guest running x64 Python emulated.

@@ -20,8 +20,8 @@ On the way out the endpoint is stopped first, so mcp.json is removed rather
 than left naming a port nothing answers on.
 
 In a VM (qa/guest.py) there is no pipe to hold: Keyhac is started in the
-guest's desktop session by `open` or a scheduled task. There the runner sets
-KEYHAC_QA_QUIT_FILE, and the file appearing is "done".
+guest's desktop session over SSH or from a scheduled task. There the runner
+sets KEYHAC_QA_QUIT_FILE, and the file appearing is "done".
 """
 
 import os
@@ -45,17 +45,30 @@ _RUNNER = None if QUIT_FILE else os.dup(0)
 def _foreground_keeper():
     """What gives the foreground back once the console has taken it, or None.
 
-    Windows guest only (KEYHAC_QA_KEEP_FOCUS, set by qa/guest.py). A room's
-    first look at the screen should find the desktop, as a Mac guest's finds
-    Finder: there `open -g` starts Keyhac without bringing it forward. A
-    scheduled task cannot, so the desktop is put in front, from Keyhac's own
-    process, which Windows lets hand the foreground on while it has it.
+    In a VM only (KEYHAC_QA_KEEP_FOCUS, set by qa/guest.py). A room's first
+    look at the screen should find the desktop - Finder on macOS - not
+    Keyhac's console, which comes forward as the loop starts.
 
-    The desktop, not the window in front before Keyhac started: on a guest
-    just reverted that was Explorer's hidden tray overflow window, which a
-    room cannot see or use. The clean state has nothing else open anyway.
+    macOS: Finder is activated through Launch Services (`open -a Finder`),
+    which brings it forward whatever is in front.
+
+    Windows: the desktop is put in front, from Keyhac's own process, which
+    Windows lets hand the foreground on while it has it. The desktop, not
+    the window in front before Keyhac started: on a guest just reverted that
+    was Explorer's hidden tray overflow window, which a room cannot see or
+    use. The clean state has nothing else open anyway.
     """
-    if sys.platform != "win32" or os.environ.get("KEYHAC_QA_KEEP_FOCUS") != "1":
+    if os.environ.get("KEYHAC_QA_KEEP_FOCUS") != "1":
+        return None
+    if sys.platform == "darwin":
+        import subprocess
+
+        def give_back_to_finder():
+            if subprocess.run(["open", "-a", "Finder"]).returncode == 0:
+                print("qa: foreground given back", flush=True)
+
+        return give_back_to_finder
+    if sys.platform != "win32":
         return None
     import ctypes
     from ctypes import wintypes
@@ -134,8 +147,7 @@ def arm_at_tray(tray) -> None:
 
     The last thing main() wires before the loop runs, and it is handed the
     console and the keymap - so the endpoint opens on a Keyhac that is
-    otherwise exactly the one `make run` starts. Also called by the guest
-    bootstrap (qa/guest_boot/sitecustomize.py), where Keyhac.app runs main().
+    otherwise exactly the one `make run` starts.
     """
     install_tray = tray.install_tray
 

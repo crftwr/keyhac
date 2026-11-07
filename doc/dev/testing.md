@@ -74,8 +74,8 @@ live on each OS.
   The VMs are shared with XeFM: a `run-vm` left open in either product holds
   them.
 - **`make run-vm GUEST=qa-mac`** is a hand check in a VM: this working tree's
-  Keyhac started in the guest's desktop session (on macOS through Keyhac.app,
-  which holds the grants) with an empty home on the stage, until Enter. Hand
+  Keyhac started in the guest's desktop session (from the image's Python and a
+  fresh venv, as the suite runs) with an empty home on the stage, until Enter. Hand
   checks go there rather than on your machine. This is what `visible = true`
   is for: a Tart VM shows its window, and a VMware VM is suspended for you to
   resume in the Fusion app.
@@ -165,7 +165,7 @@ from a clean state and puts it away afterwards.
   login Keychain when the run needs it.
 
 Without a VM in the table, the guest is used as it is, already running.
-`KEYHAC_QA_SHARE` and `KEYHAC_QA_GUEST_KEYHAC` override the table.
+`KEYHAC_QA_SHARE` overrides the table's share.
 
 Claude stays on the host: the room, the operator, the evidence and
 `cleanroom/`. The run's home and a copy of this working tree go on the
@@ -173,20 +173,25 @@ share. Keyhac is started in the guest's desktop session, and its endpoint is
 forwarded over SSH, so the host's own bridge reaches it. `qa/guest.py` has
 the details.
 
-Both have run scenarios end to end (13 on both, 12 on macOS):
+Both have run scenarios end to end (13 on both, 12 on macOS). On both, the
+run's Keyhac starts the way the test suite does: no Keyhac is used from the
+image, its Python (3.14, fixed per image) gets a fresh venv for the run with
+the third-party packages - pyproject.toml's and PuiKit's - from a pip cache
+on the share, and PuiKit is ours, so it is staged from this checkout's
+environment, not installed. Everything under test is this checkout's. (Until
+2026-11 a macOS guest ran the staged keyhac/ inside the image's Keyhac.app,
+whose bundled PuiKit went stale the first time the pin was raised past it,
+and every run stopped at start-up.)
 
 - **macOS (Tart):** the share is `tart run --dir=qa:<host path>`, mounted
-  in the guest under `/Volumes/My Shared Files/`. Keyhac.app runs the
-  staged code through `qa/guest_boot/sitecustomize.py`, since the guest's
-  Accessibility grant is the app's, and `open -g` starts it without taking
-  the foreground.
+  in the guest under `/Volumes/My Shared Files/`. `qa/daemon.py` is
+  started over SSH, which reaches the desktop session, under the image's
+  Accessibility and Input Monitoring grant to python.org's Python and
+  `sshd-keygen-wrapper`. Once the console is up, Keyhac brings Finder back
+  to the front.
 - **Windows (VMware Fusion):** VMware Tools for Windows on Arm has no
   Shared Folders, so the guest shares a folder over SMB and the host mounts
-  it. No Keyhac is installed in the image: its Python (3.14, fixed per
-  image) gets a fresh venv for the run with the third-party packages -
-  pyproject.toml's and PuiKit's - from a pip cache on the share. PuiKit is
-  ours, so it is staged from this checkout's environment, not installed.
-  `pythonw.exe` runs `qa/daemon.py` from a scheduled task, through
+  it. `pythonw.exe` runs `qa/daemon.py` from a scheduled task, through
   quality-loop's launcher; `pythonw` because `cmd.exe` would put a terminal
   window on the desktop. The task is XML because the ScheduledTasks cmdlets
   need CIM, which refuses a standard user over SSH. Once the console is up,
@@ -202,9 +207,11 @@ above. What the clean state needs, found the hard way:
   reads the screen through Keyhac's tools, and its first `get_focus`
   answers whatever window is in front: a leftover PowerShell window, or a
   system prompt.
-- Keyhac.app's Accessibility grant given, and its Local Network prompt
-  already answered (macOS). An unanswered prompt keeps the focus for the
-  whole run.
+- On macOS, python.org's Python and `sshd-keygen-wrapper` granted
+  Accessibility and Input Monitoring, and no permission prompt left to
+  appear on the way: an unanswered one keeps the focus for the whole run.
+  Python's `socket.getfqdn("127.0.0.1")` raises the Local Network prompt,
+  which is why the MCP server never calls it.
 - No developer tools and no source checkout on the guest's screen. The
   room must not be able to read the source off the display.
 - On Windows, a local account (a Microsoft account makes SMB
@@ -218,8 +225,7 @@ or Edge / Windows Terminal code in the guest, from the run's stage. On macOS tha
 goes through a scheduled task in the desktop session. The pages stay served on
 the host's `127.0.0.1`, and a reverse tunnel (`ssh -R`, same port) makes that
 address the guest's too, so the page's events come back unchanged. A
-terminal screen's script runs with the image's interpreter in the guest
-(Keyhac.app's on a macOS guest without one).
+terminal screen's script runs with the image's interpreter in the guest.
 
 What the clean state needs for screens:
 
