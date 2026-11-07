@@ -420,10 +420,17 @@ def test_describe_screen_dumps_the_tree(registry):
     assert "AXWindow" in registry.call("describe_screen", {})
 
 
-def _with_container(registry, *containers):
+def _with_container(registry, *containers, root=None):
+    """Make the window's walk come back as `root` holding `containers`, so
+    the within= search matches them in a tree it can place them by."""
+    from keyhac.core.uitree import UINode
+
     window = registry.keymap.node
-    window.find_all = lambda **criteria: (
-        setattr(window, "searched", criteria) or list(containers))
+    if root is None:
+        root = UINode(role="AXApplication")
+    root.children = list(containers)
+    window.reread = lambda **bounds: (
+        setattr(window, "searched", bounds) or root)
     return window
 
 
@@ -438,7 +445,7 @@ def test_describe_screen_within_reads_only_the_container(registry):
         "within": {"role": "Sheet", "max_depth": 30}, "max_depth": 5})
     first, *rest = text.splitlines()
     assert first.startswith("[within ") and rest == ["AXSheet 'Export'"]
-    assert window.searched == {"role": "Sheet", "max_depth": 30}
+    assert window.searched == {"max_depth": 30}
     assert sheet.read_with["max_depth"] == 5, "depth counts from the container"
     # A small container is not an empty window.
     assert "essentially nothing" not in text
@@ -449,9 +456,8 @@ def test_describe_screen_within_places_the_container_by_its_path(registry):
 
     root = UINode(role="AXWindow", name="Main")
     dialog = UINode(role="AXSheet", identifier="export")
-    dialog._parent = root
     dialog.reread = lambda **kw: dialog
-    _with_container(registry, dialog)
+    _with_container(registry, dialog, root=root)
     text = registry.call("describe_screen", {"within": {"identifier": "export"}})
     assert text.splitlines()[0] == (
         "[within UINode(AXSheet id='export'), path=AXWindow(Main)]")
@@ -680,8 +686,6 @@ def test_find_elements_pages_with_offset(registry):
 
     root = UINode(role="AXWindow", name="List")
     root.children = [UINode(role="AXRow", name=f"row {i}") for i in range(25)]
-    for row in root.children:
-        row._parent = root
     registry.keymap.node.reread = lambda **kw: root
     first = registry.call("find_elements", {"role": "Row", "limit": 10})
     assert first.startswith("25 matches")
@@ -798,16 +802,36 @@ def test_find_elements_names_each_matchs_ancestors(registry):
     right = UINode(role="AXTabGroup", name="Target")
     button_l = UINode(role="AXButton", name="English")
     button_r = UINode(role="AXButton", name="English")
-    left._parent = root
-    right._parent = root
-    button_l._parent = left
-    button_r._parent = right
     root.children, left.children, right.children = \
         [left, right], [button_l], [button_r]
     registry.keymap.node.reread = lambda **kw: root
     text = registry.call("find_elements", {"role": "Button"})
     assert "path=AXWindow(Translate)/AXTabGroup(#source)" in text
     assert "path=AXWindow(Translate)/AXTabGroup(Target)" in text
+
+
+def test_the_parent_index_follows_the_walk_that_was_searched():
+    """The ancestor path describes the reported tree: a deduped shared cell
+    hangs from the side the walk reached first, and a roles= filter's
+    hoisted nodes from the nearest reported ancestor - never a node the
+    caller cannot see. Built per search, not kept on UINode (#92)."""
+    from keyhac.core.uitree import get_ui_tree
+    from keyhac.mcp.tools import _ancestor_path, _parents
+    from tests.test_uitree import table_with_shared_cells
+
+    tree = get_ui_tree(table_with_shared_cells())
+    parents = _parents(tree)
+    row = tree.children[0]
+    a_cell = row.children[0]
+    assert id(tree) not in parents
+    assert parents[id(row)] is tree
+    assert parents[id(a_cell)] is row        # rows walk first; columns lose
+    assert _ancestor_path(a_cell.children[0], parents) == \
+        "AXTable(#results)/AXRow/AXCell"
+
+    texts = get_ui_tree(table_with_shared_cells(), roles="AXStaticText")
+    parents = _parents(texts)
+    assert all(parents[id(n)] is texts for n in texts.children)
 
 
 def test_a_match_that_is_the_searched_root_carries_no_path(registry):
@@ -826,13 +850,10 @@ def test_a_match_that_is_the_searched_root_carries_no_path(registry):
 
 def _translate_window():
     """Two tab groups, each with an "English" button; the left group also
-    holds a uniquely named one. Built as a walk would build it, so the
-    `_parent` chains lead back to a root."""
+    holds a uniquely named one."""
     from keyhac.core.uitree import UINode
 
     def adopt(parent, *children):
-        for child in children:
-            child._parent = parent
         parent.children = list(children)
         return parent
 
@@ -846,12 +867,9 @@ def _translate_window():
     return root, english_l, english_r, swap
 
 
-def _verdicts(registry, matches):
-    """Search the tree `matches` belong to for buttons, with every button
-    not in `matches` relabelled so only those match."""
-    root = matches[0]
-    while root._parent is not None:
-        root = root._parent
+def _verdicts(registry, root, matches):
+    """Search `root` for buttons, with every button not in `matches`
+    relabelled so only those match."""
     for node in root.walk():
         if node.role == "AXButton" and all(node is not m for m in matches):
             node.role = "AXImage"
@@ -865,8 +883,8 @@ def test_an_ambiguous_match_names_what_would_single_it_out(registry):
     """Issue #93: "N matches" is a prediction that find() grabs the wrong one,
     so the reply says so and measures, per match, the narrowing that would
     make it unique - identifier first, then name, then a container."""
-    _root, english_l, english_r, swap = _translate_window()
-    text, verdicts = _verdicts(registry, [english_l, swap, english_r])
+    root, english_l, english_r, swap = _translate_window()
+    text, verdicts = _verdicts(registry, root, [english_l, swap, english_r])
     assert text.startswith("3 matches - ambiguous")
     assert verdicts == [
         "unique within role='TabGroup', identifier='source', "
@@ -876,18 +894,18 @@ def test_an_ambiguous_match_names_what_would_single_it_out(registry):
 
 
 def test_a_unique_name_is_offered_before_a_container(registry):
-    _root, english_l, _english_r, swap = _translate_window()
+    root, english_l, _english_r, swap = _translate_window()
     swap.identifier = None
-    _text, verdicts = _verdicts(registry, [english_l, swap])
+    _text, verdicts = _verdicts(registry, root, [english_l, swap])
     assert verdicts[1] == "unique with name='Swap'"
 
 
 def test_a_generated_identifier_is_not_offered(registry):
     """An id the framework numbered (React's useId here) is unique today and
     renumbered next render - the advice would break the action later."""
-    _root, english_l, _english_r, swap = _translate_window()
+    root, english_l, _english_r, swap = _translate_window()
     swap.identifier = ":r1f:"
-    _text, verdicts = _verdicts(registry, [english_l, swap])
+    _text, verdicts = _verdicts(registry, root, [english_l, swap])
     assert verdicts[1] == "unique with name='Swap'"
 
 
@@ -897,7 +915,7 @@ def test_a_container_that_is_not_itself_unique_is_not_offered(registry):
     left, right = root.children
     right.name, right.identifier = None, None
     left.identifier = None
-    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    _text, verdicts = _verdicts(registry, root, [english_l, english_r])
     assert verdicts == ["nothing separates it but its position - no "
                         "identifier, name or container is its alone"] * 2
 
@@ -905,29 +923,29 @@ def test_a_container_that_is_not_itself_unique_is_not_offered(registry):
 def test_a_chromium_views_identifier_is_not_offered(registry):
     """Found on Windows (PR #165): Edge's title-bar buttons carry Views'
     "view_7" - a runtime counter, on every Chromium window's chrome."""
-    _root, english_l, _english_r, swap = _translate_window()
+    root, english_l, _english_r, swap = _translate_window()
     swap.identifier = "view_7"
-    _text, verdicts = _verdicts(registry, [english_l, swap])
+    _text, verdicts = _verdicts(registry, root, [english_l, swap])
     assert verdicts[1] == "unique with name='Swap'"
 
 
 def test_long_names_differing_past_the_prefix_are_still_separated(registry):
     """Found on Windows (PR #165): the prefix pattern matched both twins and
     the verdict claimed nothing separated them, when the whole name did."""
-    _root, english_l, english_r, _swap = _translate_window()
+    root, english_l, english_r, _swap = _translate_window()
     stem = "This is a deliberately very long button label that goes well " \
            "past sixty characters "
     english_l.name, english_r.name = stem + "A", stem + "B"
-    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    _text, verdicts = _verdicts(registry, root, [english_l, english_r])
     assert verdicts == [f"unique with name={stem + 'A'!r}",
                         f"unique with name={stem + 'B'!r}"]
 
 
 def test_a_long_name_that_differs_early_keeps_the_short_pattern(registry):
-    _root, english_l, english_r, _swap = _translate_window()
+    root, english_l, english_r, _swap = _translate_window()
     english_l.name = "A " + "x" * 80
     english_r.name = "B " + "x" * 80
-    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    _text, verdicts = _verdicts(registry, root, [english_l, english_r])
     assert verdicts[0].startswith("unique with name='A x") \
         and verdicts[0].endswith("*'")
 
@@ -940,7 +958,7 @@ def test_a_narrowing_pattern_matches_only_its_own_text(registry):
     root, english_l, english_r, _swap = _translate_window()
     english_l.name = "Save*"
     english_r.name = "Save As"
-    _text, verdicts = _verdicts(registry, [english_l, english_r])
+    _text, verdicts = _verdicts(registry, root, [english_l, english_r])
     assert verdicts[0] == "unique with name='Save[*]'"
     assert match_pattern("Save*", "Save[*]")
     assert not match_pattern("Save As", "Save[*]")
@@ -949,7 +967,7 @@ def test_a_narrowing_pattern_matches_only_its_own_text(registry):
 def test_a_cut_walk_qualifies_the_verdict(registry):
     root, english_l, english_r, _swap = _translate_window()
     root.children[1].truncated = True
-    text, _verdicts_ = _verdicts(registry, [english_l, english_r])
+    text, _verdicts_ = _verdicts(registry, root, [english_l, english_r])
     assert "within what was read" in text
 
 

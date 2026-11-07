@@ -200,18 +200,10 @@ class UINode:
     # Set when the platform's own sibling cap cut this node's children, to
     # the cap - Windows lists at most MAX_CHILDREN of them. A third bound,
     # besides max_depth and max_nodes, and the one no argument raises; the
-    # node is also marked truncated. Private for the same reason as _parent.
+    # node is also marked truncated. Private plumbing for the MCP truncation
+    # message, not public shape, and not a dataclass field so it stays out of
+    # __eq__ and repr.
     _children_capped = None
-
-    # Structural parent within the walk that built this node - private
-    # plumbing for the MCP ancestor path (issue #55), not public shape, and
-    # deliberately not a dataclass field: a back-edge in __eq__ would recurse
-    # forever through the cycle, and the semantics that would freeze on
-    # publication are awkward (under the DAG dedupe a shared cell's parent is
-    # whichever of row/column the walk reached first; under a roles= filter
-    # it is the nearest *reported* ancestor). None on a walk's root and on
-    # the shallow nodes ui.window()/ui.node() return. Promotable later.
-    _parent = None
 
     @property
     def text(self) -> str:
@@ -581,15 +573,10 @@ def get_ui_tree(root, max_depth: int = DEFAULT_MAX_DEPTH,
             if built is None:
                 continue
             if roles is None or match_role(built.role, roles):
-                built._parent = node
                 node.children.append(built)
             else:
                 # Not reported, but its matching descendants still are, so a
-                # roles= filter cannot lose a cell by way of its row.  They
-                # are re-pointed too: the parent chain describes the reported
-                # tree, never a node the caller cannot see.
-                for hoisted in built.children:
-                    hoisted._parent = node
+                # roles= filter cannot lose a cell by way of its row.
                 node.children.extend(built.children)
         return node
 
