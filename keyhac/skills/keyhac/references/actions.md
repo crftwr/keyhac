@@ -407,17 +407,26 @@ no `super().__init__()` to call. Name it what you like; what matters is that
 one each time - so set per-run state at the top of `run()`, not in `__init__`,
 or a run reports what the last one left.
 
-**Tell the user in `finished()`.** The log is for you and for Keyhac's
-console; the person learns the outcome from a balloon -
+**Tell the user in `finished()`, with the message that reaches them where
+they will be.** The log is for you and for Keyhac's console. A balloon -
 `self.keymap.pop_balloon(name, text, timeout)` (`references/configuration.md`,
-"Balloons"). `finished()` runs on the thread a balloon needs. One about a run
-that went on while they were elsewhere belongs in a corner and stays until
-they close it: `timeout=None, anchor="corner"`. When the run is long enough that
-they may have gone to another application or left, post a notification instead:
-`self.keymap.notify(title, text)`. `on_click=` takes what to do when it is clicked,
-such as showing the file the run saved; a `ThreadedAction` instance for anything
-slow. Both are absent when Keyhac runs without its UI, so reach them with
-`getattr(self.keymap, "notify", None)`.
+"Balloons") - is Keyhac's own window where the person is looking now: for an
+action a key press runs and finishes, or a short run they sit and wait on.
+`finished()` runs on the thread a balloon needs. A notification -
+`self.keymap.notify(title, text)` - is the operating system's, for a result
+that arrives when they may have gone to another application or left: it
+waits in the system's list and follows their settings. `on_click=` takes what
+to do when it is clicked, such as showing the file the run saved; a
+`ThreadedAction` instance for anything slow.
+
+**They are not interchangeable.** Decide which one an action uses from when
+its result arrives, once, while designing it. A notification that is not
+posted - permission not given, Focus on - is the person's setting doing its
+job, not a failure to work around: popping a balloon instead overrides their
+choice and shows the message to a screen nobody may be watching. What the run
+did is in what it leaves behind - its output, its record - so nothing depends
+on either message being seen. Both are absent when Keyhac runs without its UI,
+so reach them with `getattr(self.keymap, "notify", None)`.
 
 `self.ui` and every node method run on the worker that calls them, reading the
 other application directly, so an action's body has no thread ceremony in it

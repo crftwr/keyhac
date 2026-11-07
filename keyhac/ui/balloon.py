@@ -239,7 +239,9 @@ class BalloonManager:
         binding, or a worker by way of `keymap.call_on_main_thread`.  Where a
         notification cannot be posted, such as when the user has refused them,
         the console says so.  The OS may hold a notification back, under Focus
-        or Do Not Disturb.
+        or Do Not Disturb.  That is the user's setting at work, not something
+        to route around with a balloon: a balloon is for someone looking at
+        the screen now, which is a different moment.
 
         Args:
             title: The first line.
