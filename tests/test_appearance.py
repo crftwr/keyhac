@@ -185,17 +185,26 @@ def test_the_tray_menu_chooses_and_ticks(console, monkeypatch):
 
     tray.install_tray(console, keymap, console._hook)
     _title, menu, _tooltip, _image = backend.tray_calls[-1]
+    top = [getattr(item, "label", "-") for item in menu.items]
+    assert top == ["Open Console", "Edit Config", "Reload Config", "-",
+                   "Keyboard Hook", "AI Integration", "-",
+                   "Appearance", "Advanced", "-", "Quit Keyhac"]
     entries = {getattr(item, "label", "-"): item for item in menu.items}
 
-    themes = {i.label: i for i in entries["Theme"].submenu.items}
-    assert list(themes) == ["Auto", "Light", "Dark"]
+    rows = entries["Appearance"].submenu.items
+    labels = [getattr(i, "label", "-") for i in rows]
+    assert labels == ["Theme", "Auto", "Light", "Dark", "-", "Font Size", "Extra Small",
+                      "Small", "Medium", "Large", "Extra Large"]
+    by_label = {i.label: i for i in rows if hasattr(i, "label")}
+    assert not by_label["Theme"].is_enabled() and not by_label["Font Size"].is_enabled()
+
+    themes = {name: by_label[name] for name in ("Auto", "Light", "Dark")}
     assert themes["Auto"].is_checked() and not themes["Light"].is_checked()
     themes["Light"].activate()
     assert themes["Light"].is_checked() and not themes["Auto"].is_checked()
     assert console.panel.auto_ink is True
 
-    sizes = {i.label: i for i in entries["Font Size"].submenu.items}
-    assert list(sizes) == ["Extra Small", "Small", "Medium", "Large", "Extra Large"]
+    sizes = by_label
     assert sizes["Medium"].is_checked()
     sizes["Large"].activate()
     assert sizes["Large"].is_checked() and backend.base_fonts[-1].size == 14

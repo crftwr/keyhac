@@ -89,6 +89,7 @@ def install_tray(console, keymap, hook) -> None:
         MenuItem("Open Console", on_select=console.backend.show_main_window),
         MenuItem("Edit Config", on_select=keymap.edit_config),
         MenuItem("Reload Config", on_select=keymap.configure),
+        SEPARATOR,
         MenuItem("Keyboard Hook", on_select=toggle_hook,
                  checked=lambda: hook.installed),
         # Nested under a name that means something to someone who has never
@@ -114,16 +115,23 @@ def install_tray(console, keymap, hook) -> None:
             # tells the reader to pass it on rather than follow it themselves.
             MenuItem("Setup Guide", on_select=open_guide),
         )),
-        # The ticks are evaluated when the menu opens; `console.appearance` is
-        # read then too, so the choice is the setting and not a copy of it.
-        MenuItem("Theme", submenu=Menu(*[
-            MenuItem(label, on_select=lambda c=choice: console.set_theme(c),
-                     checked=lambda c=choice: console.appearance.theme_choice == c)
-            for choice, label in THEMES])),
-        MenuItem("Font Size", submenu=Menu(*[
-            MenuItem(label, on_select=lambda c=choice: console.set_font_size(c),
-                     checked=lambda c=choice: console.appearance.font_size_choice == c)
-            for choice, label, _points in FONT_SIZES])),
+        SEPARATOR,
+        # One level with headings rather than Theme and Font Size as submenus of
+        # their own: both are changed rarely, which earns them a place out of
+        # the top level but not a second hover to reach.
+        MenuItem("Appearance", submenu=Menu(
+            MenuItem("Theme", enabled=False),
+            # The ticks are evaluated when the menu opens; `console.appearance`
+            # is read then too, so the choice is the setting and not a copy.
+            *[MenuItem(label, on_select=lambda c=choice: console.set_theme(c),
+                       checked=lambda c=choice: console.appearance.theme_choice == c)
+              for choice, label in THEMES],
+            SEPARATOR,
+            MenuItem("Font Size", enabled=False),
+            *[MenuItem(label, on_select=lambda c=choice: console.set_font_size(c),
+                       checked=lambda c=choice: console.appearance.font_size_choice == c)
+              for choice, label, _points in FONT_SIZES],
+        )),
         # What is chosen once in a long while, kept out of the top level the
         # everyday items share.
         MenuItem("Advanced", submenu=Menu(
