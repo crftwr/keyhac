@@ -3,7 +3,7 @@
 Per-feature design decisions and the subtle behaviors deliberately carried over from
 the predecessors (keyhac-win 1.83 / keyhac-mac 1.68 — the frozen feature references).
 Keyhac2 targets the **union** of both feature sets; the few remaining gaps are
-tracked as GitHub issues (migemo matching, cron/periodic API, themes/fonts, i18n,
+tracked as GitHub issues (migemo matching, cron/periodic API, i18n,
 rich clipboard formats).
 
 ## Deliberate ports of subtle behaviors — do not "simplify" these

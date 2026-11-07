@@ -58,6 +58,10 @@ and merged and released there before the pin moved to them.
 
 Keyhac2-side usage notes:
 
+- Theme and font size (`keyhac/ui/appearance.py`) use `Backend.set_base_font`,
+  `set_appearance` and `effective_appearance`. A window's root pane is tagged with
+  the `window` surface, because the backends' clear color is always dark.
+
 - The console (and chooser) use `WindowStyle(tool=True)` on Windows — tray-only
   presence, no taskbar button — the Windows analog of macOS
   `activation_policy="accessory"`.

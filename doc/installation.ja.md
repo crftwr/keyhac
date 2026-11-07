@@ -87,6 +87,8 @@ Keyhac 自身が管理者権限で動いていない限り、**管理者権限�
 | Edit Config | `~/.keyhac/config.py` をエディターで開きます（変更できます。[configuration.ja.md](configuration.ja.md) を参照） |
 | Reload Config | 設定を再実行します。エラーがあると直前のキーマップが有効なまま残り、エラーはコンソールに表示されます |
 | Keyboard Hook | フックのオン／オフを切り替えます（オフ = すべてのキーがそのまま通されます） |
+| Theme | Auto（OS の設定に従います。既定値）、Light、Dark から選びます |
+| Font Size | Keyhac のウィンドウの文字サイズを、Extra Small から Extra Large までの 5 段階から選びます。既定値は Medium です |
 | Quit Keyhac | フックを解除して終了します |
 
 コンソールウィンドウを閉じても隠れるだけで、Keyhac はトレイ／メニューバーで動き続けます。

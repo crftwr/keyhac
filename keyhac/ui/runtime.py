@@ -10,3 +10,7 @@ backend = None
 #: size, which it cannot keep itself because it is a new window every time.
 #: None while running headless, where nothing has a window to remember.
 settings = None
+
+#: The app's Appearance (keyhac.ui.appearance), set by main() alongside the
+#: backend: what a window opened later should look like. None while headless.
+appearance = None

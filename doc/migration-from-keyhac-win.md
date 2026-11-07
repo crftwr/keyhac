@@ -55,8 +55,9 @@ per-user directory, exactly as in 1.x. See
   equivalent, but both are a couple of lines of `threading` now that
   `keymap.call_on_main_thread()` exists. See [Timers](#timers-delayedcall--crontable)
   below.
-- **`keymap.setFont` / `keymap.setTheme`** — UI theme/font settings are not
-  configurable yet (tracked in the issue tracker).
+- **`keymap.setFont` / `keymap.setTheme`** — there is no config API for these.
+  Choose **Theme** and **Font Size** in the tray / menu-bar menu instead; Keyhac
+  remembers them. A font family cannot be chosen.
 - **Migemo matching** in the list window — available in the chooser when `pymigemo`
   is installed; it is not a hard dependency, and without it filtering is multi-word
   substring only. 1.x's `*` / `?` wildcards are available as `WildcardMatcher`.

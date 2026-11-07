@@ -10,6 +10,7 @@ from pathlib import Path
 from puikit import Menu, MenuItem, SEPARATOR
 
 from keyhac.core import log
+from keyhac.ui.appearance import FONT_SIZES, THEMES
 
 logger = log.getLogger("Tray")
 
@@ -113,6 +114,16 @@ def install_tray(console, keymap, hook) -> None:
             # tells the reader to pass it on rather than follow it themselves.
             MenuItem("Setup Guide", on_select=open_guide),
         )),
+        # The ticks are evaluated when the menu opens; `console.appearance` is
+        # read then too, so the choice is the setting and not a copy of it.
+        MenuItem("Theme", submenu=Menu(*[
+            MenuItem(label, on_select=lambda c=choice: console.set_theme(c),
+                     checked=lambda c=choice: console.appearance.theme_choice == c)
+            for choice, label in THEMES])),
+        MenuItem("Font Size", submenu=Menu(*[
+            MenuItem(label, on_select=lambda c=choice: console.set_font_size(c),
+                     checked=lambda c=choice: console.appearance.font_size_choice == c)
+            for choice, label, _points in FONT_SIZES])),
         # What is chosen once in a long while, kept out of the top level the
         # everyday items share.
         MenuItem("Advanced", submenu=Menu(
