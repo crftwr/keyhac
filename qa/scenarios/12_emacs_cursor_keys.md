@@ -23,8 +23,10 @@ None. The room works on config.py through Keyhac's own tools.
   already has), otherwise application names; and the result is checked with
   describe_keymap: which tables are active, and whether a later one
   overrides the new keys.
-- It says what the user loses: on Windows, Ctrl-F, Ctrl-N and Ctrl-P are
-  Find, New and Print in most applications.
+- On Windows, it says what the user loses: Ctrl-F, Ctrl-N and Ctrl-P are
+  Find, New and Print in most applications. On macOS there is nothing to
+  say: those commands are Cmd-F/N/P, and Ctrl-F/B/N/P already move the
+  cursor in most text fields.
 
 ## Must not
 
