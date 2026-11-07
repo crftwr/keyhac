@@ -2200,6 +2200,28 @@ def test_the_bridge_path_is_published_when_there_is_one(tmp_path, registry,
         served.stop()
 
 
+def test_starting_the_server_looks_up_no_host_name(tmp_path, registry, monkeypatch):
+    """On macOS, socket.getfqdn("127.0.0.1") alone raises the system's Local
+    Network prompt, which a loopback-only endpoint has no business asking for.
+    HTTPServer.server_bind calls it, so the server must not."""
+    import socket
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the server looked up a host name")
+
+    monkeypatch.setattr(socket, "getfqdn", refuse)
+    monkeypatch.setattr(socket, "gethostbyaddr", refuse)
+    served = MCPServer(registry, str(tmp_path / "mcp.json"))
+    served.start()
+    try:
+        assert served._server.server_name == "127.0.0.1"
+        reply = post(served, {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+                     token=served.token)
+        assert reply["id"] == 1
+    finally:
+        served.stop()
+
+
 def test_no_bridge_key_when_the_install_generated_no_script(tmp_path, registry,
                                                             monkeypatch):
     """Absent, not null: a reader treats the key's presence as "a stdio client

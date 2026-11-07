@@ -34,6 +34,7 @@ import json
 import os
 import secrets
 import shutil
+import socketserver
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -450,6 +451,25 @@ def _error(request_id, code, message):
             "error": {"code": code, "message": message}}
 
 
+class _LoopbackHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the reverse lookup of its own address.
+
+    HTTPServer.server_bind names the server by socket.getfqdn(host), and on
+    macOS that lookup of 127.0.0.1 is enough for the system to ask "Allow
+    Keyhac to find devices on local networks?" - the first time the endpoint
+    is switched on, for a server that never leaves loopback (measured in a
+    clean macOS 27 VM, 2026-11-07: the prompt comes from getfqdn alone, not
+    from binding or listening). server_name is read only by CGI handlers,
+    which this is not, so the address itself stands in for it.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 class MCPServer:
     """The listening socket, its thread, and the published endpoint file."""
 
@@ -458,7 +478,7 @@ class MCPServer:
         self.endpoint_path = endpoint_path
         self.token = secrets.token_urlsafe(32)
         self.bridge = bridge_command()
-        self._server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+        self._server = _LoopbackHTTPServer(("127.0.0.1", port), _Handler)
         self._server.dispatcher = Dispatcher(registry)
         self._server.token = self.token
         self._server.daemon_threads = True
