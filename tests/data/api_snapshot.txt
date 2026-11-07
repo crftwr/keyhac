@@ -364,6 +364,7 @@ stable	attribute	UINode.identifier
 stable	method	UINode.line_at_caret	[["self", "pk", null]]
 stable	attribute	UINode.name
 stable	attribute	UINode.name_source
+preview	property	UINode.parent	ro
 stable	method	UINode.press	[["self", "pk", null]]
 stable	method	UINode.read_text	[["self", "pk", null]]
 stable	attribute	UINode.rect

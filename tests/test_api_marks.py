@@ -17,8 +17,8 @@ def test_the_registries_are_published():
     assert keyhac.DEPRECATED_APIS is api_marks.DEPRECATED_APIS
 
 
-def test_only_the_renamed_keymap_wiring_is_marked():
-    assert not api_marks.PREVIEW_APIS
+def test_the_marked_apis_are_the_known_ones():
+    assert api_marks.PREVIEW_APIS == {"UINode.parent"}
     assert all(name.startswith("Keymap.") for name in api_marks.DEPRECATED_APIS)
     assert "Keymap.on_key_event" in api_marks.DEPRECATED_APIS
 

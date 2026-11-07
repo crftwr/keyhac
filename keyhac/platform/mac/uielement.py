@@ -790,13 +790,30 @@ class UIElement:
         per node over a whole tree.  Attributes the element does not have come
         back as an AX error value, which _from_ax renders as None.
         """
-        err, values = _ax(AS.AXUIElementCopyMultipleAttributeValues, 
-            self._ref, _DESCRIBE_ATTRS, 0, None)
-        if err != 0 or values is None:
-            got = {}
-        else:
-            got = dict(zip(_DESCRIBE_ATTRS, [_from_ax(v) for v in values]))
+        return self._project(self._read_batch(_DESCRIBE_ATTRS))
 
+    def describe_and_parent(self) -> tuple[dict, "UIElement | None"]:
+        """describe() and the AX parent, from the same one batched call.
+
+        What keyhac.core.uitree reads for every node of a walk, so UINode's
+        parent carries AXParent's meaning. Measured 2026-11-07: AXParent in
+        the batch costs ~0.003 ms a node, against ~0.03-0.06 ms as a read of
+        its own (discussion #92).
+        """
+        got = self._read_batch(_DESCRIBE_ATTRS + ["AXParent"])
+        parent = got.get("AXParent")
+        return (self._project(got),
+                parent if isinstance(parent, UIElement) else None)
+
+    def _read_batch(self, attrs: list) -> dict:
+        err, values = _ax(AS.AXUIElementCopyMultipleAttributeValues,
+            self._ref, attrs, 0, None)
+        if err != 0 or values is None:
+            return {}
+        return dict(zip(attrs, [_from_ax(v) for v in values]))
+
+    @staticmethod
+    def _project(got: dict) -> dict:
         position, size = got.get("AXPosition"), got.get("AXSize")
         rect = None
         if isinstance(position, tuple) and isinstance(size, tuple):
