@@ -250,7 +250,8 @@ kt_terminal["Ctrl-F"] = None            # ... except here, where Ctrl-F is Ctrl-
   （`Enter` も使えます）、`Escape`、`Tab`、`Space`、`Back`（Backspace）、`Delete`、
   ナビゲーションキー群（`Left`、`Home`、`PageUp`、…）、テンキー（`Num0`、`NumAdd`、…）、
   `Kana`/`Eisu`/`Menu`/`Help`（macOS。`Menu` は PC キーボードが送るアプリケーションキー
-  です）、`Apps`/`PrintScreen`/`ScrollLock`/`Pause`（Windows）、そしてモディファイアキー
+  です）、`Section`（macOS。ISO キーボードの `1` の左のキーで、刻印は問いません。このとき左 Shift と
+  `Z` の間のキーは `BackQuote` です）、`Apps`/`PrintScreen`/`ScrollLock`/`Pause`（Windows）、そしてモディファイアキー
   そのものを主キーとして（`LWin`、`RCmd`、…）。対応付けのないキーは、生のコードで
   表せます: `"(124)"`。
 - **macOS の Fn-矢印キーの落とし穴**: Apple のキーボードは `Fn-Left/Right/Up/Down` を

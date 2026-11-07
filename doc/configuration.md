@@ -247,9 +247,12 @@ consumes and sends again, as described below.
   on Windows), `Return` (`Enter` also works), `Escape`, `Tab`, `Space`, `Back`
   (Backspace), `Delete`, the navigation cluster (`Left`, `Home`, `PageUp`, …),
   numpad (`Num0`, `NumAdd`, …), `Kana`/`Eisu`/`Menu`/`Help` (macOS — `Menu` is the
-  application key a PC keyboard sends), `Apps`/`PrintScreen`/`ScrollLock`/
-  `Pause` (Windows), and the modifier keys themselves as primary keys (`LWin`,
-  `RCmd`, …). Any unmapped key is expressible as its raw code: `"(124)"`.
+  application key a PC keyboard sends), `Section` (macOS — on an ISO keyboard, the key
+  left of `1`, whatever its legend; there the key between left Shift and `Z` is
+  `BackQuote`),
+  `Apps`/`PrintScreen`/`ScrollLock`/`Pause` (Windows), and the modifier keys
+  themselves as primary keys (`LWin`, `RCmd`, …). Any unmapped key is expressible
+  as its raw code: `"(124)"`.
 - **macOS Fn-arrow gotcha**: Apple keyboards translate `Fn-Left/Right/Up/Down` into
   `Home`/`End`/`PageUp`/`PageDown` in hardware (the `Fn` modifier itself still
   arrives). A `Fn-…-Left` binding can therefore never fire — bind `Fn-…-Home`

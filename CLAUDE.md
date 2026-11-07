@@ -167,7 +167,7 @@ already written:
 Both are settled. They change only in a major release.
 
 What remains is tracked in the GitHub issues: the deferred features (themes/fonts,
-i18n, migemo, rich clipboard formats, macOS ISO layout, balloon help UI). The
+i18n, migemo, rich clipboard formats, balloon help UI). The
 genuinely-interactive verification passes are through (issue #10, closed), but
 they are a **standing pre-release routine**, not a finished backlog — what to
 repeat, and what each check is looking for, is in

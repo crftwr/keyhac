@@ -4,7 +4,7 @@ The engine and config files use portable key name strings ("A", "Semicolon",
 "F13", ...).  This module owns the per-OS translation tables:
 
 - macOS tables ported from keyhac-mac (keyhac_const.py / keyhac_key.py),
-  with ANSI and JIS layout variants.
+  with ANSI and JIS layout variants; ISO shares the ANSI table.
 - Windows tables ported from keyhac-win (keyhac_keymap.py), which used the
   standard Win32 VK_* values via pyauto; layout variants "std" (US) and JIS.
 
@@ -141,6 +141,13 @@ def _mac_tables(layout: str):
         "HELP": v["HELP"], "DELETE": v["DELETE"], "HOME": v["HOME"],
         "END": v["END"], "PAGEDOWN": v["NEXT"], "PAGEUP": v["PRIOR"],
         "EISU": v["JIS_EISU"], "KANA": v["JIS_KANA"],
+        # In every layout's table: the code also arrives from a keyboard whose
+        # type is set to ANSI, so an ISO-only name would come and go with that
+        # setting. Named after the code macOS reports, with no correction for
+        # the 0x0A/0x32 swap it applies to ISO keyboards, so that this name and
+        # BackQuote keep producing the characters their codes map to. Not yet
+        # verified on an ISO keyboard (issue #22).
+        "SECTION": v["ISO_SECTION"],
         "ALT": v["LALT"], "LALT": v["LALT"], "RALT": v["RALT"],
         "CTRL": v["LCONTROL"], "LCTRL": v["LCONTROL"], "RCTRL": v["RCONTROL"],
         "SHIFT": v["LSHIFT"], "LSHIFT": v["LSHIFT"], "RSHIFT": v["RSHIFT"],
@@ -164,6 +171,7 @@ def _mac_tables(layout: str):
         v["HELP"]: "Help", v["DELETE"]: "Delete", v["HOME"]: "Home",
         v["END"]: "End", v["NEXT"]: "PageDown", v["PRIOR"]: "PageUp",
         v["JIS_EISU"]: "Eisu", v["JIS_KANA"]: "Kana",
+        v["ISO_SECTION"]: "Section",
         v["LALT"]: "LAlt", v["RALT"]: "RAlt",
         v["LCONTROL"]: "LCtrl", v["RCONTROL"]: "RCtrl",
         v["LSHIFT"]: "LShift", v["RSHIFT"]: "RShift",
@@ -191,7 +199,7 @@ def _mac_tables(layout: str):
             v["JIS_YEN"]: "Yen", v["JIS_CLOSEBRACKET"]: "CloseBracket",
             v["JIS_CARET"]: "Caret", v["JIS_BACKSLASH"]: "BackSlash",
         })
-    else:  # ansi (and fallback for iso: unsupported, common keys only)
+    else:  # ansi and iso: macOS gives their shared keys the same codes
         str_vk.update({
             "SEMICOLON": v["SEMICOLON"], "COLON": v["SEMICOLON"],
             "SLASH": v["SLASH"], "BACKQUOTE": v["BACKQUOTE"],
