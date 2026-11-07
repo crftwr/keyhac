@@ -22,8 +22,9 @@ None. The room works on config.py through Keyhac's own tools.
   per platform the way the config already does it (the template's MOD2, a
   constant of its own, or keymap.platform), so one file works on both
   machines.
-- It says Ctrl-X is Cut in most Windows applications and that this takes it
-  away, before or as it makes the change.
+- On Windows, it says Ctrl-X is Cut in most applications and that this
+  takes it away, before or as it makes the change. On macOS there is nothing
+  to say: Cut is Cmd-X.
 
 ## Must not
 
