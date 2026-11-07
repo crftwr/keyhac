@@ -1036,6 +1036,9 @@ _MENU_BROWSERS = (
 #: the walk goes on through the menus until one holds a bookmark.
 _BOOKMARKS_MENU_NAMES = ("Bookmarks", "ブックマーク")
 
+#: How a browser's New Tab command is known in any language.
+_NEW_TAB_SHORTCUT = "Cmd-T"
+
 #: A bound on the walk of one browser's menus, which hold every bookmark.
 _MENU_BOOKMARKS_MAX_NODES = 20000
 
@@ -1056,7 +1059,7 @@ class _OpenBookmark(ThreadedAction):
 class BrowserBookmarksSource(CandidateSource):
     """The bookmarks of Chrome, Edge and Safari.
 
-    Choosing a row opens the bookmark in the browser it came from.
+    Choosing a row opens the bookmark in a new tab of the browser it came from.
 
     On macOS they are read from each browser's Bookmarks menu, because macOS
     protects the browsers' files.  A browser's rows appear only while it is
@@ -1124,8 +1127,13 @@ class BrowserBookmarksSource(CandidateSource):
         element, pid = candidate.payload, extras["pid"]
 
         def act():
-            # Both, in this order: pressing the item opens the page and leaves
-            # the browser wherever it was.
+            # A pressed bookmark replaces the current tab, as a clicked one
+            # does, and a press cannot carry the Command of a Command-click.
+            # Should New Tab not be found, the page still opens.
+            if not _press_new_tab(extras["app"]):
+                logger.warning(f"{extras['browser']}: its New Tab command was not found.")
+            # In this order: pressing the item opens the page and leaves the
+            # browser wherever it was.
             if not _press(element):
                 logger.error(f"{candidate.display}: the bookmark refused to be pressed.")
                 return
@@ -1236,9 +1244,22 @@ def _menu_rows(control, browser, bundle_id, item):
                 icon="🔖", display=title, payload=element,
                 match_text=f"{title} {folders}",
                 extras={"browser": browser, "badge": browser, "pid": pid,
-                        "folder": folders})
+                        "app": app, "folder": folders})
         if any_row:
             return
+
+
+def _press_new_tab(app) -> bool:
+    """Press a browser's New Tab command, found by its shortcut."""
+    try:
+        for top in app.menu_bar().children() or []:
+            for menu in top.children() or []:
+                for item in menu.children() or []:
+                    if _menu_shortcut(item) == _NEW_TAB_SHORTCUT:
+                        return _press(item)
+    except Exception:
+        logger.debug("A browser's menus could not be read.")
+    return False
 
 
 def _walk_menu_bookmarks(node, path, item, budget, depth=0):

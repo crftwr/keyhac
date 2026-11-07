@@ -465,8 +465,9 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   Spotlight finds no bookmarks, and reading them would take Full Disk Access, too much
   to ask for this. The menus need no new permission and read while closed, with the
   browser in the back: 9-14 ms for Safari's 14, 74 ms for Chrome's 72, up to 5 levels
-  deep. Neither says the URL. Pressing an item leaves the browser where it was, hence
-  the activate. An item's identifier, `goToFromMenuItem:` or `openBookmarkMenuItem:`,
+  deep. Neither says the URL. Pressing an item replaces the current tab and leaves the
+  browser where it was, hence New Tab first, found by its Cmd-T as no key is sent, and
+  the activate last. An item's identifier, `goToFromMenuItem:` or `openBookmarkMenuItem:`,
   tells a bookmark from a command in any language. Chrome's menu has no identifier, so
   the walk tries the menu by name and then the others.
 - Nothing from a menu is kept for when the browser is not running. A copy on disk would

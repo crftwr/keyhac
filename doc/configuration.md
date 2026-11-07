@@ -687,7 +687,7 @@ to show. It reads every browser window each time, so it too belongs on a page yo
 go to deliberately.
 
 `BrowserBookmarksSource` lists the bookmarks of Chrome, Edge and Safari, and Enter
-opens one in the browser it came from. On macOS they come from each browser's Bookmarks
+opens one in a new tab of the browser it came from. On macOS they come from each browser's Bookmarks
 menu, because macOS protects the browsers' files. A browser's bookmarks appear only
 while it is running, and they can be found by title or folder, as the menu does not give
 the URL. Chrome and Edge list the profile of their last active window. On Windows,

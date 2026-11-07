@@ -2860,28 +2860,42 @@ class TestBrowserBookmarksSource:
         rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
         assert [c.display for c in rows] == ["Spec"]
 
-    def test_choosing_a_safari_bookmark_presses_it_and_brings_safari_forward(
-            self, engine, monkeypatch):
+    def _choose(self, engine, monkeypatch, press=lambda element: True, new_tab=True):
+        """Choose Safari's one bookmark, and answer what was pressed, in order."""
         from keyhac.core import sources
-        control = _safari(_E("AXMenuItem", "Top", identifier="goToFromMenuItem:"))
+        items = [_E("AXMenuItem", "Top", identifier="goToFromMenuItem:")]
+        if new_tab:
+            items.append(_E("AXMenuItem", "New Tab", identifier="newTab"))
+        control = _safari(*items)
         fixture = engine(lambda keymap: None)
         fixture.keymap.app_control = control
         monkeypatch.setattr(fixture.keymap, "call_on_main_thread", lambda act: act())
+        monkeypatch.setattr(sources, "_menu_shortcut",
+                            lambda e: "Cmd-T" if e.describe()["name"] == "New Tab" else "")
         pressed = []
-        monkeypatch.setattr(sources, "_press", lambda element: pressed.append(element) or True)
-        [row] = self._rows(control)
-        sources.BrowserBookmarksSource().on_chosen(row, 0)
-        assert pressed == [row.payload] and control.activated == [42]
 
-    def test_a_refused_press_does_not_bring_safari_forward(self, engine, monkeypatch):
-        from keyhac.core import sources
-        control = _safari(_E("AXMenuItem", "Top", identifier="goToFromMenuItem:"))
-        fixture = engine(lambda keymap: None)
-        fixture.keymap.app_control = control
-        monkeypatch.setattr(fixture.keymap, "call_on_main_thread", lambda act: act())
-        monkeypatch.setattr(sources, "_press", lambda element: False)
+        def record(element):
+            pressed.append(element.describe()["name"])
+            return press(element)
+
+        monkeypatch.setattr(sources, "_press", record)
         [row] = self._rows(control)
         sources.BrowserBookmarksSource().on_chosen(row, 0)
+        return pressed, control
+
+    def test_choosing_from_a_menu_opens_a_new_tab_then_the_bookmark(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch)
+        assert pressed == ["New Tab", "Top"]
+        assert control.activated == [42]
+
+    def test_with_no_new_tab_command_the_page_still_opens(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch, new_tab=False)
+        assert pressed == ["Top"]
+        assert control.activated == [42]
+
+    def test_a_refused_press_does_not_bring_the_browser_forward(self, engine, monkeypatch):
+        pressed, control = self._choose(engine, monkeypatch, press=lambda element: False)
+        assert pressed == ["New Tab", "Top"]
         assert control.activated == []
 
     def test_nothing_to_list_with_no_app_control(self, engine):

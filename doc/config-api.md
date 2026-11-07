@@ -2054,7 +2054,7 @@ Build the source.
 ## <kbd>class</kbd> `BrowserBookmarksSource`
 The bookmarks of Chrome, Edge and Safari. 
 
-Choosing a row opens the bookmark in the browser it came from. 
+Choosing a row opens the bookmark in a new tab of the browser it came from. 
 
 On macOS they are read from each browser's Bookmarks menu, because macOS protects the browsers' files.  A browser's rows appear only while it is running, and Chrome and Edge list the profile of their last active window. Rows can be found by title or folder: the menu does not say the URL. 
 
