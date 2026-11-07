@@ -24,8 +24,9 @@ page with a search form, a 3-row result table and a modal):
 - **It is a DAG, not a tree.** A table's cells are children of their AXRow
   *and* of their AXColumn - the same element, CFEqual-identical, reached twice.
   A naive recursion therefore reports every cell twice and doubles every
-  extracted table.  `seen` below is not cycle paranoia; it is load bearing on
-  any page with a table.
+  extracted table.  So the walk reads an element once and puts the same node
+  in every children list that holds it (`seen` below), and traversal - walk(),
+  all_text, the dumps - shows a node once, under its OS parent (`_traverse`).
 - **Depth alone is a bad budget.** The trivial page above needs depth 10 to
   reach a table cell, while VS Code emits 1543 nodes by depth 30.  So the
   default depth is generous and `max_nodes` is the real guard.
@@ -185,7 +186,11 @@ class UINode:
         depth: Distance below the root the walk started from - negative for
             the ancestors above it.
         element: The platform UIElement, for anything outside this projection.
-        children: Child nodes, in the platform's own order.
+        children: Child nodes, in the platform's own order - the children the
+            OS lists, all of them.  A table cell is a child of its row and of
+            its column, so the same node can be in two lists; `walk()`,
+            `find_all()`, `all_text` and the dumps still meet it once, under
+            its `parent`.
         truncated: True when this node's children were cut off by max_depth or
             max_nodes - so a caller can tell "leaf" from "gave up here".  What
             is left is then the first children in the platform's order, or
@@ -238,11 +243,11 @@ class UINode:
         `children` are not read (`truncated` is True), so look around one
         with `reread()`.
 
-        The OS's answer, not the way the walk came down.  The two differ in
-        places, and `children` follows the walk:
+        The OS's answer, as `children` is - which means the two are not
+        simply each other's inverse:
 
-        - A table cell is a child of its row *and* of its column, but its
-          parent is the row.
+        - A table cell is in its row's `children` *and* its column's, but
+          its parent is the row.
         - A container the OS leaves out of the children it lists can still be
           a parent - Electron's web content hangs from a scroll area that its
           own parent never lists.  Climbing from inside a web page can pass
@@ -284,8 +289,10 @@ class UINode:
         "37" are data, not noise.
         """
         out: list[str] = []
-
-        def collect(node, parent_pieces):
+        #: What each node passes down as "its parent's pieces".
+        passed: dict[int, list[str]] = {}
+        for node, _level, under, _elsewhere in _traverse(self):
+            parent_pieces = passed.get(id(under), []) if under else []
             pieces = [str(p) for p in (node.name, node.value)
                       if p is not None and p != ""]
             for piece in pieces:
@@ -294,10 +301,7 @@ class UINode:
                 if out and out[-1] == piece:
                     continue
                 out.append(piece)
-            for child in node.children:
-                collect(child, pieces or parent_pieces)
-
-        collect(self, [])
+            passed[id(node)] = pieces or parent_pieces
         return " ".join(out)
 
     def __repr__(self):
@@ -543,10 +547,77 @@ class UINode:
         `max_depth=0` - which is what `ui.window()` and `ui.node()` return -
         that is this node alone.  `find_all()` is the one that searches the
         live tree; `reread().walk()` traverses a fresh capture.
+
+        Each node comes once, even one that sits in two `children` lists - a
+        table cell is in its row's and its column's - and it comes under its
+        `parent`.  A node whose parent this walk does not reach comes under
+        the first node that lists it, so `column.walk()` yields the column's
+        cells.
         """
-        yield self
-        for child in self.children:
-            yield from child.walk()
+        for node, _level, _under, _elsewhere in _traverse(self):
+            yield node
+
+
+# -- traversal ----------------------------------------------------------------
+#
+# children are the OS's, so one node can sit in several children lists (a
+# cell in its row's and its column's) and, with an application that reports
+# a cycle, even below itself. Anything that goes over a snapshot shows each
+# node once, at one place, decided by the snapshot alone - never by child
+# order, which the OS does not promise:
+#
+#   under its parent, when the parent is part of this traversal and lists it;
+#   otherwise under the first node that lists it.
+#
+# The second clause is what keeps a node from vanishing: a parent outside the
+# traversal (column.walk(): the cells' rows are not below the column), a
+# parent the OS reports but never lists the node under (Electron's root
+# scroll area), and a parent that disagrees with the children it lists
+# because the screen moved mid-walk all fall to it.
+
+
+def _reachable(root: UINode) -> dict[int, UINode]:
+    """Every node `root`'s children lead to, by id - itself included."""
+    found: dict[int, UINode] = {}
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if id(node) in found:
+            continue
+        found[id(node)] = node
+        stack.extend(node.children)
+    return found
+
+
+def _placed_under(child: UINode, node: UINode, reachable: dict) -> bool:
+    home = getattr(child, "_parent_node", None)
+    if home is node or home is None or id(home) not in reachable:
+        return True
+    return not any(listed is child for listed in home.children)
+
+
+def _traverse(root: UINode):
+    """Depth first, each node once: (node, level below `root`, the node it is
+    shown under or None for the root, how many of its children are shown
+    elsewhere)."""
+    reachable = _reachable(root)
+    done: set[int] = set()
+
+    def visit(node, level, under):
+        done.add(id(node))
+        placed = [child for child in node.children
+                  if _placed_under(child, node, reachable)]
+        yield node, level, under, len(node.children) - len(placed)
+        for child in placed:
+            if id(child) not in done:
+                yield from visit(child, level + 1, node)
+
+    yield from visit(root, 0, None)
+    # Only an application reporting a cycle leaves anything unplaced; such a
+    # node still comes once, rather than not at all.
+    for key, node in reachable.items():
+        if key not in done:
+            yield from visit(node, node.depth - root.depth, None)
 
 
 def _describe(element) -> dict:
@@ -601,10 +672,13 @@ def get_ui_tree(root, max_depth: int = DEFAULT_MAX_DEPTH,
     #: (node, its OS parent element), from platforms that report one.
     reported_parents: list = []
 
-    def build(element, depth: int, walk_parent) -> UINode | None:
+    def build(element, depth: int, walk_parent) -> UINode:
         identity = _identity(element)
         if identity is not None and identity in seen:
-            return None
+            # Reached again - a cell through its column after its row. The
+            # same node goes into this children list too: read once, budget
+            # spent once, not descended into again.
+            return seen[identity]
         described, parent_element = _describe_and_parent(element)
         node = UINode(depth=depth, element=element, **described)
         if identity is not None:
@@ -627,23 +701,28 @@ def get_ui_tree(root, max_depth: int = DEFAULT_MAX_DEPTH,
         if capped:
             node._children_capped = capped
             node.truncated = True
+        listed: set[int] = set()
         for child in children:
             if budget[0] <= 0:
                 node.truncated = True
                 break
             built = build(child, depth + 1, node)
-            if built is None:
-                continue
             if roles is None or match_role(built.role, roles):
-                node.children.append(built)
+                adopting = [built]
             else:
                 # Not reported, but its matching descendants still are, so a
                 # roles= filter cannot lose a cell by way of its row.  The
                 # unreported node stays their parent: it is the real one.
-                node.children.extend(built.children)
+                adopting = built.children
+            # Once per list: hoisting through a row and a column both would
+            # otherwise put the same cell's text in one list twice.
+            for adopted in adopting:
+                if id(adopted) not in listed:
+                    listed.add(id(adopted))
+                    node.children.append(adopted)
         return node
 
-    tree = build(root_element, 0, None) or UINode(element=root_element)
+    tree = build(root_element, 0, None)
 
     # Parents by the OS's answer, now that every node the walk will build
     # exists - a cell reached through its column first still finds its row.
@@ -803,10 +882,19 @@ def format_tree(node: UINode, indent: int = 0, max_value: int = 60) -> str:
     action is being written, and a page's worth of it has to stay readable.
     """
     lines = []
-    for current in node.walk():
-        prefix = "  " * (current.depth - node.depth + indent)
+    for current, level, _under, elsewhere in _traverse(node):
+        prefix = "  " * (level + indent)
         lines.append(prefix + _node_line(current, max_value))
+        if elsewhere:
+            lines.append(prefix + "  " + _elsewhere_line(elsewhere))
     return "\n".join(lines)
+
+
+def _elsewhere_line(count: int) -> str:
+    """Stands for the children a dump shows under their own parent instead -
+    a column's cells, printed once, under their rows."""
+    noun = "child" if count == 1 else "children"
+    return f"… {count} more {noun}, shown under their own parent"
 
 
 def _node_line(node: UINode, max_value: int = 60) -> str:
@@ -841,12 +929,24 @@ def collapsed_tree(node: UINode, run: int = 6, keep: int = 2,
     """
     lines = []
     hidden = 0
+    reachable = _reachable(node)
+    done: set[int] = set()
 
     def emit(current: UINode, level: int) -> None:
         nonlocal hidden
+        if id(current) in done:
+            return                  # a cycle the application reported
+        done.add(id(current))
         prefix = "  " * level
         lines.append(prefix + _node_line(current, max_value))
-        children = list(current.children or ())
+        listed = list(current.children or ())
+        # Placed as _traverse places them: each node once, under its parent.
+        children = [child for child in listed
+                    if _placed_under(child, current, reachable)
+                    and id(child) not in done]
+        if len(listed) > len(children):
+            lines.append(prefix + "  "
+                         + _elsewhere_line(len(listed) - len(children)))
         index = 0
         while index < len(children):
             role = children[index].role

@@ -313,14 +313,16 @@ def _path_segment(node) -> str:
 
 
 def _parents(tree) -> dict:
-    """Each node of a walked tree, by id, to the node whose `children` hold it.
+    """Each node of a walked tree, by id, to the node it is shown under.
 
-    Built per search from the one tree that search read, rather than kept on
-    UINode: which side of a row/column DAG a shared cell hangs from, and
-    which ancestor a roles= filter hoisted it to, are facts about that walk,
-    and outside it they are noise (discussion #92).
+    The placement walk() and the dumps use, so an ancestor path names the
+    same chain the reported tree shows - not UINode.parent, which can step
+    through nodes no walk downwards reaches (Electron's root scroll area)
+    and, under roles=, through nodes the filter did not report.
     """
-    return {id(child): node for node in tree.walk() for child in node.children}
+    return {id(node): under
+            for node, _level, under, _elsewhere in uitree._traverse(tree)
+            if under is not None}
 
 
 def _ancestor_path(node, parents: dict) -> str:

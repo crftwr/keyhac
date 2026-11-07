@@ -675,7 +675,7 @@ A snapshot is what one read captured: the root, everything below it the walk rea
  - <b>`rect`</b>:  (x, y, w, h) in screen coordinates, or None. 
  - <b>`depth`</b>:  Distance below the root the walk started from - negative for  the ancestors above it. 
  - <b>`element`</b>:  The platform UIElement, for anything outside this projection. 
- - <b>`children`</b>:  Child nodes, in the platform's own order. 
+ - <b>`children`</b>:  Child nodes, in the platform's own order - the children the  OS lists, all of them.  A table cell is a child of its row and of  its column, so the same node can be in two lists; `walk()`,  `find_all()`, `all_text` and the dumps still meet it once, under  its `parent`. 
  - <b>`truncated`</b>:  True when this node's children were cut off by max_depth or  max_nodes - so a caller can tell "leaf" from "gave up here".  What  is left is then the first children in the platform's order, or  none at all. 
 
 
@@ -705,10 +705,10 @@ around = group.reread(max_depth=2)   # what is next to the field
 
 Part of the snapshot, like `children`: no read happens here, and every node has it filled in, the root of a walk and the shallow nodes of `ui.focused()` / `ui.node()` included - a snapshot carries the chain of ancestors up to its window.  Those ancestors are shallow: their `children` are not read (`truncated` is True), so look around one with `reread()`. 
 
-The OS's answer, not the way the walk came down.  The two differ in places, and `children` follows the walk: 
+The OS's answer, as `children` is - which means the two are not simply each other's inverse: 
 
 
-- A table cell is a child of its row *and* of its column, but its  parent is the row. 
+- A table cell is in its row's `children` *and* its column's, but  its parent is the row. 
 - A container the OS leaves out of the children it lists can still be  a parent - Electron's web content hangs from a scroll area that its  own parent never lists.  Climbing from inside a web page can pass  through such a node, which no walk downwards and no MCP ancestor  path shows. 
 - Under a `roles=` filter, the parent is the real one even when the  filter did not report it. 
 
@@ -995,6 +995,8 @@ walk() → Iterator['UINode']
 This node and every descendant in the snapshot, depth first. 
 
 A walk over what was captured, not what is on screen: it yields the nodes already held, asking the OS nothing.  On a node read with `max_depth=0` - which is what `ui.window()` and `ui.node()` return - that is this node alone.  `find_all()` is the one that searches the live tree; `reread().walk()` traverses a fresh capture. 
+
+Each node comes once, even one that sits in two `children` lists - a table cell is in its row's and its column's - and it comes under its `parent`.  A node whose parent this walk does not reach comes under the first node that lists it, so `column.walk()` yields the column's cells. 
 
 ---
 
