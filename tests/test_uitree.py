@@ -131,6 +131,201 @@ def test_a_node_carries_no_back_edge_to_the_walk():
     assert all(not hasattr(node, "_parent") for node in tree.walk())
 
 
+# -- parent -----------------------------------------------------------------
+
+class AXElement(FakeElement):
+    """An element that reports its OS parent the way macOS does: in the same
+    batched read as its description, and through parent()."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ax_parent = None
+        for child in self._children:
+            if getattr(child, "ax_parent", None) is None:
+                child.ax_parent = self
+
+    def describe_and_parent(self):
+        return self.describe(), self.ax_parent
+
+    def parent(self):
+        return self.ax_parent
+
+
+def ax_window():
+    """application > window > group > field, the shape ui.focused() climbs."""
+    field_ = AXElement("AXTextField", name="Query", key="field")
+    group = AXElement("AXGroup", identifier="search", key="group",
+                      children=[field_])
+    window = AXElement("AXWindow", name="Main", key="window", children=[group])
+    AXElement("AXApplication", key="app", children=[window])
+    return window, group, field_
+
+
+def test_a_shallow_node_carries_its_ancestors_up_to_the_window():
+    """ui.focused() and ui.node() read with max_depth=0, and parent is still
+    filled in: shallow ancestors, negative depths, the application left out
+    so a top-level window's parent is None."""
+    _window, _group, field_ = ax_window()
+    node = get_ui_tree(field_, max_depth=0)
+    group = node.parent
+    assert (group.role, group.identifier, group.depth) == \
+        ("AXGroup", "search", -1)
+    assert group.children == [] and group.truncated
+    window = group.parent
+    assert (window.role, window.depth) == ("AXWindow", -2)
+    assert window.parent is None
+
+
+def test_a_walk_links_its_nodes_and_its_root_upwards():
+    window, _group, _field = ax_window()
+    tree = get_ui_tree(window)
+    assert tree.parent is None
+    group = tree.children[0]
+    assert group.parent is tree
+    assert group.children[0].parent is group
+
+    inner = get_ui_tree(window._children[0])
+    assert inner.parent.role == "AXWindow" and inner.parent.depth == -1
+
+
+def test_a_shared_cell_has_its_row_as_parent_whichever_side_came_first():
+    """children are the OS's, so the cell is in both lists - one node, read
+    once - and its parent is the row even with the column listed first."""
+    cells = [AXElement("AXCell", value=f"c{c}", key=f"c{c}") for c in range(2)]
+    row = AXElement("AXRow", key="row", children=cells)
+    column = AXElement("AXColumn", key="col", children=cells[:1])
+    table = AXElement("AXTable", key="table", children=[column, row])
+    tree = get_ui_tree(table)
+    column_node, row_node = tree.children
+    shared = column_node.children[0]
+    assert shared.value == "c0"
+    assert row_node.children[0] is shared
+    assert shared.parent is row_node
+
+
+def test_a_parent_the_os_never_lists_is_a_shallow_node():
+    """Electron: the group lists the web area, whose AXParent is a scroll
+    area the group never lists (measured, discussion #92)."""
+    web = AXElement("AXWebArea", name="Page", key="web")
+    scroll = AXElement("AXScrollArea", key="scroll", children=[web])
+    group = AXElement("AXGroup", key="group", children=[web])
+    scroll.ax_parent = group
+    window = AXElement("AXWindow", key="window", children=[group])
+    tree = get_ui_tree(window)
+    group_node = tree.children[0]
+    web_node = group_node.children[0]
+    hidden = web_node.parent
+    assert hidden.role == "AXScrollArea" and hidden.truncated
+    assert hidden not in group_node.children
+    assert hidden.parent is group_node
+
+
+def test_under_a_roles_filter_the_parent_is_the_real_one():
+    window, _group, _field = ax_window()
+    tree = get_ui_tree(window, roles="AXTextField")
+    field_node = tree.children[0]
+    assert field_node.parent.role == "AXGroup"
+    assert field_node.parent is not tree
+
+
+def test_where_the_platform_reports_no_parent_the_walk_edge_is_used():
+    """UI Automation's control view is a tree, so the walk's edge is the OS
+    parent; above the root, parent() is climbed."""
+    tree = get_ui_tree(table_with_shared_cells())
+    assert tree.parent is None
+    row = tree.children[0]
+    assert row.parent is tree and row.children[0].parent is row
+
+    root = FakeElement("Pane", key="pane")
+    window = FakeElement("Window", key="win")
+    desktop = FakeElement("Desktop", key="desk")
+    root.parent = lambda: window
+    window.parent = lambda: desktop
+    desktop.parent = lambda: None
+    node = get_ui_tree(root)
+    assert node.parent.role == "Window" and node.parent.parent is None
+
+
+def test_a_column_lists_its_cells_and_traversal_meets_each_once():
+    """children are the OS's: the column holds its cells too.  walk(),
+    find_all() and all_text still meet every cell once, under its row."""
+    tree = get_ui_tree(table_with_shared_cells())
+    columns = [n for n in tree.children if n.role == "AXColumn"]
+    rows = [n for n in tree.children if n.role == "AXRow"]
+    assert [len(c.children) for c in columns] == [2, 2]
+    assert columns[0].children[0] is rows[0].children[0]
+    cells = [n for n in tree.walk() if n.role == "AXCell"]
+    assert len(cells) == 4 and len({id(c) for c in cells}) == 4
+    assert len(find_elements(table_with_shared_cells(), role="AXCell")) == 4
+    assert tree.all_text == "r0c0 r0c1 r1c0 r1c1"
+
+
+def test_a_column_walked_on_its_own_yields_its_cells():
+    """The cells' parent (a row) is not below the column, so a walk from the
+    column shows them there - reading a column is now possible."""
+    tree = get_ui_tree(table_with_shared_cells())
+    column = next(n for n in tree.children if n.role == "AXColumn")
+    assert [n.value for n in column.walk() if n.role == "AXStaticText"] == \
+        ["r0c0", "r1c0"]
+    assert column.all_text == "r0c0 r1c0"
+
+
+def test_a_dump_shows_a_shared_cell_once_and_says_where_the_rest_went():
+    tree = get_ui_tree(table_with_shared_cells())
+    text = tree.dump()
+    assert text.count("'r0c0'") == 1
+    assert text.count("… 2 more children, shown under their own parent") == 2
+    collapsed, hidden = collapsed_tree(tree)
+    assert collapsed.count("'r0c0'") == 1 and hidden == 0
+    assert "shown under their own parent" in collapsed
+
+
+def test_a_node_whose_parent_never_lists_it_is_not_lost():
+    """AXParent names a node that is in the snapshot but does not list this
+    one - an application bug, or the screen moving mid-walk.  The node is
+    shown under the node that does list it, rather than nowhere."""
+    stray = AXElement("AXButton", name="Stray", key="stray")
+    holder = AXElement("AXGroup", key="holder", children=[stray])
+    claimed = AXElement("AXGroup", key="claimed")
+    stray.ax_parent = claimed
+    window = AXElement("AXWindow", key="win", children=[holder, claimed])
+    tree = get_ui_tree(window)
+    assert [n.name for n in tree.walk()].count("Stray") == 1
+    stray_node = tree.children[0].children[0]
+    assert stray_node.parent is tree.children[1]
+    assert "'Stray'" in tree.dump()
+
+
+def test_a_reported_cycle_ends_and_shows_each_node_once():
+    """An application listing an ancestor among its children must not send
+    a walk round forever."""
+    inner = AXElement("AXGroup", key="inner")
+    outer = AXElement("AXGroup", key="outer", children=[inner])
+    inner._children = [outer]            # the cycle
+    window = AXElement("AXWindow", key="win", children=[outer])
+    tree = get_ui_tree(window)
+    assert [n.role for n in tree.walk()] == ["AXWindow", "AXGroup", "AXGroup"]
+    assert tree.dump().count("AXGroup") == 2
+    assert collapsed_tree(tree)[0].count("AXGroup") == 2
+
+
+def test_electron_web_content_is_walked_under_the_group_that_lists_it():
+    web = AXElement("AXWebArea", name="Page", key="web")
+    scroll = AXElement("AXScrollArea", key="scroll", children=[web])
+    group = AXElement("AXGroup", key="group", children=[web])
+    scroll.ax_parent = group
+    tree = get_ui_tree(AXElement("AXWindow", key="w", children=[group]))
+    assert [n.role for n in tree.walk()] == ["AXWindow", "AXGroup", "AXWebArea"]
+
+
+def test_parent_stays_out_of_equality_and_repr():
+    """parent and children make a cycle; __eq__ and repr must not follow it."""
+    window, _group, _field = ax_window()
+    first, second = get_ui_tree(window), get_ui_tree(window)
+    assert first.children[0] == second.children[0]
+    assert "parent" not in repr(first.children[0])
+
+
 # -- the node projection ----------------------------------------------------
 
 def test_text_keeps_falsy_values():

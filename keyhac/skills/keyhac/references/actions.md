@@ -60,6 +60,12 @@ truncated, while the document is there to be found: `find_elements` with
 where the whole budget goes to the page. In code the same move is
 `window.find(role="WebArea").reread()`.
 
+**To see what surrounds the focus, climb before you read.** `focused()` alone
+is one element; its `parent` chain leads to the container that holds it and
+its neighbours, and `reread()` on that container reads them. Every node
+carries that chain, but the ancestors are shallow - their `children` stay
+empty until you reread one. `parent` is a Preview API.
+
 If the state you need does not exist yet - a modal, a later wizard step - ask
 the user to open it and look again. That costs one message and records nothing.
 

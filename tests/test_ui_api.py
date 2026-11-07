@@ -451,9 +451,10 @@ def test_content_access_state_is_none_where_the_platform_has_no_switch(ui):
     the answer costs no walk and no dispatch - describe_screen asks this of
     every window with no web area in it, which there is most of them."""
     api, element = ui
+    node = api.node(element)    # reading the node climbs to fill in .parent
     walked = []
     element.parent = lambda: walked.append(1)
-    assert api._content_access_state(api.node(element)) is None
+    assert api._content_access_state(node) is None
     assert walked == [], "the platform was walked to learn it has no switch"
 
 
