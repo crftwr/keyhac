@@ -1033,6 +1033,18 @@ asks for permission the first time. Where a notification cannot be posted, such 
 when permission was refused, the console says so. Focus and Do Not Disturb can hold
 a notification back.
 
+**A balloon and a notification are for different moments, and neither stands in for
+the other.** A balloon is Keyhac's own window, where the user is looking now: the
+answer to a key they just pressed, or a state they are watching. Once they look away
+it has done its job or missed it. A notification is the operating system's, for a
+result that arrives while they may be elsewhere: it waits in the system's list of
+notifications, and it follows their settings — the permission they gave, Focus, Do
+Not Disturb. So pick by where the user will be when the message arrives, not by which
+one works. A notification that is not posted is usually those settings at work;
+popping a balloon instead overrides a choice the user made and puts the message on a
+screen nobody may be watching. What a run did belongs in what it leaves behind — its
+output, its log — so the user learns it whether or not a message was seen.
+
 `on_click` runs when the user clicks the notification. This argument is Preview and
 may change in any release:
 
