@@ -312,20 +312,30 @@ def _path_segment(node) -> str:
     return role
 
 
-def _ancestor_path(node) -> str:
+def _parents(tree) -> dict:
+    """Each node of a walked tree, by id, to the node whose `children` hold it.
+
+    Built per search from the one tree that search read, rather than kept on
+    UINode: which side of a row/column DAG a shared cell hangs from, and
+    which ancestor a roles= filter hoisted it to, are facts about that walk,
+    and outside it they are noise (discussion #92).
+    """
+    return {id(child): node for node in tree.walk() for child in node.children}
+
+
+def _ancestor_path(node, parents: dict) -> str:
     """A match's ancestors, root-first, slash-joined; "" on the root itself.
 
-    Read off the same walk that found the match - the `_parent` back-edges
-    `get_ui_tree` records - so it describes the searched snapshot, not a
-    second one.  Where the DAG dedupe applies, a shared node's chain is the
-    side the walk reached first, which is the honest description of the
-    reported tree.
+    Read off the same walk that found the match, so it describes the
+    searched snapshot, not a second one.  Where the DAG dedupe applies, a
+    shared node's chain is the side the walk reached first, which is the
+    honest description of the reported tree.
     """
     segments = []
-    current = getattr(node, "_parent", None)
+    current = parents.get(id(node))
     while current is not None:
         segments.append(_path_segment(current))
-        current = getattr(current, "_parent", None)
+        current = parents.get(id(current))
     return "/".join(reversed(segments))
 
 
@@ -417,22 +427,19 @@ class _Uniqueness:
     """Whether each match of a search is the only one, and if not, what
     would make it so (issue #93).
 
-    Computed from the snapshot the search walked - the matches' `_parent`
-    chains lead back to its root - so the verdict is a measurement of the
-    tree that was actually read rather than guidance about which selectors
-    tend to be stable (the lesson of #58). Adding a criterion can only
-    shrink a match set, so a narrowing is checked against the other matches
-    alone; a container is checked twice, since a scoped search is two finds
-    and the first one has to be unique as well.
+    Computed from the snapshot the search walked, so the verdict is a
+    measurement of the tree that was actually read rather than guidance
+    about which selectors tend to be stable (the lesson of #58). Adding a
+    criterion can only shrink a match set, so a narrowing is checked against
+    the other matches alone; a container is checked twice, since a scoped
+    search is two finds and the first one has to be unique as well.
     """
 
-    def __init__(self, matches: list):
+    def __init__(self, tree, matches: list, parents: dict):
         self.matches = matches
         self.match_ids = {id(match) for match in matches}
-        root = matches[0]
-        while getattr(root, "_parent", None) is not None:
-            root = root._parent
-        self.nodes = list(root.walk())
+        self.parents = parents
+        self.nodes = list(tree.walk())
         self.cut = any(node.truncated for node in self.nodes)
         self._selected: dict = {}
 
@@ -465,9 +472,9 @@ class _Uniqueness:
         # likely to move. The walk's root is skipped - it is the window the
         # search already ran in. Within a container the match's own name may
         # still be needed, when a sibling in the same container matches too.
-        ancestor = getattr(match, "_parent", None)
-        while ancestor is not None and getattr(ancestor, "_parent", None) \
-                is not None:
+        parents = self.parents
+        ancestor = parents.get(id(match))
+        while ancestor is not None and parents.get(id(ancestor)) is not None:
             for selector in _container_selectors(ancestor):
                 if self._only(selector) is not ancestor:
                     continue
@@ -481,7 +488,7 @@ class _Uniqueness:
                         return (f"unique within {_keywords(selector)}, "
                                 f"with name={name!r}")
                 break
-            ancestor = ancestor._parent
+            ancestor = parents.get(id(ancestor))
         return ("nothing separates it but its position - no identifier, "
                 "name or container is its alone")
 
@@ -1008,7 +1015,11 @@ class ToolRegistry:
                              + "/".join(WITHIN_KEYS))
         bounds = {k: int(within[k]) for k in ("max_depth", "max_nodes")
                   if within.get(k) is not None}
-        matches = window.find_all(**criteria, **bounds)
+        # The walk and the match are split, as in find_elements, so the tree
+        # the container was found in is still here to place it by its path.
+        tree = window.reread(**bounds)
+        matches = uitree._matching(tree, **criteria)
+        parents = _parents(tree)
         if not matches:
             raise RuntimeError(
                 f"no container matching within={criteria}. find_elements with "
@@ -1018,14 +1029,14 @@ class ToolRegistry:
                 f"other - a web dialog is a Window on Windows")
         if len(matches) > 1:
             listed = "\n".join(
-                f"  {node!r} path={_ancestor_path(node) or '(root)'}"
+                f"  {node!r} path={_ancestor_path(node, parents) or '(root)'}"
                 for node in matches[:10])
             raise RuntimeError(
                 f"within={criteria} matches {len(matches)} elements - it has to "
                 f"select one. find_elements with the same keys says what would "
                 f"single each out:\n{listed}")
         container = matches[0]
-        path = _ancestor_path(container)
+        path = _ancestor_path(container, parents)
         return container, (f"[within {container!r}"
                            + (f", path={path}" if path else "") + "]")
 
@@ -1183,7 +1194,8 @@ class ToolRegistry:
         # one element is a prediction that find() will grab whichever comes
         # first at run time. So the verdict comes first, and each ambiguous
         # match says what would single it out.
-        uniqueness = _Uniqueness(matches)
+        parents = _parents(tree)
+        uniqueness = _Uniqueness(tree, matches, parents)
         if len(matches) == 1:
             lines = ["1 match - unique: find() with these criteria gets this "
                      "element."]
@@ -1202,7 +1214,7 @@ class ToolRegistry:
             lines.append(f"  (from match {first + 1})")
         for node in shown:
             line = f"  {node!r} value={node.value!r} rect={node.rect}"
-            path = _ancestor_path(node)
+            path = _ancestor_path(node, parents)
             if path:
                 line += f" path={path}"
             lines.append(line)
