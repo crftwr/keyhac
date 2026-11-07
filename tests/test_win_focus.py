@@ -22,6 +22,8 @@ pytestmark = pytest.mark.desktop
 
 from ctypes import wintypes  # noqa: E402
 
+from keyhac.core.uitree import Unresponsive  # noqa: E402
+
 from keyhac.platform.win.focus import WinFocusProvider, _component  # noqa: E402
 from keyhac.platform.win.uielement import (UIElement, _same_element,  # noqa: E402
                                            get_automation)
@@ -406,7 +408,7 @@ class TestUIAPatternsAgainstNotepad:
         window = None
         found = None
         try:
-            for _ in range(30):
+            for _ in range(150):
                 time.sleep(0.1)
                 fresh = _notepad_hwnds() - before
                 if fresh:
@@ -434,7 +436,19 @@ class TestUIAPatternsAgainstNotepad:
                                          ctypes.c_void_p(node._ptr.value))
                 return None
 
-            found = walk(UIElement.from_hwnd(window.hwnd))
+            # A Notepad just started can take longer than the product's
+            # 250 ms UIA cap to answer, on a VM on a loaded host above all;
+            # that is the host's load, not what this test is about, so the
+            # walk is tried again until Notepad answers.
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    found = walk(UIElement.from_hwnd(window.hwnd))
+                    break
+                except Unresponsive:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.5)
             if found is None:
                 pytest.skip("no editable element found in Notepad")
             yield window, found

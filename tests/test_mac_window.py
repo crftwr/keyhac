@@ -62,7 +62,27 @@ while True:
 """
 
 
-def _wait_for(condition, timeout=5.0):
+#: How long this module waits on the window server and AX.  The product's
+#: caps (AX_MESSAGING_TIMEOUT 0.25 s and the like) are sized for the hook path;
+#: a VM on a loaded host answers slower than that, so the tests give the
+#: same calls more time rather than fail on the host's load.
+PATIENT_AX_TIMEOUT = 2.0
+WAIT_TIMEOUT = 15.0
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _patient_ax():
+    """Raise the AX caps for this module, before the provider is made."""
+    from keyhac.platform.mac import uielement, window
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(uielement, "AX_MESSAGING_TIMEOUT", PATIENT_AX_TIMEOUT)
+        patch.setattr(window, "AX_MESSAGING_TIMEOUT", PATIENT_AX_TIMEOUT)
+        patch.setattr(window, "ACTIVATION_TIMEOUT", PATIENT_AX_TIMEOUT)
+        patch.setattr(window, "MENU_TIMEOUT", PATIENT_AX_TIMEOUT)
+        yield
+
+
+def _wait_for(condition, timeout=WAIT_TIMEOUT):
     """Poll for an out-of-process state change (window server, AX, activation).
 
     Pumps the run loop rather than sleeping: NSWorkspace state (frontmost
@@ -108,7 +128,7 @@ def own_window(provider, helper):
     """
     from Foundation import NSRunLoop, NSDate
     window = None
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + WAIT_TIMEOUT
     while window is None and time.monotonic() < deadline:
         window = provider.find_window(title=WINDOW_TITLE)
         if window is None:
@@ -318,7 +338,7 @@ class TestActivate:
                 AS.AXUIElementSetAttributeValue(element, "AXFrontmost", True)
 
 
-def _wait_settled(window, timeout=5.0):
+def _wait_settled(window, timeout=WAIT_TIMEOUT):
     """Wait until the frame stops moving.
 
     Fill, Return to Previous Size and the way in and out of full screen
@@ -497,7 +517,7 @@ class TestFullScreen:
             self, normal_window, frontmost_restored):
         window = normal_window
         assert window.enter_full_screen()
-        assert _wait_for(window.is_full_screen, timeout=5), \
+        assert _wait_for(window.is_full_screen, timeout=WAIT_TIMEOUT), \
             "never entered full screen"
         _wait_full_screen_transition()
         # One state at a time, even where the full-screen frame equals the
@@ -508,15 +528,15 @@ class TestFullScreen:
         assert not window.enter_full_screen()   # already there
         assert not window.minimize()            # macOS will not
         assert window.restore()
-        assert _wait_for(lambda: not window.is_full_screen(), timeout=5)
+        assert _wait_for(lambda: not window.is_full_screen(), timeout=WAIT_TIMEOUT)
 
     def test_maximize_from_full_screen(self, normal_window, frontmost_restored):
         window = normal_window
         assert window.enter_full_screen()
-        assert _wait_for(window.is_full_screen, timeout=5)
+        assert _wait_for(window.is_full_screen, timeout=WAIT_TIMEOUT)
         _wait_full_screen_transition()
         assert window.maximize()
-        assert _wait_for(window.is_maximized, timeout=5), \
+        assert _wait_for(window.is_maximized, timeout=WAIT_TIMEOUT), \
             f"never maximized; frame {window.get_frame()}"
         assert not window.is_full_screen()
 
@@ -541,11 +561,11 @@ class TestFullScreen:
         sx, sy, sw, sh = MoveWindow._get_best_screen(window.get_frame(), works)
         expected = (sx, sy, sw / 2, sh)
         assert window.enter_full_screen()
-        assert _wait_for(window.is_full_screen, timeout=5)
+        assert _wait_for(window.is_full_screen, timeout=WAIT_TIMEOUT)
         _wait_full_screen_transition()
         SnapWindow("left")()
         assert _wait_for(lambda: _close_to(window.get_frame(), expected),
-                         timeout=5), \
+                         timeout=WAIT_TIMEOUT), \
             f"frame {window.get_frame()} never approached {expected}"
         assert not window.is_full_screen()
 
@@ -555,7 +575,7 @@ class TestFullScreen:
         assert window.minimize()
         assert _wait_for(window.is_minimized)
         assert window.enter_full_screen()
-        assert _wait_for(window.is_full_screen, timeout=5), \
+        assert _wait_for(window.is_full_screen, timeout=WAIT_TIMEOUT), \
             "never entered full screen"
         assert not window.is_minimized()
         _wait_full_screen_transition()
