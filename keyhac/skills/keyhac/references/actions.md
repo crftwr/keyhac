@@ -311,9 +311,10 @@ that has never executed is a guess.
    `.bak-` beside itself rather than erasing it, so this is reversible. Use it
    for a module you wrote under a name you then abandoned, or a helper you
    folded back into the action. For a throwaway such as a probe, add
-   `keep_backup=False`: it erases the module and its backups, leaving nothing
-   behind, if it was created since the MCP server started. Anything older is
-   still renamed. **Only for what you created in this
+   `keep_backup=False`: the module and its backups go to the Trash, leaving
+   nothing in `extensions/`, and the operator can still put them back. Where
+   the Trash cannot take them, the module is renamed as usual and the reply
+   says why. **Only for what you created in this
    conversation**: anything else in `extensions/` is the operator's, and it is
    theirs to remove. If the reply says `config.py` mentions the module, read
    that file and offer to take the lines out — leaving them there means their

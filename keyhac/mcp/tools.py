@@ -24,8 +24,8 @@ rather than an unlink: a module leaves `extensions/` as a timestamped `.bak-`
 beside itself. So the one tool here that sounds destructive destroys nothing,
 and the directory a fix loop leaves cluttered can be tidied without the operator
 being the transport for that either. Its one exception is asked for by name:
-`keep_backup=False` erases a throwaway, but only one created since this server
-started, so a module the operator had before the session is still only renamed.
+`keep_backup=False` moves the module and its backups to the OS Trash instead,
+which leaves `extensions/` clean and is still undone by Put Back.
 
 `keyhac/mcp/extensions.py` is the other half of that: an action class in
 `extensions/` is runnable by `module.Class` without any `config.py` edit, and
@@ -586,8 +586,6 @@ class ToolRegistry:
     def __init__(self, keymap):
         self.keymap = keymap
         self._loader = extensions.Loader()
-        #: What "this session's" means to delete_extension(keep_backup=False).
-        self._started = time.time()
         self.tools = {t.name: t for t in self._build()}
 
     def describe(self) -> list[dict]:
@@ -898,16 +896,17 @@ class ToolRegistry:
                  "touch config.py - so if that file imports the module, the "
                  "reply says so, and taking those lines out is the next thing "
                  "to offer. For a throwaway of your own, keep_backup=false "
-                 "erases it and every backup of it, if the module was created "
-                 "since this server started. An older module is still renamed, "
-                 "and the reply says so.",
+                 "moves it and every backup of it to the Trash instead, "
+                 "leaving nothing in extensions/ - the operator can still put "
+                 "it back. Where the Trash cannot take it, it is renamed as "
+                 "usual and the reply says why.",
                  {"type": "object", "properties": {
                      "name": {**string, "description": "Module name, with no "
                               "path and no .py suffix: \"open_issues\"."},
                      "keep_backup": {"type": "boolean", "description":
-                                     "False to erase a module created since "
-                                     "this server started and every .bak- of "
-                                     "it. Default true."}},
+                                     "False to move the module and every .bak- "
+                                     "of it to the Trash rather than leave a "
+                                     ".bak- beside it. Default true."}},
                   "required": ["name"]},
                  self.delete_extension,
                  _writes(destructive=True, idempotent=False)),
@@ -1655,12 +1654,17 @@ class ToolRegistry:
         reload. Nothing here is trying to make the deletion take effect faster
         than the file system says it did.
 
-        **`keep_backup=False` is for throwaways (#250).** An authoring session
-        has no other way to remove a file, so a probe it wrote would otherwise
-        leave a `.bak-` the operator never asked for. Creation time decides what
-        it applies to, so no record of the session's writes is needed and a file
-        the session wrote with its own file tools counts too. An older module,
-        or a platform that reports no creation time, falls back to the rename.
+        **`keep_backup=False` moves it to the Trash (#250).** An authoring
+        session has no other way to remove a file, so a probe it wrote would
+        otherwise leave a `.bak-` the operator never asked for. The module and
+        every backup of it go to the OS Trash (the Recycle Bin on Windows):
+        out of `extensions/`, and still something the operator can put back,
+        so whose module it was - and when it was made - does not need telling.
+        (It used to erase only a module created since the server started,
+        judged by creation time, which a VM's shared folder reports as 0 and
+        a fresh checkout of the user's own dotfiles reports as new.) Where
+        the Trash cannot take it - a network share, a volume without one -
+        it falls back to the rename and the reply says why.
         """
         try:
             path = self._module_path(name)
@@ -1669,8 +1673,14 @@ class ToolRegistry:
         if not os.path.exists(path):
             return self._no_module(name)
 
-        if not keep_backup and _created_since(path, self._started):
-            return self._erase_module(name, path)
+        trash_refused = None
+        if not keep_backup:
+            try:
+                self._trash(path)
+            except OSError as error:
+                trash_refused = str(error) or type(error).__name__
+            else:
+                return self._trash_backups(name, path)
 
         backup = path + time.strftime(".bak-%Y%m%d-%H%M%S")
         try:
@@ -1688,38 +1698,46 @@ class ToolRegistry:
         # without appearing in the conversation, and the console line is what
         # tells the operator watching it that one did.
         logger.info(f"Deleted {path} (kept {os.path.basename(backup)}).")
-        older = ("" if keep_backup else
-                 " keep_backup=false did not apply: the module is older than "
-                 "this MCP server, so it may be the operator's.")
+        refused = ""
+        if trash_refused is not None:
+            others = len(_backups_of(path)) - 1
+            refused = (f" keep_backup=false could not move it to the Trash "
+                       f"here ({trash_refused}), so it was renamed instead"
+                       + (f"; {others} older backup(s) also remain."
+                          if others > 0 else "."))
         return (f"deleted {name}.py - kept as {os.path.basename(backup)} "
                 f"beside it, so renaming that back undoes this."
-                + older + self._config_mentions(name))
+                + refused + self._config_mentions(name))
 
-    def _erase_module(self, name: str, path: str) -> str:
-        """Remove a module created this session, and every backup of it.
+    def _trash(self, path: str) -> None:
+        """Move ``path`` to the Trash, or raise OSError saying why not."""
+        app_control = getattr(self.keymap, "app_control", None)
+        if app_control is None:
+            raise OSError("no Trash is reachable from here")
+        app_control.move_to_trash(path)
+
+    def _trash_backups(self, name: str, path: str) -> str:
+        """After the module went to the Trash: every backup of it too.
 
         Every one, whatever its age, so the rule is simple to state and leaves
-        nothing behind. That includes the backup of an earlier module that had
-        the same name.
+        nothing behind in `extensions/`. That includes the backup of an earlier
+        module that had the same name.
         """
-        try:
-            os.remove(path)
-        except OSError as error:
-            return f"nothing deleted: {error}"
-
-        erased = kept = 0
+        moved = kept = 0
         for backup in _backups_of(path):
             try:
-                os.remove(backup)
-                erased += 1
+                self._trash(backup)
+                moved += 1
             except OSError:
                 # Housekeeping, as in _prune_backups: the module is gone.
                 kept += 1
 
-        logger.info(f"Deleted {path} outright, with {erased} backup(s).")
-        return (f"deleted {name}.py with no backup, and erased {erased} "
-                f"backup(s) of it."
-                + (f" {kept} backup(s) could not be removed." if kept else "")
+        logger.info(f"Moved {path} to the Trash, with {moved} backup(s).")
+        return (f"deleted {name}.py with no backup beside it: it went to the "
+                f"Trash, with {moved} backup(s) of it, where the operator can "
+                f"put them back."
+                + (f" {kept} backup(s) could not be moved and remain."
+                   if kept else "")
                 + self._config_mentions(name))
 
     def _config_mentions(self, name: str) -> str:
@@ -1807,20 +1825,6 @@ def _backups_of(path: str) -> list[str]:
                 if entry.startswith(prefix)]
     except OSError:
         return []
-
-
-def _created_since(path: str, moment: float) -> bool:
-    """Whether ``path`` was created at or after ``moment``.
-
-    False when it cannot be told, because the caller is deciding whether a file
-    may be erased. `st_birthtime` exists on macOS and, since Python 3.12, on
-    Windows; there `st_ctime` is deprecated for this.
-    """
-    try:
-        created = getattr(os.stat(path), "st_birthtime", None)
-    except OSError:
-        return False
-    return created is not None and created >= moment
 
 
 def _prune_backups(path: str) -> None:

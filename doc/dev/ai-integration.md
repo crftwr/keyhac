@@ -564,8 +564,13 @@ What exists instead:
   disappears.
 - **`delete_extension`** is a rename into the same `.bak-` scheme, so the tool
   that sounds destructive destroys nothing by default. `keep_backup=False`
-  erases a throwaway, but only one whose creation time is after the server
-  started; an older file falls back to the rename (#250). It
+  moves the module and every backup of it to the OS Trash: out of
+  `extensions/`, still undone by Put Back, so it needs no rule about whose
+  module it was. Where the Trash cannot take it, it falls back to the rename
+  (#250). An earlier version erased outright, but only a module whose
+  creation time was after the server started - a test a VM's shared folder
+  fails (its `st_birthtime` reads 0) and a fresh checkout of the user's
+  dotfiles passes, protecting nothing it meant to. It
   deliberately does **not** touch `config.py`: deleting a module the operator
   bound to a key stops their file loading, and editing their file to match would
   be worse than warning about it, so the reply carries a loose `\bname\b` search
