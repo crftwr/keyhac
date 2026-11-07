@@ -52,8 +52,7 @@ Keyhac 2 が読むのは `%APPDATA%\Keyhac\config.py` ではなく `~/.keyhac/co
 - **`keymap.delayedCall(func, msec)`** と **`CronItem`/`CronTable`**: 組み込みの代替はありませんが、
   `keymap.call_on_main_thread()` があるので、どちらも `threading` の数行で書けます。
   下の[タイマー](#タイマー-delayedcall--crontable)を参照してください。
-- **`keymap.setFont` / `keymap.setTheme`**: UI のテーマやフォントの設定は、まだ変更できません
-  （issue トラッカーで管理しています）。
+- **`keymap.setFont` / `keymap.setTheme`**: config の API はありません。代わりにトレイ／メニューバーのメニューの **Appearance** で、テーマとフォントサイズを選びます。選んだ内容は Keyhac が記憶します。フォントファミリーは選べません。
 - リストウィンドウでの **Migemo マッチング**: `pymigemo` がインストールされていればチューザーで使えます。
   必須の依存関係ではなく、ない場合の絞り込みは複数語の部分文字列一致だけです。1.x の `*` / `?` のワイルドカードは
   `WildcardMatcher` として使えます。

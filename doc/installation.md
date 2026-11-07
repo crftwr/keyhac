@@ -94,6 +94,7 @@ The tray / menu-bar icon is the hub:
 | Edit Config | Opens `~/.keyhac/config.py` in your editor (configurable — see [configuration.md](configuration.md)) |
 | Reload Config | Re-runs your config; errors keep the previous keymap active and appear in the console |
 | Keyboard Hook | Toggles the hook on/off (off = all keys pass through untouched) |
+| Appearance | Theme: Auto (follows the OS, the default), Light or Dark. Font Size: five sizes for Keyhac's windows, from Extra Small to Extra Large; Medium is the default |
 | Quit Keyhac | Uninstalls the hook and exits |
 
 Closing the console window only hides it; Keyhac keeps running in the tray / menu

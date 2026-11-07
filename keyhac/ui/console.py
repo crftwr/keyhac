@@ -15,6 +15,7 @@ GetMessage pump on Windows).  A permanent animation-tick callback pumps new
 log lines into the view and doubles as the hook health tick.
 """
 
+import functools
 import logging
 import time
 
@@ -25,26 +26,33 @@ from puikit.widgets import Button, Checkbox, DropDown, Label, LayoutView, LogVie
 
 from keyhac.core import log
 from keyhac.core.keymap import _AUTHORING_WINDOW
+from keyhac.ui.appearance import WINDOW_SURFACE, Appearance
 from keyhac.ui.frame import Frame
 from keyhac.ui.text import one_line
 
 logger = log.getLogger("Console")
 
 # Log line colors by level (matches the predecessors' scheme)
-# Log text is one point below the console's 12pt UI font. Every log style
-# must name the font explicitly: LogView leaves a style's font untouched once
-# set, but fills a font-less style with the base-size mono face — so a line
-# style without it would render at 12pt amid the 11pt stream.
-_LOG_FONT = Font(size=11, monospace=True)
-
-_LEVEL_STYLES = {
-    logging.DEBUG: Style(fg=(128, 128, 128), font=_LOG_FONT),
-    logging.INFO: Style(fg=(200, 200, 200), font=_LOG_FONT),
-    logging.WARNING: Style(fg=(255, 255, 128), font=_LOG_FONT),
-    logging.ERROR: Style(fg=(255, 128, 128), font=_LOG_FONT),
-    logging.CRITICAL: Style(fg=(255, 64, 64), font=_LOG_FONT),
+_LEVEL_COLORS = {
+    logging.DEBUG: (128, 128, 128),
+    logging.INFO: (200, 200, 200),
+    logging.WARNING: (255, 255, 128),
+    logging.ERROR: (255, 128, 128),
+    logging.CRITICAL: (255, 64, 64),
 }
-_DEFAULT_LINE_STYLE = Style(fg=(220, 220, 220), font=_LOG_FONT)
+_DEFAULT_LINE_COLOR = (220, 220, 220)
+
+
+@functools.lru_cache(maxsize=None)  # a few levels at five sizes
+def _log_style(level: int, ui_points: int) -> Style:
+    """A log line's style. Log text is one point below the console's UI font.
+    Every log style must name the font explicitly: LogView leaves a style's
+    font untouched once set, but fills a font-less style with the base-size
+    mono face - so a line style without it would render a point larger than
+    the rest of the stream."""
+    return Style(fg=_LEVEL_COLORS.get(level, _DEFAULT_LINE_COLOR),
+                 font=Font(size=ui_points - 1, monospace=True))
+
 
 _LEVELS = [
     ("Debug", logging.DEBUG),
@@ -54,6 +62,10 @@ _LEVELS = [
 ]
 
 _HEALTH_TICK_INTERVAL = 0.1
+
+#: How often Auto asks the OS whether it has gone light or dark. Nothing
+#: announces it, and a second behind the OS's own transition is not seen.
+_APPEARANCE_POLL_INTERVAL = 1.0
 
 #: Error lines this close together are one error: a traceback arrives as many
 #: ERROR lines, and the tray counts what the user would call errors.
@@ -112,6 +124,8 @@ class ConsoleWindow:
         # keyhac-win [CONSOLE] visible behavior. None (tests) = always show.
         self._settings = settings
         self._last_visible = None
+        self.appearance = Appearance(settings)
+        self._last_appearance_poll = time.monotonic()
         #: Errors the console has shown while it was not on screen (#111).
         self._unread = UnreadErrors()
         #: Called with (running action names, unread error count) on every
@@ -132,9 +146,9 @@ class ConsoleWindow:
             width=100,
             height=30,
             title="Keyhac",
-            # 12pt console; the UI font shares the base font's size
-            # (log lines are 11pt via _LOG_FONT)
-            base_font=Font(size=12, monospace=True),
+            # The UI font shares the base font's size; log lines are a point
+            # smaller (_log_style).
+            base_font=self.appearance.base_font(),
             frame_autosave_name="KeyhacConsole",
             # tool: no taskbar button / Alt-Tab entry on Windows (no-op on
             # macOS) — the tray icon is the app's sole persistent presence,
@@ -176,7 +190,8 @@ class ConsoleWindow:
             width=12,
         )
         self._log_view = LogView(max_lines=log.Console.max_lines,
-                                 style=_DEFAULT_LINE_STYLE, wrap="word")
+                                 style=_log_style(None, self.appearance.font_points),
+                                 wrap="word")
         self._last_key_label = Label("")
         self._focus_path_label = Label("")
 
@@ -240,26 +255,55 @@ class ConsoleWindow:
             Item(inspector, size="content"),
             gap=0.5,
         )
-        self.panel.set_layout(VSplit(Item(LayoutView(page, margin_px=10), weight=1)))
+        self.panel.set_layout(VSplit(Item(LayoutView(page, margin_px=10), weight=1,
+                                          hints=WINDOW_SURFACE)))
 
     # ------------------------------------------------------------------
     # Lifecycle (main() drives the loop)
 
     def open(self) -> None:
         self.backend.open()
-        # Fit the shared caption width to the widest caption as drawn (the
-        # rects recompute from Item.size on every render, so mutating it here
-        # is enough); measuring needs the fonts open() just created.
-        width = max(self.backend.measure_text(item.content.text)
-                    for item in self._caption_items)
-        for item in self._caption_items:
-            item.size = width
+        self._apply_theme()
+        self._fit_captions()
         # Backfill lines logged before the window existed, then keep pulling.
         for text, level in self._console.lines():
             self._append_line(text, level)
         self._console.pull_lines()  # already shown via lines()
         self.panel.render()
         self.backend.request_animation_ticks(self._on_pump_tick)
+
+    def _fit_captions(self) -> None:
+        """Fit the shared caption width to the widest caption as drawn (the
+        rects recompute from Item.size on every render, so mutating it here is
+        enough); measuring needs fonts, so not before open()."""
+        width = max(self.backend.measure_text(item.content.text)
+                    for item in self._caption_items)
+        for item in self._caption_items:
+            item.size = width
+
+    def _apply_theme(self) -> None:
+        self.appearance.apply_to_backend(self.backend)
+        self.appearance.style_panel(self.panel)
+
+    def set_theme(self, choice: str) -> None:
+        """A window already open keeps its look until it closes; the chooser is
+        the only one that can be, and it does not stay long."""
+        self.appearance.theme_choice = choice
+        self._apply_theme()
+        self.panel.render()
+
+    def set_font_size(self, choice: str) -> None:
+        self.appearance.font_size_choice = choice
+        self.backend.set_base_font(self.appearance.base_font())
+        self._fit_captions()
+        # A line keeps the style it was appended with, so the size reaches the
+        # lines already there only by writing them again.
+        points = self.appearance.font_points
+        self._log_view.style = _log_style(None, points)
+        self._log_view.set_lines((text, _log_style(level, points))
+                                 for text, level in self._console.lines())
+        self._console.pull_lines()  # already shown via lines()
+        self.panel.render()
 
     def run(self) -> None:
         self.backend.run_event_loop(self._on_event)
@@ -328,6 +372,11 @@ class ConsoleWindow:
         if now - self._last_health_tick >= _HEALTH_TICK_INTERVAL:
             self._last_health_tick = now
             self._hook.check_health()
+            if now - self._last_appearance_poll >= _APPEARANCE_POLL_INTERVAL:
+                self._last_appearance_poll = now
+                if self.appearance.system_changed(self.backend):
+                    self._apply_theme()
+                    changed = True
             if self._clipboard_provider is not None and self._clipboard_provider.poll():
                 self._clipboard_history.on_clipboard_changed()
             if (self._clipboard_history is not None
@@ -355,7 +404,7 @@ class ConsoleWindow:
         self._clipboard_history = history
 
     def _append_line(self, text: str, level: int) -> None:
-        self._log_view.append(text, style=_LEVEL_STYLES.get(level, _DEFAULT_LINE_STYLE))
+        self._log_view.append(text, style=_log_style(level, self.appearance.font_points))
 
     # ------------------------------------------------------------------
     # Controls

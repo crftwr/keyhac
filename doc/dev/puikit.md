@@ -55,8 +55,13 @@ and merged and released there before the pin moved to them.
 | #84 | `start_hidden` ctor flag, `Backend.hide_main_window` / `is_main_window_visible` — console visibility persistence |
 | #85 | Windows test-suite fixes for the failures #83 exposed (all stale test contracts) |
 | #86 | `LogView` sized-font clip fix: rows wrap-packed by native measure but clipped/hit-tested by grid columns lost their right-hand tail — needed for the 11pt console log |
+| #194 | `Backend.set_base_font`, `set_appearance`, `effective_appearance` — the theme and font size in the tray menu |
 
 Keyhac2-side usage notes:
+
+- Theme and font size (`keyhac/ui/appearance.py`) use `Backend.set_base_font`,
+  `set_appearance` and `effective_appearance`. A window's root pane is tagged with
+  the `window` surface, because the backends' clear color is always dark.
 
 - The console (and chooser) use `WindowStyle(tool=True)` on Windows — tray-only
   presence, no taskbar button — the Windows analog of macOS

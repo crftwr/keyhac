@@ -24,6 +24,7 @@ from puikit.layout import HSplit, Item, VSplit
 from puikit.widgets import Label
 
 from keyhac.core import log
+from keyhac.ui.appearance import WINDOW_SURFACE, style_new_panel
 from keyhac.ui.frame import Frame
 
 logger = log.getLogger("Chooser")
@@ -125,11 +126,12 @@ class PreviewWindow:
                                   activates=False, movable=False,
                                   frameless=True, overlay_input="none"))
             self._panel = Panel(self._backend, window=self._window)
+            style_new_panel(self._panel)
         self._window.set_frame_px(x, y, w, h)
         frame = Frame(VSplit(*rows, gap=0.3), margin_px=_MARGIN_PX,
                       inset_px=0.5,
                       radius_px=max(0.0, self._window.corner_radius_px - 0.5))
-        self._panel.set_layout(VSplit(Item(frame, weight=1)))
+        self._panel.set_layout(VSplit(Item(frame, weight=1, hints=WINDOW_SURFACE)))
         self._panel.render()
 
     def close(self) -> None:

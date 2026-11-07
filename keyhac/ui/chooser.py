@@ -66,6 +66,7 @@ from keyhac.core.const import (
 from keyhac.core import log
 from keyhac.core.candidate import Candidate
 from keyhac.core.matcher import DEFAULT_MATCHER
+from keyhac.ui.appearance import WINDOW_SURFACE, style_new_panel
 from keyhac.ui.completion import common_prefix, token_span
 from keyhac.platform import worker_thread_context
 from keyhac.ui import runtime
@@ -361,6 +362,7 @@ class ChooserWindow:
                                 margin_px=0)
 
         self.panel = Panel(backend, window=self.window)
+        style_new_panel(self.panel)
         # align="center" sits the magnifier on the field's text line (the field
         # box is taller than one text line on pixel backends); the page margin
         # and the search-row/list gap collapse to nothing on a character grid.
@@ -401,7 +403,8 @@ class ChooserWindow:
         self._page = Frame(
             page, margin_px=_MARGIN_PX, inset_px=_EDGE_INSET_PX,
             radius_px=max(0.0, self.window.corner_radius_px - _EDGE_INSET_PX))
-        self.panel.set_layout(VSplit(Item(self._page, weight=1)))
+        self.panel.set_layout(VSplit(Item(self._page, weight=1,
+                                          hints=WINDOW_SURFACE)))
         self.panel.focus(self._page)
         self._focus_edit()
         self.panel.render()
