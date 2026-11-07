@@ -57,6 +57,30 @@ if sys.platform == "win32":
     ASSOCF_IS_PROTOCOL = 0x1000
     ASSOCSTR_EXECUTABLE = 2
 
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND),
+                    ("wFunc", wintypes.UINT),
+                    ("pFrom", wintypes.LPCWSTR),
+                    ("pTo", wintypes.LPCWSTR),
+                    ("fFlags", wintypes.WORD),
+                    ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", wintypes.LPVOID),
+                    ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    shell32.SHFileOperationW.argtypes = [ctypes.POINTER(SHFILEOPSTRUCTW)]
+    shell32.SHFileOperationW.restype = ctypes.c_int
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetDriveTypeW.argtypes = [wintypes.LPCWSTR]
+    kernel32.GetDriveTypeW.restype = wintypes.UINT
+
+    FO_DELETE = 3
+    FOF_SILENT = 0x0004
+    FOF_NOCONFIRMATION = 0x0010
+    FOF_ALLOWUNDO = 0x0040
+    FOF_NOERRORUI = 0x0400
+    DRIVE_FIXED = 3
+
 
 #: Each Chromium browser: its name, its data folder under %LOCALAPPDATA%, and the
 #: executable, which App Paths resolves.
@@ -153,6 +177,32 @@ class WinAppControl(AppControl):
             None, SW_SHOWNORMAL)
         if (result or 0) <= 32:
             logger.warning(f"Could not open {url} in {browser} (ShellExecute {result}).")
+
+    def move_to_trash(self, path: str) -> None:
+        """The Recycle Bin, through SHFileOperation with undo allowed.
+
+        Only on a fixed drive: on a network or removable drive, which has no
+        Recycle Bin, the same call deletes the file outright without a word,
+        and the point of asking for the Recycle Bin is that the user can put
+        it back."""
+        if sys.platform != "win32":
+            raise OSError("not Windows")
+        full = ntpath.abspath(path)
+        root = ntpath.splitdrive(full)[0] + "\\"
+        if kernel32.GetDriveTypeW(root) != DRIVE_FIXED:
+            raise OSError(f"{root} is not a fixed drive, so it has no Recycle Bin")
+        operation = SHFILEOPSTRUCTW()
+        operation.wFunc = FO_DELETE
+        # A list of paths, each NUL-ended, the list ended by one more NUL: the
+        # buffer adds the last one. A buffer, because a str with a NUL inside
+        # is refused as an LPCWSTR.
+        paths = ctypes.create_unicode_buffer(full + "\0")
+        operation.pFrom = ctypes.cast(paths, wintypes.LPCWSTR)
+        operation.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
+                            | FOF_NOERRORUI)
+        result = shell32.SHFileOperationW(ctypes.byref(operation))
+        if result != 0 or operation.fAnyOperationsAborted:
+            raise OSError(f"the Recycle Bin refused it (SHFileOperation {result:#x})")
 
     def open_url(self, url: str) -> None:
         # startfile on a URL is ShellExecute "open", which is what the shell

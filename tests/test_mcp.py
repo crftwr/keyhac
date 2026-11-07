@@ -1348,25 +1348,31 @@ def test_a_deleted_module_stops_being_listed(writable):
 
 # -- delete_extension(keep_backup=False) -------------------------------------
 #
-# Issue #250. The rule under all of these: only a module created since the server
-# started can be erased, so the operator's own modules keep the rename.
+# Issue #250. keep_backup=False sends the module and every backup of it to the
+# OS Trash, whatever their age: out of extensions/, and still something the
+# operator can put back. Where the Trash refuses, the usual rename.
 
-needs_birthtime = pytest.mark.skipif(
-    not hasattr(os.stat(__file__), "st_birthtime"),
-    reason="this platform reports no creation time")
+class FakeTrash:
+    """An AppControl's move_to_trash: moves files into a folder, or refuses."""
+
+    def __init__(self, folder, refuse=None):
+        self.folder, self.refuse = folder, refuse
+        folder.mkdir(exist_ok=True)
+
+    def move_to_trash(self, path):
+        if self.refuse is not None:
+            raise OSError(self.refuse)
+        os.replace(path, self.folder / os.path.basename(path))
 
 
-def _session_began_before_now(registry):
-    registry._started = time.time() - 60
+def _with_trash(registry, tmp_path, refuse=None):
+    trash = FakeTrash(tmp_path / "Trash", refuse)
+    registry.keymap.app_control = trash
+    return trash
 
 
-def _session_began_after_now(registry):
-    registry._started = time.time() + 60
-
-
-@needs_birthtime
-def test_a_throwaway_of_this_session_is_erased_with_its_backups(writable):
-    _session_began_before_now(writable)
+def test_a_throwaway_goes_to_the_trash_with_its_backups(writable, tmp_path):
+    trash = _with_trash(writable, tmp_path)
     for source in ("x = 1\n", "x = 2\n"):
         writable.call("write_extension", {"name": "probe", "source": source})
 
@@ -1374,62 +1380,82 @@ def test_a_throwaway_of_this_session_is_erased_with_its_backups(writable):
                            {"name": "probe", "keep_backup": False})
 
     assert list(extensions(writable).glob("probe*")) == []
-    assert "no backup" in result and "1 backup(s)" in result
+    moved = sorted(p.name for p in trash.folder.iterdir())
+    assert moved[0] == "probe.py" and moved[1].startswith("probe.py.bak-")
+    assert "Trash" in result and "1 backup(s)" in result
 
 
-@needs_birthtime
-def test_an_older_module_is_still_only_renamed_and_the_reply_says_so(writable):
+def test_a_module_older_than_the_session_goes_to_the_trash_too(writable, tmp_path):
+    """No creation-time rule: whose module it was does not need telling when
+    the operator can put it back."""
+    trash = _with_trash(writable, tmp_path)
     write_action(writable, name="theirs", source="x = 1\n")
-    _session_began_after_now(writable)
+    old = time.time() - 86400
+    os.utime(extensions(writable) / "theirs.py", (old, old))
 
-    result = writable.call("delete_extension",
-                           {"name": "theirs", "keep_backup": False})
+    writable.call("delete_extension", {"name": "theirs", "keep_backup": False})
 
-    backups = list(extensions(writable).glob("theirs.py.bak-*"))
-    assert [b.read_text() for b in backups] == ["x = 1\n"]
-    assert "keep_backup=false did not apply" in result
+    assert list(extensions(writable).glob("theirs*")) == []
+    assert (trash.folder / "theirs.py").read_text() == "x = 1\n"
 
 
-@needs_birthtime
-def test_every_backup_goes_with_the_throwaway_whatever_its_age(writable, monkeypatch):
-    """A backup older than the session goes too: the rule is the module's age."""
+def test_every_backup_goes_whatever_its_name_says(writable, tmp_path):
+    """A backup an earlier module of the same name left goes too."""
     write_action(writable, name="thing", source="old = 1\n")
     writable.call("delete_extension", {"name": "thing"})
     assert len(list(extensions(writable).glob("thing.py.bak-*"))) == 1
 
-    _session_began_after_now(writable)
-    real_created_since = tools_module._created_since
-    monkeypatch.setattr(
-        tools_module, "_created_since",
-        lambda path, moment: path.endswith("thing.py")
-        or real_created_since(path, moment))
+    trash = _with_trash(writable, tmp_path)
     write_action(writable, name="thing", source="new = 1\n")
     result = writable.call("delete_extension",
                            {"name": "thing", "keep_backup": False})
 
     assert list(extensions(writable).glob("thing*")) == []
-    assert "erased 1 backup(s)" in result
+    assert len(list(trash.folder.iterdir())) == 2
+    assert "1 backup(s)" in result
 
 
-def test_no_creation_time_means_the_rename(writable, monkeypatch):
-    """Not being able to tell must not read as permission to erase."""
+def test_where_the_trash_refuses_it_is_renamed_and_the_reply_says_why(
+        writable, tmp_path):
+    """Still a success: the module is retired, which is what was asked;
+    only the clutter stays, and the reply says so."""
+    write_action(writable, name="probe", source="x = 1\n")
+    writable.call("delete_extension", {"name": "probe"})
+    # An older backup by name: two deletes in one second share a suffix.
+    (first,) = extensions(writable).glob("probe.py.bak-*")
+    first.rename(first.with_name("probe.py.bak-20200101-000000"))
+    _with_trash(writable, tmp_path, refuse="the volume has no Trash")
+    write_action(writable, name="probe", source="x = 2\n")
+
+    result = writable.call("delete_extension",
+                           {"name": "probe", "keep_backup": False})
+
+    assert not (extensions(writable) / "probe.py").exists()
+    assert len(list(extensions(writable).glob("probe.py.bak-*"))) == 2
+    assert result.startswith("deleted probe.py - kept as probe.py.bak-")
+    assert "could not move it to the Trash here (the volume has no Trash)" in result
+    assert "1 older backup(s) also remain" in result
+
+
+def test_with_no_trash_reachable_it_is_the_rename(writable):
+    """A keymap with no AppControl - tests, a headless start - renames."""
     write_action(writable, name="thing", source="x = 1\n")
-    monkeypatch.setattr(tools_module, "_created_since", lambda *_: False)
-    writable.call("delete_extension", {"name": "thing", "keep_backup": False})
+    result = writable.call("delete_extension",
+                           {"name": "thing", "keep_backup": False})
     assert len(list(extensions(writable).glob("thing.py.bak-*"))) == 1
+    assert "could not move it to the Trash" in result
 
 
-@needs_birthtime
-def test_erasing_still_warns_about_config_and_announces_itself(
+def test_trashing_still_warns_about_config_and_announces_itself(
         configurable, tmp_path, caplog):
     (tmp_path / "config.py").write_text("import probe\n")
-    _session_began_before_now(configurable)
+    _with_trash(configurable, tmp_path)
     write_action(configurable, name="probe", source="x = 1\n")
     with caplog.at_level(logging.INFO, logger="keyhac.MCP"):
         result = configurable.call("delete_extension",
                                    {"name": "probe", "keep_backup": False})
     assert "config.py mentions probe" in result
-    assert any("outright" in r.getMessage() for r in caplog.records)
+    assert any("to the Trash" in r.getMessage() for r in caplog.records)
 
 
 def test_the_write_is_announced_on_the_console(writable, caplog):

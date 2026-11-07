@@ -4,6 +4,7 @@ keyhac.core depends only on this module; the OS implementations live in
 keyhac.platform.mac (PyObjC) and keyhac.platform.win (ctypes).
 """
 
+import errno
 import functools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -477,6 +478,16 @@ class AppControl(ABC):
         """Open a URL in a browser `browser_data_dirs()` named, in the profile
         with that folder name.  Runs on a worker thread.  Logged, not raised."""
         self.open_url(url)
+
+    def move_to_trash(self, path: str) -> None:
+        """Move a file to the Trash (the Recycle Bin on Windows), where the
+        user can put it back.
+
+        Raises OSError, with the reason, when it cannot - a volume with no
+        Trash, a network share - rather than deleting it outright: the
+        caller wanted something the user could undo.  A platform with no
+        Trash raises always."""
+        raise OSError(errno.ENOTSUP, "this platform has no Trash")
 
     def running_app_element(self, bundle_id: str):
         """`(pid, application element)` of a running application, or None.  It

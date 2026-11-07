@@ -109,6 +109,19 @@ class MacAppControl(AppControl):
         except OSError as e:
             logger.warning(f"Could not open {url}: {e}")
 
+    def move_to_trash(self, path: str) -> None:
+        """NSFileManager's trashItemAtURL: Finder's own Move to Trash, so Put
+        Back works.  It fails, rather than deleting, where the volume has no
+        Trash."""
+        from Foundation import NSURL
+        url = NSURL.fileURLWithPath_(os.path.abspath(path))
+        ok, _moved, error = NSFileManager.defaultManager() \
+            .trashItemAtURL_resultingItemURL_error_(url, None, None)
+        if not ok:
+            reason = (str(error.localizedDescription()) if error is not None
+                      else "the Trash refused it")
+            raise OSError(reason)
+
     def edit_file(self, path: str, editor: str | None = None) -> None:
         """``open -a`` the file in the editor, or in the first installed
         fallback.  Each attempt blocks until LaunchServices accepts or
