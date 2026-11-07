@@ -8,6 +8,7 @@ foreground + keyboard focus). launch() verified live on Windows
 """
 
 import ctypes
+import ntpath
 import os
 import sys
 
@@ -46,6 +47,16 @@ if sys.platform == "win32":
 
     SW_SHOWNORMAL = 1
 
+    shlwapi = ctypes.WinDLL("shlwapi", use_last_error=True)
+    shlwapi.AssocQueryStringW.argtypes = [
+        wintypes.DWORD, ctypes.c_int, wintypes.LPCWSTR, wintypes.LPCWSTR,
+        wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    # Not ctypes.HRESULT, which raises where this is an answer to read.
+    shlwapi.AssocQueryStringW.restype = ctypes.c_long
+
+    ASSOCF_IS_PROTOCOL = 0x1000
+    ASSOCSTR_EXECUTABLE = 2
+
 
 #: Each Chromium browser: its name, its data folder under %LOCALAPPDATA%, and the
 #: executable, which App Paths resolves.
@@ -53,6 +64,23 @@ _CHROMIUM_BROWSERS = (
     ("Chrome", r"Google\Chrome\User Data", "chrome.exe"),
     ("Edge", r"Microsoft\Edge\User Data", "msedge.exe"),
 )
+
+
+def _default_browser_executable() -> str | None:
+    """The file name of what opens an https link, or None if Windows does not say.
+
+    By executable and not by ProgId: a per-user Chrome's ProgId carries a suffix
+    unique to the installation.
+    """
+    if sys.platform != "win32":
+        return None
+    size = wintypes.DWORD(1024)
+    path = ctypes.create_unicode_buffer(size.value)
+    result = shlwapi.AssocQueryStringW(
+        ASSOCF_IS_PROTOCOL, ASSOCSTR_EXECUTABLE, "https", "open", path, ctypes.byref(size))
+    if result != 0 or not path.value:
+        return None
+    return ntpath.basename(path.value)
 
 
 class WinAppControl(AppControl):
@@ -104,11 +132,15 @@ class WinAppControl(AppControl):
         return [(name, name) for name in names.values()]
 
     def browser_data_dirs(self) -> list[tuple[str, str]]:
+        """The default browser's alone, so none when that is another browser.  If
+        Windows does not say which is the default, both."""
         local = os.environ.get("LOCALAPPDATA")
         if not local:
             return []
+        default = _default_browser_executable()
         return [(name, os.path.join(local, folder))
-                for name, folder, _exe in _CHROMIUM_BROWSERS]
+                for name, folder, exe in _CHROMIUM_BROWSERS
+                if default is None or exe.casefold() == default.casefold()]
 
     def open_url_in_browser(self, browser: str, url: str, profile: str) -> None:
         if sys.platform != "win32":

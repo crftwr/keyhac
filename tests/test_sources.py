@@ -10,6 +10,7 @@ import time
 
 import json
 import os
+import sys
 
 import pytest
 
@@ -2908,3 +2909,21 @@ class TestBrowserBookmarksSource:
         from keyhac.platform.base import AppControl
         assert AppControl.browser_data_dirs(None) == []
         assert AppControl.running_app_element(None, "x") is None
+
+    @pytest.mark.parametrize("default, browsers", [
+        ("chrome.exe", ["Chrome"]),
+        ("MSEDGE.EXE", ["Edge"]),
+        ("firefox.exe", []),
+        (None, ["Chrome", "Edge"]),
+    ])
+    def test_windows_reads_only_the_default_browser(self, monkeypatch, default, browsers):
+        from keyhac.platform.win import apps
+        monkeypatch.setenv("LOCALAPPDATA", "local")
+        monkeypatch.setattr(apps, "_default_browser_executable", lambda: default)
+        assert [name for name, _ in apps.WinAppControl().browser_data_dirs()] == browsers
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="asks Windows")
+    def test_windows_answers_with_a_file_name(self):
+        from keyhac.platform.win import apps
+        default = apps._default_browser_executable()
+        assert default is None or default.casefold().endswith(".exe")

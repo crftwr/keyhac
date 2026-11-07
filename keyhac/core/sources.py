@@ -1066,9 +1066,10 @@ class BrowserBookmarksSource(CandidateSource):
     running, and Chrome and Edge list the profile of their last active window.
     Rows can be found by title or folder: the menu does not say the URL.
 
-    On Windows, where Safari does not run, Chrome's and Edge's are read from their
-    files, for every profile, whether or not the browser is running.  Rows can be
-    found by title, URL or folder.
+    On Windows they are read from the default browser's files, for every profile,
+    whether or not it is running.  That browser must be Chrome or Edge: with any
+    other as the default there are no rows.  Rows can be found by title, URL or
+    folder.
 
     Bookmarks are read each time and are not stored.
     """

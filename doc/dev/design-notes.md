@@ -473,6 +473,13 @@ without the mask the menu bar took the focus at the moment the popup appeared.
 - Nothing from a menu is kept for when the browser is not running. A copy on disk would
   put a protected store where any process of the user can read it, and into whatever
   syncs `~/.keyhac`. Without a URL a kept row could not open anything by itself either.
+- On Windows, `BrowserBookmarksSource` reads only the default browser. It asks
+  `AssocQueryStringW` what opens `https` and compares the file name: a per-user Chrome's
+  ProgId has a suffix unique to the installation, and the API saves knowing where
+  Windows keeps the choice. If the default is another browser nothing is listed, as
+  Chrome's rows would not be what the user asked for. If Windows gives no answer both
+  are read, as a failed lookup says nothing against either. macOS still reads all three,
+  each only while it runs.
 - `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on
   macOS Chrome: narrowing a window from 739 to 696 took its tabs in the tree from
   36 to 33, and `enable_content_access` did not bring them back. Chrome's `Tab`
