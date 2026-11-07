@@ -468,8 +468,9 @@ class AppControl(ABC):
         return []
 
     def browser_data_dirs(self) -> list[tuple[str, str]]:
-        """The Chromium browsers whose bookmarks can be read, as `(browser name,
-        data folder)` pairs.  A folder need not exist.  Runs on a worker thread."""
+        """The Chromium browsers whose bookmark files can be read, as `(browser
+        name, data folder)` pairs.  A folder need not exist.  Runs on a worker
+        thread.  macOS answers empty, because it protects those files."""
         return []
 
     def open_url_in_browser(self, browser: str, url: str, profile: str) -> None:

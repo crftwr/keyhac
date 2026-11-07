@@ -1023,13 +1023,21 @@ _CHROMIUM_BOOKMARK_FILES = ("Bookmarks", "AccountBookmarks")
 
 _BOOKMARK_MAX_DEPTH = 32
 
-#: Safari's menus say which items are bookmarks, in every language.
-_SAFARI_BUNDLE_ID = "com.apple.Safari"
-_SAFARI_BOOKMARKS_MENU = "SafariBookmarksMenu"
-_SAFARI_BOOKMARK_ITEM = "goToFromMenuItem:"
+#: The browsers whose Bookmarks menu is read on macOS, where their files are
+#: protected: name, bundle identifier, and the identifier its bookmarks carry.
+#: That says what an item is in every language.  Edge's is assumed from Chrome's.
+_MENU_BROWSERS = (
+    ("Chrome", "com.google.Chrome", "openBookmarkMenuItem:"),
+    ("Edge", "com.microsoft.edgemac", "openBookmarkMenuItem:"),
+    ("Safari", "com.apple.Safari", "goToFromMenuItem:"),
+)
 
-#: A bound on the walk of Safari's menu, which holds every bookmark.
-_SAFARI_MAX_NODES = 20000
+#: Looked at first, for the cost of not walking every menu.  In another language
+#: the walk goes on through the menus until one holds a bookmark.
+_BOOKMARKS_MENU_NAMES = ("Bookmarks", "ブックマーク")
+
+#: A bound on the walk of one browser's menus, which hold every bookmark.
+_MENU_BOOKMARKS_MAX_NODES = 20000
 
 
 class _OpenBookmark(ThreadedAction):
@@ -1050,12 +1058,16 @@ class BrowserBookmarksSource(CandidateSource):
 
     Choosing a row opens the bookmark in the browser it came from.
 
-    Chrome's and Edge's are read from their files, for every profile, whether or
-    not the browser is running. Rows can be found by title, URL or folder.
+    On macOS they are read from each browser's Bookmarks menu, because macOS
+    protects the browsers' files.  A browser's rows appear only while it is
+    running, and Chrome and Edge list the profile of their last active window.
+    Rows can be found by title or folder: the menu does not say the URL.
 
-    Safari's are read from its Bookmarks menu on macOS, and only while Safari is
-    running, because macOS protects the file. Rows can be found by title or
-    folder: the menu does not say the URL. Nothing is kept between reads.
+    On Windows, where Safari does not run, Chrome's and Edge's are read from their
+    files, for every profile, whether or not the browser is running.  Rows can be
+    found by title, URL or folder.
+
+    Bookmarks are read each time and are not stored.
     """
 
     name = "Bookmark"
@@ -1085,7 +1097,8 @@ class BrowserBookmarksSource(CandidateSource):
     def _rows(control):
         for browser, data_dir in control.browser_data_dirs():
             yield from _chromium_rows(browser, data_dir)
-        yield from _safari_rows(control)
+        for browser, bundle_id, item in _MENU_BROWSERS:
+            yield from _menu_rows(control, browser, bundle_id, item)
 
     def badge(self, candidate) -> str:
         """lazydocs: ignore"""
@@ -1112,13 +1125,13 @@ class BrowserBookmarksSource(CandidateSource):
 
         def act():
             # Both, in this order: pressing the item opens the page and leaves
-            # Safari wherever it was.
+            # the browser wherever it was.
             if not _press(element):
                 logger.error(f"{candidate.display}: the bookmark refused to be pressed.")
                 return
             keymap.app_control.activate_pid(pid)
 
-        # As WindowControlsSource.on_chosen: both are round trips into Safari.
+        # As WindowControlsSource.on_chosen: both are round trips into the browser.
         keymap.call_on_main_thread(act)
 
 
@@ -1193,9 +1206,9 @@ def _chromium_rows(browser, data_dir):
                             "url": url, "folder": folders})
 
 
-def _safari_rows(control):
-    """Yield a row for each item of Safari's Bookmarks menu, if Safari is running."""
-    found = control.running_app_element(_SAFARI_BUNDLE_ID)
+def _menu_rows(control, browser, bundle_id, item):
+    """Yield a row for each bookmark in a running browser's menus."""
+    found = control.running_app_element(bundle_id)
     if found is None:
         return
     pid, app = found
@@ -1203,27 +1216,33 @@ def _safari_rows(control):
         bar = app.menu_bar()
         tops = (bar.children() or []) if bar is not None else []
     except Exception:
-        logger.debug("Safari's menu bar could not be read.")
+        logger.debug(f"{browser}'s menu bar could not be read.")
         return
-    budget = [_SAFARI_MAX_NODES]
+    named = []
     for top in tops:
         try:
-            described = top.describe()
+            name = top.describe().get("name")
         except Exception:
-            continue
-        if described.get("identifier") == _SAFARI_BOOKMARKS_MENU:
-            for element, title, path in _walk_safari_bookmarks(top, (), budget):
-                folders = " › ".join(path)
-                yield Candidate(
-                    icon="🔖", display=title, payload=element,
-                    match_text=f"{title} {folders}",
-                    extras={"browser": "Safari", "badge": "Safari", "pid": pid,
-                            "folder": folders})
+            name = None
+        named.append((name not in _BOOKMARKS_MENU_NAMES, top))
+    named.sort(key=lambda entry: entry[0])
+    budget = [_MENU_BOOKMARKS_MAX_NODES]
+    for _other, top in named:
+        any_row = False
+        for element, title, path in _walk_menu_bookmarks(top, (), item, budget):
+            any_row = True
+            folders = " › ".join(path)
+            yield Candidate(
+                icon="🔖", display=title, payload=element,
+                match_text=f"{title} {folders}",
+                extras={"browser": browser, "badge": browser, "pid": pid,
+                        "folder": folders})
+        if any_row:
             return
 
 
-def _walk_safari_bookmarks(node, path, budget, depth=0):
-    """Yield `(element, title, folder path)` below a node of Safari's menu."""
+def _walk_menu_bookmarks(node, path, item, budget, depth=0):
+    """Yield `(element, title, folder path)` below a node of a browser's menu."""
     if depth > _BOOKMARK_MAX_DEPTH:
         return
     try:
@@ -1239,14 +1258,14 @@ def _walk_safari_bookmarks(node, path, budget, depth=0):
         except Exception:
             continue
         name = described.get("name")
-        if described.get("identifier") == _SAFARI_BOOKMARK_ITEM:
+        if described.get("identifier") == item:
             if name:
                 yield child, name, path
             continue
         # An item with a name may be a folder, whose menu is its child.  A menu
         # adds nothing to the path.
         below = (*path, name) if name and described.get("role") != "AXMenu" else path
-        yield from _walk_safari_bookmarks(child, below, budget, depth + 1)
+        yield from _walk_menu_bookmarks(child, below, item, budget, depth + 1)
 
 
 class ApplicationsSource(CandidateSource):

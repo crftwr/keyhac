@@ -687,11 +687,13 @@ to show. It reads every browser window each time, so it too belongs on a page yo
 go to deliberately.
 
 `BrowserBookmarksSource` lists the bookmarks of Chrome, Edge and Safari, and Enter
-opens one in the browser it came from. Chrome's and Edge's are read from their files,
-for every profile, and can be found by title, URL or folder. Safari's come from its
-Bookmarks menu, on macOS, and appear only while Safari is running, because macOS
-protects the file. They can be found by title or folder, as the menu does not give the
-URL. Bookmarks are read each time and are not stored.
+opens one in the browser it came from. On macOS they come from each browser's Bookmarks
+menu, because macOS protects the browsers' files. A browser's bookmarks appear only
+while it is running, and they can be found by title or folder, as the menu does not give
+the URL. Chrome and Edge list the profile of their last active window. On Windows,
+Chrome's and Edge's come from their files, for every profile, whether or not the browser
+is running, and can also be found by URL. Bookmarks are read each time and are not
+stored.
 
 `ApplicationsSource` lists the installed applications, and Enter launches one:
 the `.app` bundles in the Applications folders on macOS, what the Start menu

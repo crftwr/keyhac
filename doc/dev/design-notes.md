@@ -459,15 +459,17 @@ without the mask the menu bar took the focus at the moment the popup appeared.
   was the plan, but Keyhac has no screen capture, and adding one means the macOS
   Screen Recording permission. Text alone says little the row does not, and the
   preview window could cover the outline, which is the actual confirmation.
-- `BrowserBookmarksSource` reads Safari from its menu, not its file (#121). Measured
-  from `Keyhac.app` on macOS 27: `~/Library/Safari/Bookmarks.plist`, the folder, the
-  Safari container and group containers all answer `Operation not permitted`, also
-  through `plutil`, and Spotlight finds no bookmarks. Reading the file takes Full Disk
-  Access, too much to ask for this. The menu needs no new permission: it reads with
-  Safari in the back or with no window, at 9-14 ms for 14 bookmarks. It has no URL
-  attribute, and pressing an item leaves Safari where it was, hence the activate.
-  `SafariBookmarksMenu` and `goToFromMenuItem:` are the identifiers relied on.
-- Nothing from Safari's menu is kept for when it is not running. A copy on disk would
+- `BrowserBookmarksSource` reads menus on macOS, not files (#121). Measured from a
+  signed `Keyhac.app` on macOS 27: Safari's `Bookmarks.plist`, folder and containers,
+  and Chrome's data folder and `AccountBookmarks`, answer `Operation not permitted`,
+  Spotlight finds no bookmarks, and reading them would take Full Disk Access, too much
+  to ask for this. The menus need no new permission and read while closed, with the
+  browser in the back: 9-14 ms for Safari's 14, 74 ms for Chrome's 72, up to 5 levels
+  deep. Neither says the URL. Pressing an item leaves the browser where it was, hence
+  the activate. An item's identifier, `goToFromMenuItem:` or `openBookmarkMenuItem:`,
+  tells a bookmark from a command in any language. Chrome's menu has no identifier, so
+  the walk tries the menu by name and then the others.
+- Nothing from a menu is kept for when the browser is not running. A copy on disk would
   put a protected store where any process of the user can read it, and into whatever
   syncs `~/.keyhac`. Without a URL a kept row could not open anything by itself either.
 - `BrowserTabsSource` lists only tabs visible in the tab bar (#121). Measured on

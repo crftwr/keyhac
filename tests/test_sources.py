@@ -2678,15 +2678,15 @@ class TestBrowserTabsSource:
 
 class _FakeBookmarkApps:
     def __init__(self, dirs=(), running=None):
-        self.dirs, self.running = list(dirs), running
+        # running: bundle identifier -> (pid, application element)
+        self.dirs, self.running = list(dirs), running or {}
         self.opened, self.activated = [], []
 
     def browser_data_dirs(self):
         return self.dirs
 
     def running_app_element(self, bundle_id):
-        assert bundle_id == "com.apple.Safari"
-        return self.running
+        return self.running.get(bundle_id)
 
     def open_url_in_browser(self, browser, url, profile):
         self.opened.append((browser, url, profile))
@@ -2721,11 +2721,14 @@ class _FakeSafariApp:
         return self.bar
 
 
+def _browser_app(*items, title="Bookmarks", identifier=None):
+    menu = _E("AXMenuBarItem", title, _E("AXMenu", None, *items), identifier=identifier)
+    return _FakeSafariApp(_E("AXMenuBar", None, _E("AXMenuBarItem", "File"), menu))
+
+
 def _safari(*items):
-    menu = _E("AXMenuBarItem", "Bookmarks", _E("AXMenu", None, *items),
-              identifier="SafariBookmarksMenu")
-    return _FakeBookmarkApps(running=(42, _FakeSafariApp(_E("AXMenuBar", None,
-                             _E("AXMenuBarItem", "File"), menu))))
+    return _FakeBookmarkApps(running={
+        "com.apple.Safari": (42, _browser_app(*items, identifier="SafariBookmarksMenu"))})
 
 
 class TestBrowserBookmarksSource:
@@ -2822,8 +2825,40 @@ class TestBrowserBookmarksSource:
         assert rows[0].extras["folder"] == "Favorites"
         assert "Favorites" in rows[0].match_text
 
-    def test_safari_is_only_read_while_it_runs(self):
+    def test_a_browser_is_only_read_while_it_runs(self):
         assert self._rows(_FakeBookmarkApps()) == []
+
+    def test_chrome_bookmarks_are_told_from_its_commands_by_identifier(self):
+        app = _browser_app(
+            _E("AXMenuItem", "Bookmark Manager", identifier="commandDispatch:"),
+            _E("AXMenuItem", "Team", _E("AXMenu", None,
+               _E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"),
+               _E("AXMenuItem", "Inner", _E("AXMenu", None,
+                  _E("AXMenuItem", "Deep", identifier="openBookmarkMenuItem:"))))))
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec", "Deep"]
+        assert rows[1].extras["folder"] == "Team › Inner"
+        assert rows[0].extras["badge"] == "Chrome" and rows[0].extras["pid"] == 7
+
+    def test_edge_is_read_as_chrome_is(self):
+        app = _browser_app(_E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"))
+        rows = self._rows(_FakeBookmarkApps(running={"com.microsoft.edgemac": (8, app)}))
+        assert [c.extras["badge"] for c in rows] == ["Edge"]
+
+    def test_a_menu_in_another_language_is_found_by_its_bookmarks(self):
+        app = _browser_app(_E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:"),
+                           title="Lesezeichen")
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec"]
+
+    def test_the_menu_named_bookmarks_is_read_first_and_alone(self):
+        history = _E("AXMenuBarItem", "History", _E("AXMenu", None,
+                     _E("AXMenuItem", "Elsewhere", identifier="openBookmarkMenuItem:")))
+        bookmarks = _E("AXMenuBarItem", "Bookmarks", _E("AXMenu", None,
+                       _E("AXMenuItem", "Spec", identifier="openBookmarkMenuItem:")))
+        app = _FakeSafariApp(_E("AXMenuBar", None, history, bookmarks))
+        rows = self._rows(_FakeBookmarkApps(running={"com.google.Chrome": (7, app)}))
+        assert [c.display for c in rows] == ["Spec"]
 
     def test_choosing_a_safari_bookmark_presses_it_and_brings_safari_forward(
             self, engine, monkeypatch):

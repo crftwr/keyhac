@@ -23,12 +23,6 @@ _EDITOR_FALLBACKS = ("Visual Studio Code", "Xcode", "TextEdit")
 _APP_FOLDERS = ("~/Applications", "/Applications", "/System/Applications",
                 "/System/Library/CoreServices/Applications")
 
-#: Each Chromium browser: its name, its data folder, its application.
-_CHROMIUM_BROWSERS = (
-    ("Chrome", "~/Library/Application Support/Google/Chrome", "Google Chrome"),
-    ("Edge", "~/Library/Application Support/Microsoft Edge", "Microsoft Edge"),
-)
-
 #: How many plain folders are followed below one of those: Utilities, a
 #: vendor's folder, or `~/Applications/Chrome Apps.localized`.
 _APP_FOLDER_DEPTH = 2
@@ -97,20 +91,6 @@ class MacAppControl(AppControl):
                     name = str(manager.displayNameAtPath_(path)).removesuffix(".app")
                     found.setdefault(name.casefold(), (name, path))
         return list(found.values())
-
-    def browser_data_dirs(self) -> list[tuple[str, str]]:
-        return [(name, os.path.expanduser(folder))
-                for name, folder, _app in _CHROMIUM_BROWSERS]
-
-    def open_url_in_browser(self, browser: str, url: str, profile: str) -> None:
-        app = next(app for name, _folder, app in _CHROMIUM_BROWSERS if name == browser)
-        # -n, or a running browser never sees --args. It hands them to the
-        # instance already up and exits.
-        try:
-            subprocess.Popen(["open", "-na", app, "--args",
-                              f"--profile-directory={profile}", url])
-        except OSError as e:
-            logger.warning(f"Could not open {url} in {browser}: {e}")
 
     def running_app_element(self, bundle_id: str):
         with objc.autorelease_pool():

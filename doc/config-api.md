@@ -2056,9 +2056,11 @@ The bookmarks of Chrome, Edge and Safari.
 
 Choosing a row opens the bookmark in the browser it came from. 
 
-Chrome's and Edge's are read from their files, for every profile, whether or not the browser is running. Rows can be found by title, URL or folder. 
+On macOS they are read from each browser's Bookmarks menu, because macOS protects the browsers' files.  A browser's rows appear only while it is running, and Chrome and Edge list the profile of their last active window. Rows can be found by title or folder: the menu does not say the URL. 
 
-Safari's are read from its Bookmarks menu on macOS, and only while Safari is running, because macOS protects the file. Rows can be found by title or folder: the menu does not say the URL. Nothing is kept between reads. 
+On Windows, where Safari does not run, Chrome's and Edge's are read from their files, for every profile, whether or not the browser is running.  Rows can be found by title, URL or folder. 
+
+Bookmarks are read each time and are not stored. 
 
 ### <kbd>method</kbd> `BrowserBookmarksSource.__init__`
 
