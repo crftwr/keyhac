@@ -27,7 +27,8 @@ native ARM64 Python of the same version instead, put in the guest for the run
 macOS through Keyhac.app, which holds the Accessibility grant - with a home of
 its own on the stage, and waits for Enter. A VMware VM is started headless
 and then suspended, for you to open in the Fusion app; a Tart VM shows its
-window when the table says `visible = true`.
+window when the table says `visible = true`. **test** never shows a window:
+`visible` is for that hand check, not for the suite.
 """
 
 from __future__ import annotations
@@ -51,6 +52,11 @@ from quality_loop.guest import suite  # noqa: E402
 def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str,
               arch: str = "x64") -> int:
     guest = keyhac_guest.Guest.for_alias(alias)
+    # The suite runs with no window, whatever the table says: `visible = true`
+    # is for watching a hand check. A window can take a click or a key meant
+    # for the host, and the desktop tests drive the guest's own input sources
+    # and focus. A VMware VM has no window here anyway.
+    guest.settings["visible"] = False
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results = ROOT / "temp" / f"vm-test-{alias}{'-arm64' if arch == 'arm64' else ''}-{stamp}"
     started = time.monotonic()
