@@ -55,6 +55,7 @@ and merged and released there before the pin moved to them.
 | #84 | `start_hidden` ctor flag, `Backend.hide_main_window` / `is_main_window_visible` — console visibility persistence |
 | #85 | Windows test-suite fixes for the failures #83 exposed (all stale test contracts) |
 | #86 | `LogView` sized-font clip fix: rows wrap-packed by native measure but clipped/hit-tested by grid columns lost their right-hand tail — needed for the 11pt console log |
+| #194 | `Backend.set_base_font`, `set_appearance`, `effective_appearance` — the theme and font size in the tray menu |
 
 Keyhac2-side usage notes:
 
