@@ -62,6 +62,12 @@ live on each OS.
   or edit files until it is (about the first minute) - a checkout half way
   through the copy stages a mix of both branches, and the run then fails in
   ways neither has. The same holds for a quality-loop run in a guest.
+  The suite never shows a VM window, whatever `visible` says in
+  `guests.toml`: a window on your screen can take a click or a key meant for
+  something else, and the desktop tests drive the guest's own focus and input
+  sources. It is the suspected cause of `tests/test_mac_ime.py` failing in two
+  `make tag` runs while the Tart window was on screen (#353). A VMware VM has no
+  window here in any case.
 - **`make release-test`** is what a release is tested on, and what `make
   tag` gates on: `pytest --host-only` here, then the whole suite with
   `--desktop` in `qa-mac` and `qa-win` on PyPI packages, one after the other.
@@ -70,7 +76,9 @@ live on each OS.
 - **`make run-vm GUEST=qa-mac`** is a hand check in a VM: this working tree's
   Keyhac started in the guest's desktop session (on macOS through Keyhac.app,
   which holds the grants) with an empty home on the stage, until Enter. Hand
-  checks go there rather than on your machine.
+  checks go there rather than on your machine. This is what `visible = true`
+  is for: a Tart VM shows its window, and a VMware VM is suspended for you to
+  resume in the Fusion app.
 - **Interactive tools**: `tools/hook_echo.py` echoes key events through the real
   hook; `--stress-ordering` manufactures the injected-vs-physical race (see below).
 
