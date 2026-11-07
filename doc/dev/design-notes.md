@@ -1344,6 +1344,32 @@ at all.
 - It is the other side of `KeyBindingsSource`: one asks what the keys do, this
   asks what there is to run.
 
+## A chosen row carries no arguments (issue #120)
+
+The candidate window is one thing: pick a row, it happens. Choosing a row does
+not supply a value to whatever the row runs, and this is a decision rather than
+a gap.
+
+- **Constructor arguments are for authoring.** The authoring skill passes them
+  through `start_action` to dry-run an action while implementing it, for example
+  `{"limit": 1}` (#256). A chooser does not use them: the Run page starts an
+  action with its defaults, and keeps refusing a class with required arguments
+  with a message saying to give them defaults.
+- **An action that needs a value typed by hand asks for it itself**, by an
+  explicit public API call that shows a dialog. Keyhac does not notice a missing
+  argument and resolve it automatically. The dialog should be designed for what
+  the action's developer intends, and a bare list of arguments carries too
+  little information to give the best UX.
+- **No such dialog API exists yet.** It gets designed when an action needs it.
+  It cannot avoid the question that kept a second candidate window out of
+  discussion #112: waiting for an answer means blocking, which touches the
+  Action execution model and the meaning of cancellation.
+- **Rejected as chooser features:** a second window for choosing the argument,
+  and a typed tail (`deploy staging`), where the same characters cannot both
+  narrow the list and be the argument without a separator. A source can still
+  make one row per value, and a binding can still fix a value
+  (`kt["F5"] = Deploy(target="staging")`).
+
 ## The window-controls source
 
 - Discussion #112's original target, and the reason the window had to stop
