@@ -363,6 +363,12 @@ class GuestKeyhacUp:
         except (OSError, ValueError):
             pid = None
         (self.stage / "quit").touch()
+        if not self.guest.windows:
+            # Made from inside the guest too: a macOS guest's view of the
+            # shared folder can go on answering "no such file" for a name it
+            # has been polling, after the host made it (seen in qa-mac: the
+            # daemon never saw the quit file within the grace).
+            self.guest.ssh(f"touch {ql.sh_quote(self.guest.path(self.stage / 'quit'))}")
         # Keyhac says "stopped" as the last thing it logs. Not mcp.json's
         # absence: on an SMB share the host's view of a deleted file lags.
         # The grace covers a Windows guest running x64 Python emulated.
