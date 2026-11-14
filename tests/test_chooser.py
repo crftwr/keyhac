@@ -1399,3 +1399,82 @@ class TestAWindowThatCannotBeSeen:
         keyhac_engine.keymap.window_provider = None
         _Items()()
         assert ChooserAction._open is not None
+
+
+class TestAClosedChooserIsLetGo:
+    """Nothing the action keeps may hold a closed window or its rows.
+
+    The action sits in the key table for the whole session, so whatever it
+    still names after the close lives until the next press: the window, its
+    native panel, and every row - a menu bookmark's payload is a live
+    accessibility element of another application. A memory report showed a
+    closed chooser alive with its 2,000 rows, held by the stopped dismiss
+    watch that ChooserAction._watch still named after a focus move."""
+
+    @pytest.fixture(autouse=True)
+    def _windows(self, keyhac_engine):
+        keyhac_engine.keymap.window_provider = _ActiveWindowProvider()
+
+    def _open(self, action=None):
+        action = action or _Items()
+        action()
+        assert action._read, "the window read its rows"
+        return action, ChooserAction._open[1]
+
+    def _assert_let_go(self, action):
+        assert ChooserAction._open is None
+        assert ChooserAction._watch is None
+        assert action._read == {}
+        assert action._owners == {}
+
+    def test_after_a_selection(self, ui_backend):
+        action, chooser = self._open()
+        chooser._finish(chooser._filtered[0], 0)
+        assert action.chosen, "the row was still routed to its owner"
+        self._assert_let_go(action)
+
+    def test_after_a_cancel(self, ui_backend):
+        action, chooser = self._open()
+        chooser._finish(None, 0)
+        self._assert_let_go(action)
+
+    def test_after_the_focus_moves(self, ui_backend):
+        action, chooser = self._open()
+        Keymap.get_instance().window_provider.active = _ActiveWindow(99, "Elsewhere")
+        ChooserAction._watch._tick()
+        assert chooser._done
+        self._assert_let_go(action)
+
+    def test_after_a_click_outside(self, keyhac_engine, ui_backend):
+        action, chooser = self._open()
+        x, y, w, h = chooser.window.frame_px()
+        keyhac_engine.hook._cursor = (int(x + w + 50), int(y + h + 50))
+        keyhac_engine.hook.mouse()
+        assert chooser._done
+        self._assert_let_go(action)
+
+    def test_after_the_key_toggles_it_closed(self, ui_backend):
+        action, chooser = self._open()
+        action()
+        assert chooser._done
+        self._assert_let_go(action)
+
+    def test_after_another_chooser_replaces_it(self, ui_backend):
+        first, chooser = self._open()
+        second, _ = self._open(_Items())
+        assert chooser._done
+        assert first._read == {} and first._owners == {}
+        assert second._read, "the replacement keeps its own rows"
+
+    def test_choosing_that_reopens_the_chooser_keeps_the_new_rows(
+            self, ui_backend):
+        class _Reopens(_Items):
+            def on_chosen(self, item, modifier_flags):
+                super().on_chosen(item, modifier_flags)
+                self()
+
+        action, chooser = self._open(_Reopens())
+        chooser._finish(chooser._filtered[0], 0)
+        assert ChooserAction._open is not None
+        assert ChooserAction._open[1] is not chooser
+        assert action._read, "the reopened window's rows survive"
