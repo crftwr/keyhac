@@ -310,3 +310,106 @@ def test_mouse_event_without_handler_is_ignored(h):
     event = mouse_event(h, h.Q.kCGEventOtherMouseDown)
     assert h.deliver(event) is event
     assert h.keys == []
+
+
+# -- the ctypes entry point the tap actually calls ------------------------
+#
+# A PyObjC tap callback leaks a reference to every CGEvent it returns, so the
+# tap calls _tap_entry with raw pointers instead. These use real CGEvents:
+# the entry point's job is exactly the pointer <-> proxy conversion.
+
+class _RawEvent:
+    """A CGEvent known only by pointer - no PyObjC proxy exists for it, as
+    with the event the tap hands over. Owns one retain until close()."""
+
+    def __init__(self):
+        import ctypes
+        self._cg = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        self._cg.CGEventCreateKeyboardEvent.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
+        self._cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        self._cg.CFGetRetainCount.argtypes = [ctypes.c_void_p]
+        self._cg.CFGetRetainCount.restype = ctypes.c_long
+        self._cg.CFRelease.argtypes = [ctypes.c_void_p]
+        self.ptr = self._cg.CGEventCreateKeyboardEvent(None, 0x00, True)
+
+    def retains(self):
+        return self._cg.CFGetRetainCount(self.ptr)
+
+    def close(self):
+        self._cg.CFRelease(self.ptr)
+
+
+def _cg_event_proxies():
+    import gc
+    gc.collect()
+    return sum(1 for o in gc.get_objects() if type(o).__name__ == "CGEventRef")
+
+
+def _bare_hook():
+    from keyhac.platform.mac.hook import MacInputHook
+    return MacInputHook()
+
+
+def test_entry_returns_the_pointer_for_a_passed_event(monkeypatch):
+    hook = _bare_hook()
+    seen = []
+
+    def callback(proxy, event_type, event, refcon):
+        seen.append(event.__c_void_p__().value)
+        return event
+    monkeypatch.setattr(hook, "_tap_callback", callback)
+    raw = _RawEvent()
+    assert hook._tap_entry(None, 10, raw.ptr, None) == raw.ptr
+    assert seen == [raw.ptr]
+    raw.close()
+
+
+def test_entry_returns_null_for_a_dropped_event(monkeypatch):
+    hook = _bare_hook()
+    monkeypatch.setattr(hook, "_tap_callback", lambda *a: None)
+    raw = _RawEvent()
+    assert hook._tap_entry(None, 10, raw.ptr, None) is None
+    raw.close()
+
+
+def test_entry_passes_the_event_through_when_the_callback_raises(monkeypatch):
+    hook = _bare_hook()
+
+    def boom(*args):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(hook, "_tap_callback", boom)
+    raw = _RawEvent()
+    assert hook._tap_entry(None, 10, raw.ptr, None) == raw.ptr
+    raw.close()
+
+
+def test_entry_keeps_no_event_alive(monkeypatch):
+    hook = _bare_hook()
+    monkeypatch.setattr(hook, "_tap_callback", lambda p, t, event, r: event)
+    before = _cg_event_proxies()
+    for _ in range(200):
+        raw = _RawEvent()
+        hook._tap_entry(None, 10, raw.ptr, None)
+        # Back to the tap's own retain only: the call's proxy is gone.
+        assert raw.retains() == 1
+        raw.close()
+    assert _cg_event_proxies() == before
+
+
+def test_entry_proxy_keeps_a_deferred_event_alive(monkeypatch):
+    hook = _bare_hook()
+    kept = []
+
+    def defer(proxy, event_type, event, refcon):
+        kept.append(event)
+        return None
+    monkeypatch.setattr(hook, "_tap_callback", defer)
+    raw = _RawEvent()
+    assert hook._tap_entry(None, 10, raw.ptr, None) is None
+    # The queued proxy holds its own retain, so the event survives the tap
+    # releasing its reference after a NULL return.
+    assert raw.retains() == 2
+    raw.close()
+    kept.clear()
