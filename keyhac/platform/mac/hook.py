@@ -28,12 +28,18 @@ Deviations from the Swift original (deliberate fixes):
   processed ahead of earlier real input - observed live as a few percent of
   tools/hook_echo.py --stress-ordering rounds, always transposing the flush
   window's last keystrokes.
+
+The tap callback is a ctypes function pointer, not a PyObjC callable: PyObjC
+leaks one Python reference to every CGEvent a Python tap callback returns,
+and with it the native event (~1.4 KB per keystroke passed through - 400 MB
+after two days of typing). See _tap_entry.
 """
 
 import ctypes
 import time
 from typing import Callable, Sequence
 
+import objc
 import Quartz
 
 from keyhac.platform.base import InputHook, KeyEvent
@@ -126,6 +132,28 @@ _MOUSE_DRAG_EVENTS = (
 )
 
 
+# CGEventTapCallBack, bound through ctypes (see _tap_entry for why).
+_CGEventTapCallBack = ctypes.CFUNCTYPE(
+    ctypes.c_void_p,   # CGEventRef returned (NULL drops the event)
+    ctypes.c_void_p,   # CGEventTapProxy
+    ctypes.c_uint32,   # CGEventType
+    ctypes.c_void_p,   # CGEventRef
+    ctypes.c_void_p,   # refcon
+)
+
+_core_graphics = ctypes.CDLL(
+    "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+_core_graphics.CGEventTapCreate.argtypes = [
+    ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint64,
+    _CGEventTapCallBack, ctypes.c_void_p]
+_core_graphics.CGEventTapCreate.restype = ctypes.c_void_p
+
+_core_foundation = ctypes.CDLL(
+    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+_core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+_core_foundation.CFRelease.restype = None
+
+
 def _virtual_modifier_to_event_flags(src: int) -> int:
     dst = src
     if src & (NX_DEVICELCTLKEYMASK | NX_DEVICERCTLKEYMASK):
@@ -183,6 +211,8 @@ class MacInputHook(InputHook):
         self._mouse_down_at: dict = {}  # CGMouseButton -> monotonic time of our down
 
         self._event_tap = None
+        # The ctypes thunk the tap calls; must outlive the tap.
+        self._tap_thunk = _CGEventTapCallBack(self._tap_entry)
         self._run_loop_source = None
         self._timer = None
         self._source_translated = None
@@ -226,19 +256,23 @@ class MacInputHook(InputHook):
             for cancel_type in _MOUSE_CANCEL_TYPES:
                 event_mask |= 1 << cancel_type
 
-        self._event_tap = Quartz.CGEventTapCreate(
+        tap_ptr = _core_graphics.CGEventTapCreate(
             Quartz.kCGSessionEventTap,
             Quartz.kCGHeadInsertEventTap,
             Quartz.kCGEventTapOptionDefault,
             event_mask,
-            self._tap_callback,
+            self._tap_thunk,
             None,
         )
-        if self._event_tap is None:
+        if not tap_ptr:
             from keyhac.platform.mac import accessibility_settings_path
             raise RuntimeError(
                 "Failed to create the event tap. "
                 f"Check Accessibility permission ({accessibility_settings_path()}).")
+        # Create rule: the PyObjC proxy takes its own retain, so drop ours
+        # and let the proxy own the port's lifetime.
+        self._event_tap = objc.objc_object(c_void_p=tap_ptr)
+        _core_foundation.CFRelease(tap_ptr)
 
         self._run_loop_source = Quartz.CFMachPortCreateRunLoopSource(None, self._event_tap, 0)
         Quartz.CFRunLoopAddSource(
@@ -294,6 +328,32 @@ class MacInputHook(InputHook):
         return self._event_tap is not None
 
     # ------------------------------------------------------------------
+
+    def _tap_entry(self, proxy, event_type, event_ptr, refcon):
+        """The function the tap calls: raw pointers in and out.
+
+        A PyObjC tap callback leaks one Python reference to the CGEvent it
+        returns (pyobjc 12.1 and 13.0 alike; reported upstream as
+        ronaldoussoren/pyobjc#695), so every passed-through event
+        lived forever. Here the event is wrapped in a PyObjC proxy only for
+        the duration of the call - the proxy retains it, and releases it when
+        it dies, unless _tap_callback kept it in the deferral queue - and the
+        bare pointer goes back to the tap, which owns the event again.
+
+        Never raises: an exception escaping a ctypes callback returns NULL,
+        which would drop the user's keystroke. Pass-through on error is the
+        rule here as in the handler.
+        """
+        try:
+            event = objc.objc_object(c_void_p=event_ptr) if event_ptr else None
+            result = self._tap_callback(proxy, event_type, event, refcon)
+            return event_ptr if result is not None else None
+        except BaseException:
+            try:
+                logger.error("Event tap callback raised; event passed through.")
+            except BaseException:
+                pass
+            return event_ptr
 
     def _tap_callback(self, proxy, event_type, event, refcon):
 
