@@ -158,6 +158,14 @@ a few AX calls need `objc.loadBundleFunctions`-style care).
   `CFMachPortCreateRunLoopSource`, add to main run loop, common modes. In the callback:
   handle `kCGEventTapDisabledByTimeout/ByUserInput` (re-enable, notify engine); map
   `flagsChanged` to synthetic down/up by diffing `CGEventFlags` per modifier.
+  The callback itself is a **ctypes** `CFUNCTYPE` (and `CGEventTapCreate` is
+  called through ctypes), not a PyObjC callable: PyObjC leaks one Python
+  reference to every CGEvent a Python tap callback returns, so each passed-
+  through keystroke kept its native event alive — ~1.4 KB apiece, 400 MB
+  after two days of typing. The ctypes entry (`_tap_entry`) wraps the pointer
+  in a PyObjC proxy for the call only and hands the bare pointer back; it
+  must never raise, since a ctypes callback that raises returns NULL and
+  drops the keystroke.
 - **Source filtering**: two private `CGEventSource`s (own / replay); compare each
   incoming event's `kCGEventSourceStateID` to classify `KeyEvent.kind` (port of
   keyhac-mac `KeyhacCore_Hook.swift:278`).
