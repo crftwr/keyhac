@@ -9,13 +9,16 @@
     own code, PuiKit, and all third-party dependencies.
     Structure ported from XeFM's windows_app/build.ps1.
 
+    The embedded CPython is the free-threaded build (GIL off), like the macOS
+    app's, so the .venv has to be one too: 'make venv' picks it (py -3.XXt).
+
 .PARAMETER Arch
     The architecture the bundle is for: x64 (the default, in build\Keyhac) or
     arm64 (in build\arm64\Keyhac). The .venv need not match it. When it does not,
     the build cross-compiles: the embeddable, the headers and import library
-    (NuGet's python/pythonarm64) and the dependency wheels are all fetched for
-    the target, at the versions the venv holds. So one machine of either
-    architecture builds both.
+    (python.org's full package for the target) and the dependency wheels are
+    all fetched for the target, at the versions the venv holds. So one machine
+    of either architecture builds both.
 
 .PARAMETER Version
     Version string embedded in Keyhac.exe (e.g. 2.0.0). Defaults to
@@ -23,7 +26,8 @@
 
 .PARAMETER PythonEmbedUrl
     Override the embeddable-package download URL (default: python.org, matching
-    the venv's exact version).
+    the venv's exact version, verified against the SHA-256 python.org's
+    index-windows.json publishes; an override is not verified).
 
 .PARAMETER Zip
     Also produce build\Keyhac-<version>-win-x64.zip (arm64: -win-arm64) for
@@ -187,63 +191,131 @@ if (-not (Test-Path $VenvPy)) {
 $probe = & $VenvPy -c @"
 import sys, sysconfig, platform
 print('\t'.join([
-    platform.python_version(),                                   # 3.14.6
-    '%d.%d' % sys.version_info[:2],                              # 3.14
-    '%d%d' % sys.version_info[:2],                               # 314
+    platform.python_version(),                                   # 3.15.2
+    '%d.%d' % sys.version_info[:2],                              # 3.15
+    '%d%d' % sys.version_info[:2],                               # 315
     sys.base_prefix,                                             # full-CPython root
     sysconfig.get_paths()['purelib'],                           # venv site-packages
     sysconfig.get_platform(),                                    # win-amd64 / win-arm64
+    str(int(bool(sysconfig.get_config_var('Py_GIL_DISABLED')))), # 1 = free-threaded
 ]))
 "@
 if ($LASTEXITCODE -ne 0) { Fail 'Failed to probe the venv interpreter.' }
-$parts       = $probe.Trim() -split "`t"
-$PyFull      = $parts[0]
-$PyXY        = $parts[1]
-$PyNoDot     = $parts[2]
-$BasePrefix  = $parts[3]
-$SitePkgs    = $parts[4]
+$parts        = $probe.Trim() -split "`t"
+$PyFull       = $parts[0]
+$PyXY         = $parts[1]
+$PyNoDot      = $parts[2]
+$BasePrefix   = $parts[3]
+$SitePkgs     = $parts[4]
 $VenvPlatform = $parts[5]
+$FreeThreaded = $parts[6] -eq '1'
+
+# The app ships the free-threaded interpreter, so the .venv must be one: its
+# version picks the embeddable, and its compileall and its wheels' ABI (cp3XXt)
+# are what go into the bundle. A regular venv would build a bundle whose
+# extension modules the embedded interpreter refuses to load.
+if (-not $FreeThreaded) {
+    Fail @"
+The .venv is a regular (GIL) Python $PyFull; the Windows app ships the free-threaded build.
+Install it and recreate the venv:
+  py install $($PyXY)t
+  make clean-venv
+  make venv
+"@
+}
+# The free-threaded runtime's own names: python315t.dll / python315t.lib. Its
+# stdlib zip keeps the plain python315.zip name.
+$PyDllName = "python$($PyNoDot)t"
 
 # platform.machine() will not do here: it says ARM64 in an x64 Python running
 # under emulation, which is how a build machine on Windows on Arm usually is.
 $Cross = $VenvPlatform -ne @{ x64 = 'win-amd64'; arm64 = 'win-arm64' }[$Arch]
 
-Info "Python:        $PyFull (ABI cp$PyNoDot), $VenvPlatform"
+Info "Python:        $PyFull free-threaded (ABI cp$($PyNoDot)t), $VenvPlatform"
 Info "Target:        $Arch$(if ($Cross) { ' (cross-compiling)' })"
 Info "base_prefix:   $BasePrefix"
 Info "site-packages: $SitePkgs"
 
+New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+
+# python.org's index of its Windows packages - what Python's install manager
+# reads - names each package's URL and SHA-256, so a download is verified, and
+# the URL is looked up rather than spelled: the embeddable's file name changed
+# between 3.14 (-embed-) and 3.15 (-embeddable-). The same index serves the
+# embeddable and the full package, both free-threaded, so one lookup and one
+# check cover both (XeFM's build.ps1 does the same). The index is paged by
+# "next".
+function Find-PythonPackage([string]$Id, [string]$PyVersion) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $url = 'https://www.python.org/ftp/python/index-windows.json'
+    while ($url) {
+        try {
+            $page = Invoke-RestMethod -Uri $url -UseBasicParsing
+        } catch {
+            Fail "Could not read $url to find $Id $PyVersion.`n$($_.Exception.Message)"
+        }
+        $hit = $page.versions | Where-Object { $_.id -eq $Id -and $_.'sort-version' -eq $PyVersion } |
+               Select-Object -First 1
+        if ($hit) { return $hit }
+        $url = if ($page.next) { [Uri]::new([Uri]$url, $page.next).AbsoluteUri } else { $null }
+    }
+    Fail "python.org lists no $Id at $PyVersion (index-windows.json)."
+}
+
+# Download a python.org package into the cache once, checking its SHA-256 on
+# every use: a cached zip is no more trusted than a fresh one.
+function Get-PythonPackage([string]$Id) {
+    $pkg = Find-PythonPackage $Id $PyFull
+    $name = Split-Path -Leaf ([Uri]$pkg.url).AbsolutePath
+    $file = Join-Path $CacheDir $name
+    if (Test-Path $file) {
+        if ((Get-FileHash -Algorithm SHA256 $file).Hash.ToLower() -eq $pkg.hash.sha256) {
+            Info "Using cached $name"
+            return $file
+        }
+        Warn "Cached $name has the wrong hash; re-downloading."
+        Remove-Item -Force $file
+    }
+    Info "Downloading $($pkg.url)"
+    try {
+        Invoke-WebRequest -Uri $pkg.url -OutFile $file -UseBasicParsing
+    } catch {
+        Fail "Failed to download $($pkg.url)`n$($_.Exception.Message)"
+    }
+    $have = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+    if ($have -ne $pkg.hash.sha256) {
+        Remove-Item -Force $file
+        Fail "SHA-256 mismatch for $name`n  expected $($pkg.hash.sha256)`n  got      $have"
+    }
+    return $file
+}
+
+# python.org's package ids name the architecture its own way.
+$PyOrgArch = @{ x64 = '64'; arm64 = 'arm64' }[$Arch]
+
 $PyInclude = Join-Path $BasePrefix 'include'
 $PyLibs    = Join-Path $BasePrefix 'libs'
 if ($Cross) {
-    # The venv's own headers and import library are for its architecture. The
-    # embeddable has neither, so they come from python.org's NuGet package for
-    # the target, at the venv's exact version. Expand-Archive insists on .zip.
-    New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
-    $NugetName = @{ x64 = 'python'; arm64 = 'pythonarm64' }[$Arch]
-    $NugetDir  = Join-Path $CacheDir "$NugetName-$PyFull"
-    if (-not (Test-Path (Join-Path $NugetDir 'tools\include\Python.h'))) {
-        $NugetZip = "$NugetDir.zip"
-        $NugetUrl = "https://www.nuget.org/api/v2/package/$NugetName/$PyFull"
-        Info "Downloading $NugetUrl"
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        try {
-            Invoke-WebRequest -Uri $NugetUrl -OutFile $NugetZip -UseBasicParsing
-        } catch {
-            Fail "Failed to download $NugetName $PyFull for the headers and import library.`n$($_.Exception.Message)"
-        }
-        Expand-Archive -Path $NugetZip -DestinationPath $NugetDir -Force
-        Remove-Item -Force $NugetZip
+    # The venv's own headers and import library are for its architecture, and
+    # the embeddable has neither, so they come from python.org's full package for
+    # the target - the one Python's install manager installs - at the venv's
+    # exact version.
+    $CoreZip = Get-PythonPackage "pythoncore-$($PyXY)t-$PyOrgArch"
+    $CoreDir = Join-Path $CacheDir ([IO.Path]::GetFileNameWithoutExtension($CoreZip))
+    if (-not (Test-Path (Join-Path $CoreDir "libs\$PyDllName.lib"))) {
+        if (Test-Path $CoreDir) { Remove-Item -Recurse -Force $CoreDir }
+        Info "Extracting the headers and import library from $(Split-Path -Leaf $CoreZip)"
+        Expand-Archive -Path $CoreZip -DestinationPath $CoreDir -Force
     }
-    $PyInclude = Join-Path $NugetDir 'tools\include'
-    $PyLibs    = Join-Path $NugetDir 'tools\libs'
+    $PyInclude = Join-Path $CoreDir 'include'
+    $PyLibs    = Join-Path $CoreDir 'libs'
 }
 
 if (-not (Test-Path (Join-Path $PyInclude 'Python.h'))) {
     Fail "Python.h not found under $PyInclude. The .venv must be backed by a full CPython install (headers + libs)."
 }
-if (-not (Test-Path (Join-Path $PyLibs "python$PyNoDot.lib"))) {
-    Fail "python$PyNoDot.lib not found under $PyLibs."
+if (-not (Test-Path (Join-Path $PyLibs "$PyDllName.lib"))) {
+    Fail "$PyDllName.lib not found under $PyLibs."
 }
 
 # Resolve the version string to embed.
@@ -273,9 +345,13 @@ function Import-VsDevEnv {
     $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
     if (-not (Test-Path $devCmd)) { return $false }
     # The compiler that runs here. Windows on Arm can run an x64-hosted one too,
-    # and may only have that, so the x64 tools are the fallback.
+    # and may only have that, so the x64 tools are the fallback. Asked of the
+    # OS rather than of PROCESSOR_ARCHITECTURE alone, which an x64 PowerShell
+    # under emulation reports as AMD64.
     $hostArch = 'amd64'
-    if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -and
+    $native = $env:PROCESSOR_ARCHITEW6432
+    if (-not $native) { $native = $env:PROCESSOR_ARCHITECTURE }
+    if ($native -eq 'ARM64' -and
             (Test-Path "$vsPath\VC\Tools\MSVC\*\bin\HostARM64\$($Arch)\cl.exe")) {
         $hostArch = 'arm64'
     }
@@ -319,27 +395,25 @@ Info 'Step 3: Preparing the embedded CPython runtime...'
 
 if (Test-Path $AppRoot) { Remove-Item -Recurse -Force $AppRoot }
 New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
-New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
-
-$EmbedArch = @{ x64 = 'amd64'; arm64 = 'arm64' }[$Arch]
-$EmbedZipName = "python-$PyFull-embed-$EmbedArch.zip"
-if (-not $PythonEmbedUrl) { $PythonEmbedUrl = "https://www.python.org/ftp/python/$PyFull/$EmbedZipName" }
-$CachedZip = Join-Path $CacheDir $EmbedZipName
-
-if (-not (Test-Path $CachedZip)) {
-    Info "Downloading $PythonEmbedUrl"
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    try {
-        Invoke-WebRequest -Uri $PythonEmbedUrl -OutFile $CachedZip -UseBasicParsing
-    } catch {
-        Fail "Failed to download the embeddable package for Python $PyFull.`n$($_.Exception.Message)`nProvide it manually via -PythonEmbedUrl or place '$EmbedZipName' in $CacheDir."
+if ($PythonEmbedUrl) {
+    $EmbedZipName = Split-Path -Leaf ([Uri]$PythonEmbedUrl).AbsolutePath
+    $CachedZip = Join-Path $CacheDir $EmbedZipName
+    if (-not (Test-Path $CachedZip)) {
+        Info "Downloading $PythonEmbedUrl"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        try {
+            Invoke-WebRequest -Uri $PythonEmbedUrl -OutFile $CachedZip -UseBasicParsing
+        } catch {
+            Fail "Failed to download $PythonEmbedUrl`n$($_.Exception.Message)"
+        }
     }
+    Warn "Using $EmbedZipName from -PythonEmbedUrl, unverified."
 } else {
-    Info "Using cached $EmbedZipName"
+    $CachedZip = Get-PythonPackage "pythonembed-$($PyXY)t-$PyOrgArch"
 }
 
 # The whole embedded CPython goes under runtime\ (keeps the bundle root tidy).
-# Keyhac.exe delay-loads python3XX.dll from here after adding runtime\ to the
+# Keyhac.exe delay-loads python3XXt.dll from here after adding runtime\ to the
 # DLL search path - see launcher.c - so nothing from the runtime needs to sit
 # at the root next to the exe.
 $RuntimeDir = Join-Path $AppRoot 'runtime'
@@ -352,8 +426,24 @@ Expand-Archive -Path $CachedZip -DestinationPath $RuntimeDir -Force
 # explicitly via PyConfig; remove it so the two mechanisms can't disagree.
 Get-ChildItem -Path $RuntimeDir -Filter '*._pth' -File | Remove-Item -Force -ErrorAction SilentlyContinue
 
-if (-not (Test-Path (Join-Path $RuntimeDir "python$PyNoDot.dll"))) {
-    Fail "python$PyNoDot.dll missing after extraction - the embeddable package may not match Python $PyFull."
+# python.org's arm64 embeddable carries an x64 vcruntime140_1.dll (that DLL has
+# no arm64 build; nothing arm64 imports it). A binary for another CPU can never
+# load in this bundle, so drop any the package ships rather than distribute it.
+$PeMachine = @{ x64 = 0x8664; arm64 = 0xAA64 }[$Arch]
+Get-ChildItem -Path $RuntimeDir -Recurse -File -Include '*.dll', '*.pyd', '*.exe' | ForEach-Object {
+    $bytes = [IO.File]::ReadAllBytes($_.FullName)
+    if ($bytes.Length -lt 0x40) { return }
+    $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+    if ($peOff -lt 0 -or $peOff + 6 -gt $bytes.Length) { return }
+    $machine = [BitConverter]::ToUInt16($bytes, $peOff + 4)
+    if ($machine -ne $PeMachine) {
+        Info ("Dropping {0} from the runtime: built for machine 0x{1:X4}, not {2}" -f $_.Name, $machine, $Arch)
+        Remove-Item -Force $_.FullName
+    }
+}
+
+if (-not (Test-Path (Join-Path $RuntimeDir "$PyDllName.dll"))) {
+    Fail "$PyDllName.dll missing after extraction - the embeddable package may not be Python $PyFull's free-threaded one."
 }
 
 # ---------------------------------------------------------------------------
@@ -582,12 +672,18 @@ if ($LASTEXITCODE -ne 0) { Fail 'rc.exe failed.' }
 
 # Compile + link the launcher -> Keyhac.exe (GUI subsystem, no console).
 # /MT (static CRT) so Keyhac.exe has no load-time DLL dependency of its own -
-# the whole CPython runtime, CRT included, lives under runtime\. python3XX.dll
+# the whole CPython runtime, CRT included, lives under runtime\. python3XXt.dll
 # is delay-loaded (delayimp.lib) so it is not resolved until the launcher has
 # added runtime\ to the DLL search path.
+#
+# Py_GIL_DISABLED is defined here because on Windows nothing else defines it:
+# one pyconfig.h serves both builds, and an embedder of the free-threaded one
+# has to say so. It picks python3XXt.lib (pyconfig.h's #pragma), the object
+# layout of the free-threaded ABI, and the DLL name launcher.c loads.
 $ExeOut = Join-Path $AppRoot "$AppName.exe"
 $clArgs = @(
     '/nologo', '/O2', '/MT', '/W3',
+    '/DPy_GIL_DISABLED=1',
     "/I$PyInclude",
     (Join-Path $SrcDir 'launcher.c'),
     $ResOut,
@@ -596,7 +692,7 @@ $clArgs = @(
     '/link',
     "/LIBPATH:$PyLibs",
     '/SUBSYSTEM:WINDOWS',
-    "/DELAYLOAD:python$PyNoDot.dll",
+    "/DELAYLOAD:$PyDllName.dll",
     'delayimp.lib',
     # We embed our own application manifest via Keyhac.rc (RT_MANIFEST).
     # Suppress the linker's auto-generated manifest so the exe doesn't end up
@@ -640,7 +736,29 @@ if ($Zip) {
     $ZipOut = Join-Path $BuildDir "Keyhac-$Version-$ZipSuffix.zip"
     if (Test-Path $ZipOut) { Remove-Item -Force $ZipOut }
     Info "Creating $ZipOut"
-    Compress-Archive -Path $AppRoot -DestinationPath $ZipOut -Force
+    # Not Compress-Archive: Windows PowerShell 5.1's writes '\' into entry names,
+    # which the zip format forbids - macOS/Linux unzip then drops most files and
+    # makes folders with no permissions. Write the entries with '/' ourselves,
+    # under the same top-level Keyhac/ folder.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $RootName = Split-Path -Leaf $AppRoot
+    $RootLen = $AppRoot.TrimEnd('\').Length + 1
+    $archive = [IO.Compression.ZipFile]::Open($ZipOut, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $null = $archive.CreateEntry("$RootName/")
+        Get-ChildItem -Path $AppRoot -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $rel = $RootName + '/' + $_.FullName.Substring($RootLen).Replace('\', '/')
+            if ($_.PSIsContainer) {
+                $null = $archive.CreateEntry("$rel/")
+            } else {
+                $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $archive, $_.FullName, $rel, [IO.Compression.CompressionLevel]::Optimal)
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
     Success "Created $ZipOut"
 }
 

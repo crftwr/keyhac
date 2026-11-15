@@ -4,7 +4,7 @@
 
 | Layer | Language | Size | Why |
 |---|---|---|---|
-| Application (engine, UI, platform bindings) | Python 3.14 | ~everything | ctypes covers Win32 (PuiKit's Windows backend proves it incl. COM/Direct2D); PyObjC covers Quartz/AX/AppKit |
+| Application (engine, UI, platform bindings) | Python (3.15t, free-threaded, in the apps) | ~everything | ctypes covers Win32 (PuiKit's Windows backend proves it incl. COM/Direct2D); PyObjC covers Quartz/AX/AppKit |
 | Embedding launcher, Windows (`Keyhac.exe`) | C | ~150 lines | PEP 587 `PyConfig` isolated init, module search paths. Also: exe icon, DPI manifest. |
 | Embedding launcher, macOS (`Keyhac.app` main) | Objective-C | ~150 lines | Same PEP 587 pattern. A real bundle executable is **required** so the Accessibility permission attaches to a stable identity — running under a generic `python3` would grant the permission to that interpreter, not to Keyhac. |
 | Build scripts | PowerShell / shell / Python | | `windows_app/build.ps1`, `macos_app/build.sh`, `tools/` |
@@ -23,6 +23,21 @@ shipped PuiKit app, the standard to follow for build infra.
   → third-party notices → `compileall` → `cl.exe`. The stdlib comes from the
   python.org *embeddable* package under `runtime\`; `_pth` is deleted and paths come
   from PyConfig alone. `install_zip.ps1` installs a built zip.
+- **Free-threaded** (#369, as XeFM's apps). The embedded CPython is the 3.15t build
+  (GIL off), so the venv has to be one too — `make venv` picks the newest Python's
+  free-threaded build (`py -X.Yt`) and `build.ps1` refuses a GIL venv. The runtime is
+  `python3XXt.dll` (its stdlib zip keeps the plain `python3XX.zip` name), and the
+  launcher is compiled with `/DPy_GIL_DISABLED=1`: one `pyconfig.h` serves both
+  builds on Windows, so an embedder has to say which, and that picks
+  `python3XXt.lib` and the DLL name `launcher.c` loads. The packages are looked up in
+  python.org's `index-windows.json` (what Python's install manager reads) and checked
+  against the SHA-256 it publishes: `pythonembed-3.XXt-<arch>` for the runtime and,
+  when cross-compiling, `pythoncore-3.XXt-<arch>` for the headers and import library.
+  The embeddable's file name changed between 3.14 (`-embed-`) and 3.15
+  (`-embeddable-`), which is why the URL is looked up rather than spelled. python.org's
+  arm64 embeddable carries an x64 `vcruntime140_1.dll`; any runtime binary whose PE
+  machine is not the target's is dropped. The zip is written with `/` entry names
+  rather than by `Compress-Archive`, whose `\` names macOS and Linux `unzip` mangle.
 - Layout: `Keyhac.exe` + `runtime\` (CPython) + `Lib\site-packages\` +
   `app\{keyhac,puikit}`.
 - Distribution: `Keyhac-<version>-win-x64.zip` via `make windows-zip`,
@@ -31,9 +46,10 @@ shipped PuiKit app, the standard to follow for build infra.
 - **Two architectures** (issue #318). `build.ps1 -Arch x64|arm64` writes to
   `build\Keyhac` or `build\arm64\Keyhac`. Either builds on one machine with one
   venv, whatever its architecture. When the venv does not match the target, the
-  embeddable, the headers and import library (NuGet's `python` / `pythonarm64`)
+  embeddable, the headers and import library (python.org's `pythoncore` package)
   and the dependency wheels (`collect_dependencies.py --target-platform`, at the
-  versions the venv holds) are fetched for the target, and MSVC cross-compiles;
+  versions the venv holds, `cp3XXt` from a free-threaded venv) are fetched for
+  the target, and MSVC cross-compiles;
   that needs the ARM64 or x64 C++ build tools component. A universal binary is
   not an option: python.org builds neither `python3XX.dll` nor the stdlib `.pyd`
   files as ARM64X. A zip of both would double the download for a choice people
@@ -81,7 +97,19 @@ buy, no SmartScreen warning, and a `winget install --source msstore` line for fr
 
 ## macOS: `macos_app/`
 
-- `src/main.m` + `KeyhacAppDelegate.m` — NSApplication + embedded Python.framework.
+- `src/main.m` + `KeyhacAppDelegate.m` — NSApplication + embedded Python framework.
+- **Free-threaded** (#369). The bundle embeds the venv's free-threaded Python, and
+  `build.sh` refuses a GIL venv (`ALLOW_GIL_PYTHON=1` for a local comparison build).
+  python.org installs that build as a framework of its own, `PythonT.framework`, and
+  spells every per-ABI name with a `t` (`PythonT`, `python3.15t`,
+  `include/python3.15t`, `config-3.15t-darwin`), so `build.sh` derives the framework
+  name from sysconfig's `PYTHONFRAMEWORK` and the rest from `sys.abiflags` instead of
+  spelling them. The framework keeps its own name in the bundle; the launcher is
+  compiled with `KEYHAC_PYTHON_FRAMEWORK` to find it, and the MCP bridge script looks
+  for `Python*.framework`. `bin/` keeps only `pythonX.Yt` and `python3`: the
+  free-threaded framework ships a second `pythonX.Y` stub that still names
+  `/Library/Frameworks`. The launcher's old install name is read off the source dylib
+  and the result checked, since `install_name_tool -change` no-ops on a mismatch.
 - `build.sh` — framework embed, delocate, signing/notarization (credentials in
   gitignored `signing.env`); `create_dmg.sh` → `Keyhac-<version>-macos.dmg`.
 - `resources/{Info.plist.template,entitlements.plist,sitecustomize.py}`;

@@ -2,8 +2,8 @@
  * launcher.c - Keyhac Windows application launcher
  *
  * The Windows analog of macos_app/src/{main.m,KeyhacAppDelegate.m}: a tiny
- * native executable that embeds the CPython interpreter (python3XX.dll shipped
- * next to it, from the python.org "embeddable" package) and hands control to
+ * native executable that embeds the CPython interpreter (python3XXt.dll, the
+ * free-threaded build, from the python.org "embeddable" package) and hands control to
  * Keyhac's Python entry point (keyhac.main:main — console window + tray +
  * WH_KEYBOARD_LL hook, all on this main thread).
  *
@@ -13,14 +13,14 @@
  *
  * Bundle layout this launcher assumes (all relative to the .exe directory =
  * <root>). The whole CPython runtime lives under runtime\ to keep the root
- * tidy; Keyhac.exe is built with a static CRT and *delay-loads* python3XX.dll,
+ * tidy; Keyhac.exe is built with a static CRT and *delay-loads* python3XXt.dll,
  * so it has no load-time dependency on anything in runtime\. Before the first
  * Python call it adds runtime\ to the DLL search path
- * (SetDefaultDllDirectories + AddDllDirectory) and pre-loads python3XX.dll
+ * (SetDefaultDllDirectories + AddDllDirectory) and pre-loads python3XXt.dll
  * from there; CPython's own extension loader then resolves each .pyd's sibling
  * DLLs out of runtime\ too.
  *   <root>\Keyhac.exe               this launcher (static CRT, no external DLLs)
- *   <root>\runtime\python3XX.dll   embeddable CPython + CRT + support DLLs
+ *   <root>\runtime\python3XXt.dll  embeddable CPython + CRT + support DLLs
  *   <root>\runtime\python3XX.zip   zipped standard library
  *   <root>\runtime\*.pyd           stdlib C extensions
  *   <root>\Lib\site-packages\      third-party deps (numpy, ...)
@@ -44,8 +44,17 @@
 #include <Python.h>
 
 /* MessageBoxW lives in user32; kernel32 (GetModuleFileNameW, MultiByteToWideChar)
- * and python3XX.lib (via pyconfig.h's #pragma) are linked automatically. */
+ * and python3XXt.lib (via pyconfig.h's #pragma) are linked automatically. */
 #pragma comment(lib, "user32.lib")
+
+/* The interpreter DLL's name suffix. build.ps1 compiles with Py_GIL_DISABLED,
+ * the free-threaded runtime being python3XXt.dll; a GIL build is python3XX.dll.
+ * The stdlib zip is python3XX.zip either way. */
+#ifdef Py_GIL_DISABLED
+#define KEYHAC_PY_DLL_SUFFIX L"t"
+#else
+#define KEYHAC_PY_DLL_SUFFIX L""
+#endif
 
 /* Longest path we build under the bundle root. */
 #define KEYHAC_PATH_MAX 32768
@@ -104,7 +113,7 @@ static int fatal_status(const wchar_t *stage, PyStatus status)
     _snwprintf_s(buf, 1024, _TRUNCATE,
                  L"%ls failed.\n\n%ls\n\n"
                  L"The Keyhac.exe launcher must sit next to the runtime\\ folder "
-                 L"holding python3XX.dll and the python3XX.zip standard library "
+                 L"holding python3XXt.dll and the python3XX.zip standard library "
                  L"from the bundle.",
                  stage, werr[0] ? werr : L"(no detail)");
     fatal_box(buf);
@@ -144,10 +153,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         *slash = L'\0';
     }
 
-    /* ---- Make the runtime\ folder loadable, then pre-load python3XX.dll ----
+    /* ---- Make the runtime\ folder loadable, then pre-load python3XXt.dll ---
      * The interpreter DLL is delay-linked and lives in <root>\runtime, so it is
      * not resolved at process start. Add runtime\ to the secure DLL search path
-     * and load python3XX.dll from there by full path (which also lets its own
+     * and load python3XXt.dll from there by full path (which also lets its own
      * dependencies - the CRT and support DLLs sharing that folder - resolve).
      * Doing this up front turns a missing/blocked runtime into a clear message
      * instead of an opaque delay-load crash on the first Python call. */
@@ -158,7 +167,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     wchar_t python_dll[KEYHAC_PATH_MAX];
     _snwprintf_s(python_dll, KEYHAC_PATH_MAX, _TRUNCATE,
-                 L"%ls\\python%d%d.dll", runtime_dir, PY_MAJOR_VERSION, PY_MINOR_VERSION);
+                 L"%ls\\python%d%d" KEYHAC_PY_DLL_SUFFIX L".dll",
+                 runtime_dir, PY_MAJOR_VERSION, PY_MINOR_VERSION);
     if (!LoadLibraryExW(python_dll, NULL,
                         LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)) {
         wchar_t msg[KEYHAC_PATH_MAX];
