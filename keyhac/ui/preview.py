@@ -26,6 +26,7 @@ from puikit.widgets import Label
 from keyhac.core import log
 from keyhac.ui.appearance import WINDOW_SURFACE, style_new_panel
 from keyhac.ui.frame import Frame
+from keyhac.ui.text import lf_lines, one_line
 
 logger = log.getLogger("Chooser")
 
@@ -95,21 +96,26 @@ class PreviewWindow:
         from puikit.widgets.image import ImageView
         from puikit.widgets.text_block import TextBlock
 
+        # The text is whatever was copied or the source returned: line breaks
+        # of every kind, which the widgets below split at "\n" only (#368).
         rows = []
         if preview.title:
-            rows.append(Item(Label(preview.title, style=_TITLE_STYLE), size="content"))
+            rows.append(Item(Label(one_line(str(preview.title)), style=_TITLE_STYLE),
+                             size="content"))
         if raster is not None:
             rows.append(Item(ImageView(raster, fit=CONTAIN), weight=3))
         if preview.text:
-            rows.append(Item(TextBlock(preview.text, wrap="word"), weight=2))
+            rows.append(Item(TextBlock(lf_lines(str(preview.text)), wrap="word"),
+                             weight=2))
         elif raster is None:
             # Fields alone still need something to sit under, or they float
             # to the middle of an empty window.
             rows.append(Item(Label(""), weight=1))
         for label, value in preview.fields:
             rows.append(Item(HSplit(
-                Item(Label(str(label), style=_FIELD_LABEL_STYLE), size="content"),
-                Item(Label(str(value)), weight=1),
+                Item(Label(one_line(str(label)), style=_FIELD_LABEL_STYLE),
+                     size="content"),
+                Item(Label(one_line(str(value))), weight=1),
                 gap=1), size="content"))
         if not rows:
             self.close()
