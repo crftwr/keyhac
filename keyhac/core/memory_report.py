@@ -10,10 +10,11 @@ A report then answers, in order: is it growing and since when; is it Python or
 native (the two totals, side by side, plus the platform's own breakdown); and if
 Python, of what type and from where (the census, and tracemalloc if switched on).
 
-All of it runs on a worker thread, and the main thread runs the keyboard hook.
-Measured with 300k objects, longest stall of a 1 ms heartbeat: census 93 ms,
-gc.collect 24 ms, tracemalloc.take_snapshot 62 ms per 100k live allocations.
-All three hold the GIL throughout, the census on purpose (see _census).
+All of it runs on a worker thread, and the main thread runs the keyboard hook -
+except the census, which is handed to the main thread (see _census). Measured
+with 300k objects, longest stall of a 1 ms heartbeat: census 93 ms, gc.collect
+24 ms, tracemalloc.take_snapshot 62 ms per 100k live allocations. All three
+hold the GIL throughout on a build that has one.
 
 The reports get attached to issues, so they hold counts, sizes and code
 locations: never clipboard contents, console text or window titles.
@@ -50,6 +51,10 @@ TRACEMALLOC_FRAMES = 10
 #: Longer than any census takes: see _census.
 _CENSUS_SWITCH_INTERVAL = 60
 
+#: How long a worker waits for the main thread to take its census before the
+#: report fails rather than hangs.
+_CENSUS_TIMEOUT = 60
+
 _TOP = 30
 _TOP_BY_COUNT = 15
 _TOP_TRACEBACKS = 10
@@ -79,6 +84,15 @@ def _census() -> dict:
     objects are no better. So no other thread runs until the list is gone: the
     switch interval is what makes a waiting thread ask for the GIL. The sleep
     lets through any thread already waiting under the old interval.
+
+    A free-threaded Python has no GIL to hold, and no other way to stop the
+    other threads, so there the switch interval stops nothing. That is why
+    MemoryReporter takes its census on the main thread: the objects that
+    must die on a thread of their own - AppKit's, the hook's, a pool the
+    main thread made - are the main thread's, and an object the census
+    outlives there is destroyed where it belongs. A worker's own pool could
+    still end with the census, but only one that closes in the census's
+    tenth of a second.
     """
     interval = sys.getswitchinterval()
     sys.setswitchinterval(_CENSUS_SWITCH_INTERVAL)
@@ -172,8 +186,12 @@ class MemoryReporter:
     def __init__(self, data_dir: str, process_memory, native_report=None,
                  native_categories=None, stores=(),
                  interval: float = HISTORY_INTERVAL,
-                 baseline_delay: float = BASELINE_DELAY):
+                 baseline_delay: float = BASELINE_DELAY, on_main_thread=None):
+        """`on_main_thread(func, timeout)` runs `func` on the main thread and
+        returns its result, for the census (see _census); None takes it on
+        the calling thread, as library use and most tests do."""
         self._data_dir = data_dir
+        self._on_main_thread = on_main_thread
         self._process_memory = process_memory
         self._native_report = native_report
         self._native_categories = native_categories
@@ -203,13 +221,22 @@ class MemoryReporter:
         self._record_row()
         if self._closed.wait(self._baseline_delay):
             return
-        census = _census()
+        try:
+            census = self._census()
+        except Exception:
+            logger.exception("Could not take the baseline census")
+            census = None
         with self._lock:
-            if self._baseline is None:
+            if census is not None and self._baseline is None:
                 self._baseline = (time.monotonic(), census)
         self._record_row()
         while not self._closed.wait(self._interval):
             self._record_row()
+
+    def _census(self) -> dict:
+        if self._on_main_thread is None:
+            return _census()
+        return self._on_main_thread(_census, _CENSUS_TIMEOUT)
 
     def _record_row(self) -> None:
         try:
@@ -272,7 +299,7 @@ class MemoryReporter:
         # First, so that what is merely waiting for a collection is not
         # reported as having grown.
         collected = gc.collect()
-        census = _census()
+        census = self._census()
         now = time.monotonic()
         with self._lock:
             if self._baseline is None:

@@ -540,6 +540,20 @@ def get_automation():
     unavailable, so every caller degrades instead of raising - focus queries
     run on the key-event path and must never break typing.
     """
+    if _automation is not None or _automation_failed:
+        return _automation
+    # Actions, the chooser's walk, the MCP endpoint and the hook all reach
+    # here, and the first two to arrive would otherwise each make a client
+    # and keep one. Only the first call waits on the lock.
+    with _automation_lock:
+        return _create_automation()
+
+
+#: Serializes the one-time creation in get_automation().
+_automation_lock = threading.Lock()
+
+
+def _create_automation():
     global _automation, _automation_failed
     if _automation is not None or _automation_failed:
         return _automation

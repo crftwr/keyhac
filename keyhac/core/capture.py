@@ -65,26 +65,35 @@ _captures_lock = threading.Lock()
 
 
 class Bounded:
-    """A buffer that keeps the last MAX_CAPTURE characters and says so."""
+    """A buffer that keeps the last MAX_CAPTURE characters and says so.
+
+    Written from more than one thread - the handler on the root logger hears
+    every thread that logs - and read from the one answering the model, so
+    the parts, the size and the count of dropped characters change together.
+    """
 
     def __init__(self):
         self._parts: list[str] = []
         self._size = 0
         self.dropped = 0
+        self._lock = threading.Lock()
 
     def write(self, text: str) -> int:
-        self._parts.append(text)
-        self._size += len(text)
-        while self._size > MAX_CAPTURE and len(self._parts) > 1:
-            gone = self._parts.pop(0)
-            self._size -= len(gone)
-            self.dropped += len(gone)
+        with self._lock:
+            self._parts.append(text)
+            self._size += len(text)
+            while self._size > MAX_CAPTURE and len(self._parts) > 1:
+                gone = self._parts.pop(0)
+                self._size -= len(gone)
+                self.dropped += len(gone)
         return len(text)
 
     def getvalue(self) -> str:
-        body = "".join(self._parts)
-        if self.dropped:
-            return (f"[{self.dropped} earlier characters dropped - this is the "
+        with self._lock:
+            body = "".join(self._parts)
+            dropped = self.dropped
+        if dropped:
+            return (f"[{dropped} earlier characters dropped - this is the "
                     f"tail of the run]\n{body}")
         return body
 

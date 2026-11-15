@@ -39,6 +39,7 @@ over unchanged; each was paid for once already:
 
 import array
 import re
+import threading
 import unicodedata
 from functools import lru_cache
 
@@ -81,6 +82,19 @@ def _load_engine():
     """Import, patch and construct the engine on first use, so the ~50 ms
     dictionary read happens on the first gated query rather than at startup.
     Failure is cached as False: one warning, then permanent silence."""
+    if _engine is None:
+        # The chooser's filter and a worker can ask at once; one dictionary
+        # read, not two.
+        with _engine_lock:
+            _construct_engine()
+    return _engine if _engine else None
+
+
+#: Serializes the one-time load in _load_engine().
+_engine_lock = threading.Lock()
+
+
+def _construct_engine() -> None:
     global _engine
     if _engine is None:
         try:
@@ -97,7 +111,6 @@ def _load_engine():
             logger.warning(f"Migemo unavailable ({type(e).__name__}: {e}); "
                            "candidate filtering uses plain matching only.")
             _engine = False
-    return _engine if _engine else None
 
 
 def _word_expansion(engine, word: str) -> str:
