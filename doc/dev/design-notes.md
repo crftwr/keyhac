@@ -1496,6 +1496,10 @@ a gap.
   `array('L')`, which is 8 bytes on macOS/Linux; `_Array32` swaps the binding before
   the engine is built. Inert on Windows and once upstream lands its own fix. Pin the
   version — the patch reaches into internals.
+- **The romaji-table patch.** pymigemo's romaji lookup can never hit its table's last
+  key (`zu`), so every word spelled with ず went unfound (issue #367), and one key
+  (`~`) sits out of sorted order. `_repair_romaji_table` re-sorts the table in place
+  and appends a sentinel key, so no real key is last.
 - **Wildcards bypass Migemo.** A generated regex would collide with `*`/`?`, so a
   query using them keeps exactly the wildcard semantics it asked for.
 

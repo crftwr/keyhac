@@ -22,8 +22,11 @@ over unchanged; each was paid for once already:
   32-bit on-disk format, and ``'L'`` is 8 bytes there.  :class:`_Array32`
   swaps the ``array`` binding inside the dictionary module before the engine
   is constructed - inert on Windows, and inert once upstream reads ``'I'``
-  itself (https://github.com/oguna/pymigemo/pull/1, unmerged).  Pin the
-  dependency so a new release cannot silently move the internals it touches.
+  itself (https://github.com/oguna/pymigemo/pull/1, unmerged).
+  :func:`_repair_romaji_table` is the second patch: the romaji converter's
+  lookup can never hit the table's last key, so ``zu`` stayed ``zう`` and
+  every word spelled with ず went unfound (issue #367).  Pin the dependency
+  so a new release cannot silently move the internals both patches touch.
 - **Everything degrades to plain matching.**  Package missing, dictionary
   unreadable, an engine landmine (a lone ``s`` raises IndexError inside its
   bit vector), a regex the stdlib rejects: the answer is always ``None`` and
@@ -72,6 +75,35 @@ _HIRA2KATA = {c: c + 0x60 for c in range(0x3041, 0x3097)}
 _HIRA2KATA.update({0x309D: 0x30FD, 0x309E: 0x30FE})
 
 
+#: Appended to pymigemo's romaji table so that no real key is the last one.
+#: No query contains it, so it never matches anything itself.
+_SENTINEL_KEY = "\uffff"
+
+
+def _repair_romaji_table(converter) -> None:
+    """Fix pymigemo 0.0.1's romaji table in place, so its lookups find every
+    key.
+
+    The converter binary-searches ``ROMAJI_KEYS`` with ``bisect.bisect``,
+    which lands just past an exact hit, and then rejects a position equal to
+    the table's length - which is exactly where a hit on the last key lands.
+    The last key is ``zu``, so ``kouzui`` converted to ``こうzうい`` and never
+    found 洪水.  A sentinel key sorting after every real one keeps the last
+    real key off that position.  The table is also re-sorted: ``~`` sits
+    before ``a``, out of the order bisect assumes, and could never be found
+    either.
+
+    The lists are mutated rather than rebound, keeping the key/value pairing,
+    so the converter's own globals see the fix.  Idempotent; inert once
+    upstream sorts the table and compares positions correctly."""
+    keys, values = converter.ROMAJI_KEYS, converter.ROMAJI_VALUES
+    if keys and keys[-1] == _SENTINEL_KEY:
+        return
+    items = sorted(zip(keys, values))
+    keys[:] = [k for k, _ in items] + [_SENTINEL_KEY]
+    values[:] = [v for _, v in items] + [_SENTINEL_KEY]
+
+
 def available() -> bool:
     """Whether the engine loaded.  Loads it on the first call."""
     return _load_engine() is not None
@@ -90,6 +122,8 @@ def _load_engine():
             # other package this import raises and Migemo stays off.
             from migemo import migemocompactdictionary as _dict_module
             _dict_module.array = _Array32
+            from migemo import romajiconverter as _converter
+            _repair_romaji_table(_converter)
             import migemo as _migemo
             _engine = _migemo.Migemo()
             logger.info("Migemo dictionary loaded.")

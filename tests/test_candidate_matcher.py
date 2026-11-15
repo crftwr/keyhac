@@ -146,3 +146,30 @@ class TestMigemo:
         # spans are the substring matcher's.
         regex = migemo.get_regex("kensaku")
         assert migemo.hits(regex, "kensaku") == []
+
+    def test_zu_converts_to_kana(self):
+        # Issue #367: pymigemo's lookup missed its romaji table's last key,
+        # "zu", so every word spelled with ず went unfound.
+        match = m.with_migemo().compile("kouzui")
+        assert match.hit("こうずい")
+        assert match.hit("洪水")
+        assert m.with_migemo().compile("zubon").hit("ズボン")
+
+    def test_every_romaji_key_converts(self):
+        # Pins the table repair: each key of pymigemo's romaji table converts
+        # to its own kana, including the last one and the out-of-order "~".
+        from migemo import romajiconverter as converter
+        pairs = [(k, v) for k, v in zip(converter.ROMAJI_KEYS,
+                                        converter.ROMAJI_VALUES)
+                 if k != migemo._SENTINEL_KEY]
+        assert ("zu", "ず") in pairs and ("~", "～") in pairs
+        broken = [(k, v, converter.convert_romaji_to_hiragana(k))
+                  for k, v in pairs
+                  if converter.convert_romaji_to_hiragana(k) != v]
+        assert broken == []
+
+    def test_romaji_table_repair_is_idempotent(self):
+        from migemo import romajiconverter as converter
+        before = list(converter.ROMAJI_KEYS)
+        migemo._repair_romaji_table(converter)
+        assert converter.ROMAJI_KEYS == before
