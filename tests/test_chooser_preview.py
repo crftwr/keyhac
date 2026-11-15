@@ -129,6 +129,37 @@ class TestPreviewWindow:
         ui_backend.fire_timers()
         assert _preview_windows(ui_backend)
 
+    def test_windows_line_ends_reach_the_screen_as_lines(self, ui_backend,
+                                                         monkeypatch):
+        # A "\r" left at a line's end is a line break of its own to a text
+        # renderer; on Windows it failed every frame of the window (#368).
+        class _Copied(_Notes):
+            def preview(self, candidate):
+                if candidate.payload is None:
+                    return None
+                return CandidatePreview(
+                    title="A\r\nB", text="line one\r\nline two\rline three\r\n",
+                    fields=(("Lines\r\n", "3\r\n"),))
+
+        chooser = _open(_Copied())
+        drawn = []
+        from puikit.backends.memory_backend import MemoryBackend
+        original = MemoryBackend.draw_text
+
+        def draw_text(self, x, y, text, *args, **kwargs):
+            drawn.append(text)
+            return original(self, x, y, text, *args, **kwargs)
+
+        monkeypatch.setattr(MemoryBackend, "draw_text", draw_text)
+        _key(chooser, "down")
+        _key(chooser, "down")
+        ui_backend.fire_timers()
+        [window] = _preview_windows(ui_backend)
+        assert drawn and not any("\r" in text for text in drawn)
+        shown = _text(window)
+        for line in ("line one", "line two", "line three"):
+            assert line in shown
+
     def test_a_source_without_previews_is_never_asked(self, ui_backend):
         from tests.test_sources import _Fruit
         chooser = _open(_Fruit())
