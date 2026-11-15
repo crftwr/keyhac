@@ -245,6 +245,7 @@ class ChooserAction:
         if open_entry is not None:
             prev_action, prev_chooser, original_pid = open_entry
             prev_chooser.dismiss()
+            prev_action._forget_rows()
             if prev_action is self:
                 self._refocus(original_pid)
                 return
@@ -425,11 +426,19 @@ class ChooserAction:
             ChooserAction._open = None
             ChooserAction._stop_watch()
             _refocus_original_app()
-            self._choose(item, modifier_flags)
+            read = self._read
+            try:
+                self._choose(item, modifier_flags)
+            finally:
+                # Unless choosing opened this action's chooser again, whose
+                # rows these now are.
+                if self._read is read:
+                    self._forget_rows()
 
         def _on_canceled():
             ChooserAction._open = None
             ChooserAction._stop_watch()
+            self._forget_rows()
             _refocus_original_app()
 
         # Always the same page, so the key means the same thing on every
@@ -458,9 +467,13 @@ class ChooserAction:
         ChooserAction._open = (self, chooser, original_pid)
 
         def _dismiss():
-            # No refocus: the user moved away deliberately.
+            # No refocus: the user moved away deliberately. The watch has
+            # stopped itself, but ChooserAction._watch still names it - and it
+            # names this window, which would then outlive its close.
             ChooserAction._open = None
+            ChooserAction._stop_watch()
             chooser.dismiss()
+            self._forget_rows()
 
         ChooserAction._watch = _DismissWatch(chooser, _dismiss)
 
@@ -649,6 +662,19 @@ class ChooserAction:
     #: Filled by _collect for the lifetime of one open window.
     _owners: dict = {}
     _read: dict = {}
+
+    def _forget_rows(self) -> None:
+        """Let go of what the closed window read.
+
+        The action outlives its windows - it sits in the key table for the
+        whole session - so rows kept here after the close would stay until the
+        next press, and a row can hold a good deal: a menu bookmark's payload
+        is a live accessibility element of another application.
+
+        lazydocs: ignore
+        """
+        self._owners = {}
+        self._read = {}
 
     @staticmethod
     def _stop_watch() -> None:
