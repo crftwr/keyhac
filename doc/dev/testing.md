@@ -46,13 +46,14 @@ live on each OS.
   `temp/vm-test-<guest>-<time>/` (`tools/vm.py`). `PACKAGES=pypi` installs
   PuiKit and quality-loop from PyPI as pyproject.toml names them instead of
   staging this checkout's - what a user's pip gets. The macOS image
-  (`qa-mac-2026-10-31-2`) grants python.org's Python and
-  `sshd-keygen-wrapper` "Device Control and Data Access" (macOS 27's
+  (`qa-mac-2026-11-15`, python.org 3.15 and 3.15t; 3.14 removed) grants
+  `sshd-keygen-wrapper`, under which the Python started over SSH runs,
+  "Device Control and Data Access" (macOS 27's
   Accessibility and Input Monitoring) and has Japanese Romaji input, so the
-  window, mouse and IME tests run there. The Windows image (`QA-2026-11-01`)
+  window, mouse and IME tests run there. The Windows image (`QA-2026-11-15`, 3.14 uninstalled)
   is a snapshot of the VM shut down, so each run boots it, as each Tart
-  clone does: python.org's 3.14 x64 (emulated, the VM being Arm;
-  `ARCH=arm64` runs the suite under a native ARM64 Python of the same version
+  clone does: python.org's 3.15t x64 (emulated, the VM being Arm;
+  `ARCH=arm64` runs the suite under the image's native ARM64 3.15t
   instead, and `make release-test` does both), the Japanese Microsoft IME, automatic
   sign-in for `qa`, and "Suggest ways to finish setting up my device" off,
   whose full-screen page would otherwise cover the desktop at sign-in. A
@@ -152,6 +153,18 @@ folder as `<host path>=<guest path>`, the image's interpreter as `python`
 (required for a Windows guest), and the VM itself, so that the run starts it
 from a clean state and puts it away afterwards.
 
+Keyhac's runs use the image's **free-threaded** Python, which is what the
+apps embed (#369): `free_threaded_python` in the table, and on the Windows
+guest `free_threaded_python_arm64` for `--arch arm64`. `python` stays as it
+was, since the table is shared and XeFM still runs on it. `make test-vm`
+(and so `make release-test`) checks the interpreter has the GIL off before
+it stages anything, and stops if not; the suite's
+`test_nothing_the_apps_import_turns_the_gil_back_on` then checks that every
+dependency, as that guest installs it, keeps it off. On qa-mac the
+free-threaded framework (`PythonT.framework`, bundle `org.python.pythont`)
+needs no grant of its own: started over SSH, it runs under the
+Accessibility and Input Monitoring grant to `sshd-keygen-wrapper`.
+
 - **Tart:** `tart = "<base VM>"`. The run clones the base, starts the clone
   with the share as `--dir`, reaches it at the clone's own address, and
   deletes it afterwards.
@@ -175,7 +188,7 @@ the details.
 
 Both have run scenarios end to end (13 on both, 12 on macOS). On both, the
 run's Keyhac starts the way the test suite does: no Keyhac is used from the
-image, its Python (3.14, fixed per image) gets a fresh venv for the run with
+image, its free-threaded Python (3.15t, fixed per image) gets a fresh venv for the run with
 the third-party packages - pyproject.toml's and PuiKit's - from a pip cache
 on the share, and PuiKit is ours, so it is staged from this checkout's
 environment, not installed. Everything under test is this checkout's. (Until

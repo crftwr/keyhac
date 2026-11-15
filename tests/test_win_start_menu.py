@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -189,17 +190,38 @@ class TestLive:
     @pytest.mark.desktop
     def test_launch_from_an_absolute_path_entry_starts_the_application(
             self, monkeypatch, real_home_environ):
-        """The fourth shape: python.org's installer puts the path itself in."""
+        """The fourth shape: a shortcut whose target is outside every known
+        folder - python.org's installer made one, until 3.15 stopped - has the
+        path itself as its parsing name. The test makes its own, so it does
+        not depend on what the machine happens to have installed."""
         for key, value in real_home_environ.items():
             monkeypatch.setenv(key, value)
-        entries = [(name, parsing) for name, parsing in startmenu.scan_start_menu()
-                   if parsing[1:3] == ":\\" and parsing.lower().endswith(".exe")]
-        if not entries:
-            pytest.skip("no absolute-path entry on this machine")
-        name, parsing = entries[0]
-        image = parsing.rsplit("\\", 1)[-1]
+        target = getattr(sys, "_base_executable", sys.executable)
+        if not (target[1:3] == ":\\" and target.lower().endswith(".exe")):
+            pytest.skip(f"no executable path to point a shortcut at: {target}")
+        name = f"Keyhac test {os.getpid()}"
+        programs = os.path.join(real_home_environ["APPDATA"], "Microsoft", "Windows",
+                                "Start Menu", "Programs")
+        link = os.path.join(programs, f"{name}.lnk")
+        script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:KH_LINK); "
+                  "$s.TargetPath = $env:KH_TARGET; $s.Save()")
+        subprocess.run(["powershell", "-NoProfile", "-Command", script], check=True,
+                       env={**real_home_environ, "KH_LINK": link, "KH_TARGET": target},
+                       creationflags=subprocess.CREATE_NO_WINDOW)
+        image = target.rsplit("\\", 1)[-1]
         before = _pids(image)
         try:
+            # The Start menu notices a new shortcut on its own time.
+            deadline = time.monotonic() + 30
+            while True:
+                parsing = dict(startmenu.scan_start_menu()).get(name)
+                if parsing is not None:
+                    break
+                assert time.monotonic() < deadline, f"{name!r} never reached the Start menu"
+                time.sleep(0.5)
+            if not (parsing[1:3] == ":\\" and parsing.lower().endswith(".exe")):
+                pytest.skip(f"{target} is in a known folder: its entry is {parsing}")
+            startmenu.forget_start_menu_apps()
             WinAppControl().launch(name)
             deadline = time.monotonic() + 15
             while not _pids(image) - before:
@@ -209,6 +231,10 @@ class TestLive:
             for pid in _pids(image) - before:
                 subprocess.run(["taskkill", "/F", "/PID", str(pid)],
                                capture_output=True)
+            try:
+                os.remove(link)
+            except OSError:
+                pass
 
 
 def _pids(image):

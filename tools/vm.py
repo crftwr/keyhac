@@ -19,9 +19,10 @@ with python.exe; macOS over SSH. ``--packages pypi`` installs PuiKit and
 quality-loop from PyPI as pyproject.toml names them - a release's run (#316) -
 instead of staging this checkout's. The log and the JUnit XML are kept in
 temp/vm-test-<guest>-<time>/; the exit code is pytest's. The Windows image's
-Python is x64, emulated on that Arm VM; ``--arch arm64`` runs the suite under a
-native ARM64 Python of the same version instead, put in the guest for the run
-(qa/guest.py).
+Python is x64, emulated on that Arm VM; ``--arch arm64`` runs the suite under
+the image's native ARM64 Python instead (qa/guest.py). Either way it is the
+image's free-threaded Python (``free_threaded_python`` in the table), which is
+what the apps ship: a run on a GIL one stops before it starts (#369).
 
 **run** starts this working tree's Keyhac in the VM's desktop session - on
 macOS through Keyhac.app, which holds the Accessibility grant - with a home of
@@ -64,6 +65,7 @@ def run_tests(alias: str, pytest_args: list[str], patience: float, packages: str
     with guest.machine():
         if arch == "arm64":
             guest.use_arm64_python()
+        guest.require_free_threaded()
         stage = guest.test_stage(packages)
         try:
             print(f"vm:      installing the third-party packages in the guest "

@@ -1,7 +1,13 @@
 """The interpreter line the startup banner and every diagnostics report carry:
 which Python, built for which CPU, and whether the GIL is off."""
 
+import os
 import platform
+import subprocess
+import sys
+import sysconfig
+
+import pytest
 
 from keyhac.core import diagnostics
 
@@ -52,3 +58,31 @@ class TestPythonArch:
 
     def test_an_unknown_architecture_keeps_its_own_name(self):
         assert self.arch("linux-riscv64", "riscv64") == "riscv64"
+
+
+#: What the apps import on each OS: Keyhac's platform layer and UI, PuiKit's
+#: backend (numpy with it on Windows), and every third-party package.
+_SHIPPED = {
+    "darwin": ["keyhac.platform.mac", "puikit.backends.macos_backend"],
+    "win32": ["keyhac.platform.win", "puikit.backends.windows_backend", "numpy"],
+}
+
+
+@pytest.mark.skipif(not sysconfig.get_config_var("Py_GIL_DISABLED"),
+                    reason="a free-threaded build's question")
+@pytest.mark.skipif(sys.platform not in _SHIPPED, reason="what an app ships")
+def test_nothing_the_apps_import_turns_the_gil_back_on():
+    """An extension module built without free-threading support turns the GIL
+    back on when it is imported, with a warning nobody reads, and the build
+    runs as a GIL one (#369). In a fresh interpreter, since this one may have
+    imported anything by now; PYTHON_GIL is cleared, which would decide it."""
+    modules = ["keyhac.main", "keyhac.ui.console", "keyhac.ui.chooser", "puikit",
+               "PIL.Image", "migemo", "truststore", *_SHIPPED[sys.platform]]
+    script = (f"import sys\n"
+              f"for name in {modules!r}: __import__(name)\n"
+              f"print(int(sys._is_gil_enabled()))")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHON_GIL"}
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                          text=True, env=env, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "0", f"the GIL is back on:\n{done.stderr}"
