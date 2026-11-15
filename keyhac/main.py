@@ -59,7 +59,13 @@ def main() -> int:
     # is what print() writes here, except that print() only becomes console
     # output at redirect_std_streams() below, which is after the point where
     # this has to be said - so it goes to the same place by hand.
-    log.Console.get_instance().write(f"Keyhac {__version__} - {WEBSITE_URL}\n")
+    #
+    # The interpreter goes on the second line: whether the GIL is off and
+    # which CPU the Python was built for are what tell a free-threaded app
+    # build, or an x64 one emulated on ARM, apart by eye.
+    from keyhac.core.diagnostics import python_text
+    log.Console.get_instance().write(
+        f"Keyhac {__version__} - {WEBSITE_URL}\n{python_text()}\n")
 
     if sys.platform == "darwin":
         platform_name = "mac"
