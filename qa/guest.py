@@ -32,18 +32,25 @@ KEYHAC_QA_GUEST is an SSH host alias; its address, user and key are in
 ~/.ssh/config, and what it means on this machine is its table in
 ~/.config/quality-loop/guests.toml (doc/dev/testing.md, "In a VM").
 KEYHAC_QA_SHARE overrides the table's share.
+
+**The image's free-threaded Python** (#369): Keyhac's apps embed 3.15t, so
+the suite and the rooms run on the image's free-threaded interpreter, named
+in the table as ``free_threaded_python`` (and, for a Windows guest's native
+ARM64 run, ``free_threaded_python_arm64``). The table's ``python`` stays what
+it was, for the projects that share the table and still run on it.
 """
 
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import time
 import tomllib
-import urllib.request
 
 from quality_loop import guest as ql
 from quality_loop.guest import GuestError, TartMachine, VMwareMachine  # noqa: F401
@@ -144,37 +151,61 @@ class Guest(ql.Guest):
             raise SystemExit(f"KEYHAC_QA_GUEST: {error}") from None
 
     @property
+    def python(self) -> str:
+        """The image's free-threaded interpreter, ``free_threaded_python`` in
+        the table - what Keyhac's apps embed - or, where the table names none,
+        its ``python``. `require_free_threaded` is what refuses the second for
+        a run that has to be on the first."""
+        return self.settings.get("free_threaded_python") or super().python
+
+    def require_free_threaded(self) -> None:
+        """Stop unless `python` is a free-threaded build with the GIL off: the
+        suite on a GIL Python would pass without testing what ships."""
+        # No quotes inside -c: through SSH into PowerShell they get mangled.
+        code = "import sys; print(int(not sys._is_gil_enabled()))"
+        if self.windows:
+            said = self.ssh(f"& {ql.ps_quote(self.python)} -c \"{code}\"")
+        else:
+            said = self.ssh(f"{ql.sh_quote(self.python)} -c {ql.sh_quote(code)}")
+        if said.returncode != 0 or said.stdout.strip().splitlines()[-1:] != ["1"]:
+            raise SystemExit(
+                f"{self.alias}: {self.python} is not a free-threaded Python with the GIL "
+                f"off, and Keyhac's apps ship one. Name the image's in "
+                f"~/.config/quality-loop/guests.toml as free_threaded_python "
+                f"(doc/dev/testing.md, \"In a VM\").\n{said.stdout}{said.stderr}")
+
+    def windowless(self, python: str) -> str:
+        """``pythonw.exe`` beside ``python.exe`` (quality-loop's), and
+        ``pythonw3.15t.exe`` beside ``python3.15t.exe``: the free-threaded
+        build installs beside a regular one under those names."""
+        name = ntpath.basename(python) if self.windows else ""
+        if re.fullmatch(r"python3\.\d+t\.exe", name, re.IGNORECASE):
+            return python[:-len(name)] + "pythonw" + name[len("python"):]
+        return super().windowless(python)
+
+    @property
     def os_name(self) -> str:
         """What `--platform` takes when this run is replayed: windows or mac."""
         return "windows" if self.windows else "mac"
 
     def use_arm64_python(self) -> None:
-        """From here on, a native ARM64 Python of the image's version instead of
-        the image's x64 one, which that Arm VM emulates. NuGet's package is the
-        whole interpreter in a zip, with no installer to run in a session with
-        no desktop. It lands on the guest's disk, which the next revert drops."""
+        """From here on, the image's native ARM64 free-threaded Python,
+        ``free_threaded_python_arm64`` in the table, instead of its x64 one,
+        which that Arm VM emulates. (It was NuGet's pythonarm64 until #369;
+        NuGet's is the GIL build.)"""
         if not self.windows:
             raise SystemExit(f"{self.alias}: --arch arm64 is for a Windows guest")
-        said = self.ssh(f"& {ql.ps_quote(self.python)} -c \"import platform; "
-                        f"print(platform.python_version())\"")
-        version = said.stdout.strip()
-        package = self.host_share / f"pythonarm64-{version}.zip"
-        url = f"https://www.nuget.org/api/v2/package/pythonarm64/{version}"
-        print(f"vm:      fetching {url}", flush=True)
-        urllib.request.urlretrieve(url, package)
-        where = r"$env:LOCALAPPDATA\keyhac-python-arm64"
-        python = rf"{where}\tools\python.exe"
-        said = self.ssh(f"Expand-Archive -Force -Path {ql.ps_quote(self.path(package))} "
-                        f"-DestinationPath \"{where}\"; "
-                        f"Write-Output \"{python}\"; "
-                        f"& \"{python}\" -c \"import sysconfig; print(sysconfig.get_platform())\"",
-                        timeout=300)
-        package.unlink()
-        lines = said.stdout.strip().splitlines()
-        if len(lines) < 2 or lines[-1].strip() != "win-arm64":
-            raise SystemExit(f"{self.alias}: no ARM64 Python in the guest:\n"
+        python = self.settings.get("free_threaded_python_arm64")
+        if not python:
+            raise SystemExit(f"{self.alias}: --arch arm64 needs the image's ARM64 Python "
+                             f"named as free_threaded_python_arm64 in "
+                             f"~/.config/quality-loop/guests.toml")
+        said = self.ssh(f"& {ql.ps_quote(python)} -c \"import sysconfig; "
+                        f"print(sysconfig.get_platform())\"")
+        if said.stdout.strip().splitlines()[-1:] != ["win-arm64"]:
+            raise SystemExit(f"{self.alias}: {python} is not an ARM64 Python:\n"
                              f"{said.stdout}{said.stderr}")
-        self.settings["python"] = lines[-2].strip()
+        self.settings["free_threaded_python"] = python
 
     def stage(self, prefix: str = "keyhac-qa-stage-") -> pathlib.Path:
         """This working tree's Keyhac, copied onto the share, beside what

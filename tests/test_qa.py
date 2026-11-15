@@ -266,6 +266,46 @@ def test_a_windows_guest_s_paths_are_windows_paths_and_its_python_the_image_s(tm
     assert guest.python == r"C:\Python314\python.exe"
 
 
+def test_a_guest_runs_on_the_images_free_threaded_python_when_the_table_names_it(tmp_path):
+    """What the apps embed (#369); the table's python stays the shared one."""
+    from guest import Guest
+    guest = Guest("some-vm", tmp_path, r"C:\keyhac-qa")
+    guest._windows = True
+    guest.settings["python"] = r"C:\Python314\python.exe"
+    guest.settings["free_threaded_python"] = r"C:\Python315-x64\python3.15t.exe"
+    assert guest.python == r"C:\Python315-x64\python3.15t.exe"
+    # The console-less twin of each, for what runs on the desktop.
+    assert guest.windowless(guest.python) == r"C:\Python315-x64\pythonw3.15t.exe"
+    assert guest.windowless(r"C:\v\Scripts\python.exe") == r"C:\v\Scripts\pythonw.exe"
+
+
+def test_a_native_arm64_run_needs_the_images_arm64_python_named(tmp_path):
+    from guest import Guest
+    guest = Guest("some-vm", tmp_path, r"C:\keyhac-qa")
+    guest._windows = True
+    with pytest.raises(SystemExit, match="free_threaded_python_arm64"):
+        guest.use_arm64_python()
+    guest.settings["free_threaded_python_arm64"] = r"C:\Python315\python3.15t.exe"
+    guest.ssh = lambda command, **kw: types.SimpleNamespace(
+        stdout="win-arm64\n", stderr="", returncode=0)
+    guest.use_arm64_python()
+    assert guest.python == r"C:\Python315\python3.15t.exe"
+
+
+def test_a_suite_run_stops_on_a_python_with_the_gil(tmp_path):
+    from guest import Guest
+    guest = Guest("some-vm", tmp_path, "/Volumes/My Shared Files/qa")
+    guest._windows = False
+    guest.settings["python"] = "/usr/local/bin/python3.14"
+    guest.ssh = lambda command, **kw: types.SimpleNamespace(
+        stdout="0\n", stderr="", returncode=0)
+    with pytest.raises(SystemExit, match="free_threaded_python"):
+        guest.require_free_threaded()
+    guest.ssh = lambda command, **kw: types.SimpleNamespace(
+        stdout="1\n", stderr="", returncode=0)
+    guest.require_free_threaded()
+
+
 def test_a_guest_needs_both_sides_of_the_share(monkeypatch):
     from guest import Guest
     monkeypatch.delenv("KEYHAC_QA_GUEST", raising=False)
