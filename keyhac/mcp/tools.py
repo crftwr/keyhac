@@ -586,6 +586,11 @@ class ToolRegistry:
     def __init__(self, keymap):
         self.keymap = keymap
         self._loader = extensions.Loader()
+        # start_action's "already running?" and the record that makes it so
+        # are one step: the endpoint answers each connection on a thread of
+        # its own, and two starts of one action arriving together must not
+        # both get past the check.
+        self._start_lock = threading.Lock()
         self.tools = {t.name: t for t in self._build()}
 
     def describe(self) -> list[dict]:
@@ -1341,11 +1346,16 @@ class ToolRegistry:
         how fast the action happened to be would be worse still: the branch
         would hinge on the least predictable thing there is.
         """
+        with self._start_lock:
+            return self._start_action(name, arguments)
+
+    def _start_action(self, name: str, arguments: dict | None) -> str:
         # Before resolving, not after: a start with other arguments makes a new
         # instance and replaces the cached one, which is the one cancel_action
         # reaches - so resolving first would take a running action out of reach
         # of its stop button.
-        if capture.get_run(name) is not None and capture.get_run(name).running:
+        previous = capture.get_run(name)
+        if previous is not None and previous.running:
             return (f"{name} is already running - get_action_result to watch "
                     f"it, or cancel_action to stop it.")
         action = self._startable(name, arguments)
@@ -1358,6 +1368,10 @@ class ToolRegistry:
         # output as this one's. Which is the one failure the pair exists to
         # prevent. It also makes the already-running guard above true for a
         # second start_action inside that same window.
+        # The stop button with it, for the same window: cancel_action reads
+        # the flag off the instance, and one made by the worker would not be
+        # there yet - or would replace one already set.
+        action._cancel_flag = threading.Event()
         run = capture.start_run(name)
 
         # Always a ThreadedAction: that is what the scan matches on, and what
@@ -1885,26 +1899,35 @@ _captures_lock = threading.Lock()
 
 
 class _Bounded:
-    """A buffer that keeps the last MAX_CAPTURE characters and says so."""
+    """A buffer that keeps the last MAX_CAPTURE characters and says so.
+
+    Written from more than one thread - the handler on the root logger hears
+    every thread that logs - and read from the one answering the model, so
+    the parts, the size and the count of dropped characters change together.
+    """
 
     def __init__(self):
         self._parts: list[str] = []
         self._size = 0
         self.dropped = 0
+        self._lock = threading.Lock()
 
     def write(self, text: str) -> int:
-        self._parts.append(text)
-        self._size += len(text)
-        while self._size > MAX_CAPTURE and len(self._parts) > 1:
-            gone = self._parts.pop(0)
-            self._size -= len(gone)
-            self.dropped += len(gone)
+        with self._lock:
+            self._parts.append(text)
+            self._size += len(text)
+            while self._size > MAX_CAPTURE and len(self._parts) > 1:
+                gone = self._parts.pop(0)
+                self._size -= len(gone)
+                self.dropped += len(gone)
         return len(text)
 
     def getvalue(self) -> str:
-        body = "".join(self._parts)
-        if self.dropped:
-            return (f"[{self.dropped} earlier characters dropped - this is the "
+        with self._lock:
+            body = "".join(self._parts)
+            dropped = self.dropped
+        if dropped:
+            return (f"[{dropped} earlier characters dropped - this is the "
                     f"tail of the run]\n{body}")
         return body
 

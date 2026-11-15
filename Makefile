@@ -10,20 +10,55 @@ else ifeq ($(OS),Windows_NT)
     IS_WINDOWS := 1
 endif
 
-# Keyhac 2 targets Python 3.14 (the version embedded in the shipped app).
 ifeq ($(IS_WINDOWS),1)
-    PY_ON_PATH := $(shell command -v python3.14 2>/dev/null)
-    ifneq ($(strip $(PY_ON_PATH)),)
-        PYTHON := python3.14
-    else
-        PYTHON := py
-    endif
     VENV_PYTHON := $(VENV)/Scripts/python.exe
     VENV_PIP := $(VENV)/Scripts/pip.exe
 else
-    PYTHON := python3.14
     VENV_PYTHON := $(VENV)/bin/python
     VENV_PIP := $(VENV)/bin/pip
+endif
+
+# The interpreter `make venv` builds $(VENV) on: the newest Python installed,
+# and its free-threaded build (python3.NNt; py -X.Yt on Windows) when there is
+# one, since the shipped apps embed a free-threaded Python and
+# macos_app/build.sh bundles the framework $(VENV) was made from.
+# FREE_THREADED=0 picks the regular build. Between two of the same kind a
+# macOS framework build (python.org's) wins over a standalone one (uv's in
+# ~/.local/bin), since the app bundles the framework. PYTHON=/path/to/python
+# names one outright.
+FREE_THREADED ?= 1
+PYTHON ?=
+
+ifeq ($(IS_WINDOWS),1)
+# 'py' is called through cmd, only to learn the real interpreter's path:
+# Python's install manager puts 'py' in WindowsApps as an App Execution Alias,
+# and MSYS2's sh launching that alias directly never returns.
+define FIND_PYTHON
+best=$$(cmd //c py -c "import sys; print(sys.executable)" | tr -d '\r'); \
+if [ -z "$$best" ]; then echo "Error: 'py' did not report a Python interpreter." >&2; exit 1; fi; \
+if [ "$(FREE_THREADED)" != "0" ]; then \
+	ver=$$("$$best" -c "import sys; print('%d.%d' % sys.version_info[:2])" | tr -d '\r'); \
+	ft=$$(cmd //c py -$${ver}t -c "import sys; print(sys.executable)" 2>/dev/null | tr -d '\r'); \
+	if [ -n "$$ft" ] && [ -x "$$ft" ]; then best=$$ft; \
+	else echo "No free-threaded Python $$ver found; using the regular build" >&2; \
+		echo "  (install it with 'py install $${ver}t', then 'make clean-venv' and 'make venv')" >&2; fi; \
+fi
+endef
+else
+define FIND_PYTHON
+best=""; best_key=0; \
+for dir in $$(echo "$$PATH" | tr ':' '\n'); do \
+	for py in "$$dir"/python3.[0-9] "$$dir"/python3.[0-9][0-9] "$$dir"/python3.[0-9]t "$$dir"/python3.[0-9][0-9]t; do \
+		[ -x "$$py" ] || continue; \
+		key=$$("$$py" -c 'import sys, sysconfig; ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED")); print(((sys.version_info[0]*100 + sys.version_info[1]) * 2 + (ft if "$(FREE_THREADED)" != "0" else 1 - ft)) * 2 + bool(sysconfig.get_config_var("PYTHONFRAMEWORK")))' 2>/dev/null) || continue; \
+		if [ -n "$$key" ] && [ "$$key" -gt "$$best_key" ]; then best_key=$$key; best="$$py"; fi; \
+	done; \
+done; \
+if [ -z "$$best" ]; then \
+	best=$$(command -v python3) || { echo "Error: no python3 interpreter found in PATH" >&2; exit 1; }; \
+	echo "No versioned python3.x found; falling back to python3" >&2; \
+fi
+endef
 endif
 
 EXTRAS := dev
@@ -64,7 +99,9 @@ VENV_STAMP := $(VENV)/.installed
 
 help:
 	@echo "Keyhac 2 utility commands:"
-	@echo "  make venv        - create the virtualenv and install keyhac ($(VENV)/, $(PYTHON))"
+	@echo "  make venv        - create the virtualenv and install keyhac ($(VENV)/) on the"
+	@echo "                     newest Python, free-threaded when there is one"
+	@echo "                     (FREE_THREADED=0 for the regular build)"
 	@echo "  make install     - (re)install keyhac into the venv (editable, with dev deps)"
 	@echo "  make install-puikit - (re)install PuiKit into the venv: editable from"
 	@echo "                     PUIKIT_DIR if set, else the released build from PyPI"
@@ -140,8 +177,16 @@ help:
 	@echo "  Supporting: make build (sdist + wheel into dist/, also a tag gate),"
 	@echo "  make publish-testpypi (rehearsal upload to TestPyPI)."
 
+# The venv is made once, on the interpreter FIND_PYTHON picks; a changed
+# pyproject.toml reinstalls into it rather than remaking it on whatever is
+# newest by then. `make clean-venv venv` moves it to another Python.
 $(VENV_STAMP): pyproject.toml $(if $(PUIKIT_DIR),$(PUIKIT_DIR)/pyproject.toml)
-	$(PYTHON) -m venv $(VENV)
+	@if [ ! -x $(VENV_PYTHON) ]; then \
+		best="$(PYTHON)"; \
+		if [ -z "$$best" ]; then $(FIND_PYTHON); fi; \
+		echo "Using $$best ($$("$$best" --version 2>&1)) to create $(VENV)..."; \
+		"$$best" -m venv $(VENV) || exit 1; \
+	fi
 	$(VENV_PYTHON) -m pip install --upgrade pip
 	@$(MAKE) install-puikit
 	$(VENV_PIP) install -e ".[$(EXTRAS)]"

@@ -36,7 +36,10 @@ separate repository.
 ```bash
 git clone https://github.com/crftwr/keyhac.git
 cd keyhac
-make venv          # .venv with Keyhac (editable) and its dev extras
+make venv          # .venv with Keyhac (editable) and its dev extras, on the
+                   # newest Python - its free-threaded build (3.15t) when
+                   # installed, which is what the apps ship; FREE_THREADED=0
+                   # for the regular one
 make test          # pytest: engine and unit tests, no OS permissions needed
 make run-sandbox   # run with a throwaway config, not your ~/.keyhac/config.py
 make run-debug     # run with debug logging

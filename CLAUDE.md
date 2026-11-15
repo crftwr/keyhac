@@ -39,7 +39,9 @@ reviewed one-off.
 
 ## Key decisions (rationale in doc/dev/)
 
-1. **Languages**: Python 3.14 for everything at runtime. Platform bindings via
+1. **Languages**: Python for everything at runtime — the apps embed the
+   free-threaded 3.15t (GIL off), as XeFM's do, so shared state needs a lock
+   even where the GIL used to make a race rare. Platform bindings via
    **ctypes** (Windows) and **PyObjC** (macOS) — no custom compiled extension modules.
    The only non-Python code is a tiny PEP 587 embedding **launcher** per OS, needed
    for packaging and a stable app identity (macOS Accessibility permission is granted

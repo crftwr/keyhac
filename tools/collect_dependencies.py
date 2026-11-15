@@ -31,7 +31,8 @@ target machine), so it is intentionally not collected here. Pass
 ``--target-platform`` is for a bundle of another architecture than the venv's
 (``win_arm64`` from an x64 venv): the venv still decides what is shipped and at
 which versions, and those versions' wheels for the target are installed in
-place of the venv's files. A version with no wheel for the target fails the
+place of the venv's files, for the venv's Python version and ABI (``cp315t``
+from a free-threaded venv). A version with no wheel for the target fails the
 build.
 
 The bundle ships what the venv holds, so two checks stop the collection
@@ -59,6 +60,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tomllib
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
@@ -397,18 +399,22 @@ def copy_distribution(dist, dest_dir):
 def install_for_platform(dists, dest_dir, target_platform):
     """
     Install *dists*' exact versions into *dest_dir* from wheels for
-    *target_platform*. --no-deps because the closure is already resolved.
-    Returns True on success.
+    *target_platform*, for this interpreter's version and ABI. --no-deps
+    because the closure is already resolved. Returns True on success.
     """
-    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    major, minor = sys.version_info[:2]
+    # A free-threaded interpreter loads only cp3XXt extension modules; pip's
+    # default ABI for --python-version is the GIL build's cp3XX. "none" keeps
+    # the version-specific pure wheels; py3-none-any needs no --abi at all.
+    abi = f"cp{major}{minor}" + ("t" if sysconfig.get_config_var("Py_GIL_DISABLED") else "")
     command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
                "--no-deps", "--only-binary=:all:", "--implementation", "cp",
-               "--python-version", version, "--platform", target_platform,
-               "--target", str(dest_dir)]
+               "--python-version", f"{major}.{minor}", "--abi", abi, "--abi", "none",
+               "--platform", target_platform, "--target", str(dest_dir)]
     command += [f"{dist.metadata['Name']}=={dist.version}" for dist in dists]
-    log_info(f"Installing {len(dists)} distribution(s) for {target_platform}")
+    log_info(f"Installing {len(dists)} distribution(s) for {target_platform} ({abi})")
     if subprocess.run(command).returncode != 0:
-        log_error(f"pip could not install every distribution for {target_platform}")
+        log_error(f"pip could not install every distribution for {target_platform} ({abi})")
         return False
     # Console scripts: the build venv's are outside site-packages, so
     # copy_distribution leaves them behind, and these go the same way.

@@ -1680,18 +1680,31 @@ class Keymap:
             timeout = _AUTHORING_WINDOW
         if timeout is None:
             return
-        self._mcp_timer = threading.Timer(timeout, self._mcp_expired)
-        self._mcp_timer.daemon = True
-        self._mcp_timer.start()
+        #
+        # The timer's thread only hands the expiry to the event loop, where the
+        # switch starts and stops the endpoint too: run on the timer's own
+        # thread, a stop racing the operator's untick could stop one server
+        # twice. The timer travels with it, so an expiry queued just as the
+        # operator restarted the endpoint leaves the new one alone.
+        timer = threading.Timer(
+            timeout, lambda: self.call_on_main_thread(
+                lambda: self._mcp_expired(timer)))
+        timer.daemon = True
+        self._mcp_timer = timer
+        timer.start()
 
-    def _mcp_expired(self) -> None:
+    def _mcp_expired(self, timer=None) -> None:
         """The window ran out. Say so, then close it.
 
         Named rather than a lambda so the console line reads as a timeout and
         not as something the operator did - a switch that turns itself off with
         no explanation is the cost this design accepts, and one log line is what
-        pays it back.
+        pays it back. Runs on the event-loop thread; `timer` is the one that
+        fired, and an expiry whose timer has since been replaced or cancelled
+        does nothing.
         """
+        if timer is not None and timer is not self._mcp_timer:
+            return
         logger.info(f"MCP server stopped ({_AUTHORING_WINDOW // 60} minute "
                     f"timeout). Tick AI Integration again to reopen it.")
         self._stop_mcp_server()

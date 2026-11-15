@@ -64,7 +64,8 @@ Short answers; each links to the full analysis.
 
 ### Q1. What languages do we use other than Python?
 
-**Almost none at runtime.** Python 3.14 everywhere; Windows OS access via **ctypes**
+**Almost none at runtime.** Python everywhere (the apps embed the free-threaded 3.15t
+since #369); Windows OS access via **ctypes**
 (as PuiKit's Windows backend already proves viable, including COM), macOS via **PyObjC**
 (Quartz/ApplicationServices provide `CGEventTap` and `AXUIElement`). The only non-Python
 code is a **tiny embedding launcher per OS** (~150 lines of C/C++ using the PEP 587

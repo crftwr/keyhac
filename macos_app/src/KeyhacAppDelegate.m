@@ -12,6 +12,12 @@
 #import "KeyhacAppDelegate.h"
 #include <Python.h>
 
+// The embedded framework's directory under Contents/Frameworks; build.sh
+// defines it from the venv's Python (PythonT.framework when free-threaded).
+#ifndef KEYHAC_PYTHON_FRAMEWORK
+#define KEYHAC_PYTHON_FRAMEWORK "Python.framework"
+#endif
+
 @implementation KeyhacAppDelegate {
     BOOL pythonInitialized;
 }
@@ -31,7 +37,7 @@
     if (![self initializePython]) {
         NSString *errorMessage = @"Failed to initialize Python interpreter.\n\n"
                                  @"Possible causes:\n"
-                                 @"• Python.framework is missing or corrupted\n"
+                                 @"• The embedded " KEYHAC_PYTHON_FRAMEWORK " is missing or corrupted\n"
                                  @"• Keyhac source files are missing from the bundle\n"
                                  @"• Incompatible Python version\n\n"
                                  @"Please reinstall Keyhac or check Console.app for detailed error logs.";
@@ -63,13 +69,13 @@
     NSBundle *mainBundle = [NSBundle mainBundle];
     // Use "Current" symlink to support any Python version
     NSString *frameworksPath = [[mainBundle privateFrameworksPath]
-        stringByAppendingPathComponent:@"Python.framework/Versions/Current"];
+        stringByAppendingPathComponent:@KEYHAC_PYTHON_FRAMEWORK "/Versions/Current"];
     NSString *resourcesPath = [mainBundle resourcePath];
 
-    // Verify Python.framework exists
+    // Verify the embedded framework exists
     NSFileManager *fileManager = [NSFileManager defaultManager];
     if (![fileManager fileExistsAtPath:frameworksPath]) {
-        NSLog(@"ERROR: Python.framework not found at path: %@", frameworksPath);
+        NSLog(@"ERROR: " KEYHAC_PYTHON_FRAMEWORK " not found at path: %@", frameworksPath);
         return NO;
     }
 

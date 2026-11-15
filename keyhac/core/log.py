@@ -130,19 +130,27 @@ class _ConsoleStream:
         self._console = console
         self._log_level = log_level
         self._buffer = ""
+        # print() reaches this from every thread at once - actions, workers,
+        # the loop - and the partial line is shared: unguarded, two threads
+        # can each split off the same line, or drop the other's text.
+        self._lock = threading.Lock()
 
     def write(self, s) -> int:
         s = str(s)
-        self._buffer += s
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
+        with self._lock:
+            self._buffer += s
+            if "\n" not in self._buffer:
+                return len(s)
+            *lines, self._buffer = self._buffer.split("\n")
+        for line in lines:
             self._console.write(line + "\n", self._log_level)
         return len(s)
 
     def flush(self) -> None:
-        if self._buffer:
-            self._console.write(self._buffer, self._log_level)
-            self._buffer = ""
+        with self._lock:
+            text, self._buffer = self._buffer, ""
+        if text:
+            self._console.write(text, self._log_level)
 
     def isatty(self) -> bool:
         return False

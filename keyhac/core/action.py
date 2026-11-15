@@ -227,9 +227,15 @@ class ThreadedAction:
         `_finish`, which is handed to the loop thread and may not have run
         yet when the next Esc arrives.
 
+        The same goes for the flag: `start_action` makes it beside the record,
+        before the worker exists, so a `cancel_action` arriving before the
+        worker gets here is not lost - this keeps the flag it was handed with
+        the record rather than replacing it with one nobody has set.
+
         lazydocs: ignore
         """
-        self._cancel_flag = threading.Event()
+        if run is None or getattr(self, "_cancel_flag", None) is None:
+            self._cancel_flag = threading.Event()
         _current.action = self
         with ThreadedAction._running_lock:
             ThreadedAction._running.add(self)

@@ -3114,14 +3114,27 @@ def test_start_action_returns_before_the_action_finishes(writable):
 
 
 def test_still_running_is_an_answer_not_a_timeout(writable):
+    import time as clock
+
     gate = _slow_action(writable)
     writable.call("start_action", {"name": "slow.Slow"})
-    reply = writable.call("get_action_result", {"name": "slow.Slow", "wait": 0})
-    assert "still running" in reply
-    assert "started working" in reply, "output so far comes back too"
-    assert "again" in reply, "and it says what to do about it"
-    gate.set()
-    writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
+    try:
+        # Until its first line is out: start_action returns before the
+        # action's thread has necessarily run at all, and without a GIL
+        # handing it the processor it often has not.
+        deadline = clock.monotonic() + 10
+        while True:
+            reply = writable.call("get_action_result",
+                                  {"name": "slow.Slow", "wait": 0})
+            if "started working" in reply or clock.monotonic() > deadline:
+                break
+            clock.sleep(0.01)
+        assert "still running" in reply
+        assert "started working" in reply, "output so far comes back too"
+        assert "again" in reply, "and it says what to do about it"
+    finally:
+        gate.set()
+        writable.call("get_action_result", {"name": "slow.Slow", "wait": 20})
 
 
 def test_a_waiting_collect_returns_as_soon_as_it_ends(writable):

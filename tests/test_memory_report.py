@@ -427,25 +427,62 @@ class TestTheMenuInTheTray:
 @pytest.mark.skipif(sys.platform != "darwin", reason="PyObjC")
 def test_a_census_does_not_destroy_another_thread_s_objects():
     """gc.get_objects() must not become the last reference to something the main
-    thread lets go of: an NSAutoreleasePool destroyed on a worker segfaults."""
+    thread lets go of: an NSAutoreleasePool destroyed on a worker segfaults.
+
+    The reporter's census goes to the main thread, which is the only place that
+    holds on a free-threaded Python too - there the switch interval stops no
+    one. The main thread here serves the requests between its pools, as the
+    event loop does between key events."""
     script = """
-import threading, time, objc
+import queue, threading, time, objc
 from keyhac.core import memory_report
+requests = queue.Queue()
+def on_main_thread(func, timeout):
+    box, done = [], threading.Event()
+    requests.put((func, box, done))
+    assert done.wait(timeout)
+    return box[0]
+reporter = memory_report.MemoryReporter(
+    ".", None, on_main_thread=on_main_thread)
 stop = threading.Event()
 def worker():
     while not stop.is_set():
-        memory_report._census()
+        reporter._census()
 thread = threading.Thread(target=worker, daemon=True)
 thread.start()
 end = time.monotonic() + 3
 while time.monotonic() < end:
     with objc.autorelease_pool():
         pass
+    try:
+        func, box, done = requests.get_nowait()
+    except queue.Empty:
+        continue
+    box.append(func())
+    done.set()
 stop.set()
-thread.join(10)
+while thread.is_alive():
+    try:
+        func, box, done = requests.get(timeout=0.1)
+    except queue.Empty:
+        continue
+    box.append(func())
+    done.set()
 """
     done = subprocess.run([sys.executable, "-c", script], capture_output=True, timeout=60)
     assert done.returncode == 0, done.stderr.decode()[-2000:]
+
+
+def test_the_census_runs_where_the_reporter_is_told(tmp_path):
+    calls = []
+
+    def on_main_thread(func, timeout):
+        calls.append(timeout)
+        return func()
+
+    reporter = _reporter(tmp_path, on_main_thread=on_main_thread)
+    assert isinstance(reporter._census(), dict)
+    assert calls == [memory_report._CENSUS_TIMEOUT]
 
 
 def test_a_census_puts_the_switch_interval_back():

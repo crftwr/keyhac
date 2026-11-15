@@ -2057,6 +2057,15 @@ py-spy is refused: they are Apple-signed with the right to inspect a process.
   list is gone. Running it on the main thread in slices would have kept the hook
   responsive, but only moves the problem: COM pointers from a worker would then be
   released on the main thread instead.
+- *On a free-threaded Python the census runs on the main thread, whole.* There is no
+  GIL for the switch interval to hold, and no other way to stop the other threads, so
+  the census reproduction segfaulted on 3.15t. `MemoryReporter` now hands the census to
+  the main thread and waits for it. That protects what has to die on the main thread
+  (AppKit objects, the hook's, a pool the main thread made), which is most of what is
+  thread-bound; a worker's own pool, or a worker's COM pointer, could still end with
+  the census if it is let go of in that tenth of a second. The stall is the one the
+  GIL build already paid. Under the GIL nothing changed: the switch interval still
+  holds every thread.
 - *tracemalloc is a menu tick, not a setting.* It costs CPU on every allocation, on the
   key path too, so nothing may leave it on across a restart by accident.
 
