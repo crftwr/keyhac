@@ -323,6 +323,23 @@ class TestSync:
         assert argv[argv.index("-r") + 1] == str(layout.requirements)
         assert fake.kwargs["cwd"] == str(layout.home)
 
+    def test_a_dist_info_with_no_metadata_does_not_stop_the_sync(self, layout):
+        """What Windows shows for a moment after the prune removed one (a
+        directory still being deleted), and a broken install leaves for good.
+        Python 3.14 read it as nameless; 3.15 raises MetadataNotFound, and the
+        sync failed on it once in qa-win."""
+        write_requirements(layout, "requests\n")
+        fake = _FakePip(dists=[("requests", "2.32.0", {"requests/__init__.py": ""})])
+
+        def popen(argv, **kwargs):
+            proc = fake(argv, **kwargs)
+            target = Path(argv[argv.index("--target") + 1])
+            (target / "ghost-1.0.dist-info").mkdir()
+            return proc
+
+        result, _ = self.sync(layout, popen)
+        assert result.installed == ["requests 2.32.0"]
+
     def test_constraints_pin_the_host_versions(self, layout):
         write_requirements(layout, "requests\n")
         seen = {}

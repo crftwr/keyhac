@@ -152,6 +152,19 @@ def normalize(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def _name_and_version(dist) -> tuple[str | None, str | None]:
+    """A distribution's name and version, or ``(None, None)`` when it has no
+    metadata to read: a ``.dist-info`` whose METADATA is gone - Windows shows
+    a directory still being deleted for a moment after it was removed, and a
+    broken install leaves one for good. Python 3.14 read such a distribution
+    as having no name; 3.15 raises MetadataNotFound, a FileNotFoundError, and
+    a sync that met one failed."""
+    try:
+        return dist.metadata.get("Name"), dist.version
+    except FileNotFoundError:
+        return None, None
+
+
 def host_distributions(layout: Layout) -> dict[str, str]:
     """``{normalized name: version}`` for every distribution Keyhac can import
     without the synced directory -- what the bundle ships, or what the venv it
@@ -160,7 +173,7 @@ def host_distributions(layout: Layout) -> dict[str, str]:
     own = str(layout.root.resolve())
     found: dict[str, str] = {}
     for dist in importlib.metadata.distributions():
-        name, version = dist.metadata["Name"], dist.version
+        name, version = _name_and_version(dist)
         if not name or not version:
             continue
         try:
@@ -451,7 +464,7 @@ def _prune(directory: Path, host: dict[str, str]) -> list[str]:
     pruned = []
     root = directory.resolve()
     for dist in list(importlib.metadata.distributions(path=[str(directory)])):
-        name = dist.metadata["Name"]
+        name, _ = _name_and_version(dist)
         if not name or normalize(name) not in host:
             continue
         dirs = set()
@@ -523,9 +536,10 @@ def sync(layout: Layout | None = None, python: str | None = None,
         shutil.rmtree(layout.staging, ignore_errors=True)
         raise
     installed = sorted(
-        (f"{d.metadata['Name']} {d.version}"
-         for d in importlib.metadata.distributions(path=[str(layout.staging)])
-         if d.metadata["Name"]), key=str.lower)
+        (f"{name} {version}"
+         for name, version in map(_name_and_version,
+                                  importlib.metadata.distributions(path=[str(layout.staging)]))
+         if name), key=str.lower)
     # Swapped in even when nothing is declared: an empty directory replaces
     # the old one the same way, waiting for a restart if it has to.
     swapped = _swap_in(layout)
