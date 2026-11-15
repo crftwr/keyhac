@@ -90,9 +90,10 @@ dependencies = [
     # that Python. Pure Python on ctypes.
     'truststore>=0.10; sys_platform == "darwin" or sys_platform == "win32"',
     # Romaji-finds-Japanese filtering in the chooser (issue #106).  Pinned
-    # rather than floated: keyhac/core/migemo.py carries a runtime patch for a
-    # dictionary bug in 0.0.1 that reaches into the package's internals, so a
-    # new release must be reviewed before it is taken.  Pure Python, BSD-3,
+    # rather than floated: keyhac/core/migemo.py carries runtime patches for a
+    # dictionary bug and a romaji-table bug in 0.0.1 that reach into the
+    # package's internals, so a new release must be reviewed before it is
+    # taken.  Pure Python, BSD-3,
     # dictionary bundled in the wheel - no native library and no separate
     # dictionary placement for the user.
     #
