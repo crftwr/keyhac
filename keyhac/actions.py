@@ -6,6 +6,7 @@ they are the user-facing glue between the two.
 
 import datetime
 import os
+import threading
 import traceback
 
 from keyhac.core.const import MODKEY_SHIFT
@@ -158,6 +159,69 @@ class _DismissWatch:
         keymap = Keymap.get_instance()
         if keymap is not None and keymap.on_mouse_button is self._observer:
             keymap.on_mouse_button = None
+
+
+class _SourceRead:
+    """What one source has produced for one open chooser window, and the rest
+    of it if the source is still producing.
+
+    **One generator, possibly two walks.** Leaving a page stops its worker
+    only between rows, so the old walk can still be inside the generator when
+    the new page's walk starts on it - and Python refuses a generator entered
+    twice ("generator already executing"). So the generator is advanced under
+    its own lock, and each walk keeps a cursor into `rows`: rows the other walk
+    added after this page took its snapshot are handed over first, rather than
+    being in the list but never on screen.
+
+    Two locks, because they are waited on from different threads. Advancing
+    the generator can sit for as long as an unresponsive application takes to
+    answer, and only a walk - on the worker, for a background source - waits
+    for that. Taking a snapshot or removing a row happens on the main thread
+    and takes only the short lock around the list.
+    """
+
+    def __init__(self, rows: list, generator=None):
+        self.rows = rows
+        self.generator = generator
+        self._rows_lock = threading.Lock()
+        self._walk_lock = threading.Lock()
+
+    def snapshot(self):
+        """`(rows so far, whether more are coming)`."""
+        with self._rows_lock:
+            return list(self.rows), self.generator is not None
+
+    def walk(self, seen: int, adopt):
+        """The rows after the first `seen`, reading on from the generator once
+        the recorded ones run out. `adopt` turns what the source yielded into
+        a row."""
+        while True:
+            with self._walk_lock:
+                with self._rows_lock:
+                    if seen < len(self.rows):
+                        candidate = self.rows[seen]
+                        seen += 1
+                        generator = None
+                    else:
+                        generator = self.generator
+                        if generator is None:
+                            return
+                if generator is not None:
+                    try:
+                        item = next(generator)
+                    except StopIteration:
+                        with self._rows_lock:
+                            self.generator = None
+                        return
+                    candidate = adopt(item)
+                    with self._rows_lock:
+                        self.rows.append(candidate)
+                        seen = len(self.rows)
+            yield candidate
+
+    def discard(self, candidate) -> None:
+        with self._rows_lock:
+            self.rows[:] = [c for c in self.rows if c is not candidate]
 
 
 class ChooserAction:
@@ -448,7 +512,7 @@ class ChooserAction:
         self._page = self._home_page()
         self._owners = {}
         #: What each source has read so far, for this window only:
-        #: id(source) -> [rows, unfinished generator or None].
+        #: id(source) -> _SourceRead.
         self._read = {}
         rows, pending, badge_of, background = self._collect()
         chooser = ChooserWindow(runtime.backend, rows, pending=pending,
@@ -531,14 +595,15 @@ class ChooserAction:
             if state is None:
                 produced = source.candidates()
                 if isinstance(produced, (list, tuple)):
-                    state = [[self._adopt(source, item) for item in produced],
-                             None]
+                    state = _SourceRead(
+                        [self._adopt(source, item) for item in produced])
                 else:
-                    state = [[], iter(produced)]
+                    state = _SourceRead([], iter(produced))
                 self._read[id(source)] = state
-            rows.extend(state[0])
-            if state[1] is not None:
-                unfinished.append((source, state))
+            snapshot, still_coming = state.snapshot()
+            rows.extend(snapshot)
+            if still_coming:
+                unfinished.append((source, state, len(snapshot)))
 
         def remainder(group):
             """Continue each unfinished source in `group`, recording as it
@@ -548,15 +613,10 @@ class ChooserAction:
             window, so a *different* page sharing the source starts from
             where this one got to rather than from nothing.
             """
-            for source, state in group:
-                generator = state[1]
-                if generator is None:
-                    continue
-                for item in generator:
-                    candidate = self._adopt(source, item)
-                    state[0].append(candidate)
+            for source, state, seen in group:
+                for candidate in state.walk(seen, lambda item, source=source:
+                                            self._adopt(source, item)):
                     yield candidate
-                state[1] = None
 
         # Two streams, because they are drained in two different places. A
         # source that touches nothing of Keyhac's says so with `background`
@@ -617,7 +677,7 @@ class ChooserAction:
         if not source.remove(candidate):
             return False
         for state in self._read.values():
-            state[0][:] = [c for c in state[0] if c is not candidate]
+            state.discard(candidate)
         return True
 
     def _adopt(self, source, item):

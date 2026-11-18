@@ -2927,3 +2927,60 @@ class TestBrowserBookmarksSource:
         from keyhac.platform.win import apps
         default = apps._default_browser_executable()
         assert default is None or default.casefold().endswith(".exe")
+
+
+class TestTwoWalksOfOneSource:
+    """Leaving a page stops its worker only between rows, so the old walk can
+    still be inside a background source's generator when the new page starts
+    walking it.  Entering one generator from two threads raised "generator
+    already executing" and lost the rest of the page."""
+
+    def test_the_second_walk_waits_and_misses_nothing(self):
+        import threading
+        from keyhac.core.source import ChooserPage
+        from keyhac.actions import ShowCandidates
+
+        inside, release = threading.Event(), threading.Event()
+
+        class _Slow(CandidateSource):
+            name = "Slow"
+            background = True
+
+            def candidates(self):
+                yield Candidate(display="row 0")
+                inside.set()
+                release.wait(5)
+                for index in range(1, 4):
+                    yield Candidate(display=f"row {index}")
+
+        shared = _Slow()
+        action = ShowCandidates([ChooserPage("All", [shared]),
+                                 ChooserPage("Just it", [shared])])
+        action._owners, action._read, action._page = {}, {}, 0
+        first = action._collect()[3]
+        got_first, got_second, errors = [], [], []
+
+        def walk(generator, into, stop_after=None):
+            try:
+                for candidate in generator:
+                    into.append(candidate.display)
+                    if stop_after is not None and len(into) >= stop_after:
+                        return
+            except Exception as error:      # pragma: no cover - the bug
+                errors.append(error)
+
+        old = threading.Thread(target=walk, args=(first, got_first, 2))
+        old.start()
+        assert inside.wait(5)               # the old walk is inside next()
+        action._page = 1
+        second = action._collect()[3]
+        new = threading.Thread(target=walk, args=(second, got_second))
+        new.start()
+        release.set()
+        old.join(5)
+        new.join(5)
+        assert errors == []
+        assert got_first == ["row 0", "row 1"]
+        # The new page started from the snapshot ["row 0"], so what the old
+        # walk read after it still reaches this page.
+        assert got_second == ["row 1", "row 2", "row 3"]
