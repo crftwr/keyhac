@@ -31,7 +31,12 @@ classifiers = [
 ]
 dependencies = [
     # 1.4.2 is the first release with every puikit API/fix keyhac uses. What
-    # the floor last moved for: 1.26.0, for the free-threaded app builds
+    # the floor last moved for: 1.27.3, where closing a window takes it out of
+    # the backend's per-window records (#377). A closed chooser stayed alive
+    # with its rows, its NSWindow and its backing store: on 1.26.0 only after
+    # the pointer had changed shape over it, and on 1.27.2 after every close.
+    #
+    # Before that: 1.26.0, for the free-threaded app builds
     # (#369). It draws Windows frames on a render thread when the GIL is off
     # (puikit#215), with the races that thread brought closed (puikit#216: a
     # secondary window resized mid-frame among them). Soft, as for XeFM:
@@ -78,7 +83,7 @@ dependencies = [
     # no longer does) - and ListView scrolling an assigned selection into view
     # (PR #95), which keeps the chooser's highlight on screen (issue #27). To
     # develop against a local checkout, set PUIKIT_DIR (see Makefile).
-    "puikit>=1.26.0",
+    "puikit>=1.27.3",
     'pyobjc-framework-Cocoa>=10; sys_platform == "darwin"',
     'pyobjc-framework-Quartz>=10; sys_platform == "darwin"',
     'pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"',
