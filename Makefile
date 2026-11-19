@@ -904,6 +904,13 @@ uninstall-windows-msix:
 #
 # Poll certification afterwards with: msstore submission status <product id>
 #
+# msstore runs through `cmd //c`, not directly. msstore.exe is a WindowsApps
+# app execution alias, and MSYS2's sh never sees such a child exit: msstore
+# finishes (the submission goes on into certification) but the recipe waits
+# forever, with no msstore process left to find. `cmd` reaps it and passes
+# the exit code through. stdin is /dev/null because on a failure msstore asks
+# "Press Enter to open the browser" and would wait on the terminal for good.
+#
 # Mirrors WINDOWS_ZIP: build_msix.ps1 derives its version from the same
 # __version__ literal as KEYHAC_VERSION, plus the Store-required ".0" revision,
 # so this is the path the pack above just wrote.
@@ -927,7 +934,7 @@ release-windows-msix: windows-msixbundle
 		echo "ERROR: $(WINDOWS_MSIXBUNDLE) missing after packing."; \
 		exit 1; }; \
 	echo "Submitting $(WINDOWS_MSIXBUNDLE) to the Microsoft Store ($$KEYHAC_STORE_PRODUCT_ID)..."; \
-	msstore publish "$(WINDOWS_MSIXBUNDLE)" -id "$$KEYHAC_STORE_PRODUCT_ID"
+	cmd //c msstore publish "$(WINDOWS_MSIXBUNDLE)" -id "$$KEYHAC_STORE_PRODUCT_ID" </dev/null
 
 # Everything the Windows build machinery generates. Plain rm rather than
 # `build.ps1 -Clean` (identical effect) so this works on any OS and
