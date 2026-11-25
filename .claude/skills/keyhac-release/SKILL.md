@@ -103,9 +103,8 @@ On the Windows machine, from the same checkout at the tag:
 `make release-windows-zip` attaches both portable zips (win-x64, win-arm64);
 `make release-windows-msix` is the odd one out — it submits one `.msixbundle`
 of both architectures to the Microsoft Store, not the GitHub Release, and certification proceeds asynchronously
-(poll with `msstore submission status`). Run `make` from PowerShell here: MSYS2's
-`make` started from Git Bash reaches its recipes with most of the environment
-gone, so `gh` reads as not logged in and `release-status` misreports the Release.
+(poll with `msstore submission status`). Run `make` from PowerShell here: started
+from Git Bash, MSYS2's `make` loses most of the environment, so it stops.
 
 The bundle targets (DMG, Windows zip, MSIX) refuse a venv holding anything
 not installed from a package index — an editable PuiKit included — or outside
