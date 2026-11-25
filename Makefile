@@ -10,6 +10,22 @@ else ifeq ($(OS),Windows_NT)
     IS_WINDOWS := 1
 endif
 
+# --- Windows: stop when the Windows environment did not reach make ------------
+# Git Bash (Git for Windows' own msys) starting MSYS2's make hands it almost
+# none of the Windows environment. Two programs then take the current directory
+# for the folder a variable should have named: gh writes .local/, and `py`
+# (%LocalAppData%\Python) installs a whole Python into the checkout and points
+# the user's registry entries and Start menu at it, dropping the others'
+# (it happened in puikit on 2026-11-24).
+ifeq ($(IS_WINDOWS),1)
+ifeq ($(LOCALAPPDATA),)
+$(error On Windows, run make from PowerShell, cmd or an MSYS2 shell, not from Git Bash. The Windows environment did not reach make (LOCALAPPDATA is empty))
+endif
+endif
+
+# `py` never downloads a Python for a make target: not having one is an error.
+export PYTHON_MANAGER_AUTOMATIC_INSTALL := false
+
 ifeq ($(IS_WINDOWS),1)
     VENV_PYTHON := $(VENV)/Scripts/python.exe
     VENV_PIP := $(VENV)/Scripts/pip.exe
